@@ -1,6 +1,6 @@
 ---
 title: "Contact"
-layout: category-contact
+layout: category-Contact
 permalink: /Contact/
-author_profile: True
+author_profile: False
 ---
