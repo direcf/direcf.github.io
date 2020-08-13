@@ -1,5 +1,5 @@
 ---
-title: "My first github page is completed"
+title: goo
 layout: category
 permalink: /News/goo/
 taxonomy: goo
