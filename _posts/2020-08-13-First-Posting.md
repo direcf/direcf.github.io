@@ -1,7 +1,7 @@
 ---
 title: "My first github page is completed"
-layout : collection
-collection : News
+layout : categories
+categories : News
 permalink: /News/
 last_modified_at: 2020-08-13 00:00:00
 ---
