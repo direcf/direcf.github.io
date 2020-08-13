@@ -1,9 +1,7 @@
 ---
 title: "My first github page is completed"
-layout : categories
+layout : collection
+collection : News
 permalink: /News/
 last_modified_at: 2020-08-13 00:00:00
-toc: true # Table of Contents
-comments: true
-use_math: true # MathJax On
 ---
