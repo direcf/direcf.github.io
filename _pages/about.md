@@ -11,11 +11,8 @@ Research Area : 3D deep learning, Autonomous-driving, 3D reconstruction, Medical
 Education : Master Candidate in KAIST (Undergraduate school : Hanyang University)
 
 Motto : If you want to build a ship, don't drump up
-
         the men to gatehr wood, divide the work,
-
         and give orders, Instead teach them to
-
         yearn for the vast and endless sea.
 
 ## Blog description
