@@ -1,5 +1,6 @@
 ---
 title: "PointRCNN"
+excerpt: "RPN + RCNN = correct bbox3d via lidar"
 permalink: /docs/page3/
 author_profile : true
 layout: single
