@@ -4,6 +4,8 @@ excerpt: "RPN + RCNN = estimate bbox3d via lidar"
 permalink: /docs/page1003/
 author_profile: true
 layout: single
+header:
+    image: /assets/images/500x300.jpg
 ---
 ## 1. Introduction
 
