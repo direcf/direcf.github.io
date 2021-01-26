@@ -14,6 +14,7 @@ Motto : If you want to build a ship, don't drump up
         the men to gatehr wood, divide the work,
         and give orders, Instead teach them to
         yearn for the vast and endless sea.
+        by. Antoine Marie Jean-Baptiste Roger de Saint-Exupéry
 
 Contact : skai7923@kaist.ac.kr
 
