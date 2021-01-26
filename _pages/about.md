@@ -8,7 +8,7 @@ Name : Seungjun Lee
 
 Research Area : 3D deep learning, 3D reconstruction, Autonomous-driving, Medical Diagnosis
 
-Education : Master Candidate in KAIST (Undergraduate school : Hanyang University)
+Education : MS Candidate in KAIST EE (BS in HYU EE)
 
 Motto : If you want to build a ship, don't drump up
         the men to gatehr wood, divide the work,
