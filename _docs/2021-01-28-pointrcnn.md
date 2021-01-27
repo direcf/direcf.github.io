@@ -5,6 +5,7 @@ permalink: /docs/page1004/
 author_profile: true
 layout: single
 comments: true
+classes: wide
 header:
     image: /assets/images/header2.jpg
 ---

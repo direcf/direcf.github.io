@@ -5,6 +5,7 @@ permalink: /docs/page1001/
 author_profile: true
 layout: single
 comments: true
+classes: wide
 header:
     image: /assets/images/header2.jpg
 ---
@@ -94,6 +95,7 @@ def evaluate(model, loader, device="cpu"):
 ```
 
 **4. Network**
+
 **<span style="color:#4287f5">(1) VGG</span>**
 
 <a href="https://imgur.com/Sb5NTGr"><img src="https://i.imgur.com/Sb5NTGr.png" title="source: imgur.com" /></a>
