@@ -1,7 +1,7 @@
 ---
 title: "PointRCNN"
 excerpt: "RPN + RCNN = estimate bbox3d via lidar"
-permalink: /docs/page1003/
+permalink: /docs/page1004/
 author_profile: true
 layout: single
 comments: true
