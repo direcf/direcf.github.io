@@ -1,5 +1,5 @@
 ---
-title: "Inception, VGG, ResNet, RCNN, Fast-RCNN, Faster-RCNN"
+title: "AlexNet, VGG, GoogLeNet, ResNet"
 excerpt: "Understanding the entire system"
 permalink: /docs/page1001/
 author_profile: true
