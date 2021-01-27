@@ -1,6 +1,6 @@
 ---
-title: "PointNet"
-excerpt: "How to handle 3d representation"
+title: "Inception, VGG, ResNet, RCNN, Fast-RCNN, Faster-RCNN"
+excerpt: "Understanding the entire system"
 permalink: /docs/page1001/
 author_profile: true
 layout: single
