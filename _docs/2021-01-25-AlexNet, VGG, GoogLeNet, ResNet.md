@@ -10,6 +10,41 @@ header:
     image: /assets/images/header2.jpg
 ---
 ## <span style="color:#3498DB">Assignment1.</span> Understanding the entire system
+#### < Introduction >
+AlexNet, VGG, GoogLeNet, ResNet were developed in order. As deeper and complicated, they have evoloved for better performance. In this era, engineers were wondering how to stack it well.
+
+**1. AlexNet**
+(1) Activation function : ReLU
+(2) Normalization technique : LRN(Local Response Normalization)
+  + Data Augmentation : flip, crop, color(jiltering)
+  + Dropout : output x 0.5
+
+<a href="https://imgur.com/lq8ZmiI"><img src="https://i.imgur.com/lq8ZmiI.png" title="source: imgur.com" /></a>
+
+**2. VGG**
+VGG Network doesn't need additional description, because it is very simple structure as just using 3x3 conv, 1 stride. Normally, VGG16 and VGG19 of total six models are frequently used.
+
+<a href="https://imgur.com/crn80Ww"><img src="https://i.imgur.com/crn80Ww.png" title="source: imgur.com" /></a>
+
+**3. GoogLeNet**
+(1) The number of layers : 22
+(2) 1x1 convolution : useful technique for decreasing the number of parameters
+(3) Inception module
+(4) GAP(global average pooling)
+(5) Auxiliary classifier
+
+<a href="https://imgur.com/o72i9w2"><img src="https://i.imgur.com/o72i9w2.png" title="source: imgur.com" /></a>
+
+**4. ResNet**
+(1) The number of layers : 152
+(2) Residual block for preventing from vanishing gradient
+(3) Good initialization technique
+(4) Batch Normalization
+(5) Early stop callback
+
+<a href="https://imgur.com/9icDB5s"><img src="https://i.imgur.com/9icDB5s.png" title="source: imgur.com" /></a>
+
+#### < Code Anaylsis >
 **1. import module**
 ```python
 import torch
@@ -135,3 +170,6 @@ print('ResNet Test accuracy: {:.2f}%'.format(resnet_acc))
 ```
 
 **6. tensorboard, argparse, mgpus, logging, lr_scheduler**
+
+#### Reference site
+[1] (https://junklee.tistory.com/19)
