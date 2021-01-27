@@ -4,8 +4,8 @@ excerpt: "Understanding the entire system"
 permalink: /docs/page1001/
 author_profile: true
 layout: single
-comments: true
 classes: wide
+comments: true
 header:
     image: /assets/images/header2.jpg
 ---
