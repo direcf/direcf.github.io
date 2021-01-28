@@ -1,5 +1,5 @@
 ---
-title: "PointPainting, DeepLabV3, SqueezeSegV2"
+title: "PointPainting"
 excerpt: "Sensor Fusion"
 permalink: /docs/page1005/
 author_profile: true
@@ -9,7 +9,7 @@ comments: true
 header:
     image: /assets/images/header2.jpg
 ---
-## <span style="color:#3498DB">Assignment2.</span> 3D Semantic Segmentation
+## <span style="color:#3498DB">A new perspective</span> Sensor Fusion
 
 #### < Introduction >
 
@@ -31,13 +31,8 @@ Additionally, 'seqential method' has a critical problem that is 'speed'. No matt
 
 <a href="https://imgur.com/g3BoY9m"><img src="https://i.imgur.com/g3BoY9m.png" title="source: imgur.com" /></a>
 
+<a href="https://imgur.com/Rg4QrDu"><img src="https://i.imgur.com/Rg4QrDu.png" title="source: imgur.com" /></a>
 
 #### < Code Anaylsis >
 
 **1. import module**
-
-
-#### <DeepLabV3>
-
-
-#### <SqueezeSegV2>
