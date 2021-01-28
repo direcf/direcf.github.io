@@ -13,7 +13,7 @@ header:
 
 #### < Introduction >
 
-Sensor fusion is one of important choices to develop 3d data analysis. Today, I introduce special fusion mehod, named PointPainting, using mono camera and lidar sensor. Concept is very simple.
+Sensor fusion is one of important options to develop 3d data analysis. Today, I introduce special fusion mehod, named PointPainting, using mono camera and lidar sensor. Concept is very simple.
 
 <a href="https://imgur.com/ET3IX3J"><img src="https://i.imgur.com/ET3IX3J.png" title="source: imgur.com" /></a>
 
