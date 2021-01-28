@@ -13,7 +13,7 @@ header:
 #### < Introduction >
 AlexNet, VGG, GoogLeNet, ResNet were developed in order. As deeper and complicated, they have evoloved for better performance. In this era, engineers were wondering how to stack it well.
 
-**1. AlexNet**
+**1. AlexNet (ILSVRC'12)**
 
 (1) Activation function : ReLU
 
@@ -23,13 +23,13 @@ AlexNet, VGG, GoogLeNet, ResNet were developed in order. As deeper and complicat
 
 <a href="https://imgur.com/lq8ZmiI"><img src="https://i.imgur.com/lq8ZmiI.png" title="source: imgur.com" /></a>
 
-**2. VGG**
+**2. VGG (ILSVRC'14)**
 
 VGG Network doesn't need additional description, because it is very simple structure as just using 3x3 conv, 1 stride. Normally, VGG16 and VGG19 of total six models are frequently used.
 
 <a href="https://imgur.com/crn80Ww"><img src="https://i.imgur.com/crn80Ww.png" title="source: imgur.com" /></a>
 
-**3. GoogLeNet**
+**3. GoogLeNet (ILSVRC'14)**
 
 (1) The number of layers : 22
 
@@ -43,7 +43,7 @@ VGG Network doesn't need additional description, because it is very simple struc
 
 <a href="https://imgur.com/o72i9w2"><img src="https://i.imgur.com/o72i9w2.png" title="source: imgur.com" /></a>
 
-**4. ResNet**
+**4. ResNet (ILSVRC'15)**
 
 (1) The number of layers : 152
 
