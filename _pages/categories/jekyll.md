@@ -5,7 +5,7 @@ title: "Jekyll"
 
 author_profile: true
 sidebar:
-  nav: "side"
+  nav: "docs"
 ---
 
 {% assign posts = site.categories.jekyll %}
