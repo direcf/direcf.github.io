@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>PointNet++: Deep Hierarchical Feature Learning — direcf</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;-webkit-font-smoothing:antialiased;}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+.main{min-width:0}
+.paper-wrap{max-width:860px;padding:40px 48px 96px}
+.paper-hero{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:28px 32px;margin-bottom:36px}
+.paper-venue{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.4px;color:var(--accent);background:var(--accent-soft);padding:4px 12px;border-radius:100px;display:inline-block;margin-bottom:12px}
+.paper-title{font-size:clamp(20px,3vw,28px);font-weight:800;letter-spacing:-.02em;margin-bottom:8px}
+.paper-authors{font-size:14px;color:var(--muted);margin-bottom:16px}
+.paper-metrics{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px}
+.metric{background:var(--bg-soft);border-radius:8px;padding:8px 14px;font-size:13px}
+.metric strong{display:block;font-size:11px;color:var(--muted);font-family:"SF Mono",Menlo,monospace;text-transform:uppercase;letter-spacing:1px;margin-bottom:2px}
+.paper-links{display:flex;gap:8px;flex-wrap:wrap}
+.paper-link{font-size:13px;padding:6px 12px;border-radius:6px;border:1px solid var(--border);color:var(--muted);background:var(--bg-card)}
+.paper-link:hover{background:var(--bg-soft);color:var(--text)}
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:36px 0 16px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:18px;font-weight:800;letter-spacing:-.02em}
+.section-num{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+.prose p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.prose strong{color:var(--text)}
+.prose code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.prose ul{padding-left:1.4em;margin-bottom:14px}
+.prose ul li{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:6px}
+.contrib-list{list-style:none;display:grid;gap:10px;margin:16px 0}
+.contrib-list li{display:flex;gap:12px;align-items:flex-start;padding:12px 16px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;font-size:14px;color:var(--text-2);line-height:1.6}
+.contrib-list li::before{content:"→";color:var(--accent);font-weight:700;flex-shrink:0;font-family:monospace}
+.results-table{width:100%;border-collapse:collapse;font-size:13.5px;margin:16px 0}
+.results-table th{background:var(--text);color:rgba(255,255,255,.85);padding:10px 16px;text-align:left;font-size:11.5px;font-family:"SF Mono",Menlo,monospace;letter-spacing:.8px}
+.results-table td{padding:10px 16px;border-bottom:1px solid var(--border);color:var(--text-2)}
+.results-table tr:hover td{background:var(--bg-soft)}
+.results-table .highlight td{background:var(--accent-soft);font-weight:700;color:var(--text)}
+.diagram-box{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:24px;margin:20px 0;text-align:center;overflow-x:auto}
+.diagram-caption{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:12px}
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin:20px 0}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:#0f172a;color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.pipeline-box{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:20px;background:var(--bg-soft);border-radius:12px;margin:16px 0}
+.pipeline-step{background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:13px;font-weight:600;text-align:center;min-width:100px}
+.pipeline-arrow{color:var(--muted);font-size:18px;flex-shrink:0}
+.callout{background:var(--accent-soft);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;padding:14px 18px;margin:18px 0;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.callout strong{color:var(--text)}
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .paper-wrap{padding:24px 20px 60px}
+}
+  </style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item" href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item" href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item" href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item" href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item" href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item" href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item" href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a>
+  </nav>
+  <div class="sidebar-foot"><span>direcf · 2024</span></div>
+  </aside>
+  <div class="main">
+    <div class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a>
+        <span class="sep">/</span>
+        <a href="../../index.html#/category/computer-vision">Computer Vision</a>
+        <span class="sep">/</span>
+        <strong>PointNet++</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="../../index.html#/category/computer-vision">← Back</a>
+      </div>
+    </div>
+    <div class="paper-wrap">
+      <div class="paper-hero">
+        <div class="paper-venue">NIPS 2017</div>
+        <div class="paper-title">PointNet++: Deep Hierarchical Feature Learning on Point Sets in a Metric Space</div>
+        <div class="paper-authors">Charles R. Qi · Li Yi · Hao Su · Leonidas J. Guibas — Stanford University</div>
+        <div class="paper-metrics">
+          <div class="metric"><strong>ModelNet40 Acc</strong>91.9% (vs PointNet 89.2%)</div>
+          <div class="metric"><strong>Key Idea</strong>Hierarchical Set Abstraction</div>
+          <div class="metric"><strong>Density Handling</strong>MSG / MRG</div>
+          <div class="metric"><strong>Task</strong>Classification &amp; Segmentation</div>
+        </div>
+        <div class="paper-links">
+          <span class="paper-link">NeurIPS 2017</span>
+          <span class="paper-link">arXiv: 1706.02413</span>
+          <span class="paper-link">GitHub: charlesq34/pointnet2</span>
+        </div>
+      </div>
+
+      <div class="section-div"><h2>1. Problem with PointNet</h2><span class="section-num">§01</span></div>
+      <div class="prose">
+        <p>
+          PointNet's global max-pool aggregates all N points into a single 1024-D vector. This works for
+          distinguishing chairs from planes, but it <strong>treats all points independently</strong> and
+          discards all local geometric structure. The network cannot distinguish a flat surface from a
+          curved one if the overall point distribution is similar.
+        </p>
+        <p>
+          Worse, real-world LiDAR scans suffer from <strong>non-uniform density</strong>: points cluster
+          densely near the sensor and are sparse far away. A network trained on uniform samples
+          generalises poorly under density variation because it has no mechanism to adapt its receptive
+          field size to local density.
+        </p>
+      </div>
+      <ul class="contrib-list">
+        <li><strong>No local structure</strong> — max pool over all N points ignores neighbourhood relationships entirely; fine-grained shapes (bolts, hinges) are invisible.</li>
+        <li><strong>Density blindness</strong> — a fixed global aggregation gives equal weight to dense near-field regions and sparse far-field regions.</li>
+        <li><strong>No hierarchy</strong> — 2D CNNs build receptive fields progressively (edge → texture → part → object); PointNet jumps directly to global in one step.</li>
+      </ul>
+
+      <div class="section-div"><h2>2. Set Abstraction Layer</h2><span class="section-num">§02</span></div>
+      <div class="prose">
+        <p>
+          PointNet++ introduces the <strong>Set Abstraction (SA)</strong> layer, which down-samples the
+          point set while encoding rich local features. Each SA layer performs three sub-operations:
+        </p>
+      </div>
+      <ul class="contrib-list">
+        <li><strong>Farthest Point Sampling (FPS)</strong> — iteratively select the point furthest from all already-selected centroids. Produces M centroids that maximally cover the point cloud. More uniform than random sampling.</li>
+        <li><strong>Ball Query</strong> — for each centroid, gather all points within radius r. Capped at K neighbours. Local neighbourhood is translation-invariant and density-adaptive.</li>
+        <li><strong>PointNet mini-network</strong> — apply a small PointNet (shared MLP + max pool) to each local group of K neighbours. Outputs one d-dimensional feature vector per centroid. Result: N points → M points with richer features.</li>
+      </ul>
+      <div class="diagram-box">
+        <svg width="700" height="260" viewBox="0 0 700 260" xmlns="http://www.w3.org/2000/svg" style="max-width:100%;font-family:-apple-system,sans-serif">
+          <defs>
+            <marker id="arr" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+              <polygon points="0 0,7 2.5,0 5" fill="#64748b"/>
+            </marker>
+          </defs>
+          <!-- Level labels -->
+          <text x="10" y="20" font-size="11" fill="#0f1f3a" font-weight="700">Hierarchical Set Abstraction — N → N1 → N2 → 1</text>
+          <!-- SA1 block -->
+          <rect x="10" y="40" width="120" height="180" rx="10" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+          <text x="70" y="60" text-anchor="middle" font-size="11" fill="#1e40af" font-weight="700">SA Layer 1</text>
+          <rect x="20" y="68" width="100" height="28" rx="6" fill="#fff" stroke="#93c5fd" stroke-width="1"/>
+          <text x="70" y="86" text-anchor="middle" font-size="10" fill="#1d4ed8">FPS → N1 centroids</text>
+          <rect x="20" y="102" width="100" height="28" rx="6" fill="#fff" stroke="#93c5fd" stroke-width="1"/>
+          <text x="70" y="120" text-anchor="middle" font-size="10" fill="#1d4ed8">Ball Query r₁</text>
+          <rect x="20" y="136" width="100" height="28" rx="6" fill="#fff" stroke="#93c5fd" stroke-width="1"/>
+          <text x="70" y="154" text-anchor="middle" font-size="10" fill="#1d4ed8">PointNet MLP</text>
+          <text x="70" y="200" text-anchor="middle" font-size="9" fill="#6a7a92">N×3 → N1×d1</text>
+          <!-- arrow -->
+          <line x1="130" y1="130" x2="148" y2="130" stroke="#64748b" stroke-width="1.5" marker-end="url(#arr)"/>
+          <!-- SA2 block -->
+          <rect x="148" y="40" width="120" height="180" rx="10" fill="#d1fae5" stroke="#10b981" stroke-width="1.5"/>
+          <text x="208" y="60" text-anchor="middle" font-size="11" fill="#065f46" font-weight="700">SA Layer 2</text>
+          <rect x="158" y="68" width="100" height="28" rx="6" fill="#fff" stroke="#6ee7b7" stroke-width="1"/>
+          <text x="208" y="86" text-anchor="middle" font-size="10" fill="#059669">FPS → N2 centroids</text>
+          <rect x="158" y="102" width="100" height="28" rx="6" fill="#fff" stroke="#6ee7b7" stroke-width="1"/>
+          <text x="208" y="120" text-anchor="middle" font-size="10" fill="#059669">Ball Query r₂ &gt; r₁</text>
+          <rect x="158" y="136" width="100" height="28" rx="6" fill="#fff" stroke="#6ee7b7" stroke-width="1"/>
+          <text x="208" y="154" text-anchor="middle" font-size="10" fill="#059669">PointNet MLP</text>
+          <text x="208" y="200" text-anchor="middle" font-size="9" fill="#6a7a92">N1×d1 → N2×d2</text>
+          <!-- arrow -->
+          <line x1="268" y1="130" x2="286" y2="130" stroke="#64748b" stroke-width="1.5" marker-end="url(#arr)"/>
+          <!-- SA3 block -->
+          <rect x="286" y="40" width="120" height="180" rx="10" fill="#fce7f3" stroke="#db2777" stroke-width="1.5"/>
+          <text x="346" y="60" text-anchor="middle" font-size="11" fill="#9d174d" font-weight="700">SA Layer 3</text>
+          <rect x="296" y="68" width="100" height="28" rx="6" fill="#fff" stroke="#f9a8d4" stroke-width="1"/>
+          <text x="346" y="86" text-anchor="middle" font-size="10" fill="#be185d">Global PointNet</text>
+          <rect x="296" y="102" width="100" height="28" rx="6" fill="#fff" stroke="#f9a8d4" stroke-width="1"/>
+          <text x="346" y="120" text-anchor="middle" font-size="10" fill="#be185d">All N2 pts as group</text>
+          <rect x="296" y="136" width="100" height="28" rx="6" fill="#fff" stroke="#f9a8d4" stroke-width="1"/>
+          <text x="346" y="154" text-anchor="middle" font-size="10" fill="#be185d">MLP + Max Pool</text>
+          <text x="346" y="200" text-anchor="middle" font-size="9" fill="#6a7a92">N2×d2 → 1×d3</text>
+          <!-- arrow to classification -->
+          <line x1="406" y1="130" x2="424" y2="130" stroke="#64748b" stroke-width="1.5" marker-end="url(#arr)"/>
+          <!-- FC classifier -->
+          <rect x="424" y="100" width="110" height="60" rx="8" fill="#fef3c7" stroke="#d97706" stroke-width="1.5"/>
+          <text x="479" y="127" text-anchor="middle" font-size="11" fill="#92400e" font-weight="700">FC Layers</text>
+          <text x="479" y="143" text-anchor="middle" font-size="9.5" fill="#b45309">→ k classes</text>
+          <!-- skip connection / FP arrow for seg -->
+          <path d="M208 220 Q208 245 346 245 Q450 245 450 220" fill="none" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="5,3" marker-end="url(#arr)"/>
+          <text x="330" y="255" text-anchor="middle" font-size="9" fill="#94a3b8">Feature Propagation (for segmentation)</text>
+          <!-- scale labels -->
+          <text x="70" y="235" text-anchor="middle" font-size="9" fill="#3b82f6">N pts</text>
+          <text x="208" y="235" text-anchor="middle" font-size="9" fill="#10b981">N1 pts</text>
+          <text x="346" y="235" text-anchor="middle" font-size="9" fill="#db2777">N2 pts</text>
+          <text x="479" y="235" text-anchor="middle" font-size="9" fill="#d97706">1 vec</text>
+        </svg>
+        <div class="diagram-caption">Three-level Set Abstraction hierarchy: each SA layer down-samples via FPS, groups via ball query, encodes with PointNet mini-net</div>
+      </div>
+
+      <div class="section-div"><h2>3. MSG — Multi-Scale Grouping</h2><span class="section-num">§03</span></div>
+      <div class="prose">
+        <p>
+          Non-uniform density breaks a single fixed radius: in a sparse region, a small radius finds
+          zero neighbours; in a dense region, a large radius finds too many with insufficient local
+          resolution. <strong>MSG</strong> runs multiple ball queries at different radii in parallel and
+          concatenates the resulting feature vectors.
+        </p>
+      </div>
+      <div class="diagram-box">
+        <svg width="560" height="200" viewBox="0 0 560 200" xmlns="http://www.w3.org/2000/svg" style="max-width:100%;font-family:-apple-system,sans-serif">
+          <defs>
+            <marker id="arr2" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+              <polygon points="0 0,7 2.5,0 5" fill="#64748b"/>
+            </marker>
+          </defs>
+          <!-- centroid input -->
+          <rect x="10" y="80" width="70" height="40" rx="7" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.5"/>
+          <text x="45" y="104" text-anchor="middle" font-size="10" fill="#334155" font-weight="700">Centroid p</text>
+          <!-- fan out arrows -->
+          <line x1="80" y1="90" x2="110" y2="55" stroke="#64748b" stroke-width="1.2" marker-end="url(#arr2)"/>
+          <line x1="80" y1="100" x2="110" y2="100" stroke="#64748b" stroke-width="1.2" marker-end="url(#arr2)"/>
+          <line x1="80" y1="110" x2="110" y2="145" stroke="#64748b" stroke-width="1.2" marker-end="url(#arr2)"/>
+          <!-- radius branches -->
+          <rect x="110" y="35" width="110" height="36" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.2"/>
+          <text x="165" y="57" text-anchor="middle" font-size="10" fill="#1e40af">Ball r=0.1 → PointNet</text>
+          <rect x="110" y="82" width="110" height="36" rx="6" fill="#d1fae5" stroke="#10b981" stroke-width="1.2"/>
+          <text x="165" y="104" text-anchor="middle" font-size="10" fill="#065f46">Ball r=0.2 → PointNet</text>
+          <rect x="110" y="129" width="110" height="36" rx="6" fill="#fce7f3" stroke="#db2777" stroke-width="1.2"/>
+          <text x="165" y="151" text-anchor="middle" font-size="10" fill="#9d174d">Ball r=0.4 → PointNet</text>
+          <!-- concat arrows -->
+          <line x1="220" y1="53" x2="260" y2="90" stroke="#64748b" stroke-width="1.2" marker-end="url(#arr2)"/>
+          <line x1="220" y1="100" x2="260" y2="100" stroke="#64748b" stroke-width="1.2" marker-end="url(#arr2)"/>
+          <line x1="220" y1="147" x2="260" y2="110" stroke="#64748b" stroke-width="1.2" marker-end="url(#arr2)"/>
+          <!-- concat box -->
+          <rect x="260" y="74" width="80" height="52" rx="8" fill="#fef3c7" stroke="#d97706" stroke-width="1.5"/>
+          <text x="300" y="98" text-anchor="middle" font-size="11" fill="#92400e" font-weight="700">Concat</text>
+          <text x="300" y="114" text-anchor="middle" font-size="9" fill="#b45309">d1+d2+d3</text>
+          <!-- output -->
+          <line x1="340" y1="100" x2="370" y2="100" stroke="#64748b" stroke-width="1.5" marker-end="url(#arr2)"/>
+          <rect x="370" y="78" width="110" height="44" rx="8" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.5"/>
+          <text x="425" y="98" text-anchor="middle" font-size="10" fill="#4c1d95" font-weight="700">MSG Feature</text>
+          <text x="425" y="113" text-anchor="middle" font-size="9" fill="#6d28d9">multi-scale aware</text>
+          <!-- caption annotations -->
+          <text x="165" y="185" text-anchor="middle" font-size="9" fill="#6a7a92">SSG uses only one radius; MSG runs all three in parallel</text>
+        </svg>
+        <div class="diagram-caption">MSG: three ball queries at different radii, each with its own PointNet sub-network; features concatenated before propagation</div>
+      </div>
+      <div class="prose">
+        <p>
+          <strong>MRG (Multi-Resolution Grouping)</strong> is a computationally cheaper alternative: instead
+          of multiple radii at the same SA layer, concatenate features from <em>two consecutive levels</em>
+          of the hierarchy — one computed from the raw local points, one propagated from the coarser level.
+          When the local point set is dense, the raw-points branch dominates; when sparse, the coarser
+          features take over. MRG avoids the cost of running multiple PointNets at the same level.
+        </p>
+      </div>
+
+      <div class="section-div"><h2>4. Feature Propagation for Segmentation</h2><span class="section-num">§04</span></div>
+      <div class="prose">
+        <p>
+          Classification only needs the top-level global vector, but point-wise segmentation requires
+          a feature at <em>every</em> original point. PointNet++ propagates features back down the
+          hierarchy using <strong>interpolation + skip connections</strong>, similar to U-Net's decoder.
+        </p>
+        <p>
+          For each point at the finer level, its feature is computed as the inverse-distance-weighted
+          average of its k nearest neighbours at the coarser level:
+        </p>
+        <p style="font-family:'SF Mono',Menlo,monospace;font-size:13px;background:var(--bg-soft);padding:12px 18px;border-radius:8px;margin:16px 0;color:var(--text)">
+          f(x) = Σ w_i · f(x_i) / Σ w_i,  &nbsp;&nbsp; w_i = 1 / dist(x, x_i)^p
+        </p>
+        <p>
+          The interpolated feature is then concatenated with the skip-connection feature from the
+          encoder at the same level, and passed through a unit PointNet (per-point MLP) to refine.
+          Stacking multiple FP layers recovers the full N-point resolution.
+        </p>
+      </div>
+
+      <div class="section-div"><h2>5. PyTorch Implementation</h2><span class="section-num">§05</span></div>
+      <div class="code-card">
+        <div class="code-bar">pointnet2_sa.py — Set Abstraction layer with ball query grouping</div>
+        <pre><code class="language-python">import torch
+import torch.nn as nn
+
+
+def farthest_point_sample(xyz, npoint):
+    # Iterative farthest point sampling. xyz: B×N×3, returns B×npoint indices.
+    B, N, _ = xyz.shape
+    centroids = torch.zeros(B, npoint, dtype=torch.long, device=xyz.device)
+    distance  = torch.full((B, N), 1e10, device=xyz.device)
+    farthest  = torch.randint(0, N, (B,), device=xyz.device)
+    for i in range(npoint):
+        centroids[:, i] = farthest
+        centroid = xyz[torch.arange(B), farthest].unsqueeze(1)   # B×1×3
+        dist = ((xyz - centroid) ** 2).sum(-1)                    # B×N
+        distance = torch.min(distance, dist)
+        farthest = distance.argmax(-1)
+    return centroids
+
+
+def ball_query(radius, nsample, xyz, new_xyz):
+    # Find nsample neighbours within radius for each centroid.
+    B, N, _ = xyz.shape
+    M = new_xyz.shape[1]
+    # pairwise distances B×M×N
+    dist = ((new_xyz.unsqueeze(2) - xyz.unsqueeze(1)) ** 2).sum(-1)
+    # mask points outside radius; sort and take first nsample
+    idx = dist.argsort(-1)[..., :nsample]                         # B×M×nsample
+    group_mask = dist.gather(-1, idx) > radius ** 2
+    idx[group_mask] = idx[:, :, :1].expand_as(idx)[group_mask]   # pad with centroid
+    return idx                                                     # B×M×nsample
+
+
+class SetAbstraction(nn.Module):
+    # Single Set Abstraction layer (SSG variant).
+
+    def __init__(self, npoint, radius, nsample, in_ch, mlp_channels):
+        super().__init__()
+        self.npoint   = npoint
+        self.radius   = radius
+        self.nsample  = nsample
+        layers = []
+        last = in_ch + 3          # include relative xyz
+        for out_ch in mlp_channels:
+            layers += [nn.Conv2d(last, out_ch, 1),
+                       nn.BatchNorm2d(out_ch), nn.ReLU()]
+            last = out_ch
+        self.mlp = nn.Sequential(*layers)
+        self.out_ch = last
+
+    def forward(self, xyz, features=None):
+        # xyz: B×N×3, features: B×N×C or None → new_xyz: B×M×3, new_feat: B×M×out_ch
+        B, N, _ = xyz.shape
+        # 1. FPS
+        idx      = farthest_point_sample(xyz, self.npoint)         # B×M
+        new_xyz  = xyz[torch.arange(B).unsqueeze(1), idx]          # B×M×3
+        # 2. Ball query
+        grp_idx  = ball_query(self.radius, self.nsample, xyz, new_xyz)  # B×M×K
+        grp_xyz  = xyz[torch.arange(B).view(B,1,1).expand_as(grp_idx),
+                       grp_idx]                                     # B×M×K×3
+        grp_xyz -= new_xyz.unsqueeze(2)                             # relative coords
+        if features is not None:
+            grp_feat = features[torch.arange(B).view(B,1,1).expand_as(grp_idx),
+                                grp_idx]                            # B×M×K×C
+            grp_in = torch.cat([grp_xyz, grp_feat], dim=-1)        # B×M×K×(3+C)
+        else:
+            grp_in = grp_xyz                                        # B×M×K×3
+        # 3. PointNet mini-network
+        grp_in  = grp_in.permute(0, 3, 2, 1)                      # B×(3+C)×K×M
+        grp_out = self.mlp(grp_in)                                  # B×out_ch×K×M
+        new_feat = grp_out.max(dim=2)[0].permute(0, 2, 1)         # B×M×out_ch
+        return new_xyz, new_feat
+
+
+# Quick test
+if __name__ == "__main__":
+    xyz  = torch.randn(4, 1024, 3)
+    sa1  = SetAbstraction(npoint=512, radius=0.2, nsample=32,
+                           in_ch=0, mlp_channels=[64, 64, 128])
+    sa2  = SetAbstraction(npoint=128, radius=0.4, nsample=64,
+                           in_ch=128, mlp_channels=[128, 128, 256])
+    xyz1, f1 = sa1(xyz)
+    xyz2, f2 = sa2(xyz1, f1)
+    print(xyz1.shape, f1.shape)    # torch.Size([4, 512, 3]) torch.Size([4, 512, 128])
+    print(xyz2.shape, f2.shape)    # torch.Size([4, 128, 3]) torch.Size([4, 128, 256])
+</code></pre>
+      </div>
+
+      <div class="section-div"><h2>6. Results</h2><span class="section-num">§06</span></div>
+      <table class="results-table">
+        <thead><tr>
+          <th>Task</th><th>Dataset</th><th>Method</th><th>Metric</th><th>Score</th>
+        </tr></thead>
+        <tbody>
+          <tr><td>Classification</td><td>ModelNet40</td><td>PointNet</td><td>Accuracy</td><td>89.2%</td></tr>
+          <tr class="highlight"><td>Classification</td><td>ModelNet40</td><td>PointNet++ (MSG)</td><td>Accuracy</td><td>91.9%</td></tr>
+          <tr><td>Part Segmentation</td><td>ShapeNet Part</td><td>PointNet</td><td>mIoU</td><td>83.7%</td></tr>
+          <tr class="highlight"><td>Part Segmentation</td><td>ShapeNet Part</td><td>PointNet++</td><td>mIoU</td><td>85.1%</td></tr>
+          <tr><td>Semantic Seg</td><td>S3DIS</td><td>PointNet</td><td>mIoU</td><td>47.6%</td></tr>
+          <tr class="highlight"><td>Semantic Seg</td><td>S3DIS</td><td>PointNet++</td><td>mIoU</td><td>54.5%</td></tr>
+        </tbody>
+      </table>
+
+      <div class="section-div"><h2>7. Commentary</h2><span class="section-num">§07</span></div>
+      <div class="prose">
+        <p>
+          PointNet++ is the natural follow-up to PointNet: it adds the hierarchical local-to-global
+          processing that CNNs get "for free" from their convolutional structure. The Set Abstraction
+          layer is conceptually a 3D analog of a convolutional layer — sample centroids, pool local
+          neighbourhood, output a coarser representation — but adapted to irregular point sets.
+        </p>
+        <p>
+          The MSG density-handling is elegant but expensive: at each SA layer, you run K independent
+          PointNet sub-networks. In practice many modern architectures (PointConv, KPConv, VoteNet)
+          borrow the FPS + ball-query skeleton but replace the inner PointNet with cheaper operations.
+        </p>
+        <p>
+          <strong>Legacy:</strong> virtually every subsequent 3D detection or segmentation network
+          (PointRCNN, VoteNet, 3DETR) uses PointNet++ as its backbone. FPS and ball-query have
+          become standard primitives in 3D deep learning libraries (PyTorch3D, MinkowskiEngine).
+        </p>
+      </div>
+    </div>  </div>
+</div>
+<script>(function(){var app=document.getElementById('app');var btn=document.getElementById('sbToggle');var KEY='direcf:sb-collapsed';function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}apply(localStorage.getItem(KEY)==='1');if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});})();</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+</body>
+</html>
