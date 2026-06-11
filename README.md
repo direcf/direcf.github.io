@@ -244,9 +244,9 @@ GitHub repo → Settings → Pages → **Source: GitHub Actions** 로 설정. �
 ## 9. 알려진 한계 / 로드맵
 
 ### 지금 안 되는 것
-- [ ] **일기 페이지가 정적 HTML 그대로** — 사이드바 없음, Astro 통합 안 됨
-- [ ] **검색 기능 없음** — Cmd+K 모달 + Fuse.js 후보
-- [ ] **다크모드 없음** — 개발자 사이트에선 사실상 필수
+- [x] ~~**일기 페이지가 정적 HTML 그대로**~~ — Astro 통합 완료. 일기는 `src/data/diary.json` 한 곳에서 작성, `/diary/<slug>/`로 라우팅
+- [x] ~~**검색 기능 없음**~~ — Cmd+K 모달 + Fuse.js. 모든 글·챕터·일기가 인덱싱됨
+- [x] ~~**다크모드 없음**~~ — 헤더 ☀️/🌙 토글, `prefers-color-scheme` 자동 감지 + localStorage 저장
 - [ ] **챕터 읽기 진도 추적 없음** — localStorage로 챕터별 완독 표시 가능
 - [ ] **모바일 사이드바 = 숨김** — 햄버거 메뉴 또는 하단 탭바 필요
 - [ ] **OG default 이미지 없음** — `/og-default.png` 자리는 있는데 파일 없음

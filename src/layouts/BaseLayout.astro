@@ -1,6 +1,8 @@
 ---
 import "../styles/global.css";
 import posts from "../data/posts.json";
+import diary from "../data/diary.json";
+import { COURSES, chapterSlug } from "../lib/courses";
 
 interface Props {
   title: string;
@@ -33,6 +35,43 @@ const studySlugs = [
 const catBy = (slug: string) => posts.categories.find((c) => c.slug === slug)!;
 const fullTitle = title === "direcf" ? "direcf — direct fun, deep study" : `${title} — direcf`;
 const og = ogImage || "/og-default.png";
+
+// ── Build the search index that ships to the client ────────────────
+const searchIndex: { type: string; category: string; title: string; excerpt: string; url: string }[] = [];
+
+for (const p of posts.posts) {
+  const cat = catBy(p.category);
+  searchIndex.push({
+    type: p.type,
+    category: cat.name,
+    title: p.title,
+    excerpt: p.excerpt,
+    url: p.url,
+  });
+}
+
+for (const entry of diary.entries) {
+  searchIndex.push({
+    type: "diary",
+    category: "Diary",
+    title: entry.title,
+    excerpt: entry.excerpt,
+    url: `/diary/${entry.slug}/`,
+  });
+}
+
+for (const [slug, course] of Object.entries(COURSES)) {
+  const cat = posts.categories.find((c) => c.slug === course.categorySlug);
+  for (const ch of course.chapters) {
+    searchIndex.push({
+      type: "chapter",
+      category: cat ? cat.name : course.topic,
+      title: `Ch${String(ch.number).padStart(2, "0")} · ${ch.title}`,
+      excerpt: ch.tldr,
+      url: `/posts/${slug}/${chapterSlug(ch.number)}/`,
+    });
+  }
+}
 ---
 <!DOCTYPE html>
 <html lang="ko">
@@ -46,6 +85,19 @@ const og = ogImage || "/og-default.png";
   <meta property="og:image" content={og} />
   <meta property="og:type" content="website" />
   <meta name="twitter:card" content="summary_large_image" />
+
+  <!-- inline early to prevent flash of wrong theme -->
+  <script is:inline>
+    (function () {
+      try {
+        const KEY = "direcf:theme";
+        const saved = localStorage.getItem(KEY);
+        const sysDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        const theme = saved || (sysDark ? "dark" : "light");
+        document.documentElement.dataset.theme = theme;
+      } catch (e) {}
+    })();
+  </script>
 </head>
 <body>
   <div class="app" id="app">
@@ -103,6 +155,15 @@ const og = ogImage || "/og-default.png";
           ))}
         </div>
         <div class="header-actions">
+          <button class="search-trigger" id="searchTrigger" aria-label="Open search">
+            <span class="search-icon">🔍</span>
+            <span class="search-label">Search…</span>
+            <span class="search-kbd">⌘K</span>
+          </button>
+          <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
+            <span class="sun">☀️</span>
+            <span class="moon">🌙</span>
+          </button>
           <a class="gh-link" href="https://github.com/direcf" target="_blank" aria-label="GitHub">GitHub ↗</a>
         </div>
       </header>
@@ -111,18 +172,143 @@ const og = ogImage || "/og-default.png";
 
   </div>
 
+  <!-- Search overlay -->
+  <div class="search-overlay" id="searchOverlay" role="dialog" aria-modal="true">
+    <div class="search-modal">
+      <div class="search-input-wrap">
+        <span class="search-input-icon">🔍</span>
+        <input
+          class="search-input"
+          id="searchInput"
+          type="text"
+          placeholder="제목·키워드·카테고리 검색…"
+          autocomplete="off"
+        />
+      </div>
+      <div class="search-results" id="searchResults"></div>
+      <div class="search-footer">
+        <span><kbd>↑</kbd><kbd>↓</kbd> 이동 <kbd>↵</kbd> 열기 <kbd>esc</kbd> 닫기</span>
+        <span>powered by Fuse.js</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Search data — emitted server-side -->
+  <script id="searchData" type="application/json" set:html={JSON.stringify(searchIndex)} />
+
+  <!-- Sidebar toggle + theme toggle (inline, no bundle needed) -->
   <script is:inline>
     (function () {
       const app = document.getElementById("app");
-      const btn = document.getElementById("sidebarToggle");
-      const KEY = "direcf:sb-collapsed";
+      const sbBtn = document.getElementById("sidebarToggle");
+      const SB_KEY = "direcf:sb-collapsed";
       const apply = (c) => {
         app.classList.toggle("collapsed", c);
-        localStorage.setItem(KEY, c ? "1" : "0");
+        localStorage.setItem(SB_KEY, c ? "1" : "0");
       };
-      apply(localStorage.getItem(KEY) === "1");
-      if (btn) btn.addEventListener("click", () => apply(!app.classList.contains("collapsed")));
+      apply(localStorage.getItem(SB_KEY) === "1");
+      if (sbBtn) sbBtn.addEventListener("click", () => apply(!app.classList.contains("collapsed")));
+
+      const themeBtn = document.getElementById("themeToggle");
+      const T_KEY = "direcf:theme";
+      if (themeBtn) themeBtn.addEventListener("click", () => {
+        const cur = document.documentElement.dataset.theme;
+        const next = cur === "dark" ? "light" : "dark";
+        document.documentElement.dataset.theme = next;
+        localStorage.setItem(T_KEY, next);
+      });
     })();
+  </script>
+
+  <!-- Search (bundled) -->
+  <script>
+    import Fuse from "fuse.js";
+
+    const data = JSON.parse(document.getElementById("searchData").textContent || "[]");
+    const fuse = new Fuse(data, {
+      keys: [
+        { name: "title", weight: 0.6 },
+        { name: "excerpt", weight: 0.25 },
+        { name: "category", weight: 0.15 },
+      ],
+      threshold: 0.4,
+      includeScore: true,
+      ignoreLocation: true,
+    });
+
+    const overlay = document.getElementById("searchOverlay");
+    const input = document.getElementById("searchInput") as HTMLInputElement;
+    const resultsEl = document.getElementById("searchResults");
+    const trigger = document.getElementById("searchTrigger");
+    let activeIdx = 0;
+
+    function open() {
+      overlay.classList.add("open");
+      input.value = "";
+      render([]);
+      setTimeout(() => input.focus(), 30);
+    }
+    function close() {
+      overlay.classList.remove("open");
+    }
+    function render(items: any[]) {
+      activeIdx = 0;
+      if (input.value && items.length === 0) {
+        resultsEl.innerHTML = '<div class="search-empty">결과 없음</div>';
+        return;
+      }
+      if (items.length === 0) {
+        const recent = data.slice(0, 6);
+        resultsEl.innerHTML = '<div class="search-empty" style="text-align:left;padding:8px 12px;">최근 등록 글</div>'
+          + recent.map((d, i) => card(d, i)).join("");
+        return;
+      }
+      resultsEl.innerHTML = items.map((it, i) => card(it.item, i)).join("");
+    }
+    function card(d: any, i: number) {
+      return `
+        <a class="search-result ${i === activeIdx ? "active" : ""}" href="${d.url}" data-i="${i}">
+          <div class="sr-cat">${d.category.toUpperCase()} · ${d.type.toUpperCase()}</div>
+          <div class="sr-title">${escape(d.title)}</div>
+          <div class="sr-excerpt">${escape(d.excerpt || "")}</div>
+        </a>`;
+    }
+    function escape(s: string) {
+      return s.replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]!));
+    }
+    function setActive(idx: number) {
+      const cards = resultsEl.querySelectorAll(".search-result");
+      if (cards.length === 0) return;
+      activeIdx = (idx + cards.length) % cards.length;
+      cards.forEach((c, i) => c.classList.toggle("active", i === activeIdx));
+      const target = cards[activeIdx] as HTMLElement;
+      target.scrollIntoView({ block: "nearest" });
+    }
+
+    input.addEventListener("input", () => {
+      const q = input.value.trim();
+      render(q ? fuse.search(q).slice(0, 12) : []);
+    });
+
+    trigger?.addEventListener("click", open);
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+
+    document.addEventListener("keydown", (e) => {
+      const meta = e.metaKey || e.ctrlKey;
+      if (meta && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        overlay.classList.contains("open") ? close() : open();
+        return;
+      }
+      if (!overlay.classList.contains("open")) return;
+      if (e.key === "Escape") { close(); return; }
+      if (e.key === "ArrowDown") { e.preventDefault(); setActive(activeIdx + 1); }
+      if (e.key === "ArrowUp")   { e.preventDefault(); setActive(activeIdx - 1); }
+      if (e.key === "Enter") {
+        const link = resultsEl.querySelectorAll(".search-result")[activeIdx] as HTMLAnchorElement;
+        if (link) window.location.href = link.href;
+      }
+    });
   </script>
 </body>
 </html>
