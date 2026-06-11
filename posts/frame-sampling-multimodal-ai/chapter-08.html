@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch8: Commercial Reality — Gemini, Twelve Labs, OpenAI/Anthropic, Open-source — Frame Sampling for Multimodal AI — direcf</title>
+  <meta name="description" content="2년간 연구 SOTA(AKS, BOLT, GenS, Frame-Voyager, Q-Frame, AdaRD-Key, FOCUS)가 query-aware adaptive sampler로 ~93% frame 감축에서 동등 정확도를 입증했지만, 2026년 6월 현재 상용 video-LLM API는 단 하나도 그것을 default로 채택하지 않았다. Gemini 2.5 Pro는 1 fps, Qwen2.5-VL은 2 fps, InternVL은 uniform 16-32, LLaVA-Video는 uniform 64. Twelve Labs만 dense multi-vector indexing으로 다른 길을 가지만, 그것조차 inference time이 아닌 index time에 비용이 amortize되기 때문이다. 이 chapter는 그 갭이 왜 경제적으로 합리적인지를 정직하게 설명한다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child{margin-bottom:0}
+.sb-block strong{color:var(--text)}
+.sb-block code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/multimodal-ai">Frame Sampling for Multimodal AI</a><span class="sep">›</span>
+        <strong>Ch08 Commercial Reality — Gemini, Twelve Labs, OpenAI/Anthropic, Open-source</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 08 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🏢</div>
+      <h1 class="chapter-title">Commercial Reality — Gemini, Twelve Labs, OpenAI/Anthropic, Open-source</h1>
+      <div class="chapter-title-kr">상용 서비스의 현실 — Gemini, Twelve Labs, OpenAI/Anthropic, Open-source</div>
+      <div class="chapter-tldr">2년간 연구 SOTA(AKS, BOLT, GenS, Frame-Voyager, Q-Frame, AdaRD-Key, FOCUS)가 query-aware adaptive sampler로 ~93% frame 감축에서 동등 정확도를 입증했지만, 2026년 6월 현재 상용 video-LLM API는 단 하나도 그것을 default로 채택하지 않았다. Gemini 2.5 Pro는 1 fps, Qwen2.5-VL은 2 fps, InternVL은 uniform 16-32, LLaVA-Video는 uniform 64. Twelve Labs만 dense multi-vector indexing으로 다른 길을 가지만, 그것조차 inference time이 아닌 index time에 비용이 amortize되기 때문이다. 이 chapter는 그 갭이 왜 경제적으로 합리적인지를 정직하게 설명한다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-08.png" alt="Chapter 8 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 8 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">6 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>Gemini 2.5 Pro의 videoMetadata.fps parameter를 actual production code에서 호출하고 token/cost를 추정할 수 있다</li><li>Twelve Labs의 multi-vector indexing이 왜 inference-time QA가 아닌 retrieval task에 특화되었는지 설명할 수 있다</li><li>OpenAI/Anthropic이 video understanding을 deprioritize한 economic + technical 이유를 articulate할 수 있다</li><li>주요 open-source video-LLM (Qwen2.5-VL, InternVL, LLaVA-Video, NVILA)의 default sampling 전략과 frame cap을 비교할 수 있다</li><li>Index-time과 inference-time의 cost amortization 차이를 정량적으로 설명할 수 있다</li><li>연구 SOTA를 production에 도입할 때의 trade-off (latency variance, debuggability, infra cost)를 평가할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>Chapter 3~7에서 우리는 AKS, BOLT, Frame-Voyager, Q-Frame, AdaRD-Key, FOCUS, VideoChat-Flash 등 sampling 연구의 frontier를 훑었다. 모두 uniform baseline 대비 명확한 정확도 우위를 보였고, 일부는 ~93% frame 감축에서도 등가의 성능을 보였다. 그런데도 2026년 6월 현재 상용 video-LLM API를 열어보면 — Gemini 2.5 Pro는 1 fps, Qwen2.5-VL은 2 fps, InternVL은 uniform 16-32 frame, LLaVA-Video는 uniform 64 frame — 누구도 그 연구 SOTA를 default로 채택하지 않았다. 이 갭은 우연이 아니다. 이 chapter는 (a) 각 상용 player가 어떤 구체적 선택을 했는지, (b) 왜 그것이 economically rational인지, (c) 어디서만 예외가 생기는지(retrieval indexing)를 정직하게 살펴본다. 결론은 disappointing하지만 중요하다 — 당신이 production system을 만든다면, 첫 버전은 uniform/fps-based로 시작해야 한다. SOTA sampler는 measured pain point가 생긴 후 swap-in할 plugin으로 설계되어야지, day-one default가 아니다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>1. Gemini 2.5 Pro — 1 fps라는 솔직한 default</h2><p>Google의 Gemini 2.5 Pro는 2026년 현재 가장 널리 쓰이는 production video understanding API이다. Document 어디를 봐도 fancy keyframe selection은 없다. Default sampling rate는 <strong>1 fps</strong>, configurable range는 0.1 fps ~ 24 fps (videoMetadata.fps parameter). Visual은 frame당 258 tokens, audio는 parallel하게 1 Kbps로 처리된다.</p>
+<p>수치를 정리하면:
+- <strong>1 fps × 258 tokens/frame ≈ 15,480 tokens/min</strong> (audio 제외)
+- <strong>1M context window 기준 ≈ 1시간 video</strong> (default fps)
+- <strong>2M context + low-resolution mode ≈ 6시간 video</strong>
+- 가격은 <strong>분당 약 $0.015</strong> 수준 (입력 video token 기준 환산)</p>
+<p>왜 1 fps인가? Google이 공개한 official rationale은 <strong>&#x27;human-speech granularity&#x27;</strong> — 사람의 발화 음절·단어 단위와 비슷한 sampling rate이고, 대부분의 narration/dialogue 기반 video QA에는 충분하다는 것. 더 본질적으로는 1 fps가 (a) cost를 predictable하게 만들고 (분당 정확히 N tokens), (b) benchmark를 reproducible하게 만들고 (uniform이라 randomness 없음), (c) latency variance를 0으로 만든다 (query-conditioning이 없으므로 prefill이 결정적).</p>
+<p>사용자에게 주는 knob은 <code>videoMetadata.fps</code> 단 하나. fps=0.5로 낮추면 영상 길이를 2배로 늘릴 수 있고 (느린 영상, 강의), fps=2~5로 올리면 빠른 motion (sports, gaming)을 잡을 수 있다. 그러나 query-aware 동적 조절은 없다. AKS/BOLT를 쓰고 싶다면 client side에서 직접 frame을 select해서 image batch로 보내야 한다 — Gemini 자체는 video를 알아서 sample한다.</p></div><div class="sb-block"><h2>2. Twelve Labs — Multi-vector dense indexing이라는 다른 길</h2><p>Twelve Labs (Marengo 3.0 임베딩 모델 + Pegasus 1.2 생성 모델, 2026 라인업)는 sampling 문제에 전혀 다른 답을 낸다. 그들은 video를 <strong>약 6초 chunk로 자르고, 각 chunk에서 visual + audio + ASR + motion을 합친 multi-vector dense embedding</strong>을 추출한다. 즉, &#x27;몇 frame을 고를까?&#x27;를 묻지 않고 &#x27;모든 segment에 high-dimensional embedding을 미리 입혀두자&#x27;를 선택했다.</p>
+<p>Key design decisions:
+- <strong>Chunk size ≈ 6s</strong> — shot 길이의 통계적 중간값에 맞춤
+- <strong>Joint modality embedding</strong> — visual / audio / ASR transcript / motion이 한 vector에 entangled
+- <strong>Built for retrieval, not inference QA</strong> — query는 vector similarity search로 relevant chunk를 찾고, 그 chunk만 Pegasus generative model에 넘긴다
+- <strong>Pricing</strong>: Bedrock 기준 input 1M tokens당 ~$0.07. 분당 indexed cost는 별도 (per-minute indexed)</p>
+<p>이것이 작동하는 이유는 <strong>cost amortization</strong>이다. Index time에는 fancy multi-modal encoding을 써도 괜찮다 — 한번만 한다. 그 후 천 번의 query가 들어와도 retrieval은 vector 비교 한 번에 끝난다. 반대로 Gemini는 매 query마다 video를 처음부터 decode + sample + encode + LLM forward해야 하므로, 처음부터 cheap한 uniform이 합리적이다.</p>
+<p>Twelve Labs도 사실은 &#x27;sampling&#x27;을 하긴 한다 — 6초 chunk라는 fixed-duration uniform이다. Adaptive는 아니다. 단지 sampling output을 frame이 아니라 embedding으로 저장한다는 점이 다르다.</p></div><div class="sb-block"><h2>3. OpenAI와 Anthropic의 의도된 부재</h2><p>가장 솔직해야 할 부분이다. OpenAI는 <strong>native video understanding API가 없다</strong>. GPT-4o, GPT-4.1 모두 video 입력을 받지 않는다. Official cookbook의 가이드는 &#x27;~1 fps로 client-side에서 frame을 뽑아서 image batch로 보내라&#x27;다. Sora 2는 generation 전용 (10-25초 clip 생성)이지 understanding이 아니다.</p>
+<p>Anthropic의 Claude는 한 발 더 나간다. <strong>Video를 아예 입력으로 받지 않는다.</strong> Image만, 그리고 PDF의 frame을 image로 변환해야 한다.</p>
+<p>왜 두 frontier lab이 video를 deprioritize했을까?</p>
+<p>1. <strong>TCO가 안 맞는다.</strong> Video 1분 = image 60~1800개. Frontier model의 per-token cost 구조에서 video는 image 대비 60~1800배 비싸지만, 사용자가 분당 그만큼의 가치를 지불할 use case는 좁다 (compliance 검토, 의료 영상, 강의 요약 등 vertical 시장). General-purpose chatbot에서는 ROI가 안 나온다.</p>
+<p>2. <strong>Encoder/decoder pipeline이 무겁다.</strong> Video는 decode (codec 의존), sample (정책 의존), encode (visual encoder GPU 비용)의 3단 pipeline이 들어가는데, 이는 OpenAI/Anthropic의 LLM-centric serving 아키텍처에 어울리지 않는다. Gemini는 Google의 YouTube infra 위에 얹은 advantage가 있어서 가능했다.</p>
+<p>3. <strong>Evaluation이 어렵다.</strong> Text/image와 달리 video QA는 benchmark variance가 크고 (sampling 선택만 바꿔도 점수가 크게 흔들린다), customer-facing quality가 측정하기 어렵다.</p>
+<p>결과적으로 OpenAI/Anthropic은 video를 &#x27;나중에&#x27;, &#x27;필요해지면 partner를 통해&#x27; 정도로 미뤘다. 이는 frame sampling 연구가 production에 흡수되지 않은 또 하나의 이유다 — 가장 큰 두 LLM lab의 default가 video를 다루지 않는다.</p></div><div class="sb-block"><h2>4. Open-source defaults — 일관된 uniform 패턴</h2><p>오픈소스 video-LLM의 default 표를 모아보면 패턴은 더 분명하다.</p>
+<p>| Model | Default sampling | Max frames | Encoder |
+|---|---|---|---|
+| <strong>Qwen2.5-VL / Qwen3-VL</strong> | 2 fps | 768 (<code>FPS_MAX_FRAMES</code>) | ViT + native dynamic res |
+| <strong>InternVL2.5 / InternVL3</strong> | Uniform | 16–32 | InternViT-6B |
+| <strong>LLaVA-Video-7B/72B</strong> | Uniform (when &gt; cap) | 64 | SigLIP |
+| <strong>VILA-1.5 / NVILA</strong> | Uniform | 64 (in-context 16) | SigLIP |
+| <strong>VideoChat-Flash</strong> | 1 fps | 768 | UMT-L → HiCo compress |</p>
+<p>공통 패턴이 명확하다:
+- <strong>누구도 query-aware adaptive sampling을 default로 두지 않는다.</strong> AKS, BOLT, Q-Frame이 plug-in으로 쓸 수 있게 만들어졌음에도 불구하고.
+- <strong>fps-based이든 uniform-N이든 결정적이다.</strong> 같은 input에 대해 같은 frame이 뽑힌다.
+- <strong>Frame cap이 있다.</strong> 64~768. Cap을 넘으면 uniform downsample.
+- <strong>Sampling 정책은 model card / config의 한 줄.</strong> Algorithm이 아니라 number.</p>
+<p>이는 우연이 아니다. 이 model들의 training data 자체가 uniform sampling으로 만들어진 frame sequence를 input으로 받은 supervision으로 학습되었다. Inference time에 갑자기 AKS로 sampling 분포를 바꾸면 train-test distribution mismatch가 발생하고, 일부 benchmark에서는 오히려 성능이 떨어진다. 즉, <strong>uniform은 단순한 default가 아니라 model의 trained behavior와 결합된 default</strong>다.</p></div><div class="sb-block"><h2>5. Retrieval exception — Mixpeek과 index-time amortization</h2><p>위 패턴에서 명시적으로 벗어나는 곳이 있다. <strong>Mixpeek</strong>은 PySceneDetect 기반 shot detection으로 chunk를 만들고, 각 chunk에 vuse-generic-v1 embedding + transcript + face recognition + OCR을 entity-level로 입힌다. 이건 uniform이 아니다 — content-aware adaptive segmentation이다.</p>
+<p>Twelve Labs도 같은 결을 따른다. 6초 chunk가 uniform처럼 보이지만 그들의 indexing pipeline은 multi-modal joint encoding을 매 chunk에 수행한다 — Gemini의 single visual encoder pass보다 훨씬 무겁다.</p>
+<p><strong>왜 retrieval 시스템만 이게 가능한가?</strong> Cost amortization 때문이다.</p>
+<p>- <strong>Inference-time (Gemini, Qwen, LLaVA)</strong>: 사용자 query 1회 = sampling 1회 + LLM forward 1회. 매 query마다 sampling cost를 지불한다. Cheap한 uniform이 이긴다.
+- <strong>Index-time (Twelve Labs, Mixpeek)</strong>: video 등록 1회 = sampling/encoding 1회 + query는 vector search로 cheap. 한번 비싸게 sampling을 해두면 1,000번의 query가 그것을 공유한다.</p>
+<p>수치적으로, video 1시간에 AKS-style query-aware sampling을 적용하는 데 5초가 더 걸린다 치자. Inference 시스템에서는 사용자 latency에 5초가 더해진다 (각 query마다). Index 시스템에서는 등록 1회에 5초가 더해지고 query latency는 그대로 (~100ms vector search)다. 1,000개 query면 inference는 5,000초 누적, index는 5초 누적.</p>
+<p><strong>이것이 commercial reality의 핵심 분기점이다.</strong> Adaptive/fancy sampling을 쓰고 싶다면 시스템을 retrieval로 설계해야 한다. Inference-time generative QA를 한다면 uniform이 거의 항상 이긴다 — 적어도 default로는.</p></div><div class="sb-block"><h2>6. 갭이 영구히 존재하는 이유</h2><p>이 chapter의 thesis는 단순하다 — <strong>연구 SOTA와 production의 갭은 일시적 lag이 아니라 구조적이다.</strong> Production engineer가 uniform을 고르는 이유는 게으르거나 무지해서가 아니라, 다음 6가지 properties가 어떤 정확도 향상보다 비싸기 때문이다.</p>
+<p>1. <strong>Predictable cost</strong> — 1분 video = 정확히 N tokens. Finance/quoting/SLA가 가능하다. Adaptive sampler는 video 내용에 따라 cost가 흔들린다.</p>
+<p>2. <strong>Easy benchmarking</strong> — 같은 input에 같은 output. Regression test가 가능하다. Stochastic/query-conditioned sampler는 매번 다른 결과.</p>
+<p>3. <strong>No query-conditioning latency</strong> — Prefill을 model warmup 전에 시작할 수 있다. Adaptive sampler는 query를 봐야 sampling이 시작된다 — 사용자 latency가 늘어난다.</p>
+<p>4. <strong>No additional training/finetuning</strong> — 모델 변경 시 sampler도 재훈련하지 않는다. AKS/BOLT가 &#x27;training-free&#x27;를 강조해도, 실제로는 base model의 train distribution과의 mismatch가 있어 fine-tuning이 도움이 되는 경우가 많다.</p>
+<p>5. <strong>Debuggable</strong> — &#x27;왜 이 frame을 골랐나?&#x27;에 &#x27;frame 1, 31, 61, ...&#x27;이 답이 된다. Adaptive sampler는 &#x27;CLIP score 0.73, top-K cutoff&#x27;를 설명해야 한다.</p>
+<p>6. <strong>Failure mode가 알려져 있다</strong> — Uniform이 실패하는 곳 (긴 video, sparse event)을 정확히 알고 있다. Adaptive sampler의 failure mode는 새 vid가 들어올 때마다 발견된다.</p>
+<p>이는 데이터베이스가 B-tree를 default로 쓰는 이유와 같다. LSM tree, fractal tree, hash index 등이 특정 workload에서 더 빠르지만, B-tree의 known properties (logarithmic, ordered, range scan, lock 동작 등)이 production engineer에게 더 값지다. <strong>Known beats optimal</strong>, 늘 그렇다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">왜 패스트푸드 체인은 셰프 패티 대신 냉동 패티를 쓰는가</div>
+      <div class="a-body"><p>가설: 잘 만든 fresh patty가 frozen patty보다 분명히 맛있다. 미슐랭 셰프가 매장에 있다면 손님 만족도가 올라간다. 그런데 왜 McDonald&#x27;s, Burger King, In-N-Out 같은 글로벌 체인은 여전히 frozen 또는 표준화된 patty를 쓰는가?</p>
+<p>답은 <strong>consistency + cost + ops simplicity</strong>가 per-burger 맛 최대화보다 비싸기 때문이다.</p>
+<p>- Frozen patty는 grain, weight, fat ratio, cook time이 결정적이다. 도쿄 매장과 마이애미 매장이 같은 맛.
+- 매시간 patty quality variance가 0에 가깝다. CFO가 단가를 정확히 quote할 수 있다.
+- Fryer/grill을 표준 시간에 맞춰 운영할 수 있다. 셰프가 없어도 된다.
+- 실패 모드가 알려져 있다 — frozen patty가 dry해지는 조건을 30년간 모았다.</p>
+<p>반면 fresh patty는 (a) 매일 fat ratio가 흔들리고, (b) 매 매장의 grill master skill에 의존하고, (c) supply chain이 흔들리면 즉시 무너지고, (d) 새로운 실패 모드가 매주 발견된다.</p>
+<p>결과적으로 글로벌 체인은 &#x27;patty 맛&#x27;이라는 하나의 metric을 포기하는 대신 &#x27;predictable, scalable, debuggable burger&#x27;를 얻는다.</p>
+<p><strong>Frame sampling은 정확히 같은 구조다.</strong> Gemini/Qwen/LLaVA의 uniform sampling은 &#x27;냉동 패티&#x27; — per-video 정확도 최대화는 포기하지만, predictable cost / easy benchmarking / debuggable / no training 의 5가지 properties를 얻는다. AKS/BOLT/Frame-Voyager는 &#x27;fresh patty&#x27; — per-video 정확도는 분명히 더 높지만, 운영 비용이 다르다.</p>
+<p>그리고 <strong>Twelve Labs는 &#x27;central commissary&#x27; 모델</strong>이다. Fresh patty를 본사에서 미리 만들어 cryovac해서 매장에 보내는 방식. Index time에 한번 정성껏 만들어두고, 매장 (query)에서는 가열만 한다. 그래서 fancy embedding이 가능하다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>실제 Gemini 2.5 Pro API를 호출해서 video를 처리하는 production code다. <code>videoMetadata.fps</code> parameter — Google이 사용자에게 제공하는 단 하나의 sampling knob — 를 어떻게 조정하고, 그 결과 token cost가 어떻게 달라지는지 보여준다. fps=0.5(저속/강의), 1(default/대화), 2(스포츠/액션)의 세 경우를 비교한다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python"># pip install google-genai
+# Requires GOOGLE_API_KEY env var
+import os
+from google import genai
+from google.genai import types
+
+client = genai.Client(api_key=os.environ[&quot;GOOGLE_API_KEY&quot;])
+
+# 1) Upload a local video (or pass a public URL via file_uri)
+VIDEO_PATH = &quot;./lecture_30min.mp4&quot;  # 30-min lecture
+uploaded = client.files.upload(file=VIDEO_PATH)
+
+# Visual tokens per frame in Gemini 2.5 Pro
+TOKENS_PER_FRAME = 258
+PRICE_PER_MIN = 0.015  # ~$0.015/min at 1 fps (rough envelope)
+
+def ask_gemini(fps: float, prompt: str, duration_min: float):
+    &quot;&quot;&quot;Run Gemini 2.5 Pro on a video at a specific sampling fps and estimate cost.&quot;&quot;&quot;
+    response = client.models.generate_content(
+        model=&quot;gemini-2.5-pro&quot;,
+        contents=[
+            types.Content(
+                role=&quot;user&quot;,
+                parts=[
+                    types.Part(
+                        file_data=types.FileData(
+                            file_uri=uploaded.uri,
+                            mime_type=&quot;video/mp4&quot;,
+                        ),
+                        # The only sampling knob Google exposes
+                        video_metadata=types.VideoMetadata(fps=fps),
+                    ),
+                    types.Part(text=prompt),
+                ],
+            )
+        ],
+    )
+    # Cost envelope: visual tokens ~= fps * 60 * duration_min * 258
+    est_visual_tokens = int(fps * 60 * duration_min * TOKENS_PER_FRAME)
+    est_cost = duration_min * PRICE_PER_MIN * (fps / 1.0)
+    return {
+        &quot;fps&quot;: fps,
+        &quot;answer&quot;: response.text,
+        &quot;est_visual_tokens&quot;: est_visual_tokens,
+        &quot;est_cost_usd&quot;: round(est_cost, 4),
+    }
+
+prompt = &quot;What are the three main arguments the lecturer makes? Cite timestamps.&quot;
+for fps in [0.5, 1.0, 2.0]:
+    result = ask_gemini(fps=fps, prompt=prompt, duration_min=30)
+    print(f&quot;[fps={result[&#x27;fps&#x27;]}] tokens~={result[&#x27;est_visual_tokens&#x27;]:,}  &quot;
+          f&quot;cost~=${result[&#x27;est_cost_usd&#x27;]}\n  -&gt; {result[&#x27;answer&#x27;][:120]}...\n&quot;)</code></pre>
+      <div class="c-walk"><p>이 code의 production-실용적 핵심:</p>
+<p>1. <strong>`video_metadata=types.VideoMetadata(fps=fps)`</strong> — Google이 노출한 sampling control은 <strong>이것 하나뿐</strong>이다. AKS/BOLT처럼 query-conditioning을 하고 싶다면 client에서 직접 frame을 골라 image part로 보내야 한다.</p>
+<p>2. <strong>fps=0.5, 1, 2의 trade-off</strong>:
+   - fps=0.5: 30분 video → visual 약 232K tokens, $0.225. 강의처럼 prompt-aware sampling이 약한 use case에 적합.
+   - fps=1 (default): visual 약 464K tokens, $0.45. 일반 narration/dialogue에 충분.
+   - fps=2: visual 약 928K tokens, $0.90. 1M context의 거의 절반을 시각 token이 차지한다. Sports/action용.</p>
+<p>3. <strong>Cost envelope이 fps에 거의 선형</strong>이다. Adaptive sampler가 fps를 동적으로 조정해주면 좋겠지만, Gemini는 그것을 user가 결정하게 둔다 — 그게 가장 predictable하기 때문이다.</p>
+<p>4. <strong>Estimation은 visual만 포함</strong>이다. Audio (1 Kbps), text prompt, output token은 별도. Production에서는 actual usage가 <code>response.usage_metadata</code>에서 정확히 나오므로 그것을 쓴다.</p>
+<p>5. 실제 운영에서는 use case 별로 fps를 한번 결정하면 그 후에는 거의 바꾸지 않는다. 이게 바로 commercial pattern이다 — sampling은 <strong>policy decision</strong>이지 매 query 결정이 아니다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">Senior video infrastructure engineer 채용 인터뷰는 candidate가 (a) 실제 production API의 sampling 정책을 정확히 알고 그 economic rationale을 articulate할 수 있는지, (b) inference-time과 index-time의 cost 구조 차이를 정량적으로 설명할 수 있는지, (c) 연구 SOTA를 production에 어떤 단계로 도입할지 판단할 수 있는지를 본다. &#x27;AKS가 SOTA니까 도입하자&#x27;는 답은 junior 신호다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>Gemini 2.5 Pro의 1 fps default를 알고, &#x27;human-speech granularity&#x27; + &#x27;predictable cost&#x27; 두 rationale로 설명할 수 있다</li><li>videoMetadata.fps의 range (0.1~24)와 256-2M context의 trade-off를 분단위로 계산할 수 있다</li><li>Twelve Labs가 multi-vector dense embedding을 쓰는 이유 = retrieval에 최적화된 cost amortization 패턴임을 즉시 설명한다</li><li>OpenAI/Anthropic이 video를 deprioritize한 이유를 economic TCO와 serving architecture 측면에서 분석한다</li><li>Qwen2.5-VL 2 fps, InternVL uniform 16-32, LLaVA-Video uniform 64 같은 구체적 default를 외우고 있다</li><li>&#x27;왜 uniform이 default인가&#x27;에 &#x27;lazy/legacy&#x27;가 아니라 6가지 properties 중 4가지 이상을 든다</li><li>Adaptive sampler를 도입할 때 inference-time vs index-time 중 어느 쪽이 ROI가 좋은지 판단할 수 있다</li><li>Production rollout 시 fancy sampler를 day-one default가 아닌 &#x27;measured pain point 후 swap-in plugin&#x27;으로 설계한다</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>&#x27;AKS가 SOTA니까 Gemini도 곧 도입할 것이다&#x27;라고 단순 추정한다</li><li>Twelve Labs와 Gemini를 같은 카테고리로 묶는다</li><li>OpenAI에 video API가 있다고 잘못 안다</li><li>Open-source defaults를 &#x27;training cost 때문&#x27;이라고만 설명한다</li><li>Index-time과 inference-time의 cost amortization 차이를 못 든다</li><li>&#x27;우리 시스템에 AKS 바로 넣자&#x27;고 한다</li><li>Mixpeek/Voxel51 같은 retrieval 시스템과 generative QA 시스템의 차이를 설명 못함</li><li>연구 paper의 accuracy gain만 보고 production cost properties를 평가에 포함하지 않음</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>**Q1.** Gemini 2.5 Pro의 default fps는 1입니다. 만약 당신이 강의 video 전용 SaaS를 만든다면 fps를 0.5로 낮춰서 비용을 절반으로 줄이고 싶을 겁니다. 어떤 측정으로 그 결정이 안전하다고 prove하시겠습니까? 어떤 edge case가 fps=0.5에서 실패할까요? 그리고 실패하는 video를 detect해서 fps=1로 fallback하는 system은 어떻게 설계하시겠습니까?</li><li>**Q2.** 당신 회사는 1시간짜리 회의 video 10만 개에 대해 &#x27;Q&amp;A on demand&#x27; 서비스를 제공합니다. (a) Gemini를 매 query마다 호출하는 inference 방식과, (b) Twelve Labs로 index해두고 retrieval+generation하는 방식. 1년 동안 video당 평균 50개의 query가 발생한다고 가정할 때 두 모델의 cost를 분단위까지 추정하고, 어느 방식이 ROI가 높을지 판단하세요.</li><li>**Q3.** Qwen2.5-VL은 2 fps with FPS_MAX_FRAMES=768을 default로 씁니다. 당신이 이 model을 self-host해서 30분짜리 surgical video QA를 한다고 합시다. 2 fps × 30분 = 3,600 frame이 cap 768을 초과합니다. Qwen은 이때 uniform downsample을 하는데, 외과 의사가 &#x27;critical moment에서 frame이 빠졌다&#x27;고 컴플레인합니다. AKS/BOLT plug-in vs shot detection + multi-pass query 중 무엇을 고르겠습니까?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> **Familiar**한 후보는 &#x27;Gemini는 1 fps, Qwen은 2 fps&#x27;를 기억한다. **Mastery**를 가진 후보는 그 1 fps가 token economics (258 tokens × 60 sec × 60 min = 928,800 tokens/hr으로 1M context에 정확히 맞춘 설계)와 human-speech granularity라는 두 rationale의 교집합임을 알고, 더 나아가 inference-time cost amortization 구조 때문에 AKS/BOLT를 도입해도 사용자 latency가 늘어나 ROI가 낮다는 것을 즉석에서 계산한다. Twelve Labs를 보면 그들이 fancy sampling이 아니라 index-time cost를 query 1,000번에 amortize하는 economic architecture를 채택했음을 안다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>Gemini 2.5 Pro는 1 fps default — videoMetadata.fps 단 하나의 knob</h3><p>258 tokens/frame × 60 sec × 60 min = 약 928,800 tokens/hr → 1M context window에 정확히 1시간 fit. 분당 ~$0.015. Query-aware adaptive sampling은 없다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>Twelve Labs는 retrieval 시스템이지 generative QA가 아니다</h3><p>Marengo 3.0 / Pegasus 1.2가 multi-vector dense embedding (visual+audio+ASR+motion joint)을 6초 chunk마다 만드는 이유는, index time에 한번 비싸게 만들어두면 1,000번의 query가 그 cost를 amortize하기 때문이다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>OpenAI는 native video가 없고, Anthropic은 video를 받지 않는다</h3><p>OpenAI cookbook은 &#x27;client-side ~1 fps frame extraction → image batch&#x27;를 권장한다. Anthropic Claude는 image만. 두 frontier lab은 video TCO와 LLM-centric serving architecture 부적합 때문에 video understanding을 deprioritize했다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>Open-source defaults는 일관되게 uniform/fps-based</h3><p>Qwen2.5-VL 2 fps (768 cap), InternVL2.5/3 uniform 16-32, LLaVA-Video uniform 64, NVILA uniform 64. 누구도 query-aware adaptive를 default로 두지 않는다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>Index-time vs Inference-time이 sampling 정책의 분기점이다</h3><p>Inference-time 시스템은 매 query마다 sampling cost를 지불하므로 cheap한 uniform이 이긴다. Index-time 시스템은 등록 1회에 sampling cost를 amortize하므로 fancy multi-modal encoding이 가능하다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>Production은 정확도가 아니라 6가지 properties를 산다</h3><p>Predictable cost, easy benchmarking, no query-conditioning latency, no additional training, debuggable, known failure mode. known beats optimal.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>Mixpeek은 retrieval이라서 shot detection이 가능하다</h3><p>Mixpeek은 PySceneDetect 기반 content-aware segmentation을 쓰는 드문 예외다. 이는 그들이 inference QA가 아닌 search/retrieval workload를 다루기 때문이지 fancy sampler가 보편적으로 production-ready여서가 아니다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>연구 SOTA는 swap-in plugin으로 설계하되 day-one default가 아니다</h3><p>Production rollout 순서는 (1) uniform/fps-based로 시작, (2) accuracy/cost pain point를 measure, (3) failing video class를 식별, (4) 그 class에 한해 AKS/BOLT를 plugin으로 swap-in, (5) variant별 A/B로 ROI 검증.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-07.html">← Token-Level Compression — VideoChat-Flash, NVILA, FastVID</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-09.html">Plug-and-Play Architecture Design →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+</body></html>

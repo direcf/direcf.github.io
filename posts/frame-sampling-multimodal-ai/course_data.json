@@ -1,0 +1,1171 @@
+{
+  "topic": "Frame Sampling for Multimodal AI",
+  "topicKr": "멀티모달 AI를 위한 프레임 샘플링",
+  "topicSlug": "frame-sampling-multimodal-ai",
+  "categorySlug": "multimodal-ai",
+  "level": "advanced",
+  "codeLanguage": "Python",
+  "description": "비디오 LLM의 진짜 병목은 모델 크기가 아니라 frame sampling이다. 2026 SOTA(AKS, BOLT, Frame-Voyager, Q-Frame, AdaRD-Key, FOCUS, VideoChat-Flash)와 상용 서비스(Gemini, Twelve Labs, Qwen-VL)의 갭, 그리고 plug-and-play architecture로 SOTA를 갈아끼우는 운영 패턴까지 다루는 10챕터 강의.",
+  "chapters": [
+    {
+      "number": 1,
+      "emoji": "🎬",
+      "title": "Why Frame Sampling Is the Bottleneck",
+      "titleKr": "왜 프레임 샘플링이 진짜 병목인가",
+      "tldr": "비디오 LLM의 진짜 병목은 모델 크기나 context 길이가 아니라, 한정된 token 예산 안에 어떤 frame을 통과시킬지 결정하는 sampling 단계다.",
+      "topics": [
+        "Token economics of video LLMs",
+        "Context window arithmetic",
+        "Information loss in uniform sampling",
+        "Sampler as swappable architectural component"
+      ],
+      "learningGoals": [
+        "Gemini 2.5의 258 tokens/sec 같은 vendor별 token budget을 암산으로 추정할 수 있다",
+        "1시간짜리 1080p 영상을 1M context에 통과시킬 때 어디서 깨지는지 정량적으로 설명할 수 있다",
+        "Encoder-side 병목과 decoder-side 병목을 구분하고, sampling이 왜 encoder-side 문제인지 말할 수 있다",
+        "Uniform 16-frame sampling이 5분 30 fps 영상에서 무엇을 버리는지 scene-level로 설명할 수 있다",
+        "왜 sampler가 '월 단위로 SOTA가 바뀌는 plug-and-play 모듈'인지, 그리고 왜 그 지점에 투자해야 하는지 논증할 수 있다"
+      ],
+      "overview": "비디오 LLM을 처음 시스템에 붙일 때 엔지니어가 가장 먼저 부딪히는 환상은 '1M context window가 있으니 1시간 비디오 정도는 그냥 통째로 넣으면 된다'는 것이다. 이 강의는 그 환상을 한 챕터에 걸쳐 해체하는 것에서 시작한다. 핵심은 단순하다. Gemini 2.5 Pro는 1초 영상에 약 258 token을 쓴다. 1 fps로 샘플링된 1시간 영상이 곧바로 928K token을 잡아먹고, 텍스트 prompt와 audio까지 합치면 1M 한계를 그대로 넘긴다. 즉 video LLM의 token economics는 절대로 너그럽지 않다.\n\n동시에 production 환경의 모든 상용 API — Gemini, Qwen2.5-VL, LLaVA-Video, VideoChat-Flash — 가 여전히 uniform / fixed-fps sampling을 쓰고 있다. 한편 연구 SOTA(AKS, BOLT, GenS, Frame-Voyager, Q-Frame, AdaRD-Key, FOCUS)는 같은 frame 예산에서 정확도를 10pt 이상 끌어올리거나, 같은 정확도를 93% 적은 frame으로 달성한다. 이 갭이 이 강의가 존재하는 이유다.\n\n이 챕터의 목표는 결론을 외우는 게 아니라 *직관을 정량화*하는 것이다. Token budget, encoder/decoder bottleneck, information loss를 수치로 계산할 줄 알게 된 다음에야 이후 챕터에서 다룰 AKS의 relevance-coverage trade-off나 VideoChat-Flash의 HiCo 1/50 compression이 왜 그 모양인지 설명될 수 있다.",
+      "sections": [
+        {
+          "title": "1.1 The Arithmetic: 258 tokens/sec과 1M context의 충돌",
+          "content": "Gemini 2.5 Pro의 공식 spec을 보면 video는 'default 1 fps, 약 258 tokens per second of video' 로 명시되어 있다. 이 숫자를 그냥 외우지 말고 곱셈해 보자. 5분짜리 영상은 300초 × 258 ≈ 77.4K token. 30분은 464K. 1시간은 928K. 즉 1M context를 가진 Gemini 2.5 Pro조차도 default 설정으로는 *1시간 영상 하나를 겨우 통과시키는 수준*이고, 거기에 prompt, system instruction, audio track(audio도 parallel하게 1 Kbps 정도로 token화됨), 출력 buffer를 더하면 한 번의 inference에서 다른 어떤 컨텍스트도 끼워 넣기 어려워진다.\n\n이걸 production에서 흔히 마주치는 시나리오로 옮기면 더 분명해진다. CCTV 24시간 retrospective QA? 6.2M token이 필요하다. 90분짜리 영화 한 편 Q&A? 1.4M token. 12편짜리 드라마 시즌 binge-recall? 약 17M token. 이 시점에서 '더 큰 context window를 기다리자'는 답은 무너진다. 2026년 현재 frontier는 2M(Gemini 2.5 Pro low-res mode)까지 와 있지만 그것조차 6시간을 못 채운다. 더 본질적인 문제는, context를 두 배로 늘려도 attention의 quadratic cost와 prefill latency가 따라서 두 배가 되지 않는다는 점이다. KV cache는 GPU HBM을 잠식하고, TTFT(time-to-first-token)는 사용자가 견딜 수 없는 수준으로 늘어난다.\n\n그래서 token 예산은 '확장 가능한 자원'이 아니라 '냉정하게 분배해야 하는 고정 자원'이라고 봐야 한다. 엔지니어가 던져야 할 첫 질문은 '내 모델의 context는 얼마인가'가 아니라 '내가 답하려는 *결정* 하나에 token이 몇 개 필요한가, 그리고 그 token이 내 영상의 어느 *순간*에 가야 하는가'다. 이 강의 전체가 그 질문 위에 서 있다."
+        },
+        {
+          "title": "1.2 더 큰 LLM은 답이 아니다 — Capacity vs Selection",
+          "content": "공정하게 짚자. LLM 크기를 키우면 video understanding 점수가 오르는 것은 사실이다. LLaVA-Video-7B에서 72B로 가면 Video-MME에서 몇 pt 오른다. 그런데 같은 LLaVA-Video-7B에 AKS(CVPR 2025) 같은 query-aware sampler를 끼우면 *동일한 7B 모델*이 *72B baseline*을 이긴다. 이게 핵심이다. 모델 크기를 10배 키워 얻는 이득이, 잘 만든 sampler 하나로 동일하게 얻어진다는 사실은 우연이 아니라 구조적이다. 정답을 만들 능력은 이미 7B에도 충분히 있고, 부족한 것은 *정답을 만들 근거 frame*이 context에 들어와 있느냐다.\n\n이 구조를 두 개의 bottleneck으로 분리해 보자. **Decoder-side bottleneck**은 attention 위에서 token 간 관계를 잘 추론하는 능력이다. 여기서는 model size, training data, RLHF가 효과가 있다. **Encoder-side bottleneck**은 raw video 픽셀에서 어떤 시간 구간을, 어떤 해상도로, 어떤 순서로 token으로 변환할지에 대한 결정이다. 여기서 model size는 거의 도움이 안 된다. 도움이 되는 것은 sampler 그 자체와, sampler가 prompt를 참조할 수 있는지(query-aware) 여부다. 2025–2026 SOTA가 일제히 후자에 베팅한 것은 이 분리를 명시적으로 인정한 결과다.\n\n경제적으로도 결론은 같다. 72B 모델을 서빙하는 비용은 7B의 약 10배다. 거기에 video token 길이까지 두 배가 되면 attention의 quadratic cost가 4배다. 같은 정확도를 얻기 위해 sampler를 갈아끼우는 R&D 비용은 *한 번* 내고 끝나지만, capacity를 키우는 비용은 *매 요청*마다 든다. Production에서 latency, $/query, GPU 점유율을 동시에 만족시켜야 하는 팀은 결국 selection 쪽으로 밀린다. 이 강의가 sampler를 architecturally swappable한 component로 다루는 이유다."
+        },
+        {
+          "title": "1.3 Information Loss의 정량화 — 5분 영상에서 16 frame이 버리는 것",
+          "content": "추상적으로 'uniform sampling은 정보를 잃는다'고 말하는 것은 쓸모가 없다. 숫자로 가자. 5분짜리 30 fps 영상은 9,000 frame이다. LLaVA-Video나 InternVL2.5 같은 open-source 모델의 default `max_frames=16`이면, 모델이 보는 비율은 16 / 9,000 ≈ **0.18%**다. 다르게 말하면 영상의 99.82%가 input 단계에서 폐기된다. Frame 간 간격은 약 18.75초. 1초 안에 끝나는 reaction shot, 0.5초짜리 폭발, 3초짜리 표정 변화는 *통계적으로* 절대 16-sample grid에 안 걸린다.\n\n구체적인 예를 들면, 요리 튜토리얼 5분 영상에서 셰프가 칼로 양파를 자르는 동작이 12초 동안 일어난다고 하자. Uniform 16-frame이 18.75초 간격이면 이 동작에 0개 또는 1개의 frame이 떨어진다. 모델이 '셰프가 양파를 어떻게 잘랐는가'에 답할 수 있을 확률은 사실상 *무작위*다. 더 잔혹한 예는 surveillance / dashcam 시나리오다. 10분짜리 dashcam에서 사고 순간은 0.4초다. 16-frame uniform sampling은 37.5초마다 하나씩 찍으므로 사고 frame이 뽑힐 확률은 0.4/37.5 ≈ **1.07%**. 그리고 이게 바로 BOLT(CVPR 2025)가 'uniform 8-frame on 1-hour video'를 anti-pattern으로 명시한 이유다.\n\n그렇다면 production 1 fps default(Gemini, VideoChat-Flash)는 어떨까. 30 fps 원본 기준 30배 다운샘플, 즉 97%를 버린다. 16-frame uniform보다 훨씬 낫지만 1초 미만의 micro-event는 여전히 통과되지 않는다. 그리고 1 fps × 1시간 = 3,600 frame인데 frame 하나가 약 258 token이니 928K token, 위에서 본 그대로다. 즉 *uniform sampling은 token 예산을 다 쓰면서도 micro-event를 잃는다*는 두 가지 실패를 동시에 한다. 이게 query-aware adaptive sampler가 등장한 진짜 motivation이다 — 같은 token 예산에서 'query가 가리키는 순간'에 frame을 몰아 줄 수 있으면 두 실패를 동시에 줄일 수 있기 때문이다."
+        },
+        {
+          "title": "1.4 이 강의의 명제 — Sampler is the swappable SOTA layer",
+          "content": "Video LLM의 canonical pipeline은 `Decode → Sample → Encode → Token-Reduce → LLM` 다섯 단계로 정리된다. 이 중 **Decode** 단계는 Decord / PyAV / NVDEC에서 거의 commodity가 되었고, **Encode**는 CLIP / SigLIP / Marengo로 수렴 중이며, **LLM**은 Qwen3-VL / Gemini / LLaVA-Video 사이에서 큰 폭의 점프가 자주 일어나지 않는다. 그러나 **Sample** 단계는 2024년부터 2026년 6월 현재까지 *매 학회마다* SOTA가 바뀐다. CVPR 2025의 AKS / BOLT, ICLR 2025의 Frame-Voyager, ICCV 2025의 Q-Frame, ICLR 2026 submission의 AdaRD-Key와 FOCUS, 그리고 2026년 들어 agentic loop으로 옮겨가는 FrameThinker / FrameMind / A.I.R. 이 모두 sampler 단계의 plug-and-play 교체다.\n\n이 강의의 명제는 명확하다. **Sampler는 video LLM 시스템에서 유일하게 월 단위로 갈아끼울 가치가 있는 component이고, 그 교체를 안전하게 만들 수 있는 architecture에 투자해야 한다.** 9장에서 다룰 `Sampler.select(video, query, budget) -> List[int]` 인터페이스가 왜 그 모양인지, vLLM-Omni의 disaggregated stage 분리가 왜 91.4% JCT 감소를 만드는지, 모두 이 명제에서 따라 나온다. 반대로 sampler를 LLM 코드 안에 hard-coding한 팀은 매 새 paper가 나올 때마다 모델 서빙을 멈추고 코드를 갈아엎어야 한다.\n\n이 명제는 한 가지 의무를 동반한다 — sampler가 swappable해지려면 *공통의 evaluation harness*도 swappable해야 한다. lmms-eval, Video-MME, MLVU, LongVideoBench, EgoSchema, HourVideo, Multi-Hop NIAH(10K frame)가 그 역할을 한다. 10장에서 이 harness를 직접 만들 것이다. 지금은 이렇게 기억하자. *'sampler를 갈아끼울 수 있는 시스템'이라는 한 줄이 이 강의의 전부다.*"
+        },
+        {
+          "title": "1.5 강의 전체 forward reference",
+          "content": "2장은 uniform / fps / PySceneDetect 같은 classical baseline을 정확히 어디서 깨지는지 정량화한다. 3장은 CVPR 2025의 AKS / BOLT로 query-aware adaptive sampling의 첫 SOTA를 다룬다. 4장은 Frame-Voyager / M-LLM / GenS의 learned sampler — combinational ranking과 generative retriever — 를 구현 수준에서 본다. 5장은 Q-Frame / AdaRD-Key / FOCUS의 relevance × diversity frontier, log-det diversity와 multi-armed bandit으로 2026년 SOTA의 모양을 잡는다.\n\n6장은 1시간 이상의 long-video로 확장 — LongVU의 DINOv2 temporal pruning, Hour-LLaVA의 MemAug, VideoMarathon 9.7K시간 dataset, HourVideo 벤치마크. 7장은 sampling과 직교하는 token compression — VideoChat-Flash의 HiCo 1/50과 10K-frame NIAH 99.1%, NVILA scale-then-compress, FastVID dynamic density. '언제 sample 줄이고 언제 token 줄이느냐'의 결정 규칙을 만든다.\n\n8장은 commercial reality — Gemini, Twelve Labs Marengo/Pegasus, Qwen2.5-VL, VideoChat-Flash가 실제 production에서 무엇을 쓰는지와, 왜 research SOTA가 그리로 안 가는지의 영구적 갭을 분석한다. 9장은 architecture — `Sampler.select()` 계약, vLLM-Omni disaggregated pipeline, Twelve Labs Embed cache, anti-pattern 6선. 10장은 직접 swappable reference architecture를 만들고 Video-MME / MLVU / LongVideoBench / EgoSchema / Multi-Hop NIAH 전체 벤치마크로 평가한다. 강의를 마치면 'AKS-v2가 어제 arXiv에 올라왔다'는 소식에 시스템을 멈추지 않고 한 시간 안에 교체할 수 있는 엔지니어가 되어 있어야 한다."
+        }
+      ],
+      "analogy": {
+        "title": "Documentary Editor with a 100-Hour Shoot",
+        "content": "다큐멘터리 편집자 한 명을 상상하자. 다섯 명의 카메라 팀이 6개월 동안 100시간 분량의 raw footage를 찍어 왔다. 최종 상영본은 90분, 즉 약 1.5%. 편집자가 'raw가 너무 많으니 매 5초마다 한 frame씩 균일하게 잘라서 보겠다'고 하면 어떻게 될까. 그는 인터뷰 대상이 결정적인 답을 내뱉는 0.8초짜리 표정 변화를 절대 못 본다. 폭우 속 시위대가 갈라지는 3초짜리 순간도 못 본다. 100시간 중 *어떤 1.5%가 이야기를 만드는지*는 균일 grid가 알려주지 않는다.\n\n실제 편집자는 그렇게 일하지 않는다. 그는 먼저 '내가 만들고 싶은 이야기'(=query)를 정한다. 그다음에 raw 100시간을 빠르게 훑으면서 *그 이야기와 관련된 순간*에만 표시를 남긴다(=relevance scoring). 그리고 한 장면이 다음 장면으로 잘 연결되도록 *서로 다른 분위기의 cut을 섞어*(=diversity) 90분 안에 모든 beat을 채운다. 이게 정확히 AKS와 BOLT의 relevance-coverage 트레이드오프이고, AdaRD-Key의 log-det diversity가 형식화한 직관이다.\n\n중요한 건 그가 라이팅과 색보정, 사운드 디자인에 더 좋은 장비(=더 큰 LLM)를 사도 같은 균일 cut 위에서는 영화가 좋아지지 않는다는 점이다. 영화의 질을 결정하는 *진짜 결정*은 어떤 1.5%를 들고 편집실에 들어가느냐다. Video LLM도 똑같다. 1M context는 편집실 크기일 뿐이고, 그 안에 어떤 cut을 가지고 들어가느냐 — 즉 sampling — 가 결과를 만든다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "Token budget 산수를 머리로만 하지 말고 직접 돌려 보자. 아래 스크립트는 Decord로 임의의 영상 파일을 열고, 길이를 잰 다음, Gemini 2.5 Pro의 default 1 fps × 258 tokens/sec spec을 그대로 적용해 *그 영상 하나가 1M context의 몇 %를 잡아먹는지* 출력한다. 30분 영상 하나만 넣어도 1M의 절반 가까이 사라진다는 걸 직접 보게 된다.",
+        "code": "# pip install decord\nimport decord\nfrom decord import VideoReader, cpu\n\nGEMINI_TOKENS_PER_SEC = 258         # Gemini 2.5 Pro: 1 fps default, ~258 tok/s of video\nGEMINI_AUDIO_TOKENS_PER_SEC = 32    # ~1 Kbps audio track, parallel\nGEMINI_CTX = 1_000_000              # 1M ctx (Pro tier)\nPROMPT_OVERHEAD = 4_000             # system + user prompt + output buffer\n\ndef budget_report(path: str, query_tokens: int = PROMPT_OVERHEAD) -> dict:\n    vr = VideoReader(path, ctx=cpu(0))\n    n_frames = len(vr)\n    fps = vr.get_avg_fps()\n    duration_s = n_frames / fps\n\n    # Gemini-style cost (server-side 1 fps resample is implicit)\n    video_tokens = int(duration_s * GEMINI_TOKENS_PER_SEC)\n    audio_tokens = int(duration_s * GEMINI_AUDIO_TOKENS_PER_SEC)\n    total = video_tokens + audio_tokens + query_tokens\n    used_pct = 100.0 * total / GEMINI_CTX\n\n    # What uniform 16-frame sampling discards (open-source default)\n    uniform_keep = 16\n    discard_ratio = 1 - (uniform_keep / n_frames)\n\n    return {\n        \"duration_min\": round(duration_s / 60, 2),\n        \"raw_frames\": n_frames,\n        \"video_tokens\": video_tokens,\n        \"audio_tokens\": audio_tokens,\n        \"total_tokens\": total,\n        \"ctx_used_pct\": round(used_pct, 1),\n        \"headroom_tokens\": GEMINI_CTX - total,\n        \"uniform16_discard_pct\": round(100 * discard_ratio, 3),\n    }\n\nif __name__ == \"__main__\":\n    # any mp4: e.g. a 30-min lecture recording\n    print(budget_report(\"lecture_30min.mp4\"))\n    # expected output (30 min @ 30 fps):\n    # duration_min: 30.0, raw_frames: 54000,\n    # video_tokens: 464400, audio_tokens: 57600, total_tokens: 526000,\n    # ctx_used_pct: 52.6, headroom_tokens: 474000,\n    # uniform16_discard_pct: 99.970",
+        "walkthrough": "출력을 천천히 읽자. 30분 lecture 하나가 1M context의 *52.6%*를 즉시 가져간다. 같은 inference call에서 lecture 한 편만 더 붙이면 우리는 이미 ctx 한계를 넘는다. 동시에 그 30분에 들어 있던 54,000 frame 중 99.97%는 open-source default `max_frames=16` 기준으로는 *모델 눈에 들어가지도 않는다*. 즉 token 예산을 풀로 쓰면서도 raw 정보의 99.97%를 버리고 있는 모순적 상태가 production의 default다. 이 격차가 이 강의가 매 챕터에서 줄이려는 양이다 — query-aware sampler는 같은 16 frame을 *영상의 결정적인 순간*에 모아 주고, token compression은 같은 frame을 *더 적은 token으로* 표현한다."
+      },
+      "industryEvaluation": {
+        "overview": "Video LLM 팀의 시니어 면접에서 이 단원의 직관은 거의 100% 검증된다. 면접관은 후보자가 'context는 자원이다'라는 추상이 아니라 '내 영상의 1초가 몇 token을 쓰고, 그게 내 ctx의 몇 %인지'를 즉석에서 계산할 수 있는지를 본다. 동시에 후보자가 sampling을 LLM 안의 문제로 착각하는지(흔한 오류), 아니면 encoder-side의 분리된 component로 보는지를 빠르게 가른다.",
+        "whatEngineersLookFor": [
+          "Tokens-per-decision으로 생각하는가 — '내가 답하려는 질문 하나에 token을 몇 개 쓸 수 있나, 그 token이 영상의 어느 구간에 가야 하나'를 즉석에서 말할 수 있는지",
+          "Encoder-side bottleneck과 decoder-side bottleneck을 구분하는가 — sampling이 왜 model size로 안 풀리는 문제인지 설명할 수 있는지",
+          "Vendor별 token 산수를 외우고 있는가 — Gemini 2.5 Pro의 258 tok/s, 1 fps default, 1M/2M ctx 같은 구체적 숫자",
+          "Uniform sampling이 *무엇을* 버리는지 scene 단위로 설명할 수 있는가 — micro-event, reaction shot, shot boundary 등",
+          "Research SOTA(AKS, BOLT, Q-Frame 등)와 production default(Gemini, Qwen2.5-VL, VideoChat-Flash) 사이의 갭이 *왜 영구적인지*를 비용 관점에서 말할 수 있는가"
+        ],
+        "redFlags": [
+          "'1M context면 1시간 영상은 그냥 통째로 넣으면 된다'고 답하는 경우 — 산수를 안 한 것",
+          "'더 큰 모델(72B, GPT-4o 등)로 가면 해결된다'고 답하는 경우 — capacity vs selection 구분 실패",
+          "Video generation(Sora 2, Movie Gen)과 video understanding을 혼동하는 경우 — 두 분야의 token economics는 완전히 다름",
+          "Production API의 default fps를 모르거나 'frame 다 넣는다'고 답하는 경우 — Gemini는 1 fps, Qwen2.5-VL은 2 fps, VideoChat-Flash는 1 fps라는 사실"
+        ],
+        "interviewQuestions": [
+          "Gemini 2.5 Pro의 1M ctx에 90분짜리 1080p 영상 한 편과 5,000자 분량의 system prompt를 넣어 'XX장면이 몇 분 몇 초에 나오는가'에 답하게 하려고 한다. Default 설정으로 가능한가, 불가능하면 어디서 깨지고 어느 component를 어떻게 바꿔야 하는가?",
+          "당신 팀의 video QA 정확도가 LLaVA-Video-7B baseline에서 정체되어 있다. 예산은 GPU 6장 추가 또는 ML 엔지니어 2명 6주 어느 쪽이든 가능하다. 7B → 72B로 가는 옵션과 7B + AKS-style query-aware sampler를 붙이는 옵션, 어느 쪽을 고르고 왜 그런가? 정확도, latency, $/query 세 축으로 답하라.",
+          "30 fps 5분짜리 dashcam 영상에서 0.4초짜리 사고 frame을 놓치지 않으면서 동시에 token budget을 1만 안에서 유지하려면 sampling 전략을 어떻게 설계할 것인가? Uniform이 왜 실패하는지 수치로, 그리고 당신의 대안이 왜 사고 frame을 잡을 확률을 올리는지 설명하라."
+        ],
+        "masteryVsFamiliar": "이 단원에 *친숙한* 엔지니어는 'Gemini는 1M ctx가 있고 video를 지원한다, uniform sampling보다는 query-aware sampling이 좋다더라' 정도를 말한다. *마스터한* 엔지니어는 칠판 앞에서 258 tok/s × duration을 즉석 계산하고, 그게 자신의 product의 latency SLO와 $/query 목표에 어떻게 부딪히는지 그래프를 그린다. 그리고 그 충돌을 해결하기 위해 어디서 sampler를 갈아끼울지, 그 sampler가 frozen MLLM 앞단에 plug-and-play로 들어갈 수 있는지(=AKS / BOLT 스타일), 아니면 학습이 필요한지(=Frame-Voyager / GenS 스타일), token compression(=VideoChat-Flash HiCo)과 어떻게 조합할지를 한 그림에 그릴 수 있다. 이 차이는 보통 첫 30분 system design 인터뷰에서 명확히 드러난다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "Token economics가 진짜 제약이다",
+          "content": "Gemini 2.5 Pro 258 tok/s × 1시간 = 928K token으로, 1M ctx조차 video 단 한 편을 겨우 통과시킨다."
+        },
+        {
+          "title": "Bottleneck은 encoder-side다",
+          "content": "Decoder(LLM) 크기를 키우는 것은 비용은 quadratic으로 늘지만 video understanding 점수는 marginal하게 오른다 — selection이 진짜 lever다."
+        },
+        {
+          "title": "Uniform 16-frame은 99.82%를 버린다",
+          "content": "5분 30 fps 영상에서 16 frame을 균일하게 뽑으면 9,000 → 16, 즉 1초 미만 micro-event는 확률적으로 절대 잡히지 않는다."
+        },
+        {
+          "title": "Sampler가 같은 LLM의 점수를 뒤집는다",
+          "content": "LLaVA-Video-7B + AKS(CVPR 2025)가 LLaVA-Video-72B baseline을 이긴다 — 10배 capacity가 잘 만든 sampler 하나와 같다."
+        },
+        {
+          "title": "Research SOTA와 production 사이엔 영구적 갭이 있다",
+          "content": "AKS, BOLT, GenS, Q-Frame, AdaRD-Key, FOCUS는 모두 plug-and-play지만 Gemini / Qwen2.5-VL / LLaVA-Video / VideoChat-Flash 모두 여전히 uniform 또는 fixed-fps default다."
+        },
+        {
+          "title": "Sampler는 swappable한 SOTA layer다",
+          "content": "Decode / Encode / LLM은 수렴 중이지만 Sample은 매 학회마다 SOTA가 바뀐다 — `Sampler.select()` 인터페이스에 투자하는 것이 가장 ROI가 높다."
+        },
+        {
+          "title": "Sampling과 token compression은 직교한다",
+          "content": "Sampling은 'frame을 줄이는 축', VideoChat-Flash HiCo 같은 compression은 'frame당 token을 줄이는 축' — 7장에서 둘을 결합한다."
+        },
+        {
+          "title": "Tokens-per-decision으로 생각하라",
+          "content": "면접과 production 양쪽에서 시니어를 가르는 기준은 '내 결정 하나에 token이 몇 개 필요하고, 영상의 어느 순간에 가야 하는가'를 즉석에서 정량화할 수 있느냐다."
+        }
+      ]
+    },
+    {
+      "number": 2,
+      "emoji": "🎯",
+      "title": "Classical Baselines and Where They Fail",
+      "titleKr": "고전적 baseline들 — 어디까지 효과적이고 언제 무너지는가",
+      "tldr": "Uniform / fixed-fps / shot detection은 단순하지만 여전히 production의 기본값이다. 짧고 동질적인 비디오에서는 충분히 강하고, 비용·지연·구현 복잡도 면에서 압도적이다. 그러나 long video, query-specific reasoning, rare event, multi-event 추론에서는 정보 손실이 정량적으로 누적되며 무너진다. 이 chapter는 세 baseline의 수학적 정의, 산업이 이들을 고수하는 경제적 이유, 그리고 정확히 어떤 query에서 깨지는지를 코드와 함께 정리한다.",
+      "topics": [
+        "Uniform sampling의 수학적 정의와 Qwen2.5-VL / LLaVA-Video / InternVL의 default 선택",
+        "Fixed-fps sampling — Gemini 2.5 Pro의 1 fps와 인간 발화 단위 가정",
+        "PySceneDetect 기반 shot detection — ContentDetector / AdaptiveDetector의 threshold knob",
+        "Failure mode taxonomy: needle-in-haystack, rare event, multi-event, inter-shot reasoning",
+        "Mixpeek류 retrieval pipeline이 shot boundary를 anchor로 쓰는 이유",
+        "Uniform이 production에서 사라지지 않는 다섯 가지 경제적 근거"
+      ],
+      "learningGoals": [
+        "Uniform / fixed-fps / shot-based 세 baseline을 수식 수준에서 정의하고 구현 코드를 짤 수 있다",
+        "Qwen2.5-VL fps=2, LLaVA-Video uniform 64, InternVL 16–32 같은 산업 default가 *왜* 그 값으로 정해졌는지 설명할 수 있다",
+        "주어진 query–video 조합에 대해 어느 baseline이 실패할지 사전에 예측할 수 있다",
+        "PySceneDetect의 threshold·min_scene_len·luma_only 같은 knob을 상황에 맞게 튜닝할 수 있다",
+        "Uniform sampling이 'stupid한 게 아니라 economically optimal'한 영역과 그렇지 않은 영역을 분리해 말할 수 있다"
+      ],
+      "overview": "Chapter 1에서 frame sampling이 video LLM의 진짜 병목임을 봤다. 이번 chapter는 그 병목 앞에서 산업이 *지금 실제로* 쓰는 세 가지 고전 baseline — uniform, fixed-fps, shot detection — 을 정면으로 다룬다. 이 셋은 SOTA 논문이 매년 두 자릿수 %씩 깨고 있음에도 불구하고 Gemini 2.5 Pro, Qwen2.5-VL, LLaVA-Video, InternVL의 default로 그대로 살아 있다. 우리는 먼저 각 baseline의 수학을 정의하고, 그것이 *어떤 영역에서 정당화되는지* (짧고 homogeneous한 콘텐츠, 발화 중심 비디오, retrieval index 단계)를 본 뒤, *정확히 어디서 깨지는지*를 네 가지 failure mode로 분류한다. 마지막으로 uniform이 영구히 사라지지 않는 경제적·시스템적 이유를 검토한다. 이 chapter를 끝내면 '왜 SOTA가 production에 안 들어가는가'라는 질문에 한 줄로 답할 수 있게 된다 — 답은 알고리즘이 아니라 *예측 가능한 비용 함수*다.",
+      "sections": [
+        {
+          "title": "1. Uniform sampling — 가장 단순하고 가장 끈질긴 baseline",
+          "content": "Uniform sampling은 길이 T 프레임의 비디오에서 N개의 frame을 고를 때 인덱스를 다음과 같이 결정한다.\n\n    i_k = round(k · (T − 1) / (N − 1)),  k = 0, 1, ..., N − 1\n\n또는 segment-then-pick 방식으로 [0, T)를 N개의 동일 폭 segment로 나눠 각 segment의 중앙 또는 첫 frame을 고른다. 둘 다 동일하게 'query-agnostic, content-agnostic, deterministic'이다.\n\n이 단순한 함수가 2026년 현재 industry default다.\n- **LLaVA-Video-7B / 72B**: max_frames_num=64, 그 이상은 uniform downsample.\n- **InternVL2.5 / InternVL3**: 보통 16–32 frame uniform.\n- **Qwen2.5-VL / Qwen3-VL**: 명목상 fps=2.0이지만 `FPS_MAX_FRAMES=768` cap에 걸리면 사실상 uniform으로 downsample된다 (긴 영상에서는 2 fps가 아닌 'uniform 768'로 수렴).\n- **NVILA / VILA-1.5**: 64 frame, context에 들어가는 건 16 frame.\n- **VideoChat-Flash**: 1 fps + uniform 보조.\n\n8,600 frame짜리 5분 영상을 16 frame으로 줄이면 *정보 손실률* 은 단순 비율로 99.81%다. 이 손실이 치명적인지는 query와 콘텐츠에 달려 있는데, 핵심은 uniform이 *기대값 측면에서* 최적이라는 점이다. 콘텐츠와 query에 대한 사전지식이 0일 때, 각 frame이 동등하게 informative하다는 maximum entropy prior 아래에서 uniform sampling은 expected coverage를 최대화한다. 이게 산업이 'stupid한데도 안 버리는' 이유의 절반이다 — 나머지 절반은 비용이고 5절에서 다룬다.\n\n그러나 이 prior가 깨지는 순간 — 정보가 시간축 위에서 강하게 비균등하게 분포할 때 — uniform은 한 번에 무너진다. 예: 60분 강의 중 45분 30초에 한 슬라이드가 잠깐 뜨고 그게 답인 query라면, 16-frame uniform이 그 슬라이드를 잡을 확률은 약 16/T = 16/(60·60·30) ≈ 0.015% per relevant-second. 이게 needle-in-haystack failure의 기본 산수다."
+        },
+        {
+          "title": "2. Fixed-fps sampling — 시간 일관성과 Gemini 2.5 Pro의 1 fps 선택",
+          "content": "Fixed-fps는 uniform의 사촌이지만 frame 수가 아닌 *rate*를 고정한다.\n\n    sampled = [video[round(t · fps_src / fps_target)] for t in range(int(duration · fps_target))]\n\n이 방식의 장점은 *시간 일관성*이다. 같은 콘텐츠에서 'N=16 uniform'은 1분짜리든 1시간짜리든 같은 frame 수를 주지만 sampling 밀도가 60배 다르고, 'fps=1'은 항상 1초당 1 frame이라 모델이 학습한 temporal density와 inference density가 일치한다.\n\nGemini 2.5 Pro의 1 fps default는 우연이 아니다.\n- 영어/한국어 평균 발화 속도는 분당 130–180 단어 ≈ 초당 2–3 단어다. 1 frame/sec은 화자가 새 문장을 시작할 무렵 시각 context가 한 번씩 갱신되는 셈이다.\n- 강의·인터뷰·튜토리얼·뉴스 — 즉 'human-speech-paced' 콘텐츠 — 에서 1 fps는 거의 손실 없이 의미를 보존한다.\n- 1M token context와 결합하면 1 fps × 258 tokens/sec ≈ 약 1시간 영상이 default로 들어온다 (Gemini 공식 quoted 수치).\n\n그러나 1 fps는 다음에서 명확히 무너진다.\n- **Sports**: 축구 슛 모션은 약 0.3초. 1 fps는 그 순간을 정확히 놓치거나 잡거나 binary다.\n- **Fight scene / 격투기**: 펀치-블록 시퀀스가 200–400ms 단위로 일어남.\n- **Magic trick / sleight-of-hand**: 의도적으로 1 fps 이상의 속도로 동작이 가려짐.\n- **자동차 사고 / 사고 분석**: 결정적 frame이 1–3 frame에 압축됨.\n\n반대편 극단으로 fps를 너무 올리면 (예: 30 fps 그대로 1시간) token cost가 폭발한다 — 30 × 3600 × 258 ≈ 2,786만 token. 1 fps라는 선택은 '인간 인지 paced 콘텐츠에 대한 합리적 Nyquist rate'에 가깝다."
+        },
+        {
+          "title": "3. Shot detection — PySceneDetect와 retrieval pipeline의 자연스러운 anchor",
+          "content": "Shot detection은 'frame을 N개 고른다'가 아니라 '비디오를 의미 단위로 잘라낸다'에 가깝다. 사용되는 도구는 사실상 PySceneDetect 하나로 수렴했고, 두 가지 detector가 표준이다.\n\n**ContentDetector** — frame 간 HSV-space content delta가 threshold(default 27.0)를 넘으면 cut으로 판정. 빠르고 hard cut에 강하다. 부드러운 fade·crossfade는 못 잡는다.\n\n**AdaptiveDetector** — rolling window 위의 content delta 분포에 대해 적응형 threshold를 잡는다. 조명 변화가 잦은 자연 영상에서 false positive를 줄인다. window·threshold·min_scene_len이 주요 knob다.\n\n중요한 knob:\n- `threshold` (보통 27, 액션·MV는 20까지 낮춤, 슬라이드 강의는 35–40까지 올림)\n- `min_scene_len` (frame 단위, 보통 15 — 0.5초 미만 cut을 합쳐버린다)\n- `luma_only=True` — 색감 변화는 무시하고 밝기만; flash photography 환경에 유용\n- `weights` — content delta의 H/S/V/edge 가중치\n\nShot boundary가 retrieval pipeline의 anchor로 쓰이는 이유는 명확하다.\n- **재현 가능한 chunk**: 같은 영상에서 같은 boundary를 다시 얻을 수 있어 index가 안정적이다.\n- **semantic locality**: 한 shot 내부의 frame들은 거의 항상 동일 scene·동일 화자·동일 setting이라, shot 대표 frame 하나의 embedding으로 그 구간을 retrieve해도 손실이 적다.\n- **caption granularity**: ASR transcript + shot boundary 정렬로 'shot + 그 안의 발화' 단위 multi-modal chunk가 자연스럽게 잡힌다.\n\nMixpeek류 video retrieval platform이 uniform이 아닌 scene/shot 기반 chunking을 default로 쓰는 이유가 여기 있다. 그들은 *inference time*이 아니라 *index time*에 비용을 지불하므로 한 번 정확한 boundary를 뽑아두면 query 비용은 vector search 한 번으로 끝난다. 반면 video LLM의 inference path는 query마다 sample을 다시 뽑아야 하므로 uniform의 예측 가능 비용이 이긴다 — 이 분리가 chapter의 핵심 통찰이다.\n\n주의점: shot detection만으로는 'shot *내부*에서 결정적 순간'을 못 잡는다. 한 shot이 30초짜리 long take일 때 그 안의 0.5초 micro-event는 boundary detector가 보지 못한다. 이게 4절 failure taxonomy의 마지막 항목이다."
+        },
+        {
+          "title": "4. Failure mode taxonomy — 어디서, 왜 깨지는가",
+          "content": "세 baseline이 깨지는 양상을 네 카테고리로 정리한다. 각 항목은 후속 chapter (AKS, BOLT, Frame-Voyager, Q-Frame, FOCUS) 가 정조준하는 문제와 1:1 대응한다.\n\n**(a) Needle-in-haystack on long video** — 1시간짜리 영상의 단 한 frame만이 정답을 담고 있는 query. Uniform N-frame의 hit probability ≈ N · L_needle / T. N=16, L_needle=1 sec, T=3600 sec이면 0.44%. VideoChat-Flash의 Multi-Hop NIAH가 10K-frame 영상에서 99.1%를 찍은 건 정확히 이 시나리오를 정조준해서다.\n\n**(b) Rare event detection** — '이 6시간 보안 카메라 영상에서 누가 문을 부쉈나' 같은 query. Event가 시간축 위에서 sparse하므로 query-agnostic sampler는 거의 항상 놓친다. Shot detection이 도움이 되지만 boundary가 잡힌 *모든* shot을 LLM에 넘기면 비용이 폭발한다 — 그래서 SigLIP/CLIP score 기반 query-aware 필터 (AKS·BOLT의 핵심) 가 필요해진다.\n\n**(c) Multi-event reasoning** — '주인공이 안경을 쓴 후 처음으로 누구를 만났는가' 같은 두 event의 *순서·연결*을 요구하는 query. Uniform은 두 event를 동시에 잡을 확률이 곱셈으로 떨어진다. 학습된 sampler가 두 event의 *공동 evidence* 를 잡도록 ranking을 학습하는 Frame-Voyager의 'combinational ranking' 동기가 여기다.\n\n**(d) Inter-shot reasoning, 즉 shot *사이* 정보가 필요한 query** — Shot detection의 사각지대. 예: '카메라가 cut 없이 30초 동안 따라간 차량이 어느 골목으로 들어갔는가' — boundary detector에는 single shot, dense sampler에는 그 안의 trajectory가 필요하다. Pure shot-based는 그 30초를 frame 하나로 요약해버린다.\n\n실전에서 query 유형을 사전에 분류해 router로 baseline을 고르는 패턴이 흔하다 — short clip + descriptive query → uniform 16, 강의/인터뷰 → 1 fps, retrieval index 빌드 → shot detection, long-video QA → query-aware adaptive sampler. 이 router 자체가 9장의 plug-and-play architecture 동기다."
+        },
+        {
+          "title": "5. 왜 uniform이 사라지지 않는가 — 경제적·시스템적 다섯 가지 이유",
+          "content": "연구 SOTA (AKS, BOLT, GenS, Q-Frame, FOCUS) 가 매년 두 자릿수 %를 깬다. 그런데도 2026년 Gemini, Qwen2.5-VL, LLaVA-Video, InternVL의 default는 여전히 uniform/fixed-fps다. 다섯 가지 이유가 함께 작동한다.\n\n**(1) 예측 가능한 비용 함수** — Uniform N-frame은 입력 영상 길이·콘텐츠·query와 무관하게 *정확히* N개의 vision token block을 소비한다. SaaS API 가격책정에서 결정적인 속성이다. Query-aware sampler는 frame 수가 가변이거나 추가 forward pass가 필요해 SLA·과금 모델이 어려워진다.\n\n**(2) Learned component 부재** — Uniform은 학습 데이터·체크포인트·라이선스가 없다. Frame-Voyager나 M-LLM Frame Selection은 별도 모델을 동봉하고 관리해야 한다 (또 하나의 model card, 또 하나의 GPU pool).\n\n**(3) Query-conditioning latency** — Adaptive sampler는 query를 받아서 frame을 다시 고른다. 즉 첫 token latency에 sampler forward가 그대로 더해진다. 인터랙티브 UI에서는 200–500ms가 곧장 보인다.\n\n**(4) Benchmark·debug 용이성** — Uniform은 deterministic해서 회귀 테스트가 trivial하다. Adaptive sampler는 동일 영상·동일 query에서도 모델·temperature·seed에 따라 frame 집합이 흔들리고 그 변동이 LLM 출력 변동과 entangle되어 디버깅이 어렵다.\n\n**(5) 모델 학습 시점의 가정과 일치** — LLaVA-Video / InternVL / Qwen2.5-VL 모두 학습 단계에서 uniform 혹은 fixed-fps로 frame을 받았다. Inference에서 adaptive sampler를 끼우면 train–inference distribution shift가 생긴다. Hour-LLaVA가 1 fps로 *학습부터* 한 이유와 같은 결의 압력이다.\n\n결론: uniform은 'optimal algorithm'이 아니라 'optimal product default'다. SOTA를 production에 넣으려면 이 다섯 항목 하나하나에 답해야 한다 — chapter 9에서 plug-and-play 인터페이스로 그 답들을 봉합한다."
+        }
+      ],
+      "analogy": {
+        "title": "알람 시계 vs 이벤트 기반 알림",
+        "content": "Uniform sampling은 *알람 시계*다. 매 N분마다 무조건 울린다. 당신이 자고 있건, 회의 중이건, 우주가 폭발하건 관계없다. 단순하고 예측 가능하며, 배터리 소비가 정확히 계산된다. 출근 시간을 놓치지 않으려는 목적에는 완벽하다.\n\nQuery-aware adaptive sampling은 *이벤트 기반 알림*이다. 'CEO가 내 이름을 언급할 때만' 울린다. 평소엔 조용하지만 결정적인 순간을 놓치지 않는다. 대가는 명확하다 — 누가 언급했는지 *판단할 모델*이 항상 돌고 있어야 하고, 그 판단이 틀리면 영원히 안 울린다.\n\n짧은 영상 (회의 5분 요약, 30초 클립 캡션) 에서는 시계 알람이면 충분하다. 어차피 N분 단위로 다 깨어 있다. 1시간 보안 카메라에서 '문 부순 사람을 찾아라'는 query에는 알람이 절대 못 잡는다 — 사건이 23분 17초에 0.4초 동안 일어났기 때문이다. Gemini의 1 fps가 발화 중심 영상에서 거의 손실 없는 이유, 그리고 sports/fight scene에서 무너지는 이유가 정확히 이 비유로 설명된다. 산업이 알람을 안 버리는 건 알람이 멍청해서가 아니라 *알람만 있어도 되는 작업이 압도적으로 많기 때문*이다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "같은 영상에 세 baseline — uniform N-frame, fixed-fps, PySceneDetect 기반 shot — 을 적용해 어떤 frame index가 뽑히는지 직접 비교한다. Decord로 디코딩하고 PySceneDetect의 ContentDetector를 쓴다. 환경: `pip install decord scenedetect[opencv] numpy`. 짧은 클립 (~30초) 에서는 셋이 비슷한 결과를, 1시간짜리에서는 완전히 다른 결과를 낸다.",
+        "code": "import numpy as np\nfrom decord import VideoReader, cpu\nfrom scenedetect import open_video, SceneManager\nfrom scenedetect.detectors import ContentDetector\n\n\ndef uniform_sample(num_frames_total: int, n: int) -> list[int]:\n    if num_frames_total <= n:\n        return list(range(num_frames_total))\n    return [int(round(k * (num_frames_total - 1) / (n - 1))) for k in range(n)]\n\n\ndef fixed_fps_sample(num_frames_total: int, src_fps: float, target_fps: float) -> list[int]:\n    duration = num_frames_total / src_fps\n    n = max(1, int(duration * target_fps))\n    return [min(num_frames_total - 1, int(round(t * src_fps / target_fps))) for t in range(n)]\n\n\ndef shot_sample(path: str, threshold: float = 27.0, min_scene_len: int = 15) -> list[int]:\n    video = open_video(path)\n    sm = SceneManager()\n    sm.add_detector(ContentDetector(threshold=threshold, min_scene_len=min_scene_len))\n    sm.detect_scenes(video=video)\n    scenes = sm.get_scene_list()  # list of (start, end) FrameTimecodes\n    # pick the middle frame of each shot as its representative\n    return [int((s.get_frames() + e.get_frames()) // 2) for s, e in scenes]\n\n\ndef compare_baselines(path: str, n_uniform: int = 16, target_fps: float = 1.0):\n    vr = VideoReader(path, ctx=cpu(0))\n    T, src_fps = len(vr), vr.get_avg_fps()\n    print(f\"video: {T} frames @ {src_fps:.2f} fps ({T/src_fps:.1f}s)\")\n    u = uniform_sample(T, n_uniform)\n    f = fixed_fps_sample(T, src_fps, target_fps)\n    s = shot_sample(path)\n    print(f\"uniform-{n_uniform}: {len(u)} frames -> {u[:8]}{'...' if len(u)>8 else ''}\")\n    print(f\"fps={target_fps}: {len(f)} frames -> {f[:8]}{'...' if len(f)>8 else ''}\")\n    print(f\"shot:    {len(s)} frames -> {s[:8]}{'...' if len(s)>8 else ''}\")\n    return {\"uniform\": u, \"fps\": f, \"shot\": s}\n\n\nif __name__ == \"__main__\":\n    compare_baselines(\"sample.mp4\", n_uniform=16, target_fps=1.0)",
+        "walkthrough": "`uniform_sample`은 첫 frame과 마지막 frame을 포함해 N개를 등간격으로 뽑는다 — LLaVA-Video / InternVL이 쓰는 식. `fixed_fps_sample`은 target_fps에 맞춰 frame 수가 영상 길이에 비례해 늘어난다 — Gemini 2.5 Pro의 1 fps default가 이 형태다. `shot_sample`은 PySceneDetect로 shot boundary를 잡고 각 shot의 중앙 frame을 대표로 고른다. 같은 30초 광고 영상에 돌리면 셋이 12–18 frame 정도로 비슷하게 수렴하지만, 1시간 강의에 돌리면 uniform=16, fps=1→약 3,600, shot→슬라이드 전환 수만큼 (~40–80) 으로 완전히 갈라진다. `threshold`를 20으로 낮추면 빠른 cut이 많은 액션 영상에서 shot 수가 폭증하고, 35로 올리면 슬라이드 강의에서 fade를 무시해 안정적인 boundary를 얻는다. 실전 배포 시 이 세 함수를 동일한 `Sampler.select(video, query=None, budget=N)` 시그니처 뒤에 숨겨 plug-and-play로 묶는다 — 9장에서 다룬다."
+      },
+      "industryEvaluation": {
+        "overview": "Senior video-LLM 엔지니어 인터뷰에서 frame sampling은 '얼마나 SOTA를 아는가'가 아니라 '왜 SOTA가 production에 못 들어가는지 아는가'로 평가된다. 즉 baseline의 *한계*를 정량적으로 설명하면서 동시에 baseline의 *존재 이유*를 product 관점에서 변호할 수 있어야 한다. 그래서 면접관은 후보가 uniform을 무시하는지, 아니면 그 영구성을 이해하는지를 본다.",
+        "whatEngineersLookFor": [
+          "Qwen2.5-VL의 fps=2 / FPS_MAX_FRAMES=768 같은 구체적 default 값과 그 선택의 근거 (학습 데이터 distribution, token budget) 를 같이 설명할 수 있는가",
+          "Uniform이 무너지는 query 유형을 needle-in-haystack / rare event / multi-event / inter-shot 같은 카테고리로 분류해 말할 수 있는가",
+          "PySceneDetect의 ContentDetector vs AdaptiveDetector 차이, threshold·min_scene_len·luma_only knob의 효과를 콘텐츠 유형별로 설명할 수 있는가",
+          "Gemini 2.5 Pro의 1 fps가 발화 중심 영상에서 합리적인 Nyquist rate라는 점, 그리고 sports에서 깨지는 정확한 이유를 시간 단위로 말할 수 있는가",
+          "Mixpeek류 retrieval pipeline이 uniform이 아닌 shot 기반 chunking을 쓰는 이유 — 비용이 index time에 amortize된다 — 를 설명할 수 있는가",
+          "Adaptive sampler가 production에 못 들어가는 비기술적 이유 (예측 가능 비용, learned dependency, latency, debug 가능성, train–inference shift) 를 적어도 셋 이상 명시할 수 있는가"
+        ],
+        "redFlags": [
+          "Uniform sampling을 'stupid' 또는 'just a baseline'으로 단정하고 산업이 왜 그것을 default로 유지하는지 답하지 못함",
+          "'그냥 fps=1로 뽑으면 됩니다'처럼 콘텐츠 유형 (강의 vs 스포츠) 을 구분 없이 답함",
+          "PySceneDetect를 모르거나, 안다고 해도 threshold knob 하나도 못 댐",
+          "Shot detection이 inter-shot reasoning에 무력하다는 점을 인지하지 못하고 '모든 long video에 shot이 답'이라고 주장",
+          "Query-aware sampler를 즉시 추천하면서 latency / 비용 변동성 / train–inference shift를 한 마디도 언급하지 않음"
+        ],
+        "interviewQuestions": [
+          "Q1. Qwen2.5-VL은 fps=2.0을 default로 쓰지만 `FPS_MAX_FRAMES=768` cap이 있습니다. 1시간짜리 영상을 넣었을 때 실제로 뽑히는 frame 수와 effective fps는 어떻게 됩니까? 그리고 그 결과가 'fps=2'라는 명목 설정과 어긋난다는 점이 사용자에게 어떻게 노출됩니까?",
+          "Q2. 2시간짜리 보안 카메라 footage에서 '누군가 문을 부순 순간'을 찾는 query가 들어왔습니다. (a) uniform 32-frame이 그 frame을 잡을 확률을 대략 계산하고, (b) PySceneDetect로 대체했을 때 이득이 있는지, 있다면 어떤 ContentDetector 설정을 쓰겠습니까? (c) 그래도 안 되면 어떤 다음 단계가 필요합니까?",
+          "Q3. Senior 한 명이 'AKS가 LLaVA-Video-72B를 7B로 이긴다는데 왜 우리 API default는 아직 uniform이냐'고 묻습니다. 비용·latency·debug 가능성·train-inference shift 관점에서 두 문장으로 답해 보세요. 그리고 어떤 조건에서 그 default를 바꾸자고 제안하겠습니까?"
+        ],
+        "masteryVsFamiliar": "**Familiar** 수준은 세 baseline 이름을 대고 PySceneDetect를 한 번 써본 정도다. uniform이 default라는 사실은 알지만 그 이유를 '단순해서'로만 설명한다. **Mastery** 수준은 (1) 각 baseline의 수학을 즉석에서 쓸 수 있고, (2) Qwen2.5-VL·LLaVA-Video·Gemini·Mixpeek 각각이 *왜 그 baseline*을 골랐는지 product/cost 관점에서 변호할 수 있으며, (3) 주어진 query–영상 조합에 대해 어느 baseline이 깨질지 사전에 예측하고, (4) PySceneDetect threshold를 콘텐츠 유형별 (강의·드라마·스포츠·CCTV) 로 다르게 권장할 수 있다. Mastery는 한마디로 — baseline을 '극복할 대상'이 아니라 '*default로 남겨둘 영역과 교체할 영역을 분리해 그릴 수 있는 지도*'로 본다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "Uniform은 알고리즘이 아니라 product default다",
+          "content": "예측 가능 비용, learned component 부재, query-conditioning latency 없음, deterministic debug, train–inference 일치 — 다섯 가지 product 속성이 합쳐져 uniform을 default로 만든다. SOTA를 못 이겨서가 아니라 이 다섯을 동시에 깨지 않기 때문에 살아남는다."
+        },
+        {
+          "title": "Qwen2.5-VL fps=2는 FPS_MAX_FRAMES=768 cap과 함께 읽어야 한다",
+          "content": "1시간 영상에서는 fps=2가 7,200 frame을 의미하지만 실제로는 cap에 걸려 effective fps ≈ 0.21이 된다. 'fps=2 default'는 짧고 중간 길이 영상에서만 진짜 fps=2다. 사용자에게 이 비선형성이 노출되지 않으면 silent failure가 된다."
+        },
+        {
+          "title": "Gemini의 1 fps는 발화 paced 콘텐츠에 대한 합리적 Nyquist rate다",
+          "content": "분당 130–180 단어 화법은 약 1 sentence/sec, 1 frame/sec은 그 단위마다 시각 context를 한 번 갱신한다. 강의·인터뷰·뉴스·튜토리얼에서 거의 손실이 없다. Sports·격투·magic trick·사고 영상에서는 0.2–0.4초 결정 frame을 놓치므로 즉시 무너진다."
+        },
+        {
+          "title": "PySceneDetect는 anchor용이지 sampler가 아니다",
+          "content": "Shot boundary는 안정적이고 재현 가능한 chunk anchor라서 Mixpeek류 retrieval에 이상적이지만, 한 shot이 30초 long take라면 그 안의 micro-event는 못 잡는다. ContentDetector(threshold=27, min_scene_len=15) 가 일반 default이고 액션/슬라이드 콘텐츠마다 별도 튜닝이 필요하다."
+        },
+        {
+          "title": "Failure mode는 네 가지로 분류된다",
+          "content": "Needle-in-haystack, rare event, multi-event reasoning, inter-shot reasoning. 후속 chapter (AKS·BOLT·Frame-Voyager·Q-Frame·FOCUS) 는 이 네 카테고리에 1:1로 대응하는 해법을 제시한다. baseline 비판은 이 분류 없이는 흐릿하다."
+        },
+        {
+          "title": "Index time vs inference time이 비용 구조를 가른다",
+          "content": "Retrieval 시스템은 비용을 index 단계에서 한 번 지불하고 query는 vector search 한 번으로 끝낸다 — 그래서 shot detection 같은 정교한 chunking이 정당화된다. Video LLM의 inference path는 query마다 sample을 다시 뽑으므로 uniform의 예측 가능 비용이 이긴다. 같은 영상에 두 baseline이 공존하는 이유다."
+        },
+        {
+          "title": "Adaptive를 production에 넣으려면 다섯 항목에 답해야 한다",
+          "content": "비용 예측 가능성, learned model 운영 부담, query-conditioning latency, deterministic debug, train–inference distribution shift. 새 sampler를 도입할 때 이 다섯에 대한 답을 가지고 가지 않으면 정확도가 올라도 SRE 단계에서 거절된다."
+        },
+        {
+          "title": "Router는 baseline을 죽이지 않고 살린다",
+          "content": "실전 architecture는 'short clip → uniform 16, 발화 중심 → 1 fps, retrieval index → shot, long-video QA → adaptive'를 query 유형별로 라우팅한다. baseline은 폐기되는 게 아니라 적합 영역으로 *압축*된다 — 9장 plug-and-play 인터페이스의 동기다."
+        }
+      ]
+    },
+    {
+      "number": 3,
+      "emoji": "🧭",
+      "title": "Query-Aware Adaptive Sampling — AKS & BOLT",
+      "titleKr": "Query-Aware Adaptive Sampling — AKS와 BOLT",
+      "tldr": "CVPR 2025의 AKS(arXiv:2502.21271)와 BOLT(arXiv:2503.21483)는 둘 다 training-free·plug-and-play query-aware sampler로, downstream VLM을 한 줄도 고치지 않은 채 LLaVA-Video-7B+AKS가 LLaVA-Video-72B uniform baseline을 넘어서고, BOLT는 8-frame budget만으로 Video-MME 53.8→56.1, MLVU 58.9→63.4를 달성한다. 두 방법의 공통 본질은 *relevance(질문 관련도)*와 *coverage(시간적 다양성)* 사이의 명시적 트레이드오프를 frozen CLIP score 위에서 푸는 데 있다.",
+      "topics": [
+        "Relevance vs. coverage objective",
+        "CLIP/SigLIP-based query–frame alignment",
+        "AKS recursive partition for temporal coverage",
+        "BOLT inverse-transform sampling (CDF reweighting)",
+        "Training-free plug-and-play design contract",
+        "Empirical wins under fixed frame budget (8/16/64)"
+      ],
+      "learningGoals": [
+        "Query-aware keyframe selection을 relevance/coverage joint objective로 정식화할 수 있다",
+        "AKS의 recursive partition 알고리즘을 의사코드 수준으로 재현할 수 있다",
+        "BOLT의 inverse-transform sampling이 왜 stochastic diversity를 유지하면서 high-relevance 구간으로 mass를 쏠리게 하는지 설명할 수 있다",
+        "Training-free sampler가 frozen VLM·frozen encoder 환경에서 plug-and-play로 동작하는 인터페이스적 이유를 댈 수 있다",
+        "AKS·BOLT가 underperform하는 조건(짧은 클립, ambiguous query, query-irrelevant benchmark)을 식별할 수 있다"
+      ],
+      "overview": "Chapter 2에서 본 uniform·fps·shot-detection baseline은 긴 비디오에서 두 가지 방식으로 무너졌다 — 정보 손실이 query와 무관하게 일어나거나, 반대로 query와 무관한 redundancy를 그대로 LLM에 떠넘기거나. 이 chapter는 2025년 CVPR에서 동시에 등장한 두 plug-and-play training-free sampler, **AKS**(Adaptive Keyframe Sampling, Tang et al., arXiv:2502.21271)와 **BOLT**(Liu et al., arXiv:2503.21483)를 다룬다. 두 방법은 같은 문제 — *질문 텍스트가 있을 때 어느 frame을 LLM의 context에 통과시킬 것인가* — 를 서로 다른 수학적 어법으로 푼다. AKS는 이를 **constrained discrete optimization**으로, BOLT는 **importance-weighted stochastic sampling**으로 정식화한다. 둘 다 frozen CLIP encoder만 호출하고, downstream VLM에는 손대지 않으며, 64–768 frame budget이 아니라 **8–16 frame budget** 안에서도 작동한다는 점에서 production-friendly한 첫 세대 query-aware sampler다. 이 chapter의 목표는 (a) 두 방법을 정식화하고, (b) AKS recursive partition을 직접 Python으로 구현해 보며, (c) 어떤 조건에서 둘이 uniform에 진다는 사실까지 솔직하게 정리하는 것이다.",
+      "sections": [
+        {
+          "title": "3.1 The Objective — Relevance vs. Coverage as a Constrained Selection Problem",
+          "content": "비디오를 N개의 frame f_1, ..., f_N, 질문을 텍스트 q라고 하자. Sampler의 임무는 부분집합 S ⊆ {1, ..., N}을 고르는 것인데, 제약은 |S| = K로 LLM의 vision context 한계가 강제한다. 두 가지 효용을 동시에 키워야 한다. 첫째 **relevance** R(S; q) = Σ_{i ∈ S} sim(φ_v(f_i), φ_t(q)) — frozen CLIP/SigLIP encoder가 주는 query-frame cosine similarity의 총합. 둘째 **coverage** C(S) = spread({t_i : i ∈ S}) — 선택된 frame들의 timestamp가 비디오 전체를 얼마나 고르게 덮는가. AKS는 이를 명시적으로 max_{|S|=K} R(S; q) + λ · C(S) 형태의 joint objective로 푼다. λ → 0 극단은 top-K CLIP score 그대로 (지난 chapter의 anti-pattern: 한 장면에 score가 몰리면 8 frame 전부 같은 2초 구간에서 뽑힘), λ → ∞ 극단은 uniform sampling. 이 트레이드오프가 chapter 전체를 관통하는 축이다. BOLT는 같은 문제를 결정적(greedy)으로 풀지 않고, frame별 relevance score를 PDF로 해석한 뒤 inverse-transform sampling으로 stochastic하게 뽑는다 — 동일한 트레이드오프를 확률 분포 차원에서 표현하는 방식이다. 두 정식화의 공통점은 *질문 텍스트가 sampling 단계 안으로 들어왔다는 것*이고, 차이점은 *결정성 대 확률성, 명시적 partition 대 묵시적 CDF reweighting*이다."
+        },
+        {
+          "title": "3.2 AKS — Recursive Partition for Coverage-Aware Top-K",
+          "content": "AKS(Tang et al., CVPR 2025, arXiv:2502.21271, repo: github.com/ncTimTang/AKS)의 핵심 아이디어는 단순하다. 비디오를 시간축 위에서 **recursive하게 절반으로 자르고**, 각 절반에 frame budget을 분배한 뒤, *그 절반 안에서만* CLIP relevance score 기준 top-1을 뽑는다. 알고리즘은 세 단계다. (1) **CLIP relevance scoring**: 전체 N개 frame을 frozen CLIP visual encoder로 임베딩하고, query q의 text embedding과 cosine similarity를 계산해 score vector s ∈ R^N을 얻는다. (2) **Recursive partition**: 함수 AKS(s[l:r], k)가 들어오면 — k=1이면 구간 [l, r)에서 score 최댓값 인덱스 하나만 반환하고, k>1이면 구간을 중간점 m에서 둘로 자른 뒤 budget을 절반씩(⌊k/2⌋, ⌈k/2⌉) 나눠 양쪽 재귀호출 결과를 union한다. (3) **Adaptive top-up**: 원논문은 또한 한 partition 안에서 score가 *너무 균일*(모두 낮거나 모두 비슷)할 때 그 partition을 더 쪼개지 않고 그 자리 uniform으로 대체하는 가벼운 fallback을 둔다 — 이는 'ambiguous query'에서 AKS가 uniform으로 우아하게 degrade되도록 만든다. 결과적으로 selected frame들은 시간축 위에서 (a) 비디오 전체를 덮으면서 (b) 각 구간 내부에서는 query 관련도가 가장 높은 frame을 고르는 *Pareto-front 근사*가 된다. 가장 인상적인 empirical 결과는 LLaVA-Video-7B + AKS가 LLaVA-Video-72B + uniform baseline을 LongVideoBench와 Video-MME long split에서 상회한다는 점이다 — 즉 *10× 작은 모델이 더 똑똑한 sampler 하나로 더 큰 모델을 이긴다*. Production 함의는 명확하다: VLM size를 키우기 전에 sampler를 query-aware로 바꿔라."
+        },
+        {
+          "title": "3.3 BOLT — Inverse-Transform Sampling on Query–Frame CDF",
+          "content": "BOLT(Liu et al., CVPR 2025, arXiv:2503.21483, repo: github.com/sming256/BOLT)는 AKS와 정반대의 mental model에서 출발한다. AKS가 'partition 안 결정적 argmax'라면 BOLT는 'relevance가 만든 분포에서의 확률적 뽑기'다. 절차는 다음과 같다. (1) frozen CLIP/SigLIP으로 모든 frame의 query alignment score s_i를 구한다. (2) 이를 양수화·정규화해 frame-level PDF p_i = softmax(s_i / τ)로 만든다 — 여기서 temperature τ가 chapter 3.1의 λ 역할을 한다 (τ → 0이면 결정적 top-K, τ → ∞이면 uniform). (3) PDF를 누적합해 CDF F_i = Σ_{j ≤ i} p_j를 만들고, u ∼ Uniform(0,1) K번을 뽑은 뒤 각 u에 대해 i* = min{i : F_i ≥ u}를 찾는다 — 표준 **inverse-transform sampling**이다. 이 한 줄짜리 트릭이 BOLT의 전부지만, 의미는 깊다. CDF가 high-relevance 구간에서 가파르게 올라가므로 sampling mass가 자연스럽게 그쪽으로 쏠리되, *모든 frame이 0이 아닌 확률을 갖기 때문에* 시간축의 전역 coverage가 확률적으로 유지된다. AKS의 recursive partition이 'coverage를 hard constraint으로' 강제했다면, BOLT는 'coverage를 stochastic regularizer로' 녹였다. 보고된 숫자는 결정적이다: 8-frame budget에서 Video-MME가 53.8→56.1, MLVU가 58.9→63.4 — uniform 대비 같은 비용으로 +2.3, +4.5 포인트를 그냥 얻는다. BOLT의 또 다른 장점은 *stochastic*이라는 점 자체다. 같은 query에 다른 sample을 뽑아 ensemble하면 추가 정확도를 살 수 있다 — AKS는 결정적이라 이 trick이 안 먹힌다."
+        },
+        {
+          "title": "3.4 Empirical Comparison and Where Each Wins",
+          "content": "두 sampler의 보고된 wins를 한 표로 요약한다. **AKS**: downstream VLM을 LLaVA-Video-7B로 고정하고 sampler만 uniform→AKS로 바꿨을 때 LongVideoBench/Video-MME long split에서 LLaVA-Video-72B+uniform을 상회 — 7B 모델이 72B를 이긴다는 것은 *sampling이 model scale의 일부를 대체 가능*하다는 강한 진술이다. **BOLT**: LLaVA-OneVision/LLaVA-Video 위에서 8-frame budget만으로 Video-MME 53.8→56.1(+2.3), MLVU 58.9→63.4(+4.5). 두 paper 모두 frame budget이 늘어날수록 uniform과의 격차가 *줄어든다*는 점은 솔직하게 보고한다 — 64 frame을 다 쓸 수 있다면 더 똑똑한 sampler의 marginal return은 작다. 그래서 두 방법의 진짜 자리는 *frame budget이 빡빡한* 환경이다: 모바일 inference, edge VLM, 또는 비디오 길이가 한 시간이라 8-frame 안에 모든 evidence를 우겨넣어야 하는 long-video setting. 반대로 *짧은 클립*(30초 미만)이나 *ambiguous query*('describe this video' 류)에서는 두 방법 모두 uniform과 통계적으로 무차별해지거나 미세하게 진다. AKS는 partition fallback 덕에 ambiguous query에 좀 더 우아하게 degrade되고, BOLT는 stochastic ensemble로 variance를 흡수할 수 있다는 부차적 차이가 있다."
+        },
+        {
+          "title": "3.5 Why Training-Free Wins for Plug-and-Play",
+          "content": "두 방법이 2025년에 동시에 SOTA를 깬 *진짜* 이유는 알고리즘적 우아함이 아니라 **인터페이스적 결정**이다. 둘 다 downstream VLM, vision encoder, text encoder 어느 것도 fine-tuning하지 않는다. Chapter 9에서 정식화할 `Sampler.select(video, query, K) -> indices` 계약 안에 깔끔하게 들어맞고, frozen LLaVA-Video, frozen Qwen2.5-VL, frozen InternVL3 어느 것 위에서도 동일하게 동작한다. Production 함의는 세 가지다. 첫째, **deployment cost가 0**이다 — model weight를 새로 분배하지 않고, kv-cache 호환성도 안 깨지고, vLLM-Omni 같은 disaggregated serving graph에서 sampler stage만 갈아끼우면 된다. 둘째, **encoder 재사용**이 자연스럽다 — Twelve Labs Embed API나 자체 SigLIP cache로 frame embedding을 미리 만들어 뒀다면, sampler는 그 cache 위에서 cosine score만 계산하면 끝이다. 비디오 1회 디코드·임베드 비용을 query 수에 amortize할 수 있다. 셋째, **A/B test 비용이 싸다** — 같은 frozen VLM에 AKS와 BOLT를 동시에 붙여 traffic split만 나누면 그대로 비교 가능하다. Chapter 4의 learned sampler들(Frame-Voyager, M-LLM Frame Selection, GenS)은 더 높은 ceiling을 보여주지만, 그 대가로 별도 학습 데이터·별도 model weight·별도 serving lane을 요구한다. AKS·BOLT가 'first deploy, then learn'의 첫 번째 단계인 이유다."
+        }
+      ],
+      "analogy": {
+        "title": "The Curator and the Librarian",
+        "content": "같은 도서관 1만 권 장서에서 *방문객의 질문에 대답할* 8권을 골라 전시 테이블에 올린다고 상상해 보자. **AKS는 큐레이터(curator)**다. 큐레이터는 서가를 분야별로 절반씩 자른다 — 인문/자연, 다시 인문은 문학/철학, 자연은 물리/생물… 각 칸에서 *방문객 질문에 가장 가까운 책 한 권*만 뽑는다. 결과 테이블은 '내용 적합성'과 '전시 균형(coverage)' 두 축 모두를 만족한다. 결정적이고, 재현 가능하고, 같은 질문에 같은 8권이 나온다. **BOLT는 사서(librarian)가 진행하는 가중 추첨(weighted lottery)**이다. 사서는 모든 책에 질문 관련도 점수를 매겨 추첨함에 표를 그 점수만큼 더 많이 넣는다. 점수가 높은 책일수록 뽑힐 확률이 높지만, 0점인 책도 (작게) 들어가 있다. 8번 추첨하면 평균적으로 high-relevance 책이 다수지만, 매번 약간 다른 조합이 나온다 — 그래서 같은 질문에 두 번 추첨하면 *앙상블*이 된다. 두 방식 모두 '도서관 자체를 다시 짓지 않는다'는 점이 핵심이다. 책(frozen VLM), 분류표(frozen encoder), 서가 배치(serving infra)는 그대로 두고, *고르는 사람만* 바꾼다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "단순화한 AKS-style sampler를 처음부터 짜 본다. CLIP encoder는 placeholder로 두고, recursive partition 로직 자체에 집중한다. 실제 production에서는 `clip_encode`를 SigLIP 또는 OpenCLIP 호출로 바꾸고, frame embedding은 캐시에서 읽는다.",
+        "code": "import numpy as np\nfrom typing import List, Callable\n\n# --- Placeholder encoders (swap with SigLIP/OpenCLIP in production) ---\ndef clip_encode_frames(frames: np.ndarray) -> np.ndarray:\n    # frames: [N, H, W, 3] -> [N, D]; deterministic fake encoder for demo\n    rng = np.random.default_rng(0)\n    return rng.standard_normal((len(frames), 512)).astype(np.float32)\n\ndef clip_encode_text(query: str) -> np.ndarray:\n    rng = np.random.default_rng(abs(hash(query)) % (2**32))\n    return rng.standard_normal(512).astype(np.float32)\n\ndef cosine(a: np.ndarray, b: np.ndarray) -> np.ndarray:\n    a = a / (np.linalg.norm(a, axis=-1, keepdims=True) + 1e-8)\n    b = b / (np.linalg.norm(b) + 1e-8)\n    return a @ b  # [N]\n\n# --- AKS recursive partition core ---\ndef aks_partition(scores: np.ndarray, lo: int, hi: int, k: int,\n                  uniform_fallback_std: float = 1e-3) -> List[int]:\n    \"\"\"Select k indices from scores[lo:hi] balancing relevance and coverage.\"\"\"\n    span = scores[lo:hi]\n    if k <= 0 or len(span) == 0:\n        return []\n    # Fallback: if the partition is too flat, query is uninformative here.\n    if span.std() < uniform_fallback_std or k >= len(span):\n        step = max(len(span) // max(k, 1), 1)\n        return [lo + i * step for i in range(k) if lo + i * step < hi]\n    if k == 1:\n        return [lo + int(np.argmax(span))]\n    mid = lo + len(span) // 2\n    left_k, right_k = k // 2, k - k // 2\n    return (aks_partition(scores, lo, mid, left_k, uniform_fallback_std)\n            + aks_partition(scores, mid, hi, right_k, uniform_fallback_std))\n\ndef aks_select(frames: np.ndarray, query: str, k: int = 8) -> List[int]:\n    frame_emb = clip_encode_frames(frames)            # [N, D]\n    query_emb = clip_encode_text(query)               # [D]\n    scores = cosine(frame_emb, query_emb)             # [N]\n    idx = aks_partition(scores, 0, len(scores), k)\n    return sorted(idx)\n\nif __name__ == \"__main__\":\n    fake_video = np.zeros((200, 224, 224, 3), dtype=np.uint8)\n    picked = aks_select(fake_video, \"person opens a red door\", k=8)\n    print(\"selected frame indices:\", picked)",
+        "walkthrough": "`clip_encode_frames`와 `clip_encode_text`는 production에서 SigLIP/OpenCLIP 호출로 1:1 교체된다 — 인터페이스가 동일하므로 함수 본문만 바꾸면 된다. 핵심은 `aks_partition`이다. 재귀 함수는 (a) `k=1`이면 구간 내 argmax 한 점만 돌려주고(=relevance 우선), (b) `k>1`이면 구간을 시간축 중간에서 둘로 잘라 budget을 절반씩 나눠 양쪽을 호출한 뒤 합친다(=coverage 강제). `uniform_fallback_std`는 본문 3.2에서 언급한 ambiguous-query fallback이다 — partition 안 score 분산이 너무 낮으면 query가 그 구간을 구별하지 못한다는 신호이므로 그냥 uniform으로 떨어진다. `aks_select`는 chapter 9에서 정식화할 `Sampler.select` 계약과 동일한 시그니처를 따른다 — 같은 인터페이스로 BOLT를 짠다면 마지막 두 줄을 `np.searchsorted(np.cumsum(softmax(scores/tau)), np.random.rand(k))`로 바꾸면 끝이다."
+      },
+      "industryEvaluation": {
+        "overview": "시니어 ML 엔지니어가 video-LLM 파이프라인 면접에서 query-aware sampler를 물을 때 노리는 지점은 세 곳이다: (a) relevance–coverage 트레이드오프를 *수식 수준에서* 말할 수 있는가, (b) training-free가 왜 deployment 차원에서 결정적인지 설명할 수 있는가, (c) 이 방법들이 *언제 실패하는지* 솔직히 짚을 수 있는가. 세 번째가 가장 중요하다 — paper의 강점만 외운 후보와 실제로 운영해 본 후보를 가르는 질문이다.",
+        "whatEngineersLookFor": [
+          "AKS·BOLT 둘 다 'CLIP score 위에서 무엇을 더 한다'까지 한 문장으로 압축할 수 있는가",
+          "Frame budget이 *작을 때* SOTA gap이 커지고 *클 때* 좁아진다는 사실을 알고 있는가",
+          "Frozen VLM 위에 sampler만 갈아끼울 수 있는 이유(인터페이스 계약, encoder 재사용, kv-cache 무관)를 production 언어로 말할 수 있는가",
+          "Stochastic sampler(BOLT)와 deterministic sampler(AKS)의 ensemble/재현성 trade-off를 인지하는가",
+          "Ambiguous query·짧은 클립에서는 uniform이 안 진다는 점을 'paper 광고'와 분리해 말할 수 있는가",
+          "Frame embedding을 Twelve Labs Embed/자체 cache로 amortize할 수 있다는 production-leverage point를 짚는가"
+        ],
+        "redFlags": [
+          "'AKS가 그냥 더 좋다'고 말하고 frame budget·query type 조건을 안 따짐",
+          "BOLT의 inverse-transform sampling을 'top-K with noise'로 잘못 요약함",
+          "Training-free를 단순한 'cheap'으로 받고, plug-and-play 인터페이스 계약과 연결 못 함",
+          "LLaVA-Video-7B+AKS > LLaVA-Video-72B uniform 결과를 들고 '그러므로 큰 모델은 필요 없다'고 일반화함",
+          "CLIP score 분포가 평평한 ambiguous query에서도 sampler가 자동으로 잘할 거라고 가정함"
+        ],
+        "interviewQuestions": [
+          "**Q1 (relevance–coverage 트레이드오프)**: AKS의 objective를 수식으로 쓰고, λ가 0 또는 ∞일 때 sampler가 각각 어떤 baseline으로 환원되는지 설명하라. 또한 같은 트레이드오프를 BOLT가 *어디서* 표현하는지 답하라. (정답 골자: max R + λ C, λ=0이면 top-K CLIP, λ=∞이면 uniform; BOLT는 softmax temperature τ가 같은 역할.)",
+          "**Q2 (training-free의 의미)**: 'training-free라서 좋다'를 1) deployment cost, 2) encoder 재사용/cache, 3) A/B test 비용 세 측면에서 각각 production 언어로 설명하라. 만약 회사에 이미 SigLIP frame embedding cache가 있다면, AKS와 BOLT 도입 비용은 정확히 무엇이 추가되는가? (정답 골자: weight 재배포 0, cache 위 cosine·argmax/CDF만 추가, traffic split로 즉시 비교 가능.)",
+          "**Q3 (failure mode)**: 사내 dogfooding에서 query-aware sampler가 uniform 대비 *지는* 경우를 두 가지 이상 들고, 그 원인과 운영적 대응을 설명하라. (정답 골자: (i) 30초 미만 짧은 클립 — 정보 밀도가 이미 충분, sampler가 줄 marginal이 없음, 짧은 비디오는 uniform으로 라우팅; (ii) ambiguous query('summarize this video') — score 분포가 평평해져 partition fallback 또는 high-τ BOLT가 자동으로 uniform 근처로 수렴; (iii) frame budget이 64 이상 — gap 자체가 닫힘. 대응: video length·query embedding의 norm/entropy 기반 라우터로 sampler를 동적으로 끈다.)"
+        ],
+        "masteryVsFamiliar": "**Familiar** 후보는 'AKS와 BOLT는 CVPR 2025 query-aware sampler이고 LLaVA-Video-7B+AKS가 72B를 이긴다'까지 말한다. **Mastery** 후보는 같은 사실을 *인터페이스* 언어로 다시 말한다 — 'frozen VLM 위 `Sampler.select`만 바꾸는 plug-and-play다, 그래서 deployment risk가 0이고, encoder cache 위에서 cosine·argmax·CDF만 추가하면 끝이다, 그리고 frame budget이 작을 때만 의미가 있어서 우리 서비스의 traffic 중 long-video 비중을 먼저 본 뒤 도입을 결정한다'. 즉 *결과를 외운 사람*이 아니라 *결과의 운영 조건을 따지는 사람*이 mastery다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "Query가 sampling 안으로 들어왔다",
+          "content": "AKS·BOLT의 본질은 알고리즘이 아니라 *sampling stage에 query text가 입력으로 들어왔다는 사실 자체*다. Uniform·fps·shot-detection은 모두 query-agnostic이었다."
+        },
+        {
+          "title": "Relevance와 coverage는 항상 같이 푼다",
+          "content": "Top-K CLIP score만 쓰면 한 장면에 frame이 몰린다. AKS는 recursive partition으로, BOLT는 softmax temperature로 coverage를 강제한다. 어느 쪽이든 둘을 동시에 푸는 것이 핵심."
+        },
+        {
+          "title": "AKS = 결정적 partition, BOLT = 확률적 CDF",
+          "content": "AKS는 시간축을 절반씩 잘라 각 칸에서 argmax — 재현 가능하고 분석하기 쉽다. BOLT는 score를 PDF로 보고 inverse-transform sampling — stochastic하지만 ensemble이 가능하다."
+        },
+        {
+          "title": "7B + 똑똑한 sampler > 72B + uniform",
+          "content": "LLaVA-Video-7B+AKS가 LLaVA-Video-72B uniform baseline을 상회한다(arXiv:2502.21271). Model scale의 일부는 sampler가 대신 살 수 있다."
+        },
+        {
+          "title": "BOLT는 8-frame budget에서 결정적",
+          "content": "Video-MME 53.8→56.1, MLVU 58.9→63.4 (8 frames, arXiv:2503.21483). Frame budget이 작을수록 query-aware sampler의 marginal return이 크다."
+        },
+        {
+          "title": "Training-free가 plug-and-play를 만든다",
+          "content": "Downstream VLM·encoder를 안 건드리므로 weight 재배포 0, kv-cache 무관, vLLM-Omni 같은 disaggregated graph의 sampler stage만 교체. A/B test 비용도 traffic split 수준."
+        },
+        {
+          "title": "Frame embedding cache와 궁합이 좋다",
+          "content": "Twelve Labs Embed API나 자체 SigLIP cache가 있으면 sampler는 cosine + argmax/CDF만 계산. Decode/encode 비용을 query 수에 amortize한다."
+        },
+        {
+          "title": "짧은 클립·ambiguous query·64+ budget에서는 진다",
+          "content": "30초 미만 클립, 'describe this video' 류 모호한 질문, frame budget이 충분히 큰 경우엔 uniform과 무차별. Video length·query entropy 기반 라우터로 sampler를 동적으로 켜고 끄는 것이 운영 정답."
+        }
+      ]
+    },
+    {
+      "number": 4,
+      "emoji": "🎓",
+      "title": "Learned Samplers — Frame-Voyager, M-LLM, GenS",
+      "titleKr": "Learned Sampler — Frame-Voyager, M-LLM, GenS",
+      "tldr": "Training-free sampler가 휴리스틱으로 '관련성'을 정의했다면, learned sampler는 downstream VLM의 정답률 자체를 supervision으로 쓴다. Frame-Voyager(ICLR 2025)는 단일 프레임이 아니라 **프레임 조합**을 ranking하고, M-LLM Selector(CVPR 2025, Amazon)는 spatial importance와 temporal coherence를 분리해 점수화하며, GenS(ACL 2025 Findings, Salesforce)는 VideoLLM 자체를 generative retriever로 써서 프레임 인덱스를 직접 생성한다. LongVideoBench에서 GenS는 Aria +13.4pt, GPT-4o +13.6pt를 기록했다. 세 모델 모두 downstream VLM을 frozen으로 두는 plug-and-play를 유지한다.",
+      "topics": [
+        "Combinational ranking — 단일 프레임이 아니라 조합 단위로 학습",
+        "M-LLM 기반 spatial+temporal dual scoring",
+        "Generative retrieval — VideoLLM이 frame index를 emit",
+        "Downstream VLM correctness를 training signal로 변환하는 방법",
+        "Training cost vs accuracy gain의 손익분기점",
+        "Frozen downstream VLM을 보장하는 plug-and-play 인터페이스"
+      ],
+      "learningGoals": [
+        "왜 단일 프레임 ranking이 실패하고 combinational ranking이 이기는지 정보이론적으로 설명할 수 있다",
+        "M-LLM Selector의 spatial branch와 temporal branch가 각각 무엇을 보정하는지 구분할 수 있다",
+        "GenS의 generative retrieval이 일반 retriever와 어떻게 다른지, autoregressive head가 왜 long-range coherence를 잡는지 안다",
+        "Downstream VLM accuracy를 reward로 backprop하기 위한 surrogate loss를 설계할 수 있다",
+        "자체 video corpus와 안정적인 downstream VLM이 있을 때 train-free에서 learned로 넘어갈 시점을 판단할 수 있다",
+        "Sampler를 학습한 후에도 downstream LLM을 건드리지 않고 swap할 수 있는 modular boundary를 유지할 수 있다"
+      ],
+      "overview": "3장에서 다룬 AKS와 BOLT는 training-free였다. 휴리스틱으로 query–frame relevance와 coverage를 정의하고 그 위에서 최적화했다. 하지만 휴리스틱에는 한계가 있다 — 'relevance'를 CLIP cosine similarity로 정의한 순간 우리는 CLIP의 편향을 그대로 물려받는다. 4장의 출발점은 단순하다. **downstream VLM의 정답률이 곧 ground truth라면, 그 신호로 sampler를 직접 학습하면 안 되는가?** 2025년의 세 landmark 논문이 이 질문에 서로 다른 방향으로 답했다.\n\nFrame-Voyager(arXiv:2410.03226, ICLR 2025)는 **무엇을 ranking하느냐**를 바꿨다. 기존 sampler들은 프레임 하나하나에 점수를 매기고 top-K를 골랐다. Frame-Voyager는 *프레임 조합* 자체에 점수를 매긴다. 8프레임을 뽑는 문제에서 단일 프레임 점수 합이 최대인 조합과 실제로 VLM이 정답을 맞히는 조합은 다르다는 통찰이다.\n\nM-LLM Frame Selector(arXiv:2502.19680, CVPR 2025, Amazon)는 **누가 점수를 매기느냐**를 바꿨다. CLIP이 아니라 multimodal LLM 자체가 두 가지 분리된 점수 — 개별 프레임의 spatial importance와 프레임 시퀀스의 temporal coherence — 를 매긴다. 그리고 그 점수를 frozen downstream Video-LLM에 그대로 꽂는다.\n\nGenS(arXiv:2503.09146, ACL 2025 Findings, Salesforce / Li Junnan팀)는 한 발 더 나갔다. **점수를 매기지 않고 인덱스를 생성한다.** VideoLLM이 입력 비디오와 질의를 보고 autoregressive하게 'frame 42, 117, 203, ...'을 텍스트 토큰으로 emit한다. LongVideoBench에서 Aria 기반 +13.4pt, GPT-4o 기반 +13.6pt라는 결과로 generative retrieval의 우월성을 보였다.\n\n세 접근 모두 공통점이 있다 — downstream VLM은 frozen이다. Sampler만 학습하고, 학습된 sampler는 LLaVA-Video든 Qwen2.5-VL든 GPT-4o든 그대로 꽂힌다. Plug-and-play 계약은 유지된다.",
+      "sections": [
+        {
+          "title": "4.1 왜 train-free에서 trained로 넘어가야 하는가",
+          "content": "AKS와 BOLT가 충분히 강력한데 왜 굳이 학습하는가? 세 가지 한계 때문이다.\n\n**첫째, relevance proxy의 편향.** AKS와 BOLT는 CLIP/SigLIP의 query–frame similarity를 relevance로 쓴다. CLIP은 정적인 객체 인식에 강하지만 행동, 인과, 시간적 추론에는 약하다. 'Why did the man drop the cup?'이라는 질문에서 컵을 보여주는 모든 프레임이 높은 점수를 받지만, 정작 손이 미끄러지는 결정적 프레임은 낮은 점수를 받는다. CLIP은 '왜'를 모른다.\n\n**둘째, 조합의 비선형성.** 8프레임을 고를 때, 각 프레임 점수의 합이 최대인 조합이 VLM 정답률을 최대화하지는 않는다. Frame-Voyager 논문이 보인 핵심 관찰이다 — 단일 프레임 ranking은 redundant한 high-score 프레임을 모으는 경향이 있고, VLM은 다양성이 필요한 질문에서 실패한다.\n\n**셋째, downstream VLM의 인식 특성을 무시.** Sampler가 고른 프레임이 '인간 보기엔 좋다'와 '특정 VLM이 정답을 맞히는 데 좋다'는 다르다. Qwen2.5-VL이 잘 읽는 프레임과 LLaVA-Video가 잘 읽는 프레임은 다르다. Trained sampler는 이 차이를 흡수할 수 있다.\n\n반대 방향의 비용도 명확하다 — (frames, query, correctness) triplet을 수집해야 하고, downstream VLM이 바뀌면 재학습해야 한다. 그래서 train-free와 trained의 경계는 'video corpus의 안정성'과 'downstream VLM의 안정성' 두 축이다. 둘 다 안정적이면 trained가 이기고, 어느 하나라도 흔들리면 train-free가 안전하다."
+        },
+        {
+          "title": "4.2 Frame-Voyager — Combinational Ranking (ICLR 2025)",
+          "content": "Frame-Voyager(arXiv:2410.03226, Yu et al.)의 핵심 슬로건은 'rank combinations, not frames'이다.\n\n**문제 정식화.** 비디오 V에서 8프레임을 뽑는다고 하자. 가능한 조합은 C(T, 8)개. 각 조합 S에 대해 downstream VLM이 정답을 맞히는지를 reward r(S) ∈ {0,1}로 본다. 목표는 r(S)가 높은 조합을 선호하도록 scorer f(S, q)를 학습하는 것이다.\n\n**Combinational ranking loss.** 학습 데이터는 한 query q에 대해 여러 조합 {S_1, S_2, ...}을 샘플링하고, 각각을 downstream VLM에 통과시켜 reward를 얻은 후 pairwise ranking loss로 학습한다.\n\n  L = Σ_{i,j: r(S_i)>r(S_j)} max(0, m - f(S_i, q) + f(S_j, q))\n\nScorer f는 조합 안의 프레임들을 함께 encoding한다 (transformer로 cross-attention). 그래서 'A와 B는 같이 있을 때 의미 있다'는 신호가 학습된다.\n\n**Inference.** 모든 조합을 enumerate하는 건 불가능하므로 beam search나 greedy improvement로 근사한다. 논문은 candidate pool을 CLIP top-K로 줄인 후 그 위에서 조합 ranking을 한다.\n\n**결과.** Video-MME long split, MVBench, NExT-QA에서 단일 프레임 ranking 대비 일관되게 우위. 특히 multi-hop 추론이 필요한 질문에서 격차가 커진다.\n\n**왜 조합이 이기는가?** 정보이론으로 보면 H(answer | frames) — 8개 프레임을 봤을 때 정답의 조건부 엔트로피 — 를 최소화하는 것이 목표인데, 이건 sum of mutual information이 아니라 joint mutual information이다. Joint는 조합 단위로만 측정 가능하다."
+        },
+        {
+          "title": "4.3 M-LLM Frame Selector — Spatial + Temporal Dual Scoring (CVPR 2025, Amazon)",
+          "content": "M-LLM Frame Selector(arXiv:2502.19680, Hu et al., Amazon)는 'scorer로 무엇을 쓰느냐'를 재정의했다. CLIP 대신 multimodal LLM을 쓴다.\n\n**Dual branch 구조.**\n- **Spatial importance branch**: 한 프레임씩 보면서 'this frame is relevant to query'를 M-LLM에 묻고 logit을 뽑는다. 단일 프레임 점수.\n- **Temporal coherence branch**: 후보 프레임들의 시퀀스를 한꺼번에 보고 'this sequence is coherent for answering query'를 묻는다. 시퀀스 점수.\n\n두 점수를 weighted sum하여 최종 selection criterion으로 쓴다.\n\n**왜 두 개로 나누나?** Spatial은 'each frame must be informative'를 강제하고, temporal은 'frames must tell a story together'를 강제한다. 한 점수로 합치면 둘 중 하나가 다른 하나를 덮어버린다. 명시적으로 분리해야 학습이 안정적이다.\n\n**Plug-and-play.** Selector M-LLM은 학습 가능하지만 downstream Video-LLM은 frozen이다. LLaVA-Video, VideoLLaMA, InternVL 어떤 downstream에도 그대로 꽂힌다. Amazon이 이 구조를 미는 이유는 명확하다 — 그들의 production stack에는 Bedrock에 다양한 VLM이 있고, sampler 하나로 모두 커버하고 싶다.\n\n**학습 신호.** Downstream VLM accuracy를 reward로 쓰되, M-LLM scorer의 출력 logit에 대한 RL/preference learning으로 propagate한다. 직접 backprop이 안 되니 reward를 weak supervision으로 변환한다 (5절 코드 예제 참고).\n\n**결과.** Video-MME, MLVU, NExT-QA에서 uniform 대비 5–8pt, AKS 대비 1–3pt 추가 개선. CLIP 기반 sampler가 놓치는 'temporal causality' 질문에서 특히 강하다."
+        },
+        {
+          "title": "4.4 GenS — VideoLLM as Generative Retriever (ACL 2025 Findings, Salesforce)",
+          "content": "GenS(arXiv:2503.09146, Yao et al., Salesforce / Li Junnan팀)는 가장 급진적인 접근이다. **Scoring을 버리고 generation으로 갔다.**\n\n**핵심 아이디어.** VideoLLM에 비디오와 질의를 주고 'Which frame indices should I attend to?'라고 prompt한다. 모델이 autoregressive하게 '[12, 47, 89, 134, ...]'을 텍스트 토큰으로 emit한다. 이 indices를 downstream VLM에 전달.\n\n**왜 generative가 이기는가?**\n- **Long-range dependency**: Autoregressive head는 '이전에 뽑은 인덱스를 보고 다음 인덱스를 결정'할 수 있다. Frame i를 골랐다면 frame i 근처의 redundancy를 피해 frame j를 다음에 고른다. Pointwise scorer는 이 dependency를 못 잡는다.\n- **Variable selection size**: VLM이 stop token을 emit하면 selection 종료. 질문마다 필요한 프레임 수가 다를 수 있는데, 이 가변성을 자연스럽게 처리한다.\n- **Joint distribution 학습**: P(S | V, q)를 인덱스 시퀀스의 autoregressive factorization으로 학습 — Frame-Voyager의 combinational ranking을 generative하게 일반화한 셈.\n\n**학습.** Downstream VLM의 정답률이 높은 frame sequence를 ground truth로 삼아 standard language modeling loss로 학습한다. 즉, instruction tuning과 동형이다 — 'video + query → frame indices' 형식의 supervised fine-tuning.\n\n**Benchmark 결과.** LongVideoBench에서:\n- Aria-25B + GenS: 기존 uniform 대비 **+13.4pt**\n- GPT-4o + GenS: 기존 uniform 대비 **+13.6pt**\n\n이 격차는 다른 어떤 sampler보다 크다. Generative retrieval이 long video에서 특히 강하다는 강한 증거.\n\n**비용.** 단점은 inference 비용이다. VideoLLM을 두 번 호출 — 한 번은 selection, 한 번은 final answer. Sampling 자체에 VLM 호출이 들어가므로 latency budget이 큰 production에는 부담스럽다. Offline indexing이나 batch processing에서 이상적이다."
+        },
+        {
+          "title": "4.5 Training-Free vs Trained Decision Tree",
+          "content": "언제 trained sampler를 학습할 가치가 있는가? 의사결정 트리.\n\n**Q1. 자체 video corpus가 있는가?**\n- 없음 (사용자가 임의의 URL을 던짐) → train-free 추천. 학습 분포가 inference 분포와 다르면 trained sampler가 오히려 떨어진다.\n- 있음 (자사 콘텐츠, 정해진 도메인) → Q2로.\n\n**Q2. Downstream VLM이 안정적인가? (6개월 이상 고정 또는 fine-tune 통제 가능)**\n- 불안정 (월마다 GPT-4o → Gemini → Claude로 갈아탐) → train-free. Sampler 재학습 비용이 누적된다.\n- 안정 → Q3로.\n\n**Q3. Labeled QA 데이터가 있는가? (>10K 정도)**\n- 없음 → GenS-style self-supervised 학습 시도하거나, train-free에 머무름.\n- 있음 → Q4로.\n\n**Q4. Latency 예산은?**\n- <500ms p50 → Frame-Voyager 또는 M-LLM Selector (compact scorer). GenS는 부담.\n- ≥2s 또는 offline → GenS가 최강.\n\n**Q5. Frame budget이 매우 작은가? (≤8 frames)**\n- Yes → Combinational ranking(Frame-Voyager) 효과가 크다.\n- No (≥32 frames) → 단순한 M-LLM scoring으로 충분할 수 있다.\n\n**경험칙 — 학습 비용 손익분기점.** Trained sampler는 보통 학습에 100–500 A100 hours가 든다. 그 비용을 inference 시 절약되는 token 비용으로 회수하려면 대략 **월간 10만 query 이상** 처리할 때 의미가 있다. 그 이하 규모면 AKS/BOLT가 운영상 더 합리적이다."
+        },
+        {
+          "title": "4.6 Plug-and-Play 인터페이스가 유지되는 이유",
+          "content": "세 sampler 모두 downstream VLM을 **frozen**으로 둔다. 이게 단순한 엔지니어링 편의가 아니라 학술적 선택이다 — Sampler 학습 신호가 downstream VLM의 gradient를 타고 흐르지 않게 분리함으로써 sampler가 *특정 VLM에 overfit하지 않도록* 막는다.\n\n**계약 (Sampler interface).**\n```\nselect(video: Tensor[T,H,W,3],\n       query: str,\n       max_frames: int) -> List[int]  # frame indices\n```\n\nFrame-Voyager, M-LLM Selector, GenS 모두 이 동일한 signature를 따른다. 이 덕분에 아래가 가능하다.\n\n- **Swap downstream VLM**: LLaVA-Video-7B로 학습한 sampler를 Qwen2.5-VL에 꽂아도 작동한다 (성능 일부 손실은 있지만 catastrophic하지 않다).\n- **Swap sampler at inference**: 같은 pipeline에서 짧은 비디오는 AKS, 긴 비디오는 GenS로 라우팅 가능.\n- **A/B test**: Sampler만 바꿔 latency/accuracy trade-off 측정.\n\n**유지 안 되는 경우 — 안티패턴.** Sampler 학습 시 downstream VLM의 internal feature(중간 layer activation)를 쓰면 plug-and-play가 깨진다. 이건 sampler가 그 VLM의 internals에 묶이는 결과. 세 논문 모두 이를 피해 black-box reward만 쓴다."
+        }
+      ],
+      "analogy": {
+        "title": "Apprentice film editor vs algorithmic editor",
+        "content": "3장에서 본 AKS/BOLT는 algorithmic editor였다. '대화 장면이 길면 컷, 액션이 빠르면 더 많이 컷'같은 규칙을 손으로 짜놓고, 새 영화가 들어오면 그 규칙대로 자른다. 빠르고, 예측 가능하고, 어떤 영화에든 그대로 돌아간다.\n\n4장의 learned sampler는 **director's cut 100편을 보여주며 키운 견습 편집자**다. Christopher Nolan이 어떻게 잘랐는지, Bong Joon-ho가 어떻게 잘랐는지를 보면서 '아, 긴장이 풀리기 직전의 1초를 살려야 하는구나' 같은 *taste*를 익혔다. 새 영화에서도 그 taste가 작동한다.\n\n하지만 견습 편집자에게도 약점이 있다.\n- **학습 비용**: 100편의 director's cut과 raw footage를 수집해야 한다. Frame-Voyager/M-LLM/GenS의 (frames, query, correctness) triplet에 해당.\n- **분포 외 영화**: 누아르만 보고 자란 편집자는 코미디에서 헤맨다. Train-free는 장르를 안 가린다.\n- **감독이 바뀌면 다시 배워야**: Downstream VLM이 바뀌면 sampler 재학습.\n\n세 sampler 간에도 성격이 다르다.\n- **Frame-Voyager**는 '한 장면 안의 컷들이 어떻게 조합되어야 하는지'를 배운 편집자 — 단일 컷이 아니라 조합을 본다.\n- **M-LLM Selector**는 '각 컷의 미학(spatial)'과 '컷의 흐름(temporal)'을 따로 평가하는 편집자 — Amazon이 좋아할 만한 modular 사람.\n- **GenS**는 자기가 직접 '여기, 여기, 여기 자르세요'라고 *말하는* 편집자 — scoring이 아니라 generation. 가장 비싸지만 long video에서 가장 정확하다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "아래는 작은 learned scorer를 학습하는 toy training loop이다. CLIP feature 위에 MLP를 얹어 'frame이 query에 얼마나 유용한가'를 예측하되, **supervision은 downstream VLM의 정답률**에서 온다. Frame-Voyager의 combinational ranking과 M-LLM Selector의 reward-based learning을 단순화한 형태. Runnable Python으로 작성했고, 실제 학습에는 더 큰 batch와 hard negative mining이 필요하다.",
+        "code": "import torch\nimport torch.nn as nn\nimport torch.nn.functional as F\nfrom torch.utils.data import DataLoader, Dataset\nimport random\n\n# -----------------------------------------------------------\n# 1) Scorer: CLIP feature를 받아 frame-level score를 emit\n#    조합 점수는 frame score의 attention-weighted sum으로 정의\n# -----------------------------------------------------------\nclass CombinationalScorer(nn.Module):\n    def __init__(self, d_clip=768, d_text=768, d_hidden=512):\n        super().__init__()\n        self.frame_proj = nn.Linear(d_clip, d_hidden)\n        self.text_proj  = nn.Linear(d_text, d_hidden)\n        # Cross-attention: 조합 안 frame들이 서로를 의식하도록\n        self.cross_attn = nn.MultiheadAttention(d_hidden, num_heads=8, batch_first=True)\n        self.head = nn.Sequential(nn.Linear(d_hidden, d_hidden), nn.GELU(),\n                                  nn.Linear(d_hidden, 1))\n\n    def forward(self, frame_feats, text_feat):\n        # frame_feats: [B, K, d_clip]   (K = combination size, e.g. 8)\n        # text_feat:   [B, d_text]\n        f = self.frame_proj(frame_feats)              # [B, K, H]\n        t = self.text_proj(text_feat).unsqueeze(1)    # [B, 1, H]\n        # query=text, key/value=frames → frame들이 query 맥락에서 재해석됨\n        attended, _ = self.cross_attn(t.expand(-1, f.size(1), -1), f, f)\n        fused = f + attended                          # [B, K, H]\n        per_frame_score = self.head(fused).squeeze(-1)  # [B, K]\n        # 조합 점수 = frame score들의 합 (단순화). 실제로는 set-transformer pooling 권장.\n        combo_score = per_frame_score.sum(dim=-1)     # [B]\n        return combo_score, per_frame_score\n\n# -----------------------------------------------------------\n# 2) Training data: (frame_feats, query_feat, S_pos, S_neg, reward_pos, reward_neg)\n# -----------------------------------------------------------\nclass FrameComboDataset(Dataset):\n    def __init__(self, samples):\n        self.samples = samples\n    def __len__(self): return len(self.samples)\n    def __getitem__(self, i):\n        s = self.samples[i]\n        return (s['video_feats'][s['pos_idx']],\n                s['video_feats'][s['neg_idx']],\n                s['q_feat'])\n\n# -----------------------------------------------------------\n# 3) Combinational ranking loss (margin-based pairwise)\n# -----------------------------------------------------------\ndef ranking_loss(scorer, pos_feats, neg_feats, q_feat, margin=0.5):\n    pos_score, _ = scorer(pos_feats, q_feat)\n    neg_score, _ = scorer(neg_feats, q_feat)\n    return F.relu(margin - pos_score + neg_score).mean()\n\n# -----------------------------------------------------------\n# 4) Training loop. VLM gradient는 흐르지 않는다.\n# -----------------------------------------------------------\ndef train(scorer, dataset, epochs=3, lr=1e-4, bs=32):\n    loader = DataLoader(dataset, batch_size=bs, shuffle=True)\n    opt = torch.optim.AdamW(scorer.parameters(), lr=lr)\n    for ep in range(epochs):\n        total = 0.0\n        for pos, neg, q in loader:\n            opt.zero_grad()\n            loss = ranking_loss(scorer, pos, neg, q)\n            loss.backward()\n            opt.step()\n            total += loss.item()\n        print(f\"epoch {ep}: loss={total/len(loader):.4f}\")\n\n# -----------------------------------------------------------\n# 5) Inference: K-frame budget이 주어지면 candidate pool에서 best combo 선택\n# -----------------------------------------------------------\n@torch.no_grad()\ndef select_frames(scorer, video_feats, q_feat, K=8, n_trials=200):\n    T = video_feats.size(0)\n    best_score, best_idx = -1e9, None\n    for _ in range(n_trials):\n        idx = sorted(random.sample(range(T), K))\n        feats = video_feats[idx].unsqueeze(0)\n        score, _ = scorer(feats, q_feat.unsqueeze(0))\n        if score.item() > best_score:\n            best_score, best_idx = score.item(), idx\n    return best_idx",
+        "walkthrough": "이 코드의 핵심은 **VLM의 gradient가 sampler로 흐르지 않는다**는 점이다. Downstream VLM은 학습 데이터를 만들 때만 호출된다 — 'combination S_pos를 VLM에 줬더니 정답을 맞혔다, S_neg를 줬더니 틀렸다'라는 0/1 label만 추출하고 그 이후로는 VLM을 건드리지 않는다.\n\nCross_attention이 Frame-Voyager의 핵심을 단순화한 부분이다. 각 frame의 representation이 *같은 조합 안 다른 frame들*과 *query*를 함께 보고 갱신된다. 그래서 'A와 B가 같이 있을 때 의미 있다'는 신호가 학습된다. 이 attention이 없으면 frame score가 독립적으로 결정되고 코드는 단순 pointwise scorer로 퇴화한다.\n\nranking_loss는 Frame-Voyager의 combinational ranking을 그대로 따른다. 절대 score가 아니라 *상대 ordering*만 학습한다. 이게 reward sparsity에 강한 이유 — VLM이 정답을 맞힌 조합과 틀린 조합 두 개만 있으면 학습 신호가 만들어진다.\n\nselect_frames는 inference. 실제 production에서는 (a) CLIP/SigLIP top-N으로 후보 pool을 만들고, (b) beam search나 greedy swap으로 조합을 정련한다. 본 코드는 random sampling으로 단순화했다.\n\nM-LLM Selector로 확장하려면 head를 두 개로 나누고 (spatial logit, temporal coherence logit) weighted sum하면 된다. GenS로 확장하려면 scorer 대신 작은 autoregressive transformer를 두고 frame index를 token으로 emit하도록 LM loss로 학습한다."
+      },
+      "industryEvaluation": {
+        "overview": "Senior 면접관은 후보가 'trained sampler가 무조건 좋다'고 답하는지를 본다. 좋은 답은 *언제 학습할 가치가 있는가*에 대한 비용-이익 reasoning이다. Frame-Voyager의 combinational ranking을 정확히 설명할 수 있는지, downstream VLM accuracy를 어떻게 supervision으로 변환하는지를 구체적으로 짚을 수 있는지가 갈림점이다.",
+        "whatEngineersLookFor": [
+          "**Combinational ranking을 정확히 이해하는가** — 단일 프레임 점수 합이 최대인 조합과 VLM 정답률이 최대인 조합이 *왜 다른지*를 informational 관점에서 설명할 수 있는지",
+          "**Downstream reward를 sampler 학습 신호로 변환하는 구체적 방법** — 'VLM은 0/1 reward를 제공하고 sampler는 그 위에서 ranking/RL/SFT loss로 학습한다'고 답하는지",
+          "**Plug-and-play 경계를 유지하는 설계 선택** — Frame-Voyager/M-LLM/GenS 모두 downstream VLM을 frozen으로 둔다는 사실과 그 이유 (VLM 종속 overfit 방지, 운영상 swap 용이성)를 안다",
+          "**Train-free vs trained의 손익분기점** — 'video corpus 안정성'과 'downstream VLM 안정성' 두 축으로 답하는지. 둘 다 흔들리면 trained가 손해라는 점을 짚는지",
+          "**GenS의 generative retrieval이 왜 pointwise scoring보다 long video에서 강한지** — autoregressive head가 conditional dependency를 잡는다는 점",
+          "**Latency / 비용 trade-off 인식** — GenS는 VLM을 두 번 호출하므로 latency 부담이 크다는 점"
+        ],
+        "redFlags": [
+          "'Trained가 항상 train-free보다 좋다'는 무조건적 주장",
+          "Combinational ranking을 'top-K를 더 정교하게 고르는 방법'이라고 잘못 설명",
+          "'Downstream VLM을 sampler와 jointly fine-tune'한다고 답함 — 세 논문 모두 frozen인데 plug-and-play를 깨는 설계 제안",
+          "GenS의 +13.4/+13.6pt 같은 구체 수치를 모르거나 follow-up에 답을 못 함",
+          "M-LLM Selector의 spatial/temporal dual branch 중 하나로 통합 가능하다고 잘못 단순화",
+          "'학습 데이터는 인간 annotator가 만든다'고 답함 — 세 논문 모두 downstream VLM correctness를 weak label로 자동 생성"
+        ],
+        "interviewQuestions": [
+          "**Q1. 당신 회사는 자체 e-learning video corpus 30만 시간을 보유하고 있고 downstream VLM으로 LLaVA-Video-72B를 6개월 이상 쓰고 있다. 학생들의 질의응답 query log가 일 50만 건 들어온다. AKS(train-free)와 Frame-Voyager-style trained sampler 중 어느 쪽으로 가야 하는가? 손익분기점을 어떻게 계산하나?**",
+          "**Q2. Frame-Voyager는 왜 단일 프레임 ranking이 아니라 조합 ranking을 쓰는가? '조합 ranking은 C(T,K)로 폭발한다'는 반론에 어떻게 답하는가?**",
+          "**Q3. (frames, query, VLM_correctness) triplet 학습 데이터를 어떻게 구성하나? Sampling 분포의 편향 문제는?**"
+        ],
+        "masteryVsFamiliar": "**Familiar**: 'Frame-Voyager는 ICLR 2025 paper, M-LLM Selector는 Amazon CVPR 2025, GenS는 Salesforce ACL 2025'라고 이름과 출처를 말한다. 'Trained가 train-free보다 정확도 높다'는 큰 그림을 안다.\n\n**Mastery**: (a) 단일 프레임 ranking이 joint mutual information을 못 잡는다는 informational 분석으로 combinational ranking의 필연성을 설명한다. (b) Downstream VLM을 frozen으로 두는 plug-and-play 계약이 단순한 편의가 아니라 *sampler가 특정 VLM에 overfit하지 않게 하는 학술적 선택*임을 안다. (c) 자체 corpus 크기, query 볼륨, VLM 안정성 세 축으로 train-free vs trained 손익분기점을 구체적 수치로 추정한다. (d) GenS의 generative retrieval이 long video에서 +13pt 이상 격차를 내는 이유를 conditional dependency 학습 관점에서 설명한다. (e) 면접에서 'M-LLM Selector를 GenS로 마이그레이션할 때 어디가 깨지나'라는 응용 질문에 답할 수 있다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "단일 프레임 ranking은 joint mutual information을 못 잡는다",
+          "content": "각 프레임 점수의 합이 최대인 조합과 VLM 정답률이 최대인 조합은 다르다. Frame-Voyager(arXiv:2410.03226)의 combinational ranking은 *조합 자체*를 ranking 단위로 두어 redundancy를 피하고 frame 간 상호보완성을 학습한다."
+        },
+        {
+          "title": "Sampler 학습 신호는 downstream VLM의 정답률에서 자동 생성된다",
+          "content": "세 논문 모두 인간 annotator가 아니라 downstream VLM correctness를 weak label로 쓴다. (frames, query, 0/1 correctness) triplet은 자체 corpus와 query log만 있으면 *공짜로* 만들어진다."
+        },
+        {
+          "title": "M-LLM Selector는 spatial과 temporal을 분리해야 학습이 안정적이다",
+          "content": "Amazon CVPR 2025 논문(arXiv:2502.19680)의 dual branch는 한 점수로 합치면 한 신호가 다른 신호를 덮어버린다는 경험적 관찰에서 나왔다."
+        },
+        {
+          "title": "GenS는 scoring이 아니라 generation으로 long video에서 +13pt를 만든다",
+          "content": "VideoLLM이 frame index를 autoregressive하게 emit하는 generative retrieval(arXiv:2503.09146). LongVideoBench에서 Aria +13.4pt, GPT-4o +13.6pt."
+        },
+        {
+          "title": "Plug-and-play는 downstream VLM을 frozen으로 두기 때문에 유지된다",
+          "content": "세 sampler 모두 VLM gradient를 흘리지 않는다. VLM을 black-box reward로 다루는 이 설계가 sampler를 특정 VLM에 overfit시키지 않게 한다."
+        },
+        {
+          "title": "Train-free에서 trained로 넘어가는 손익분기점은 corpus 안정성과 query 볼륨이다",
+          "content": "자체 video corpus가 있고 downstream VLM이 6개월 이상 고정이며 월간 query가 10만 건 이상일 때 trained가 이긴다."
+        },
+        {
+          "title": "학습 비용은 trained sampler의 진짜 가격표다",
+          "content": "Frame-Voyager급 sampler 학습은 보통 100–500 A100 hours가 들고, downstream VLM이 바뀔 때마다 재학습 압력이 있다."
+        },
+        {
+          "title": "GenS의 latency 부담은 offline indexing에 적합한 구조다",
+          "content": "GenS는 VideoLLM을 selection과 generation 두 번 호출한다. Real-time chat에는 부담이지만 offline batch processing, video library indexing에는 적합."
+        }
+      ]
+    },
+    {
+      "number": 5,
+      "emoji": "🌐",
+      "title": "The Relevance × Diversity Frontier — Q-Frame, AdaRD-Key, FOCUS",
+      "titleKr": "Relevance × Diversity Frontier — Q-Frame, AdaRD-Key, FOCUS",
+      "tldr": "2025년 ICCV의 Q-Frame(Xiaomi, arXiv:2506.22139)과 2026년 ICLR submission인 AdaRD-Key(arXiv:2510.02778), FOCUS(arXiv:2510.27280)는 모두 같은 결론에 도달했다: pure relevance만으로는 redundant한 near-identical frame을 골라 temporal evolution을 놓친다. relevance × diversity가 새로운 frontier이고, log-det / max-volume / multi-armed bandit이 그 수학적 언어가 되었다.",
+      "topics": [
+        "pure relevance의 redundancy 실패 모드",
+        "Q-Frame: query-aware + per-frame multi-resolution under token budget",
+        "AdaRD-Key: Relevance × log-det Diversity Max-Volume objective와 weak-query gating",
+        "FOCUS: combinatorial pure-exploration multi-armed bandit (Bernstein bound)",
+        "DPP / log-det / max-volume 직관과 portfolio analogy",
+        "2026 frontier의 세 축: training-free, query-aware, relevance×diversity"
+      ],
+      "learningGoals": [
+        "pure relevance sampler가 왜 redundant frame을 뽑는지 정량적으로 설명할 수 있다",
+        "log-det diversity term이 Determinantal Point Process(DPP)와 어떻게 연결되는지 이해한다",
+        "Q-Frame의 per-frame multi-resolution이 token budget 안에서 왜 효율적인지 설명할 수 있다",
+        "AdaRD-Key의 gating 메커니즘이 weak query에서 왜 diversity-only로 fallback해야 하는지 이해한다",
+        "FOCUS의 multi-armed bandit framing이 large frame pool + expensive evaluator 상황에 왜 맞는지 안다",
+        "greedy submodular maximization으로 relevance × diversity selector를 직접 구현할 수 있다",
+        "2026년 SOTA가 수렴한 세 축(training-free / query-aware / frame×diversity)을 자신의 시스템에 매핑할 수 있다"
+      ],
+      "overview": "Chapter 3-4에서 query-aware adaptive sampler(AKS, BOLT)와 learned sampler(Frame-Voyager, M-LLM, GenS)를 봤다. 이들의 공통 약점은 *pure relevance bias*다 — query–frame similarity가 높은 frame을 K개 뽑으면, 그 K개가 사실상 같은 순간(같은 shot, 같은 객체, 같은 카메라 각도)을 가리키는 경우가 압도적으로 많다. 1시간짜리 cooking video에서 'how does the chef season the steak?'라는 query를 던지면 seasoning 장면 0.5초 안의 거의 동일한 30 프레임이 top-30을 다 차지한다. 정답에 필요한 *before / during / after* 구조는 사라진다.\n\n2025 후반부터 2026 ICLR submission 시즌까지 이 문제를 정면으로 겨냥한 세 논문이 등장했다. ICCV 2025의 **Q-Frame**(Xiaomi, arXiv:2506.22139)은 query-aware selection에 *per-frame multi-resolution* 축을 추가해 같은 token budget 안에서 더 많은 시간적 분산을 확보했다. ICLR 2026 submission **AdaRD-Key**(arXiv:2510.02778)는 Relevance × log-det Diversity의 Max-Volume objective를 명시적으로 풀고, weak query에서는 diversity-only로 자동 전환하는 gating을 도입했다. 같은 시즌의 **FOCUS**(arXiv:2510.27280)는 frame selection을 combinatorial pure-exploration multi-armed bandit으로 다시 정의해, Bernstein confidence bound로 20분 이상 LongVideoBench에서 frame의 2% 미만만 보면서 +11.9%를 얻었다.\n\n이 chapter는 (1) 왜 pure relevance가 실패하는지 정량적으로 보고, (2) 세 논문을 한 줄로 묶는 mathematical lens — log-det / max-volume / bandit — 을 정리한 뒤, (3) portfolio diversification analogy로 직관을 잡고, (4) 30줄 짜리 greedy relevance × diversity selector를 직접 구현한다. 마지막으로 2026 frontier가 수렴한 세 축(training-free vs learned, query-aware vs agnostic, frame-level vs token-level)에서 우리가 어디 서 있는지 좌표를 찍는다.",
+      "sections": [
+        {
+          "title": "1. Why Pure Relevance Fails — Redundancy Collapse",
+          "content": "가장 단순한 query-aware sampler를 생각하자. 비디오의 모든 frame을 SigLIP/CLIP으로 encoding하고, query embedding과 cosine similarity를 계산해 top-K를 뽑는다. 이게 BOLT(arXiv:2503.21483)의 inverse-transform 이전 baseline이고, naive CLIP-filter baseline이며, 실제 production에서 가장 자주 보는 패턴이다.\n\n실패 모드는 **redundancy collapse**다. similarity가 높은 frame들은 시간축에서 *클러스터링*된다 — 동일 shot, 동일 객체, 미세하게 다른 카메라 각도. K=8을 뽑으면 8개가 0.5초 윈도 안에 다 들어가는 경우가 흔하다. AdaRD-Key 논문의 ablation에서 pure relevance top-K는 LongVideoBench의 다단계 질문(예: 'before X, what was Y doing?')에서 정확도가 random uniform보다 낮게 떨어진다. 시간적 *evolution*을 잡지 못하기 때문이다.\n\n수학적으로 보면 명확하다. K개 frame의 information content는 단순 sum이 아니라 *submodular*하다. 두 번째 frame이 첫 번째와 거의 같다면 marginal gain은 0에 가깝다. pure relevance는 이 submodularity를 모델링하지 않는다. 그래서 sum(rel(f_i))만 maximize하면 marginal gain이 0인 frame을 계속 추가한다.\n\nChapter 3의 AKS가 prompt relevance와 *coverage*를 함께 본 이유, BOLT가 *inverse-transform*으로 weight 분포를 펼쳐서 뽑은 이유가 여기에 있다. 2025–2026의 세 frontier 논문은 같은 직관을 더 explicit한 수학으로 다시 쓴다 — coverage/spread를 **diversity term**으로 형식화하고, 그 term을 log-det이나 bandit exploration으로 정의한다."
+        },
+        {
+          "title": "2. Q-Frame (ICCV 2025, Xiaomi) — Multi-Resolution under Token Budget",
+          "content": "Q-Frame(arXiv:2506.22139, Zhang et al., Xiaomi)은 ICCV 2025에 accept된 training-free, model-agnostic sampler다. 핵심 통찰은 두 가지다.\n\n**첫째, query-aware selection**: CLIP-style scoring으로 frame–query relevance를 계산하되, naive top-K가 아니라 *relevance 분포를 따라 spread*시키는 방식으로 인덱스를 뽑는다 (BOLT의 inverse-transform과 사상은 유사하지만 Q-Frame은 그 위에 multi-resolution을 얹는 게 차별점이다).\n\n**둘째, per-frame multi-resolution under token budget**: 모든 frame을 같은 해상도로 인코딩하지 않는다. relevance가 높은 frame은 고해상도(=많은 vision token)로, 낮은 frame은 저해상도(=적은 token)로 인코딩한다. 총 token budget T가 주어졌을 때, frame f_i에 해상도 r_i를 할당하는 문제를 풀면 같은 T 아래서 더 많은 frame을 cover할 수 있다.\n\n이게 왜 diversity와 연결되는가? 동일 budget으로 더 많은 frame을 통과시킬 수 있다는 것은, *temporal coverage*가 자동으로 늘어난다는 뜻이다. high-relevance cluster에 있는 frame들은 어차피 비슷하므로 그중 하나만 고해상도로, 나머지는 저해상도로 (혹은 drop) 처리하면 budget을 outside-cluster의 일부 frame을 끌어오는 데 쓸 수 있다.\n\nQ-Frame은 model-agnostic이다 — LLaVA-Video, Qwen2.5-VL, InternVL2.5 같은 downstream Video-LLM의 vision encoder 앞단에 그대로 끼워 넣는다. Chapter 9에서 다룰 plug-and-play interface 관점에서 보면 `Sampler.select() -> (indices, resolutions)` 으로 시그니처가 한 칸 늘어난 형태다."
+        },
+        {
+          "title": "3. AdaRD-Key (ICLR 2026 submission) — Max-Volume Objective",
+          "content": "AdaRD-Key(arXiv:2510.02778, Xian et al.)는 ICLR 2026 submission으로, relevance × diversity를 **Max-Volume objective**로 명시적으로 푼다.\n\n**Objective**: 선택된 frame index set S에 대해,\n\n```\nJ(S) = α · Σ_{i∈S} rel(f_i, q)  +  (1-α) · logdet(K_S + εI)\n```\n\n여기서 K_S는 선택된 frame들의 feature Gram matrix다. `logdet(K_S)`는 feature space에서 그 frame들이 *얼마나 큰 volume*을 span하는지 측정한다. 동일한 frame을 두 번 넣으면 K_S는 rank-deficient가 되어 logdet은 -∞로 발산한다(ε regularizer로 막는다). 즉 redundant frame은 자동으로 penalize된다.\n\nlog-det diversity는 **Determinantal Point Process(DPP)**의 핵심 수학이다. DPP에서 set S가 뽑힐 확률은 det(L_S)에 비례하고, log을 취하면 log-det 형태가 된다. DPP는 추천 시스템(Netflix), summarization, mini-batch selection 등에서 'diverse but high-quality' set을 뽑을 때 표준 도구다. AdaRD-Key는 이 도구를 frame sampling에 가져왔다.\n\n**Greedy approximation**: logdet은 set function으로 submodular이고, relevance sum은 modular다. 둘의 weighted sum은 여전히 submodular이므로, **greedy algorithm**이 (1 - 1/e) 근사를 보장한다. 즉 매 step에서 marginal gain이 가장 큰 frame을 하나씩 추가하면 된다. K=8, K=32 같은 실용적 size에서 greedy로 충분하다.\n\n**Weak-query gating**: AdaRD-Key의 두 번째 contribution이다. query가 'describe the video' 같은 weak/generic query면 relevance signal이 거의 uniform하다 — 모든 frame의 rel score가 비슷하다. 이 경우 relevance term은 정보가 없으므로 α를 자동으로 0으로 만들어 **diversity-only**로 fallback한다. 반대로 query가 'when does the woman pick up the red mug?' 같은 strong/specific query면 α를 크게 둔다. gating은 query embedding의 entropy나 rel score 분포의 분산으로 결정된다.\n\nresult: LongVideoBench, MLVU에서 동급 frame budget의 BOLT/AKS 대비 추가 이득을 보고한다 (paper Table 2)."
+        },
+        {
+          "title": "4. FOCUS (ICLR 2026 submission) — Combinatorial Pure-Exploration Bandit",
+          "content": "FOCUS(arXiv:2510.27280)는 frame selection을 **combinatorial pure-exploration multi-armed bandit**으로 reframe한다. 같은 ICLR 2026 cycle의 submission이고, 가장 자극적인 결과 — **20분 이상 LongVideoBench에서 전체 frame의 <2%만 보면서 +11.9%** — 를 보고한다.\n\n**Bandit framing**: 각 frame을 'arm'으로 본다. arm을 pull한다는 것은 그 frame을 (비싼) downstream evaluator — 예를 들어 VideoLLM 자체나 captioner — 에 넣어서 reward(=query에 대한 informativeness)를 측정한다는 의미다. 한 시간 비디오에는 수만 개 frame이 있고, 모든 frame을 evaluator에 넣는 건 불가능하다. 우리가 알고 싶은 건 *top-K arm 집합* 자체(combinatorial) — 어떤 frame이 *개별적으로* best인지가 아니라 어떤 *K-tuple*이 best인지.\n\n**Pure exploration**: 일반 bandit은 exploration-exploitation trade-off지만, pure exploration은 *오직 best arm/set identification*만 목표로 한다. classification: 보상을 최대화하는 게 아니라 최소 횟수의 pull로 best set을 옳게 identify하는 것.\n\n**Bernstein confidence bound**: FOCUS는 Bernstein inequality 기반 confidence interval로 arm마다 estimated reward의 신뢰구간을 유지한다. 어떤 frame의 upper bound가 다른 frame의 lower bound보다 명확히 낮으면 그 frame은 즉시 제거(elimination). 남은 후보군에서 confidence가 가장 넓은 frame을 다음에 pull한다. 결과적으로 명확히 나쁜 frame은 빠르게 버려지고, 'top-K boundary' 근처의 어려운 frame에만 evaluator budget을 쓴다.\n\n**왜 이게 diversity와 연결되는가**: combinatorial pure exploration은 *K-set의 joint reward*를 본다. K개를 함께 평가하므로, 서로 중복된 K-set은 joint reward가 낮게 측정된다(같은 정보 K번 = K배가 아님). 이 평가 함수 자체에 diversity가 내장되어 있다.\n\n**어디에 맞는가**: (a) frame pool이 매우 클 때 (1시간+, 1 fps만 해도 3600 frame), (b) per-frame 평가가 *비쌀 때* (captioner 호출, VideoLLM 부분 inference). 이 두 조건이 둘 다 강하면 bandit의 sample-complexity gain이 압도적이다. AKS/BOLT는 CLIP 한 번에 모든 frame 점수가 나오므로 bandit이 불필요했지만, evaluator가 더 무거워지는 2026 agentic loop 시대(Chapter 9에서 다룰 FrameThinker, FrameMind)에는 bandit이 자연스럽다."
+        },
+        {
+          "title": "5. The Three Axes 2026 Converged On",
+          "content": "AKS, BOLT, Frame-Voyager, M-LLM, GenS, Q-Frame, AdaRD-Key, FOCUS — 2024 말부터 2026 초까지의 SOTA sampler들을 모아두면 세 개의 직교 축이 보인다.\n\n**축 1: Training-free vs Learned**\n- Training-free: AKS, BOLT, Q-Frame, AdaRD-Key, FOCUS — frozen CLIP/SigLIP embedding 위에서 objective만 푼다. 운영상 'pip install, 끝'.\n- Learned: Frame-Voyager(arXiv:2410.03226), M-LLM(arXiv:2502.19680), GenS(arXiv:2503.09146) — 별도 학습 단계 필요. supervised signal로 인해 성능 상한은 높지만, 새 domain에 가면 재학습.\n\n**축 2: Query-aware vs Agnostic**\n- Query-aware: 위 거의 전부.\n- Agnostic: PySceneDetect, uniform, fps-based — query를 모름. retrieval indexing에는 적합(질의어를 미리 모름), 단일 질의 inference에는 sub-optimal.\n\n**축 3: Frame-level vs Token-level**\n- Frame-level: 위 sampler 전부 — 'K개 frame을 고른다'가 목표.\n- Token-level: VideoChat-Flash(arXiv:2501.00574), NVILA(arXiv:2412.04468), FastVID(arXiv:2503.11187) — frame은 다 받되 *token*을 압축. Chapter 7에서 다룰 직교 축.\n\n**2026이 서 있는 좌표**: training-free + query-aware + frame-level + relevance × diversity. Q-Frame / AdaRD-Key / FOCUS가 같은 좌표에 모인 게 우연이 아니다. 이 좌표는 (a) 어떤 downstream Video-LLM에도 swap-in 가능하고(plug-and-play), (b) query를 알 수 있는 inference time에 강하고, (c) Chapter 7의 token compression과 *직교*하므로 stack 가능하다(sampler→token compressor 순으로 쌓는다). frontier는 이 좌표를 정교화하는 방향 — gating, multi-resolution, bandit budget — 으로 움직이고 있다."
+        }
+      ],
+      "analogy": {
+        "title": "Portfolio Diversification — α(alpha)와 Covariance",
+        "content": "target return을 가진 stock portfolio를 짤 때 두 가지를 동시에 본다.\n\n1. **Expected return (alpha)**: 각 stock의 기대 수익률. 높은 게 좋다. → relevance(query, frame).\n2. **Covariance**: 보유 stock 사이의 상관관계. 모든 stock이 같은 섹터(예: 전부 반도체)면 한 번의 시장 충격에 다 같이 무너진다. covariance가 낮은(uncorrelated) stock을 섞어야 분산이 작아진다. → frame features 사이의 redundancy.\n\nModern Portfolio Theory의 핵심은 그래서 *return × diversification*이지 return only가 아니다. 정확히 같은 구조가 frame sampling에 나타난다.\n\n- '모든 자금을 alpha가 가장 높은 한 종목에 몰빵' = pure relevance top-K. cluster collapse.\n- 'alpha와 분산을 함께 최대화' = relevance × diversity.\n\nlog-det이 covariance와 직접 연결된다. 포트폴리오의 위험 분산도는 covariance matrix Σ의 determinant로 측정할 수 있다 — det(Σ)가 크면 자산들이 *큰 volume*을 span한다(=서로 잘 분산되어 있다). frame feature Gram matrix K_S의 log-det이 정확히 같은 양이다. AdaRD-Key의 Max-Volume objective는 'expected return α만큼은 챙기되 covariance volume도 키워라'다.\n\nFOCUS의 bandit framing은 portfolio 비유의 다른 측면이다. 모든 종목을 일일이 분석할 수 없을 때, 분석 비용 자체를 최소화하면서 best-K portfolio를 *식별*하는 문제. quant trading의 'best arm identification' 알고리듬이 그대로 옮겨온다.\n\n이 비유에서 빠뜨리지 말 것: α(weight)는 hyperparameter가 아니라 *query에 의존*한다. weak query = market regime이 불확실 → diversification으로 보수적 운용. strong query = high-conviction view → alpha에 더 베팅. AdaRD-Key의 gating이 이 'regime-dependent α'를 명시적으로 학습한다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "30~40줄짜리 greedy relevance × diversity selector. AdaRD-Key의 Max-Volume objective를 단순화한 버전으로, frame feature와 query embedding이 주어지면 K개 frame을 고른다. submodular greedy로 매 step marginal gain이 가장 큰 frame을 추가한다. 실행 가능하고, NumPy만 쓴다.",
+        "code": "import numpy as np\n\ndef relevance_diversity_select(\n    frame_features: np.ndarray,   # [N, D], L2-normalized\n    query_emb: np.ndarray,        # [D], L2-normalized\n    K: int,\n    alpha: float = 0.6,\n    eps: float = 1e-3,\n) -> list[int]:\n    \"\"\"Greedy submodular max of:  alpha * sum(rel)  +  (1-alpha) * logdet(K_S + eps*I).\n\n    AdaRD-Key style Max-Volume objective, simplified.\n    \"\"\"\n    N = frame_features.shape[0]\n    rel = frame_features @ query_emb              # [N], cosine since both normalized\n    sim = frame_features @ frame_features.T       # [N, N] Gram matrix (kernel)\n\n    selected: list[int] = []\n    remaining = set(range(N))\n    for _ in range(min(K, N)):\n        best_idx, best_gain = -1, -np.inf\n        if selected:\n            K_S = sim[np.ix_(selected, selected)] + eps * np.eye(len(selected))\n            sign, cur_logdet = np.linalg.slogdet(K_S)\n            cur_logdet = cur_logdet if sign > 0 else -np.inf\n        else:\n            cur_logdet = 0.0\n        for i in remaining:\n            cand = selected + [i]\n            K_C = sim[np.ix_(cand, cand)] + eps * np.eye(len(cand))\n            sign, new_logdet = np.linalg.slogdet(K_C)\n            if sign <= 0:\n                continue\n            div_gain = new_logdet - cur_logdet\n            gain = alpha * rel[i] + (1.0 - alpha) * div_gain\n            if gain > best_gain:\n                best_gain, best_idx = gain, i\n        if best_idx < 0:\n            break\n        selected.append(best_idx)\n        remaining.remove(best_idx)\n    return sorted(selected)\n\n\nif __name__ == \"__main__\":\n    rng = np.random.default_rng(0)\n    D, N = 64, 200\n    # synthetic: 3 clusters of frames, the first cluster aligns with the query.\n    centers = rng.standard_normal((3, D))\n    feats = np.vstack([c + 0.1 * rng.standard_normal((N // 3, D)) for c in centers])\n    feats /= np.linalg.norm(feats, axis=1, keepdims=True)\n    query = centers[0] / np.linalg.norm(centers[0])\n\n    pure_relevance = np.argsort(-(feats @ query))[:8].tolist()\n    rel_div = relevance_diversity_select(feats, query, K=8, alpha=0.6)\n    print(\"pure relevance top-8 cluster ids:\", [i // (N // 3) for i in pure_relevance])\n    print(\"relevance x diversity cluster ids:\", [i // (N // 3) for i in rel_div])",
+        "walkthrough": "`frame_features`는 SigLIP/CLIP으로 인코딩된 L2-normalized frame embedding이라고 가정한다. `rel = features @ query`는 cosine relevance가 된다. `sim`은 모든 frame 쌍의 Gram matrix이고 log-det diversity의 입력이다.\n\ngreedy loop은 매 step에서 (a) 현재 선택된 set의 log-det을 한 번 계산하고, (b) 후보 frame i를 추가했을 때 log-det 증가분 `div_gain`을 구하고, (c) `alpha * rel[i] + (1-alpha) * div_gain`의 marginal gain이 최대인 frame을 고른다. submodular function의 standard greedy로 (1 - 1/e) 근사를 보장한다.\n\n`eps * I`는 K_S가 rank-deficient(중복 frame)일 때 log-det이 -∞로 가는 걸 막는 regularizer다. 실전에서는 eps를 1e-3 ~ 1e-2 범위로 두고, frame feature가 normalized라는 가정 하에서 안정적이다.\n\n`__main__` 데모는 3개 cluster의 synthetic frame을 만들고 cluster 0이 query와 align되도록 설계한다. **pure relevance top-8은 거의 전부 cluster 0**을 뽑는다 — redundancy collapse. **relevance × diversity는 cluster 0을 다수 뽑되 cluster 1, 2에서도 몇 개를 끌어온다**. 실제 비디오에서 cluster 1, 2가 'before'와 'after' frame이라면 정답을 위한 temporal context를 확보한 셈이다.\n\n프로덕션 코드에서 바꿀 점: (1) Cholesky rank-1 update로 매 step O(N·k) 대신 O(N·k²)을 O(N·k)로 낮춘다. (2) eps와 alpha를 AdaRD-Key의 gating으로 query-dependent하게 만든다 — rel 분포의 분산이 작으면 alpha→0(diversity-only). (3) frame feature는 frame-level 평균 대신 multi-token average pool을 쓰면 더 잘 동작한다."
+      },
+      "industryEvaluation": {
+        "overview": "Senior video-LLM 엔지니어가 후보자가 'sampler 직접 디자인'할 수 있는 사람인지 보는 신호. CVPR-tier 논문 한 줄 인용은 누구나 한다. 진짜로 보고 싶은 건 *왜* diversity term이 필요한지, *어떤* objective family에서 log-det이 나오는지, *언제* bandit이 cost-justifiable한지.",
+        "whatEngineersLookFor": [
+          "pure relevance가 cluster collapse한다는 사실을 *실제 데이터*로 본 경험",
+          "log-det diversity와 DPP의 관계, 그리고 그게 portfolio covariance와 같은 수학적 구조라는 걸 직관적으로 설명할 수 있는가",
+          "submodular function의 greedy (1 - 1/e) 보장이 어디서 오는지 한 줄로 설명할 수 있는가 (Nemhauser-Wolsey-Fisher)",
+          "weak query 상황에서 relevance term을 *낮춰야* 한다는 gating 직관",
+          "bandit framing이 항상 필요한 게 아니라 (a) 큰 pool + (b) 비싼 per-frame evaluator의 두 조건이 *동시에* 성립할 때 정당화된다는 비용 분석",
+          "training-free / query-aware / frame-level이라는 2026의 좌표를 자기 시스템의 좌표와 비교하고 gap을 식별할 수 있는가",
+          "Q-Frame의 multi-resolution이 token budget이라는 *제약*에서 자연스럽게 도출되는 결과이며, budget 무제한이면 의미가 없다는 점을 이해하는가"
+        ],
+        "redFlags": [
+          "'diversity는 그냥 frame을 골고루 뽑는 거 아니에요?' — uniform sampling과 log-det max-volume의 차이를 모름",
+          "logdet이 -∞로 발산하는 numerical 문제와 그 해결책(eps regularizer)을 모른 채 '논문대로 구현했어요'라고 함",
+          "DPP를 들어본 적 없거나 '추천에서만 쓰는 것 같던데요'라고 함",
+          "weak query gating을 듣고 'query를 prompt engineering으로 강하게 만들면 되지 않나요?'라고 답함",
+          "bandit이 *모든* video sampling 문제에 좋다고 말함",
+          "Q-Frame과 AdaRD-Key가 '같은 거 아니냐'고 말함",
+          "'training-free라서 SOTA 못 깬다'는 편견"
+        ],
+        "interviewQuestions": [
+          "Q1. 1시간짜리 cooking video에서 'how does the chef season the steak?'라는 query로 K=16 frame을 뽑아야 한다. naive CLIP top-16이 실패하는 모드를 정확히 묘사하고, AdaRD-Key의 Max-Volume objective가 *왜* 그 실패를 정량적으로 고치는지 설명하라. log-det이 0(혹은 -∞)에 가까워질 때 일어나는 일을 수식 수준에서 답하라.",
+          "Q2. 당신의 production 시스템은 frame당 GPT-4V caption을 호출하고 그 caption으로 frame을 평가한다(API 호출 비용 $0.01/frame). 비디오는 평균 2시간, 1 fps 추출 시 7,200 frame이다. K=32를 골라야 한다. (a) AdaRD-Key(CLIP 기반 log-det) vs FOCUS(bandit-pure-exploration) 중 어느 쪽이 *비용* 관점에서 정당한지, (b) Bernstein bound 기반 elimination이 평균 몇 회의 GPT-4V 호출 안에서 끝날지 sample complexity의 order를 sketch하라.",
+          "Q3. Q-Frame의 per-frame multi-resolution과 Chapter 7에서 다룰 VideoChat-Flash의 token-level HiCo compression은 둘 다 'token budget을 줄인다'는 점에서 닮아 보인다. 두 접근이 stack 가능한지(같은 pipeline에 둘 다 넣어도 되는지), 어느 순서로 두어야 하는지, 그리고 *trade-off가 충돌하는* 구체적 시나리오 하나를 들어라."
+        ],
+        "masteryVsFamiliar": "**Familiar(논문 읽음)**: 'Q-Frame, AdaRD-Key, FOCUS가 relevance × diversity 방향이고 ICLR 2026 submission이다'라고 말한다. arXiv ID와 한 줄 contribution을 댈 수 있다.\n\n**Mastery(직접 구현/배포 가능)**: (1) log-det objective를 numpy로 30줄에 짜고 eps regularizer의 필요성을 시연한다. (2) weak query gating을 '왜' 넣어야 하는지 — rel score 분포의 분산이 작을 때 alpha를 낮춰야 한다는 — entropy 관점에서 유도한다. (3) bandit framing의 비용-편익 분석을 자기 시스템 숫자(frame pool size × evaluator cost)로 정량화하고 'AKS면 충분 / FOCUS가 정당화됨'의 경계선을 그릴 수 있다. (4) 2026 frontier가 수렴한 좌표(training-free + query-aware + frame×diversity)를 자기 production stack의 좌표와 그려놓고 다음 분기에 옮길 한 칸을 정한다. (5) Q-Frame의 multi-resolution을 Chapter 7의 token compression과 *직교 축*으로 인식하고 둘을 stack한 architecture를 그릴 수 있다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "Pure relevance는 redundancy collapse한다",
+          "content": "query–frame similarity top-K는 시간축에서 cluster된 거의 동일한 frame을 뽑는다. K개의 marginal information은 1개와 거의 같다."
+        },
+        {
+          "title": "log-det diversity는 DPP/portfolio covariance와 같은 수학",
+          "content": "AdaRD-Key의 Max-Volume objective `α·sum(rel) + (1-α)·logdet(K_S + εI)`는 Determinantal Point Process의 핵심 수학과 동일하다."
+        },
+        {
+          "title": "Greedy submodular는 (1-1/e) 보장",
+          "content": "relevance + log-det weighted sum은 submodular다. greedy는 OPT의 (1-1/e)≈0.632까지 보장한다."
+        },
+        {
+          "title": "Q-Frame은 token budget을 multi-resolution으로 해체한다",
+          "content": "같은 token budget T 아래서 high-relevance frame은 고해상도, low는 저해상도로 인코딩. 결과적으로 더 많은 frame을 cover해 temporal diversity가 부수효과로 늘어난다(arXiv:2506.22139)."
+        },
+        {
+          "title": "AdaRD-Key의 gating: weak query에서는 diversity-only",
+          "content": "query가 generic하면 relevance signal이 거의 uniform이고 정보가 없다. 이때 α=0으로 자동 전환해 log-det만 maximize → 사실상 DPP sampling(arXiv:2510.02778)."
+        },
+        {
+          "title": "FOCUS의 bandit은 large pool + expensive evaluator일 때만 정당화",
+          "content": "combinatorial pure-exploration bandit + Bernstein bound는 frame pool이 수천~수만이고 per-frame 평가가 비쌀 때 비로소 ROI가 양수다. 20분+ LongVideoBench에서 frame의 <2%로 +11.9% 결과는 이 두 조건이 충족된 케이스다(arXiv:2510.27280)."
+        },
+        {
+          "title": "2026 frontier는 한 좌표로 수렴했다",
+          "content": "training-free + query-aware + frame-level + relevance × diversity. Q-Frame, AdaRD-Key, FOCUS가 같은 좌표에 모인 건 우연이 아니다."
+        },
+        {
+          "title": "Diversity term은 hyperparameter가 아니라 query-dependent",
+          "content": "α를 fixed 0.5로 두는 건 baseline이고, 실제 frontier는 α를 query embedding entropy 혹은 rel 분포 분산으로 동적으로 정한다."
+        }
+      ]
+    },
+    {
+      "number": 6,
+      "emoji": "🎞️",
+      "title": "Long-Video Sampling — LongVU, Hour-LLaVA, VideoMarathon",
+      "titleKr": "Long-Video 샘플링 — LongVU, Hour-LLaVA, VideoMarathon",
+      "tldr": "5분 클립과 1시간 영상은 다른 시스템이다. LongVU의 DINOv2 기반 temporal pruning, Hour-LLaVA의 MemAug 메모리 모듈, 9.7K-hour VideoMarathon 데이터셋, 그리고 HourVideo 벤치마크가 hour-scale의 phase transition을 어떻게 다루는지 본다.",
+      "topics": [
+        "Hour-scale phase transition",
+        "LongVU spatiotemporal adaptive compression",
+        "DINOv2 vs CLIP similarity for temporal pruning",
+        "MemAug memory module",
+        "VideoMarathon 9.7K-hour dataset",
+        "HourVideo benchmark",
+        "Episodic memory pattern for video",
+        "Memory vs context tradeoff"
+      ],
+      "learningGoals": [
+        "30분-1시간-6시간 구간에서 token budget이 어떻게 폭발하는지 정량적으로 설명할 수 있다",
+        "LongVU의 DINOv2 temporal pruning이 왜 CLIP similarity보다 redundancy 검출에 강한지 말할 수 있다",
+        "Hour-LLaVA의 MemAug가 어떻게 1 FPS hour-long training을 가능하게 하는지 설명할 수 있다",
+        "HourVideo가 Video-MME long split / EgoSchema / MLVU와 어떻게 다른 능력을 측정하는지 구분할 수 있다",
+        "Atkinson-Shiffrin식 episodic memory 패턴을 video 시스템에 어떻게 적용하는지 안다",
+        "memory-augmented sampling을 직접 sketch할 수 있다"
+      ],
+      "overview": "Chapter 3–5는 5분짜리 영상에서 어떤 frame을 고를지를 다뤘다. 그러나 1시간이 넘어가는 순간 문제의 성격이 바뀐다. 1 fps만 해도 3,600 frame이고, 6시간이면 21,600 frame이다. SigLIP token 256개씩만 잡아도 token이 백만 단위로 폭발한다. 이건 단순히 'sampler를 더 영리하게'로 해결할 영역이 아니다. 인간이 War & Peace를 읽을 때 한 페이지씩 다 외우는 게 아니라 chapter 요약과 메모를 쓰는 것처럼, hour-scale video도 *episodic memory* 라는 다른 인지 시스템이 필요하다. 이 챕터는 LongVU(ICLR 2025, Meta, arXiv:2410.17434)의 spatiotemporal adaptive compression, Hour-LLaVA(NeurIPS 2025 Spotlight)의 MemAug + VideoMarathon 9.7K-hour 데이터셋, 그리고 HourVideo 벤치마크가 이 phase transition을 어떻게 풀고 있는지를 본다.",
+      "sections": [
+        {
+          "title": "1. Hour-scale에서 일어나는 phase transition",
+          "content": "먼저 token이 얼마나 폭발하는지 보자. SigLIP per-frame ≈ 256 vision token, frame 당 평균치로 잡자.\n\n| 길이 | 1 fps frames | Tokens(256/frame) | 1M ctx 대비 |\n|---|---|---|---|\n| 5분 | 300 | 76.8K | 7.6% |\n| 30분 | 1,800 | 460K | 46% |\n| 1시간 | 3,600 | 921K | 92% |\n| 6시간 | 21,600 | 5.5M | 553% |\n\n5분에서는 어떤 sampler든 다 들어간다. 30분에서는 query-aware adaptive sampling (Chapter 3–5)이 충분히 효과적이다. 그러나 **1시간을 넘는 순간 1M context에도 1 fps가 안 들어간다**. 6시간이면 token compression(VideoChat-Flash의 1/50 HiCo) 없이는 시작도 못한다.\n\n그리고 token만의 문제가 아니다. 1시간 영상에서는 사건이 *시간적으로 분산*되어 있다. 'A 인물이 B를 보고 어떻게 반응했나?'라는 질문에 A와 B가 40분 차이로 등장할 수 있다. 5분 clip의 short-range attention pattern은 여기서 깨진다. 이게 hour-scale의 phase transition 두 축이다: **token explosion** + **temporal dispersion**.\n\n결론: hour-scale은 'sampler를 더 영리하게'가 아니라 'memory 시스템을 추가'하는 새로운 design axis를 요구한다."
+        },
+        {
+          "title": "2. LongVU — DINOv2 temporal pruning + cross-attention spatial reduction",
+          "content": "LongVU(Shen et al., Meta, ICLR 2025, arXiv:2410.17434)는 hour-scale의 첫 production-ready 솔루션 중 하나다. 핵심 통찰은 **spatiotemporal adaptive compression**: 시간 축과 공간 축을 *서로 다른 방법*으로 압축한다.\n\n**Temporal axis — DINOv2 similarity pruning.** 인접 frame이 비슷하면 둘 중 하나를 버린다. 여기서 결정적인 디테일은 *어떤 encoder의 similarity를 쓰느냐*다. LongVU는 CLIP이 아니라 **DINOv2** embedding의 cosine similarity를 쓴다. 이유는 분명하다:\n\n- CLIP은 *언어-정렬* representation이라 'a person walking'과 'a person standing'을 의미적으로 비슷하다고 평가한다. redundancy 판정에 부적합.\n- DINOv2는 *self-supervised visual* representation이라 픽셀 수준 변화(자세, 시점, 조명)에 민감하다. 진짜로 시각적 정보가 새로운지 판단하는 데 적합.\n\n즉 'semantically similar but visually different' frame을 CLIP similarity로 자르면 정보가 날아간다. DINOv2 similarity는 visual redundancy를 정확히 잡는다. 이게 LongVU의 핵심 design choice다.\n\n**Spatial axis — cross-attention reduction.** Temporal pruning을 통과한 frame에 대해서도, 모든 patch를 다 LLM에 넣지 않는다. Query text를 condition으로 cross-attention을 돌려서 query와 관련 있는 patch만 살린다. 결과적으로 같은 token budget으로 훨씬 긴 영상을 처리한다.\n\n중요한 건 두 축이 *순서*가 있다는 것이다: temporal 먼저, spatial 그 다음. 왜? Frame 하나를 통째로 버리는 게 patch를 버리는 것보다 비용 효율이 훨씬 좋기 때문이다."
+        },
+        {
+          "title": "3. Hour-LLaVA / VideoMarathon — MemAug와 9.7K-hour 데이터셋",
+          "content": "LongVU가 'compression을 잘하자'였다면 Hour-LLaVA(Lin et al., NeurIPS 2025 Spotlight)는 'memory를 추가하자'다. 핵심 구성요소 두 개.\n\n**MemAug (Memory Augmentation module).** 영상을 chunk 단위(예: 30초)로 자르고, 각 chunk를 작은 memory token bank로 압축한다. 새 chunk가 들어올 때 *과거의 memory bank*를 cross-attention key/value로 참조한다. 즉 LLM이 현재 chunk를 처리하면서 과거 chunk의 압축된 표현을 읽는다. 이건 사실상 Transformer-XL의 segment-recurrent memory를 video에 도입한 셈이다. 결과: **1 FPS로 1시간 영상을 end-to-end 학습 가능**.\n\n**VideoMarathon 데이터셋.** Hour-LLaVA의 진짜 임팩트는 데이터셋이다. **9,700 시간 분량의 hour-long video + QA pair**를 공개했다. 비교: 기존 LLaVA-Video 178K 클립의 평균 길이가 ~1분대인 걸 생각하면, hour-long training data는 처음으로 산업 규모에 도달했다. 'hour-scale을 풀려면 hour-scale 데이터로 학습해야 한다'는 당연한 명제가 처음으로 가능해진 것.\n\nMemAug + VideoMarathon 조합의 결론은 단순하다: hour-scale은 inference-time trick(더 영리한 sampler)만으로는 못 풀고, *training distribution이 hour-scale이어야* 한다."
+        },
+        {
+          "title": "4. HourVideo 벤치마크 — 무엇을 측정하나",
+          "content": "Hour-scale 시대의 benchmark가 따로 필요한 이유는 기존 benchmark가 hour-scale의 진짜 능력을 측정하지 못해서다. 비교해보자.\n\n| 벤치마크 | 평균 길이 | 측정하는 능력 |\n|---|---|---|\n| Video-MME (Long split) | ~30–60분 | comprehensive QA, multi-domain |\n| MLVU | 평균 10분대 | multitask long-video understanding |\n| LongVideoBench | 8분–1시간 | referred-question QA (referring expression 포함) |\n| EgoSchema | 3분 | egocentric long-form (실은 'long'이 아님) |\n| **HourVideo** | **1시간 전후** | **temporal reasoning, causal chain, narrative summarization** |\n| Multi-Hop NIAH | 10K frame | needle-in-haystack (retrieval 능력만) |\n\nHourVideo의 차별점:\n- 단일 timestamp 한 곳 보면 풀리는 question을 의도적으로 배제\n- *temporal reasoning chain*('A 다음에 B가 일어났고 그 결과 C가 발생한 이유는?')\n- *long-range narrative summarization*\n- *causal attribution* across hour-scale gap\n\nVideo-MME long split이 여전히 'long-range retrieval+QA'를 측정하는 데 비해, HourVideo는 'hour-scale에서의 reasoning'을 직접 겨눈다. NIAH는 retrieval만 측정해서 reasoning을 빠뜨린다. 그래서 hour-scale 시스템 평가에서는 NIAH(retrieval baseline) + HourVideo(reasoning) 조합이 표준이 되고 있다."
+        },
+        {
+          "title": "5. Episodic memory 패턴 — Atkinson-Shiffrin과 RAG-for-video",
+          "content": "한 발 떨어져서 패턴을 보자. Hour-scale video understanding이 수렴하고 있는 architectural pattern은 사실 인지심리학의 Atkinson-Shiffrin memory model과 정확히 같다.\n\n- **Sensory register** ≈ raw frame decode\n- **Short-term / working memory** ≈ 현재 chunk의 full-resolution token\n- **Long-term memory** ≈ 압축된 memory bank (MemAug의 memory token)\n- **Retrieval** ≈ query 시점에 memory bank에서 관련 token을 cross-attention으로 꺼냄\n\n이건 RAG-for-text와도 구조적으로 같다. 차이는 retrieval unit이 document chunk가 아니라 *video segment의 압축 표현*이라는 것. 'video as a stream of episodes, each episode as a retrievable memory'.\n\n이 패턴이 의미하는 것: hour-scale을 풀려고 등장한 시스템들(LongVU, Hour-LLaVA, VideoChat-Flash의 HiCo)이 표면적으로는 'compression'이라는 이름을 달고 있지만, 더 깊은 차원에서는 다 *episodic memory를 학습하고 있다*. 그래서 Chapter 7의 token-level compression과 이 챕터의 long-video sampling이 결국 같은 방향으로 수렴한다. 둘 다 'video를 memory로 추상화'하려는 시도다.\n\n실무적 함의: hour-scale 시스템을 설계할 때 'sampler' 모듈만 swap하는 Chapter 3–5의 plug-and-play 패러다임은 부족하다. **memory module도 swap 대상으로 분리**해야 한다. Sampler.select() 옆에 MemoryStore.write() / MemoryStore.retrieve()가 인터페이스로 같이 있어야 한다."
+        }
+      ],
+      "analogy": {
+        "title": "War & Peace를 읽기 vs 단편 소설 읽기",
+        "content": "단편 소설은 처음부터 끝까지 한 호흡으로 읽는다. 모든 디테일을 working memory에 올려두고 마지막 페이지까지 끌고 간다. 이게 5분 video clip의 모델이다 — frame 전부를 context에 넣고 LLM의 attention이 다 처리한다.\n\nWar & Peace를 같은 방식으로 읽으려고 하면 망한다. 1,200페이지를 working memory에 다 올릴 수 없다. 그래서 사람은 다른 인지 시스템을 동원한다: chapter 끝에서 무슨 일이 일어났는지 *요약 메모*를 쓰고, 등장인물 관계도를 *외부 노트*에 그리고, 100페이지 전에 누가 누구한테 뭘 약속했는지가 필요해지면 *목차로 돌아가서 다시 찾아본다*. 즉 working memory + long-term memory + retrieval이 협력한다.\n\nHour-scale video도 똑같다. 'frame을 더 영리하게 고른다(sampler)'는 단편 소설을 더 잘 읽는 기술이다. 하지만 1시간 영상에서 진짜 필요한 건 'chapter 요약을 쓰는 기술'(MemAug), '시각적으로 중복인 페이지를 건너뛰는 기술'(LongVU의 DINOv2 pruning), 그리고 '나중에 다시 찾아볼 수 있게 인덱스를 만드는 기술'(memory bank retrieval)이다. 다른 인지 시스템을 동원해야 하는 영역으로 넘어가는 것이다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "Memory-augmented frame sampling의 sketch. 영상을 chunk 단위로 처리하면서 각 chunk를 small memory bank로 압축하고, query 시점에 memory bank를 retrieval해서 top-K relevant frame을 고른다. Encoder는 placeholder로 둔다 (실전에서는 SigLIP/DINOv2).",
+        "code": "import torch\nimport torch.nn.functional as F\nfrom dataclasses import dataclass\nfrom typing import List, Callable\n\n@dataclass\nclass MemorySlot:\n    chunk_id: int\n    frame_indices: List[int]\n    summary_emb: torch.Tensor   # [D], pooled chunk representation\n    frame_embs: torch.Tensor    # [T_chunk, D], per-frame for re-retrieval\n\nclass MemoryAugmentedSampler:\n    def __init__(self, encode_fn: Callable, chunk_size: int = 60,\n                 mem_tokens_per_chunk: int = 4, topk_frames: int = 32):\n        self.encode = encode_fn\n        self.chunk_size = chunk_size     # 60 frames @ 1 fps = 1 min chunk\n        self.M = mem_tokens_per_chunk\n        self.K = topk_frames\n        self.memory: List[MemorySlot] = []\n\n    def _pool_to_memory(self, chunk_embs: torch.Tensor) -> torch.Tensor:\n        # Attention-pooled summary: split chunk into M segments, mean-pool each.\n        T, D = chunk_embs.shape\n        seg = max(1, T // self.M)\n        pooled = torch.stack([chunk_embs[i*seg:(i+1)*seg].mean(0)\n                              for i in range(self.M)])\n        return pooled.mean(0)\n\n    def ingest(self, frames: torch.Tensor):\n        for c, start in enumerate(range(0, len(frames), self.chunk_size)):\n            chunk = frames[start:start + self.chunk_size]\n            embs = self.encode(chunk)\n            summary = self._pool_to_memory(embs)\n            self.memory.append(MemorySlot(\n                chunk_id=c,\n                frame_indices=list(range(start, start + len(chunk))),\n                summary_emb=summary, frame_embs=embs))\n\n    def query(self, query_emb: torch.Tensor) -> List[int]:\n        # 1) Coarse: rank chunks by query vs summary similarity.\n        chunk_scores = torch.stack([\n            F.cosine_similarity(query_emb, m.summary_emb, dim=0)\n            for m in self.memory])\n        top_chunks = chunk_scores.topk(min(8, len(self.memory))).indices.tolist()\n        # 2) Fine: within winning chunks, score per-frame and take global top-K.\n        candidates = []\n        for ci in top_chunks:\n            m = self.memory[ci]\n            fs = F.cosine_similarity(query_emb.unsqueeze(0), m.frame_embs, dim=-1)\n            for idx, score in zip(m.frame_indices, fs.tolist()):\n                candidates.append((score, idx))\n        candidates.sort(reverse=True)\n        return [idx for _, idx in candidates[:self.K]]",
+        "walkthrough": "세 가지 디자인 결정이 핵심이다. (1) `chunk_size=60`은 1 fps 기준 1분 chunk — Hour-LLaVA의 MemAug가 사용하는 segment 단위와 같은 정신이다. (2) `_pool_to_memory`는 attention-pooled summary로 chunk를 작은 memory representation으로 압축한다 — 실전 MemAug는 학습된 cross-attention pooler를 쓰지만 sketch에서는 segment-mean으로 단순화. (3) `query`는 **two-stage retrieval**이다: 먼저 chunk-level summary로 hour-scale에서 분 단위 거르고, 그 다음 winning chunk 안에서 frame-level로 정밀 ranking. 1시간 = 60 chunk = 60번 cosine으로 1차 필터 → 후보 chunk 8개 × 60 frame = 480 frame에 대해서만 fine ranking. 3,600 frame을 다 LLM에 넣지 않고도 query-relevant top-K를 가져온다. 이게 Atkinson-Shiffrin 패턴 그대로다: summary_emb = long-term memory, frame_embs = retrieval index, 최종 K개 frame = working memory로 LLM에 들어가는 것."
+      },
+      "industryEvaluation": {
+        "overview": "Hour-scale은 'sampler 잘 짠다'에서 'memory 시스템을 설계한다'로 멘탈 모델이 바뀌는 지점이다. 시니어 엔지니어 평가에서는 후보가 (a) memory와 context의 tradeoff를 양적으로 이해하는지, (b) hour-scale benchmark가 측정하는 능력을 정확히 짚는지, (c) LongVU의 DINOv2 선택 같은 micro-design decision의 의도를 읽는지를 본다.",
+        "whatEngineersLookFor": [
+          "1시간 / 6시간 비디오에서 1 fps token budget이 얼마인지 즉석 계산 (백만 단위 token 폭발)",
+          "temporal pruning과 spatial reduction을 서로 *직교한 축*으로 다루는 사고",
+          "'training data distribution이 hour-scale이어야 한다'는 인식 (VideoMarathon 9.7K hours의 의의)",
+          "sampler-only 아키텍처와 memory-augmented 아키텍처의 인터페이스 차이를 코드 수준으로 분리",
+          "retrieval(NIAH)과 reasoning(HourVideo) benchmark의 측정 영역을 구분"
+        ],
+        "redFlags": [
+          "'더 큰 context window면 해결된다'는 답 (token explosion 6시간 = 5.5M, 1M ctx로도 부족)",
+          "CLIP similarity로 temporal pruning을 하겠다는 제안 (semantic 정렬 때문에 visual redundancy 못 잡음)",
+          "memory를 stateless cache로만 보고 cross-attention key/value로 쓰는 학습 가능 representation으로 안 보는 시각",
+          "HourVideo와 EgoSchema를 'long-video benchmark'로 묶어버리는 평가 ('long'의 정의가 다르다)",
+          "hour-scale을 inference-time problem으로만 보고 training distribution 문제를 무시하는 관점"
+        ],
+        "interviewQuestions": [
+          "**Q1. Memory vs context tradeoff.** 1 fps 6시간 video를 처리해야 하고 1M context window가 있다. SigLIP 256 token/frame 가정. (a) naive로 다 넣었을 때 token이 얼마이고 몇 % over budget인지 계산하라. (b) hourly chunk + per-chunk 4 memory token으로 압축했을 때 token이 어떻게 변하는지 계산하라. (c) 이 둘 사이의 어떤 hybrid가 reasoning benchmark에서 더 잘 동작할 것 같은지, MemAug의 design을 근거로 논하라.",
+          "**Q2. HourVideo가 측정하는 것.** Video-MME long split, MLVU, EgoSchema, LongVideoBench, HourVideo, Multi-Hop NIAH 중 'hour-scale에서 causal reasoning across 40-minute gap'을 측정하는 데 가장 적합한 것은 무엇이고, 나머지가 왜 부족한지 설명하라.",
+          "**Q3. LongVU의 DINOv2 선택.** LongVU의 temporal pruning 모듈을 'CLIP similarity'로 바꾸려는 PR이 올라왔다. 'CLIP이 이미 우리 인코더에 있고 추가 모델 weight를 안 쓴다'는 근거. 이 PR을 reject한다면 어떤 실패 케이스로 reviewer를 설득할 것인가?"
+        ],
+        "masteryVsFamiliar": "**Familiar**: LongVU, Hour-LLaVA, HourVideo 이름을 알고 '긴 영상을 잘 처리하는 모델/벤치마크'라고 한 문장으로 설명할 수 있다. **Mastery**: hour-scale의 phase transition을 token budget 계산으로 정량화하고, temporal/spatial을 직교 축으로 분리한 LongVU 설계와 episodic memory 패턴으로 수렴하는 Hour-LLaVA를 인지심리학적 패턴(Atkinson-Shiffrin)에 매핑한다. DINOv2 vs CLIP의 redundancy 검출 차이를 실패 시나리오로 설명할 수 있고, HourVideo가 reasoning을 NIAH가 retrieval을 측정한다는 평가 축의 분리를 설계 결정으로 가져온다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "Hour-scale은 phase transition이다",
+          "content": "1 fps 1시간 = 3,600 frame ≈ 921K token으로 1M context의 92%. 6시간이면 5.5M token으로 1M context를 553% 초과. sampling이 아닌 *memory system* 설계가 필요해진다."
+        },
+        {
+          "title": "LongVU는 spatiotemporal 축을 분리한다",
+          "content": "arXiv:2410.17434 (ICLR 2025, Meta). Temporal axis는 DINOv2 similarity pruning, spatial axis는 query-conditioned cross-attention reduction. Frame 단위 버리기가 patch 단위 버리기보다 비용 효율 좋아서 temporal이 항상 먼저."
+        },
+        {
+          "title": "DINOv2 > CLIP for redundancy 검출",
+          "content": "CLIP은 language-aligned라 'walking'과 'standing'을 의미적으로 가깝게 본다. visual redundancy 판단에는 self-supervised visual representation인 DINOv2가 더 정확하다."
+        },
+        {
+          "title": "MemAug는 segment-recurrent memory를 video에 도입했다",
+          "content": "Hour-LLaVA (NeurIPS 2025 Spotlight). 각 chunk를 memory token bank로 압축, 다음 chunk가 cross-attention K/V로 참조. 1 FPS hour-long end-to-end 학습 가능."
+        },
+        {
+          "title": "VideoMarathon 9.7K-hour는 distribution shift을 푼다",
+          "content": "기존 long-video dataset이 평균 분 단위였던 데서 처음으로 hour-scale 학습 분포가 가능해졌다. hour-scale은 inference-time trick으로는 못 풀고 training distribution이 hour-scale이어야 한다는 명제의 실증."
+        },
+        {
+          "title": "HourVideo는 reasoning을 직접 측정한다",
+          "content": "NIAH는 retrieval, EgoSchema는 3분이라 'long' 아님, Video-MME long split은 comprehensive QA. HourVideo만 hour-scale temporal reasoning과 causal chain을 직접 겨눈다. NIAH(retrieval) + HourVideo(reasoning) 조합이 표준 평가축."
+        },
+        {
+          "title": "수렴하는 패턴은 episodic memory다",
+          "content": "LongVU의 compression, Hour-LLaVA의 MemAug, VideoChat-Flash의 HiCo가 표면적으로 다 다르지만 모두 Atkinson-Shiffrin의 sensory-working-long-term memory + retrieval 구조로 수렴한다. RAG-for-video라는 멘탈 모델이 가장 정확하다."
+        },
+        {
+          "title": "Plug-and-play 인터페이스에 memory를 1급 객체로 올려야 한다",
+          "content": "Chapter 9에서 다룰 Sampler.select() 옆에 MemoryStore.write() / retrieve()가 동등한 swap point로 분리되어야 한다. hour-scale 시스템에서 memory는 sampler의 부속이 아니라 independent 모듈이다."
+        }
+      ]
+    },
+    {
+      "number": 7,
+      "emoji": "🗜️",
+      "title": "Token-Level Compression — VideoChat-Flash, NVILA, FastVID",
+      "titleKr": "Token-Level Compression — VideoChat-Flash, NVILA, FastVID",
+      "tldr": "Frame sampling은 N개의 frame을 줄이지만, token-level compression은 frame 하나당 M개의 token을 줄인다. 두 축은 orthogonal하게 작동하며 자유롭게 compose할 수 있다. VideoChat-Flash(HiCo, arXiv:2501.00574)는 Clip→Video 계층적 압축으로 ~1/50 ratio, 10K-frame Multi-Hop NIAH 99.1%를 달성했다. NVILA(arXiv:2412.04468)는 \"scale-then-compress\" — 먼저 frame 수를 256까지 늘리고 그 다음 공격적으로 token을 줄인다. FastVID(arXiv:2503.11187)는 layer-attention 기반 dynamic density pruning으로 training-free하게 inference 비용을 낮춘다. 짧은 비디오는 sampling만으로 충분하고, 긴 비디오는 sampling + compression, 시간 단위 비디오는 sampling + memory + compression을 모두 써야 한다.",
+      "topics": [
+        "Frame-level vs token-level: orthogonal한 두 축의 design space",
+        "VideoChat-Flash / HiCo의 hierarchical Clip→Video compression (~1/50)",
+        "Multi-Hop NIAH at 10K frames — 99.1% recall이 의미하는 것",
+        "NVILA의 scale-then-compress 철학: 먼저 늘리고 나중에 줄여라",
+        "FastVID dynamic density pruning과 FastV(image baseline)의 차이",
+        "Layer-attention 기반 token pruning의 intuition (shallow vs deep layer)",
+        "When to sample vs when to compress — 길이별 decision tree",
+        "두 축 compose의 실전 cost model"
+      ],
+      "learningGoals": [
+        "Frame sampling 축과 token compression 축이 왜 orthogonal한지, 어떻게 동시에 적용되는지 설명할 수 있다",
+        "HiCo의 hierarchical 구조(Clip-level pool → Video-level merge)를 코드 수준에서 구현할 수 있다",
+        "Multi-Hop NIAH 같은 long-context benchmark가 일반 QA가 못 잡는 무엇을 측정하는지 안다",
+        "FastV/FastVID의 layer-attention based pruning이 왜 deep layer에서 안전한지 설명할 수 있다",
+        "비디오 길이(분/시간)에 따라 sampling-only vs sample+compress vs sample+memory+compress 중 무엇을 선택할지 결정할 수 있다",
+        "NVILA의 \"scale-then-compress\" 가 단순히 frame 수를 줄이는 것보다 왜 효과적일 수 있는지 안다"
+      ],
+      "overview": "지금까지 Chapter 2–6은 \"몇 개의 frame을 LLM에 넣을 것인가\"라는 단일 축을 다뤘다. 그러나 token economics는 frame 수만으로 결정되지 않는다. SigLIP/CLIP encoder는 frame 하나를 보통 256–729개의 vision token으로 토큰화하고, 이 token들이 LLM의 context로 흘러들어간다. 64 frame × 256 token/frame = 16,384 token이라는 단순 계산만으로도 short context 모델의 한계를 즉시 넘어간다. 따라서 \"frame을 잘 골랐다\"는 것은 절반의 승리일 뿐이고, frame 하나당 token 수를 어떻게 줄일지가 나머지 절반이다. 이 챕터는 그 직교 축을 다룬다. VideoChat-Flash의 HiCo는 clip 단위 압축 후 video 단위 merging으로 ~1/50 ratio를 달성하면서 10K-frame Multi-Hop NIAH에서 99.1%를 찍는다(arXiv:2501.00574). NVILA는 반대로 \"먼저 frame을 256개까지 늘리고 token을 공격적으로 압축한다\"는 scale-then-compress 전략을 취한다(arXiv:2412.04468). FastVID는 inference-time에 attention score 기반 dynamic density pruning을 적용해 retraining 없이 latency를 낮춘다(arXiv:2503.11187). 마지막 절은 \"언제 sampling만 쓰고 언제 compression을 더할지\"의 실전 decision tree와, 두 축을 곱해서 생기는 cost를 어떻게 모델링할지를 다룬다.",
+      "sections": [
+        {
+          "title": "1. 두 축의 design space — frame과 token은 직교한다",
+          "content": "비디오 LLM의 입력 token 수는 단순한 곱셈으로 결정된다. `total_tokens = N_frames × tokens_per_frame + text_tokens`. Chapter 2–6에서 다룬 모든 sampler(AKS, BOLT, Frame-Voyager, Q-Frame, AdaRD-Key, FOCUS, LongVU)는 첫 번째 인자 `N_frames`만을 줄인다. 그러나 두 번째 인자 `tokens_per_frame`은 encoder가 결정하며, 기본값은 SigLIP의 729 token, CLIP-L/14 336px의 576 token, Qwen2.5-VL의 동적 patch 수 등 모두 수백 token이다. 64 frame × 729 = 46,656 vision token은 32K context 모델의 절반을 단독으로 차지한다. 두 축이 직교한다는 말의 의미는 (a) 어느 축의 개선도 다른 축을 막지 않고, (b) 두 축의 ratio가 곱해진다는 것이다. AKS가 frame을 1/4로 줄이고 HiCo가 token을 1/50로 줄이면 총 압축 ratio는 1/200이다. 실전에서는 이 곱셈이 무조건 좋은 것은 아니다 — 너무 압축하면 fine-grained QA에서 성능이 떨어진다. 따라서 결정해야 할 것은 \"두 축을 어떻게 budget할 것인가\"이며, 이는 비디오 길이, task 종류(요약 vs needle-in-haystack), latency 요구사항에 의존한다. 이 챕터의 핵심 명제 하나: **frame을 줄이는 것은 evidence를 잃는 것이고, token을 줄이는 것은 detail을 잃는 것이다.** 두 손실의 형태가 다르기 때문에 두 도구는 서로를 대체할 수 없다."
+        },
+        {
+          "title": "2. VideoChat-Flash와 HiCo — hierarchical Clip→Video compression",
+          "content": "VideoChat-Flash(Li et al., ICLR 2026 submission, arXiv:2501.00574, OpenGVLab)는 \"Hierarchical Compression(HiCo)\"이라는 2단계 token 압축을 핵심으로 한다.\n\n**Stage 1 — Clip-level compression**: 비디오를 짧은 clip(보통 4–8 frame)으로 분할한 뒤, 각 clip 내부에서 spatial pooling과 temporal aggregation을 결합해 token 수를 크게 줄인다. Clip 안에서는 frame 사이 redundancy가 매우 높기 때문에(같은 장면, 비슷한 배경) 공격적으로 pool 해도 정보 손실이 작다. \n\n**Stage 2 — Video-level merging**: clip별로 압축된 token들을 모은 뒤, 비슷한 token들을 cosine similarity 기준으로 merge한다. 영화의 여러 scene이 똑같은 배경에서 일어나면 그 \"배경 token\"들이 video level에서 한 번 더 합쳐진다. \n\n두 stage가 합쳐져 ~1/50의 compression ratio를 만든다. 이 ratio가 의미하는 것은 \"같은 GPU memory로 50배 긴 비디오를 처리할 수 있다\"는 것이다. VideoChat-Flash는 기본 1 fps로 최대 768 frame을 처리하고, 10,000 frame까지 단일 forward pass로 처리할 수 있다. \n\nKey 결과는 **Multi-Hop NIAH(Needle-in-A-Haystack) at 10K frames에서 99.1% recall**이다. NIAH는 긴 비디오 안에 의도적으로 \"바늘\" 영상 토막을 숨기고 그것을 찾아내는 능력을 측정한다. 일반 QA가 \"이 비디오가 무슨 내용인가\" 같은 global 질문에 강하다면 NIAH는 \"이 비디오의 3:42에 어떤 단어가 적혀 있었나\" 같은 local recall 질문을 측정한다. 99.1%는 압축이 globally aggressive하더라도 locally critical한 정보는 보존됨을 보여준다 — 이것이 HiCo의 가장 강한 주장이다. \n\nHiCo가 plug-and-play sampler들과 다른 점: sampler는 LLM 외부의 decision이고, HiCo는 LLM의 vision-language projector 직전 단계에서 token tensor 자체를 줄인다. 따라서 sampler와 결합 가능하다 — AKS로 frame을 고른 다음 HiCo로 token을 줄이는 파이프라인이 자연스럽다. Repository: github.com/OpenGVLab/VideoChat-Flash."
+        },
+        {
+          "title": "3. NVILA / Cosmos Nemotron — scale-then-compress",
+          "content": "NVILA(NVIDIA, arXiv:2412.04468)는 정반대의 직관에서 출발한다. 기존 video-LLM은 \"frame 수와 frame당 token 수를 둘 다 적게\" 쓰지만, NVILA는 \"frame 수를 먼저 키우고, 그다음에 frame당 token을 공격적으로 줄인다.\" 이것이 *scale-then-compress* 전략이다. \n\n구체적으로 NVILA는 최대 **256 frame**을 입력으로 받지만 LLM context에는 그중 일부만 들어가도록 token level에서 강하게 압축한다(공개된 변형에서는 ~16 frame 정도의 token만큼). 왜 이렇게 하는가? 두 가지 직관: (1) **temporal redundancy를 활용하려면 먼저 dense하게 봐야 한다**. 16 frame을 uniform으로 뽑으면 어떤 빠른 action은 영영 잡지 못한다. 256 frame을 보면 그 action이 한 frame에 잡혀 있고, compressor가 \"이 frame은 다른 frame과 달라서 살려야 한다\"는 신호를 추출할 수 있다. (2) **encoder는 한 번 돌리면 끝이지만 LLM은 비싸다**. SigLIP에 256 frame을 흘리는 것은 GPU memory만 충분하면 빠른 batch 연산이고, 비싼 비용은 LLM context에 들어가는 token 수에 비례한다. \n\nScale-then-compress는 따라서 \"encoder는 dense하게, LLM은 sparse하게\"로 요약할 수 있다. Chapter 6에서 다룬 LongVU의 DINOv2 temporal pruning과 가까운 발상이지만, NVILA는 짧은 비디오(분 단위)에서도 같은 전략을 일관적으로 적용한다는 점이 다르다. \n\n이것이 frame sampling literature에 던지는 메시지: \"frame을 적게 뽑는 것이 cheap한 게 아니라, frame 수만큼 LLM context를 차지하는 것이 expensive하다.\" 만약 token compression이 매우 강력하다면, 굳이 정교한 sampler를 쓰지 않고 \"많이 뽑고 많이 압축하기\"가 경쟁력 있는 baseline이 된다. NVILA 결과는 Video-MME와 EgoSchema에서 그것이 사실임을 보여준다 — 단, NIAH류 fine-grained benchmark에서는 여전히 sampler가 도움이 된다."
+        },
+        {
+          "title": "4. FastVID — dynamic density pruning과 FastV의 차이",
+          "content": "FastVID(arXiv:2503.11187)는 학습 없이 inference 시점에 token을 잘라내는 *dynamic density pruning* 방법이다. 출발점은 image-LLM에서 유명한 **FastV**(Chen et al., ECCV 2024)다. FastV는 한 가지 관찰에서 출발한다: LLM의 vision token에 대한 attention score는 **shallow layer에서는 균등하게 분포하지만, deep layer로 갈수록 매우 sparse해진다**. 즉 깊은 layer에서는 대부분의 vision token이 사실상 무시되고 있다. 따라서 특정 layer(보통 layer 2–3) 이후에는 attention score가 낮은 vision token을 잘라내도 출력 품질이 크게 떨어지지 않는다. FastV는 image 한 장에 대해 이 pruning을 수행한다. \n\nFastVID가 video로 확장하면서 더하는 두 가지: \n\n**(1) Frame-wise density variation** — 비디오의 어떤 구간은 정적(말하는 머리 shot)이고 어떤 구간은 동적(액션 장면)이다. FastVID는 attention 분포의 entropy를 frame 단위로 추정해서, 정적 구간에서는 더 공격적으로 잘라내고 동적 구간에서는 보존한다. 이것이 \"dynamic density\"라는 말의 의미다. \n\n**(2) Temporal contiguity preservation** — image FastV처럼 token 하나씩 독립적으로 자르면 인접 frame의 같은 영역이 들쭉날쭉 살아남아 LLM이 motion을 잃는다. FastVID는 인접 frame 간에 같은 spatial 위치의 token이 함께 살아남거나 함께 죽도록 제약을 건다. \n\nFastV/FastVID 모두 **retraining이 필요 없는 inference-time 기법**이다. 따라서 이미 배포된 video-LLM 위에 즉시 얹어 latency를 낮추는 용도로 적합하다. HiCo가 architecture에 굳어진 방식이라면 FastVID는 plug-in 방식이다. 두 가지를 함께 쓰는 것도 가능하다 — HiCo가 한 번 strongly compress하고, FastVID가 deep layer에서 한 번 더 잘라낸다. \n\n**주의할 점**: layer-attention pruning은 deep layer에서 안전하지만 shallow layer에서는 위험하다. shallow layer는 아직 vision token 간의 관계를 파악 중이기 때문에 여기서 자르면 의미 있는 정보가 사라진다. FastV/FastVID의 hyperparameter 중 \"어느 layer부터 자를 것인가(보통 K=2)\"가 가장 sensitive하다."
+        },
+        {
+          "title": "5. 언제 sample하고 언제 compress하는가 — decision tree",
+          "content": "두 축이 직교한다는 것은 \"둘 다 쓸 수 있다\"는 뜻이지만, 무조건 둘 다 써야 하는 것은 아니다. 비디오 길이와 task 종류에 따른 실전 decision tree:\n\n**Tier 1 — 짧은 비디오(<2분, 30초 클립 등)**: 그냥 uniform sample. 16–32 frame이면 충분하고 SigLIP의 default token 수도 LLM context에 들어간다. Compression을 추가해도 latency만 늘고 정확도 이득은 거의 없다. *Token compression이 손해*가 되는 첫 번째 영역이다.\n\n**Tier 2 — 중간 비디오(2–30분, 강의 영상, podcast)**: Sample + compress. AKS/BOLT/Q-Frame으로 64–128 frame을 뽑고, HiCo 같은 hierarchical compressor로 token을 1/8~1/16 줄인다. NVILA-style scale-then-compress(256 frame → 강 압축)도 이 영역에서 유효하다.\n\n**Tier 3 — 긴 비디오(30분–몇 시간, 영화, 강의 시리즈)**: Sample + memory + compress. Chapter 6의 Hour-LLaVA / MemAug 같은 memory mechanism이 더해진다. HiCo만으로는 부족하다 — clip 단위 압축은 여전히 clip 수에 비례해 늘어나기 때문이다. 압축 ratio가 1/50이어도 10시간 비디오면 frame이 36,000개라 압축 후도 720개의 clip 단위 token block이 남는다.\n\n**Task별 미세 조정**:\n- **요약/global QA**: 강 압축이 안전. 세부 detail이 별로 안 중요.\n- **NIAH / fine-grained QA**: 압축에 보수적이어야 한다. 특히 spatial token을 너무 강하게 pool하면 OCR-style 질문이 망가진다.\n- **action recognition**: temporal redundancy를 압축해야 한다(같은 frame 반복 제거). spatial은 보존.\n- **dialogue/lecture**: ASR text 채널이 있으면 vision token을 더 공격적으로 줄여도 된다.\n\n**Cost model**: 두 축의 비용은 다음과 같이 모델링할 수 있다. \n```\ncost ≈ α · N_frames · T_per_frame (encoder) + β · (N_frames · T_per_frame)^2 (LLM attention)\n```\nLLM attention이 quadratic이기 때문에 **compression의 한계 이득이 sampling보다 크다**. 즉 64 frame을 32로 줄이는 것보다 frame당 token을 256→128로 줄이는 것이 같은 비율인데도 LLM 비용은 더 많이 떨어진다(특히 attention이 dominant한 경우). 이것이 NVILA가 scale-then-compress를 정당화하는 이론적 근거다."
+        }
+      ],
+      "analogy": {
+        "title": "1년 여행의 사진첩",
+        "content": "1년 동안 세계 여행을 다니며 매일 30장씩 찍은 사진 10,000장이 있고, 이걸 한 권의 사진첩으로 만들어 가족에게 보여줘야 한다고 생각해보자. 사진첩에는 200장만 들어간다.\n\n결정해야 할 것은 두 가지다.\n\n**축 1 — 어느 200장을 고를 것인가**: 매일 한 장씩 균일하게? 가장 인상 깊었던 사진들만? 가족이 보고 싶어할 만한 사람·장소 위주로? 이것이 *frame sampling*이다. AKS, BOLT, Frame-Voyager는 각각 다른 기준으로 200장을 고른다.\n\n**축 2 — 각 사진을 얼마나 크게 인쇄할 것인가**: 한 페이지를 가득 채울 것인가, 손바닥만 한 thumbnail 9장씩 한 페이지에 넣을 것인가, 아니면 콜라주처럼 합쳐서 한 페이지에 30장을 우겨넣을 것인가? 이것이 *token compression*이다. HiCo는 콜라주 방식(여러 사진을 비슷한 것끼리 합치기), NVILA는 \"많이 모아서 작게 인쇄하기\", FastVID는 \"인쇄소에서 잉크 절약 모드로 출력하기\"에 해당한다.\n\n두 결정은 *독립적*이다. 200장을 정성껏 골라도 모두 thumbnail로 인쇄하면 표정이 안 보인다. 1,000장을 막 골라도 잘 압축해서 잘 배치하면 200장 풀 페이지보다 더 많은 정보를 전달할 수도 있다(NVILA의 주장). 가족이 \"바르셀로나에서 본 그 작은 골목 표지판 글자가 뭐였더라\"를 물어보면(NIAH 질문) thumbnail은 망한다 — 이때는 그 한 장을 풀 페이지로 인쇄해야 한다(local detail 보존). 반대로 \"올해 여행이 어땠어?\"는 요약 질문(global QA)이라 thumbnail 콜라주로도 충분하다.\n\n결정은 결국 \"보여줄 사람의 질문 종류\"와 \"사진첩의 페이지 수(LLM context window)\"의 함수다. 두 손잡이를 *독립적으로* 돌릴 수 있다는 사실 자체가 이 챕터의 가장 큰 메시지다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "HiCo의 핵심 아이디어인 \"clip-level pool 후 video-level cosine-similarity merge\"를 최소 구현한다. 실전 HiCo는 학습된 projector를 쓰지만, 여기서는 mean pooling과 greedy merging만으로 그 골격을 보여준다. `clip_ratio`와 `merge_threshold` 두 손잡이로 압축 강도를 조절할 수 있고, 최종 token 수를 출력하면 frame sampling과 곱해진 총 ratio를 즉시 확인할 수 있다.",
+        "code": "import torch\nimport torch.nn.functional as F\n\ndef hico_compress(\n    frames: torch.Tensor,   # [N_frames, T_per_frame, D]  e.g. [64, 256, 768]\n    clip_size: int = 4,     # frames per clip\n    clip_ratio: int = 4,    # tokens per clip kept = T_per_frame * clip_size // clip_ratio\n    merge_threshold: float = 0.85,  # cosine sim above which we merge video-level\n) -> torch.Tensor:\n    \"\"\"HiCo-style hierarchical token compressor.\n\n    Stage 1: split frames into clips, mean-pool each clip to (T*clip_size/clip_ratio) tokens.\n    Stage 2: across all clips, greedily merge tokens whose cosine similarity > threshold.\n    \"\"\"\n    N, T, D = frames.shape\n    assert N % clip_size == 0, \"N_frames must be divisible by clip_size\"\n\n    # --- Stage 1: clip-level mean pooling ---\n    n_clips = N // clip_size\n    clipped = frames.view(n_clips, clip_size, T, D)               # [C, K, T, D]\n    flat = clipped.reshape(n_clips, clip_size * T, D)             # [C, K*T, D]\n    keep_per_clip = (clip_size * T) // clip_ratio\n    # adaptive 1d pool along token axis\n    pooled = F.adaptive_avg_pool1d(\n        flat.transpose(1, 2), output_size=keep_per_clip          # [C, D, keep]\n    ).transpose(1, 2)                                             # [C, keep, D]\n    tokens = pooled.reshape(-1, D)                                # [C*keep, D]\n\n    # --- Stage 2: video-level cosine-similarity greedy merging ---\n    normed = F.normalize(tokens, dim=-1)\n    sims = normed @ normed.T                                      # [M, M]\n    M = tokens.shape[0]\n    alive = torch.ones(M, dtype=torch.bool)\n    merged = tokens.clone()\n    counts = torch.ones(M)\n    for i in range(M):\n        if not alive[i]:\n            continue\n        # find later tokens highly similar to token i\n        mask = (sims[i] > merge_threshold) & alive\n        mask[: i + 1] = False\n        if mask.any():\n            merged[i] = (merged[i] * counts[i] + tokens[mask].sum(0)) / (counts[i] + mask.sum())\n            counts[i] += mask.sum()\n            alive[mask] = False\n    out = merged[alive]\n\n    print(f\"input  {N*T:>6} tokens  ->  stage1 {tokens.shape[0]:>5}  ->  stage2 {out.shape[0]:>4}\")\n    print(f\"total compression ratio: {N*T / out.shape[0]:.1f}x\")\n    return out\n\nif __name__ == \"__main__\":\n    frames = torch.randn(64, 256, 768)        # 64 frames, 256 tokens each (SigLIP-ish)\n    compressed = hico_compress(frames, clip_size=4, clip_ratio=8, merge_threshold=0.9)",
+        "walkthrough": "**Stage 1 (lines 23–33)**: `[64 frame, 256 token, 768 dim]` 입력을 4-frame clip으로 자른다 → 16 clip. 각 clip 내부의 `4*256=1024` token을 1D adaptive pooling으로 `1024/clip_ratio` token으로 줄인다. clip_ratio=8이면 clip당 128 token, 총 `16*128 = 2,048` token. 이미 원본 `64*256 = 16,384`에서 8x 압축된 상태다.\n\n**Stage 2 (lines 35–46)**: 모든 clip의 token을 펼친 뒤 L2 정규화 → cosine similarity matrix를 만든다. greedy 순회로 \"나보다 뒤에 있고 sim > threshold인 token들\"을 평균에 흡수한다. count로 weighted average를 유지해서 자주 등장하는 패턴(예: 검은 배경)이 한 번만 살아남게 한다. 실제 HiCo는 learned projector + cross-attention pooling을 쓰지만, greedy cosine merge가 그 골격을 충분히 보여준다.\n\n**확장 포인트**: (a) Stage 1의 pooling을 attention-weighted로 바꾸면 motion-heavy frame이 보존되도록 만들 수 있다. (b) Stage 2의 merge_threshold를 frame index에 따라 가변으로 만들면 FastVID 같은 dynamic density 효과를 흉내낼 수 있다. (c) `clip_ratio`와 `merge_threshold` 두 손잡이는 paper의 ~1/50 ratio를 재현할 수 있을 만큼 강력하다 — 예: clip_ratio=16, threshold=0.8을 쓰면 위 예제에서 ~300 token까지 떨어진다(약 50x).\n\n**Sampler와의 결합**: 이 함수의 입력 `frames`는 Chapter 3–4의 AKS/Frame-Voyager가 *이미 뽑은* frame들의 vision embedding이라고 보면 된다. 즉 sampling과 compression은 코드 레벨에서 완전히 분리된 두 함수이며, 곱해진 압축 ratio가 전체 token budget을 결정한다."
+      },
+      "industryEvaluation": {
+        "overview": "Token-level compression은 video-LLM serving cost를 가장 직접적으로 결정하는 결정이다. Senior engineer 인터뷰에서는 (a) 압축이 도움이 되는 비디오와 손해가 되는 비디오를 구분할 수 있는지, (b) FastV/FastVID의 attention-based pruning이 왜 deep layer에서 안전한지를 first principle로 설명할 수 있는지, (c) NIAH 같은 long-context benchmark가 일반 QA가 못 잡는 무엇을 측정하는지 — 세 가지를 본다. 단순히 \"HiCo가 좋다\"를 외우는 것과, \"왜 이 task에는 HiCo가 위험한가\"를 설명하는 것은 다른 수준의 이해다.",
+        "whatEngineersLookFor": [
+          "Frame sampling과 token compression이 직교 축임을 명확히 구분하는가 — 두 ratio를 곱해서 전체 budget을 산출할 수 있는가",
+          "비디오 길이/task별 압축 전략의 trade-off를 설명할 수 있는가 (요약은 강 압축 OK, NIAH/OCR은 보수적)",
+          "FastV/FastVID의 layer-K pruning이 attention 분포의 sparsity 관찰에 기반함을 안다",
+          "HiCo의 ~1/50 ratio가 실제 deployment에서 의미하는 것(GPU memory, latency, max video length)을 정량화할 수 있다",
+          "Inference-time(FastVID) vs architecture-level(HiCo, NVILA) compression의 deployment 차이를 안다 (재학습 필요 여부, plug-in 가능 여부)",
+          "NIAH 같은 stress test와 일반 QA benchmark가 측정하는 차원이 다름을 설명할 수 있다"
+        ],
+        "redFlags": [
+          "\"압축은 무조건 좋다\"라고 답한다 — 짧은 비디오에서는 손해가 된다는 점을 모른다",
+          "Frame sampling과 token compression을 \"같은 문제의 다른 표현\"이라고 답한다(두 축이 직교함을 모름)",
+          "FastV가 attention score 기반임을 모르고 \"random pruning과 비슷한 것\"이라고 설명한다",
+          "NIAH가 측정하는 것을 \"일반 QA의 어려운 버전\"이라고만 답한다 — local recall vs global understanding 구분을 못함",
+          "1시간 비디오에 HiCo만으로 충분하다고 답한다 — memory mechanism의 필요성을 모름",
+          "NVILA의 scale-then-compress를 단순히 \"frame 수 늘리기\"로 이해한다 — encoder/LLM cost 비대칭이 핵심임을 놓침"
+        ],
+        "interviewQuestions": [
+          "**Q1**: 30초짜리 surveillance clip에 대해 \"불법 주차 차량의 번호판이 뭐였나\"를 묻는 task가 있다. HiCo로 1/50 token compression을 적용해야 할까? Yes/No와 그 이유를 first principle로 답하라. (기대 답: No에 가깝다. 짧은 비디오라 token이 이미 작고, 번호판 OCR은 spatial high-frequency 정보라 강 pooling에 매우 취약하다. 짧은 비디오에서 압축은 latency 이득은 작은데 task별 위험이 크다.)",
+          "**Q2**: FastV는 어떤 layer K부터 vision token을 자른다. K=2가 일반적이다. K=0(첫 layer부터 자르기)이 왜 성능을 망가뜨리는지, K=20(매우 깊은 layer부터)이 왜 latency 이득이 작은지 attention 분포 관점에서 설명하라. (기대 답: shallow layer의 attention은 균등 — vision token 간 관계를 아직 형성 중이라 자르면 정보 손실. deep layer는 이미 sparse — 자르나 마나 출력은 거의 같지만 그 layer 이후 KV cache만 줄어서 이득이 작다. 가장 큰 이득은 \"attention이 sparse해지기 시작하는 첫 번째 지점\"에서 자를 때.)",
+          "**Q3**: Multi-Hop NIAH at 10K frames에서 99.1% recall을 측정한다는 것은 일반적인 Video-MME 평균 정확도가 측정하지 못하는 무엇을 보장하는가? 그리고 이 차이가 실제 product 결정(예: 1시간 강의 영상 QA 서비스)에 어떻게 반영되어야 하는가? (기대 답: NIAH는 long-context에서의 *local* 정보 추출 — 압축이 globally OK여도 specific moment를 lose하지 않음을 보장한다. Video-MME 평균은 \"보통의 질문\"에 대한 평균 성능이라 압축으로 인한 long-tail 실패를 가린다. Product 관점에서 강의 영상 QA는 NIAH-like 질문이 매우 흔하다(\"45분쯤에 교수가 보여준 그래프가 뭐였지?\") → NIAH 점수가 production 성능의 더 좋은 proxy다. Video-MME만 보고 의사결정하면 user-facing 실패를 놓친다.)"
+        ],
+        "masteryVsFamiliar": "Familiar한 사람은 \"HiCo는 ~1/50 압축이고 좋다\" 정도로 답한다. Mastery한 사람은 \"비디오 길이 × task 종류 × encoder의 token 수\"를 곱해서 cost 모델을 즉석에서 세우고, 압축이 도움 되는 경계 — 짧은 비디오에서는 손해, 긴 비디오에서는 필수, NIAH-style task에서는 위험 — 을 정량적으로 짚는다. 또한 FastVID의 layer-attention pruning이 model 구조에 독립적이라 \"이미 배포된 어떤 video-LLM에도 즉시 얹을 수 있다\"는 production 가치를 인식한다. 인터뷰에서는 \"두 축을 곱해서 budget을 짠다\"는 시스템 사고가 가장 강한 신호다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "Frame과 token은 직교 축이다",
+          "content": "Frame sampling(Chapter 2–6)은 N_frames를 줄이고 token compression은 tokens_per_frame을 줄인다. 두 축의 ratio는 곱해진다. AKS의 1/4 frame과 HiCo의 1/50 token을 결합하면 총 1/200이다. 두 축은 서로를 대체하지 않는다 — frame을 줄이면 evidence를 잃고, token을 줄이면 detail을 잃는다."
+        },
+        {
+          "title": "HiCo의 hierarchical 구조가 1/50 ratio를 만든다",
+          "content": "VideoChat-Flash(arXiv:2501.00574)의 HiCo는 Clip-level pooling(stage 1)과 Video-level similarity merging(stage 2)을 결합해 ~1/50 압축을 달성하면서 10K-frame Multi-Hop NIAH에서 99.1% recall을 유지한다. 핵심 아이디어는 \"clip 내부는 redundant, video 전체는 patterned\"라는 두 가지 redundancy를 따로 다루는 것이다."
+        },
+        {
+          "title": "NVILA의 scale-then-compress는 encoder/LLM 비용 비대칭을 활용한다",
+          "content": "NVILA(arXiv:2412.04468)는 frame을 256까지 늘리고 token을 공격적으로 줄인다. encoder는 한 번이고 batch-friendly한 반면 LLM context는 attention quadratic이라 비용 dominant — \"먼저 dense하게 보고 늦게 sparse하게 줄이기\"가 정당화된다. 이것은 sampler를 정교화하는 것의 대안적 baseline이다."
+        },
+        {
+          "title": "FastVID는 training-free plug-in이다",
+          "content": "FastVID(arXiv:2503.11187)는 FastV의 layer-K attention pruning을 video로 확장하면서 dynamic density(frame 단위 entropy)와 temporal contiguity를 추가한다. 재학습 없이 이미 배포된 video-LLM에 얹을 수 있다는 점이 production 가치다. K=2 근처가 일반적이고 그보다 얕거나 깊으면 이득이 줄거나 정확도가 깨진다."
+        },
+        {
+          "title": "압축은 짧은 비디오에서는 손해, 긴 비디오에서는 필수다",
+          "content": "<2분 비디오는 sampling만으로 충분하고 압축은 latency 이득은 작고 task별 위험은 크다. 2–30분은 sample+compress, 30분 이상은 sample+memory+compress가 표준이다. \"무조건 압축\"이 아니라 비디오 길이와 task에 따른 decision tree가 필요하다."
+        },
+        {
+          "title": "NIAH는 일반 QA가 못 보는 long-tail 실패를 측정한다",
+          "content": "Multi-Hop NIAH는 긴 비디오 안 특정 순간의 local 정보를 정확히 recall하는 능력을 잰다. Video-MME 같은 평균 정확도는 \"평범한 질문\"에 대한 성능이라 압축으로 인한 local 실패가 가려진다. 강의·법률·의료 등 specific moment를 묻는 도메인에서는 NIAH가 production proxy로 더 좋다."
+        },
+        {
+          "title": "Layer-attention pruning은 sparsity가 시작되는 지점에서 잘라야 한다",
+          "content": "Shallow layer에서는 attention이 균등하므로 자르면 정보가 사라진다. Deep layer에서는 이미 sparse해서 자르나 마나 같다. 가장 큰 이득은 \"attention이 sparse해지기 시작하는 첫 번째 layer\"에서 잘랐을 때이고, 이것이 FastV/FastVID의 K hyperparameter가 sensitive한 이유다."
+        },
+        {
+          "title": "두 축의 cost는 곱해지지만 quadratic은 token 축에 더 무겁다",
+          "content": "LLM attention 비용은 token 수에 quadratic하기 때문에 같은 1/2 ratio라도 token 압축이 frame 압축보다 LLM 비용을 더 많이 떨어뜨린다. 이것이 NVILA가 \"frame을 줄이는 것보다 frame당 token을 줄이는 것이 효율적\"이라고 주장하는 이론적 근거다. 시스템 설계 때 두 축의 marginal cost를 따로 모델링해야 한다."
+        }
+      ]
+    },
+    {
+      "number": 8,
+      "emoji": "🏢",
+      "title": "Commercial Reality — Gemini, Twelve Labs, OpenAI/Anthropic, Open-source",
+      "titleKr": "상용 서비스의 현실 — Gemini, Twelve Labs, OpenAI/Anthropic, Open-source",
+      "tldr": "2년간 연구 SOTA(AKS, BOLT, GenS, Frame-Voyager, Q-Frame, AdaRD-Key, FOCUS)가 query-aware adaptive sampler로 ~93% frame 감축에서 동등 정확도를 입증했지만, 2026년 6월 현재 상용 video-LLM API는 단 하나도 그것을 default로 채택하지 않았다. Gemini 2.5 Pro는 1 fps, Qwen2.5-VL은 2 fps, InternVL은 uniform 16-32, LLaVA-Video는 uniform 64. Twelve Labs만 dense multi-vector indexing으로 다른 길을 가지만, 그것조차 inference time이 아닌 index time에 비용이 amortize되기 때문이다. 이 chapter는 그 갭이 왜 경제적으로 합리적인지를 정직하게 설명한다.",
+      "topics": [
+        "Gemini 2.5 Pro의 1 fps default와 그 이유",
+        "videoMetadata.fps API knob과 cost estimation",
+        "Twelve Labs Marengo 3.0 / Pegasus 1.2의 multi-vector dense embedding 아키텍처",
+        "OpenAI/Anthropic이 native video understanding을 deprioritize한 이유",
+        "Open-source defaults 비교표 — Qwen2.5-VL, InternVL2.5/3, LLaVA-Video, VILA/NVILA",
+        "Retrieval (index-time) vs Inference (query-time) cost amortization 차이",
+        "Mixpeek shot detection의 예외성",
+        "Engineering pragmatism — predictable cost, easy benchmarking, no training, no query-conditioning latency"
+      ],
+      "learningGoals": [
+        "Gemini 2.5 Pro의 videoMetadata.fps parameter를 actual production code에서 호출하고 token/cost를 추정할 수 있다",
+        "Twelve Labs의 multi-vector indexing이 왜 inference-time QA가 아닌 retrieval task에 특화되었는지 설명할 수 있다",
+        "OpenAI/Anthropic이 video understanding을 deprioritize한 economic + technical 이유를 articulate할 수 있다",
+        "주요 open-source video-LLM (Qwen2.5-VL, InternVL, LLaVA-Video, NVILA)의 default sampling 전략과 frame cap을 비교할 수 있다",
+        "Index-time과 inference-time의 cost amortization 차이를 정량적으로 설명할 수 있다",
+        "연구 SOTA를 production에 도입할 때의 trade-off (latency variance, debuggability, infra cost)를 평가할 수 있다"
+      ],
+      "overview": "Chapter 3~7에서 우리는 AKS, BOLT, Frame-Voyager, Q-Frame, AdaRD-Key, FOCUS, VideoChat-Flash 등 sampling 연구의 frontier를 훑었다. 모두 uniform baseline 대비 명확한 정확도 우위를 보였고, 일부는 ~93% frame 감축에서도 등가의 성능을 보였다. 그런데도 2026년 6월 현재 상용 video-LLM API를 열어보면 — Gemini 2.5 Pro는 1 fps, Qwen2.5-VL은 2 fps, InternVL은 uniform 16-32 frame, LLaVA-Video는 uniform 64 frame — 누구도 그 연구 SOTA를 default로 채택하지 않았다. 이 갭은 우연이 아니다. 이 chapter는 (a) 각 상용 player가 어떤 구체적 선택을 했는지, (b) 왜 그것이 economically rational인지, (c) 어디서만 예외가 생기는지(retrieval indexing)를 정직하게 살펴본다. 결론은 disappointing하지만 중요하다 — 당신이 production system을 만든다면, 첫 버전은 uniform/fps-based로 시작해야 한다. SOTA sampler는 measured pain point가 생긴 후 swap-in할 plugin으로 설계되어야지, day-one default가 아니다.",
+      "sections": [
+        {
+          "title": "1. Gemini 2.5 Pro — 1 fps라는 솔직한 default",
+          "content": "Google의 Gemini 2.5 Pro는 2026년 현재 가장 널리 쓰이는 production video understanding API이다. Document 어디를 봐도 fancy keyframe selection은 없다. Default sampling rate는 **1 fps**, configurable range는 0.1 fps ~ 24 fps (videoMetadata.fps parameter). Visual은 frame당 258 tokens, audio는 parallel하게 1 Kbps로 처리된다.\n\n수치를 정리하면:\n- **1 fps × 258 tokens/frame ≈ 15,480 tokens/min** (audio 제외)\n- **1M context window 기준 ≈ 1시간 video** (default fps)\n- **2M context + low-resolution mode ≈ 6시간 video**\n- 가격은 **분당 약 $0.015** 수준 (입력 video token 기준 환산)\n\n왜 1 fps인가? Google이 공개한 official rationale은 **'human-speech granularity'** — 사람의 발화 음절·단어 단위와 비슷한 sampling rate이고, 대부분의 narration/dialogue 기반 video QA에는 충분하다는 것. 더 본질적으로는 1 fps가 (a) cost를 predictable하게 만들고 (분당 정확히 N tokens), (b) benchmark를 reproducible하게 만들고 (uniform이라 randomness 없음), (c) latency variance를 0으로 만든다 (query-conditioning이 없으므로 prefill이 결정적).\n\n사용자에게 주는 knob은 `videoMetadata.fps` 단 하나. fps=0.5로 낮추면 영상 길이를 2배로 늘릴 수 있고 (느린 영상, 강의), fps=2~5로 올리면 빠른 motion (sports, gaming)을 잡을 수 있다. 그러나 query-aware 동적 조절은 없다. AKS/BOLT를 쓰고 싶다면 client side에서 직접 frame을 select해서 image batch로 보내야 한다 — Gemini 자체는 video를 알아서 sample한다."
+        },
+        {
+          "title": "2. Twelve Labs — Multi-vector dense indexing이라는 다른 길",
+          "content": "Twelve Labs (Marengo 3.0 임베딩 모델 + Pegasus 1.2 생성 모델, 2026 라인업)는 sampling 문제에 전혀 다른 답을 낸다. 그들은 video를 **약 6초 chunk로 자르고, 각 chunk에서 visual + audio + ASR + motion을 합친 multi-vector dense embedding**을 추출한다. 즉, '몇 frame을 고를까?'를 묻지 않고 '모든 segment에 high-dimensional embedding을 미리 입혀두자'를 선택했다.\n\nKey design decisions:\n- **Chunk size ≈ 6s** — shot 길이의 통계적 중간값에 맞춤\n- **Joint modality embedding** — visual / audio / ASR transcript / motion이 한 vector에 entangled\n- **Built for retrieval, not inference QA** — query는 vector similarity search로 relevant chunk를 찾고, 그 chunk만 Pegasus generative model에 넘긴다\n- **Pricing**: Bedrock 기준 input 1M tokens당 ~$0.07. 분당 indexed cost는 별도 (per-minute indexed)\n\n이것이 작동하는 이유는 **cost amortization**이다. Index time에는 fancy multi-modal encoding을 써도 괜찮다 — 한번만 한다. 그 후 천 번의 query가 들어와도 retrieval은 vector 비교 한 번에 끝난다. 반대로 Gemini는 매 query마다 video를 처음부터 decode + sample + encode + LLM forward해야 하므로, 처음부터 cheap한 uniform이 합리적이다.\n\nTwelve Labs도 사실은 'sampling'을 하긴 한다 — 6초 chunk라는 fixed-duration uniform이다. Adaptive는 아니다. 단지 sampling output을 frame이 아니라 embedding으로 저장한다는 점이 다르다."
+        },
+        {
+          "title": "3. OpenAI와 Anthropic의 의도된 부재",
+          "content": "가장 솔직해야 할 부분이다. OpenAI는 **native video understanding API가 없다**. GPT-4o, GPT-4.1 모두 video 입력을 받지 않는다. Official cookbook의 가이드는 '~1 fps로 client-side에서 frame을 뽑아서 image batch로 보내라'다. Sora 2는 generation 전용 (10-25초 clip 생성)이지 understanding이 아니다.\n\nAnthropic의 Claude는 한 발 더 나간다. **Video를 아예 입력으로 받지 않는다.** Image만, 그리고 PDF의 frame을 image로 변환해야 한다.\n\n왜 두 frontier lab이 video를 deprioritize했을까?\n\n1. **TCO가 안 맞는다.** Video 1분 = image 60~1800개. Frontier model의 per-token cost 구조에서 video는 image 대비 60~1800배 비싸지만, 사용자가 분당 그만큼의 가치를 지불할 use case는 좁다 (compliance 검토, 의료 영상, 강의 요약 등 vertical 시장). General-purpose chatbot에서는 ROI가 안 나온다.\n\n2. **Encoder/decoder pipeline이 무겁다.** Video는 decode (codec 의존), sample (정책 의존), encode (visual encoder GPU 비용)의 3단 pipeline이 들어가는데, 이는 OpenAI/Anthropic의 LLM-centric serving 아키텍처에 어울리지 않는다. Gemini는 Google의 YouTube infra 위에 얹은 advantage가 있어서 가능했다.\n\n3. **Evaluation이 어렵다.** Text/image와 달리 video QA는 benchmark variance가 크고 (sampling 선택만 바꿔도 점수가 크게 흔들린다), customer-facing quality가 측정하기 어렵다.\n\n결과적으로 OpenAI/Anthropic은 video를 '나중에', '필요해지면 partner를 통해' 정도로 미뤘다. 이는 frame sampling 연구가 production에 흡수되지 않은 또 하나의 이유다 — 가장 큰 두 LLM lab의 default가 video를 다루지 않는다."
+        },
+        {
+          "title": "4. Open-source defaults — 일관된 uniform 패턴",
+          "content": "오픈소스 video-LLM의 default 표를 모아보면 패턴은 더 분명하다.\n\n| Model | Default sampling | Max frames | Encoder |\n|---|---|---|---|\n| **Qwen2.5-VL / Qwen3-VL** | 2 fps | 768 (`FPS_MAX_FRAMES`) | ViT + native dynamic res |\n| **InternVL2.5 / InternVL3** | Uniform | 16–32 | InternViT-6B |\n| **LLaVA-Video-7B/72B** | Uniform (when > cap) | 64 | SigLIP |\n| **VILA-1.5 / NVILA** | Uniform | 64 (in-context 16) | SigLIP |\n| **VideoChat-Flash** | 1 fps | 768 | UMT-L → HiCo compress |\n\n공통 패턴이 명확하다:\n- **누구도 query-aware adaptive sampling을 default로 두지 않는다.** AKS, BOLT, Q-Frame이 plug-in으로 쓸 수 있게 만들어졌음에도 불구하고.\n- **fps-based이든 uniform-N이든 결정적이다.** 같은 input에 대해 같은 frame이 뽑힌다.\n- **Frame cap이 있다.** 64~768. Cap을 넘으면 uniform downsample.\n- **Sampling 정책은 model card / config의 한 줄.** Algorithm이 아니라 number.\n\n이는 우연이 아니다. 이 model들의 training data 자체가 uniform sampling으로 만들어진 frame sequence를 input으로 받은 supervision으로 학습되었다. Inference time에 갑자기 AKS로 sampling 분포를 바꾸면 train-test distribution mismatch가 발생하고, 일부 benchmark에서는 오히려 성능이 떨어진다. 즉, **uniform은 단순한 default가 아니라 model의 trained behavior와 결합된 default**다."
+        },
+        {
+          "title": "5. Retrieval exception — Mixpeek과 index-time amortization",
+          "content": "위 패턴에서 명시적으로 벗어나는 곳이 있다. **Mixpeek**은 PySceneDetect 기반 shot detection으로 chunk를 만들고, 각 chunk에 vuse-generic-v1 embedding + transcript + face recognition + OCR을 entity-level로 입힌다. 이건 uniform이 아니다 — content-aware adaptive segmentation이다.\n\nTwelve Labs도 같은 결을 따른다. 6초 chunk가 uniform처럼 보이지만 그들의 indexing pipeline은 multi-modal joint encoding을 매 chunk에 수행한다 — Gemini의 single visual encoder pass보다 훨씬 무겁다.\n\n**왜 retrieval 시스템만 이게 가능한가?** Cost amortization 때문이다.\n\n- **Inference-time (Gemini, Qwen, LLaVA)**: 사용자 query 1회 = sampling 1회 + LLM forward 1회. 매 query마다 sampling cost를 지불한다. Cheap한 uniform이 이긴다.\n- **Index-time (Twelve Labs, Mixpeek)**: video 등록 1회 = sampling/encoding 1회 + query는 vector search로 cheap. 한번 비싸게 sampling을 해두면 1,000번의 query가 그것을 공유한다.\n\n수치적으로, video 1시간에 AKS-style query-aware sampling을 적용하는 데 5초가 더 걸린다 치자. Inference 시스템에서는 사용자 latency에 5초가 더해진다 (각 query마다). Index 시스템에서는 등록 1회에 5초가 더해지고 query latency는 그대로 (~100ms vector search)다. 1,000개 query면 inference는 5,000초 누적, index는 5초 누적.\n\n**이것이 commercial reality의 핵심 분기점이다.** Adaptive/fancy sampling을 쓰고 싶다면 시스템을 retrieval로 설계해야 한다. Inference-time generative QA를 한다면 uniform이 거의 항상 이긴다 — 적어도 default로는."
+        },
+        {
+          "title": "6. 갭이 영구히 존재하는 이유",
+          "content": "이 chapter의 thesis는 단순하다 — **연구 SOTA와 production의 갭은 일시적 lag이 아니라 구조적이다.** Production engineer가 uniform을 고르는 이유는 게으르거나 무지해서가 아니라, 다음 6가지 properties가 어떤 정확도 향상보다 비싸기 때문이다.\n\n1. **Predictable cost** — 1분 video = 정확히 N tokens. Finance/quoting/SLA가 가능하다. Adaptive sampler는 video 내용에 따라 cost가 흔들린다.\n\n2. **Easy benchmarking** — 같은 input에 같은 output. Regression test가 가능하다. Stochastic/query-conditioned sampler는 매번 다른 결과.\n\n3. **No query-conditioning latency** — Prefill을 model warmup 전에 시작할 수 있다. Adaptive sampler는 query를 봐야 sampling이 시작된다 — 사용자 latency가 늘어난다.\n\n4. **No additional training/finetuning** — 모델 변경 시 sampler도 재훈련하지 않는다. AKS/BOLT가 'training-free'를 강조해도, 실제로는 base model의 train distribution과의 mismatch가 있어 fine-tuning이 도움이 되는 경우가 많다.\n\n5. **Debuggable** — '왜 이 frame을 골랐나?'에 'frame 1, 31, 61, ...'이 답이 된다. Adaptive sampler는 'CLIP score 0.73, top-K cutoff'를 설명해야 한다.\n\n6. **Failure mode가 알려져 있다** — Uniform이 실패하는 곳 (긴 video, sparse event)을 정확히 알고 있다. Adaptive sampler의 failure mode는 새 vid가 들어올 때마다 발견된다.\n\n이는 데이터베이스가 B-tree를 default로 쓰는 이유와 같다. LSM tree, fractal tree, hash index 등이 특정 workload에서 더 빠르지만, B-tree의 known properties (logarithmic, ordered, range scan, lock 동작 등)이 production engineer에게 더 값지다. **Known beats optimal**, 늘 그렇다."
+        }
+      ],
+      "analogy": {
+        "title": "왜 패스트푸드 체인은 셰프 패티 대신 냉동 패티를 쓰는가",
+        "content": "가설: 잘 만든 fresh patty가 frozen patty보다 분명히 맛있다. 미슐랭 셰프가 매장에 있다면 손님 만족도가 올라간다. 그런데 왜 McDonald's, Burger King, In-N-Out 같은 글로벌 체인은 여전히 frozen 또는 표준화된 patty를 쓰는가?\n\n답은 **consistency + cost + ops simplicity**가 per-burger 맛 최대화보다 비싸기 때문이다.\n\n- Frozen patty는 grain, weight, fat ratio, cook time이 결정적이다. 도쿄 매장과 마이애미 매장이 같은 맛.\n- 매시간 patty quality variance가 0에 가깝다. CFO가 단가를 정확히 quote할 수 있다.\n- Fryer/grill을 표준 시간에 맞춰 운영할 수 있다. 셰프가 없어도 된다.\n- 실패 모드가 알려져 있다 — frozen patty가 dry해지는 조건을 30년간 모았다.\n\n반면 fresh patty는 (a) 매일 fat ratio가 흔들리고, (b) 매 매장의 grill master skill에 의존하고, (c) supply chain이 흔들리면 즉시 무너지고, (d) 새로운 실패 모드가 매주 발견된다.\n\n결과적으로 글로벌 체인은 'patty 맛'이라는 하나의 metric을 포기하는 대신 'predictable, scalable, debuggable burger'를 얻는다.\n\n**Frame sampling은 정확히 같은 구조다.** Gemini/Qwen/LLaVA의 uniform sampling은 '냉동 패티' — per-video 정확도 최대화는 포기하지만, predictable cost / easy benchmarking / debuggable / no training 의 5가지 properties를 얻는다. AKS/BOLT/Frame-Voyager는 'fresh patty' — per-video 정확도는 분명히 더 높지만, 운영 비용이 다르다.\n\n그리고 **Twelve Labs는 'central commissary' 모델**이다. Fresh patty를 본사에서 미리 만들어 cryovac해서 매장에 보내는 방식. Index time에 한번 정성껏 만들어두고, 매장 (query)에서는 가열만 한다. 그래서 fancy embedding이 가능하다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "실제 Gemini 2.5 Pro API를 호출해서 video를 처리하는 production code다. `videoMetadata.fps` parameter — Google이 사용자에게 제공하는 단 하나의 sampling knob — 를 어떻게 조정하고, 그 결과 token cost가 어떻게 달라지는지 보여준다. fps=0.5(저속/강의), 1(default/대화), 2(스포츠/액션)의 세 경우를 비교한다.",
+        "code": "# pip install google-genai\n# Requires GOOGLE_API_KEY env var\nimport os\nfrom google import genai\nfrom google.genai import types\n\nclient = genai.Client(api_key=os.environ[\"GOOGLE_API_KEY\"])\n\n# 1) Upload a local video (or pass a public URL via file_uri)\nVIDEO_PATH = \"./lecture_30min.mp4\"  # 30-min lecture\nuploaded = client.files.upload(file=VIDEO_PATH)\n\n# Visual tokens per frame in Gemini 2.5 Pro\nTOKENS_PER_FRAME = 258\nPRICE_PER_MIN = 0.015  # ~$0.015/min at 1 fps (rough envelope)\n\ndef ask_gemini(fps: float, prompt: str, duration_min: float):\n    \"\"\"Run Gemini 2.5 Pro on a video at a specific sampling fps and estimate cost.\"\"\"\n    response = client.models.generate_content(\n        model=\"gemini-2.5-pro\",\n        contents=[\n            types.Content(\n                role=\"user\",\n                parts=[\n                    types.Part(\n                        file_data=types.FileData(\n                            file_uri=uploaded.uri,\n                            mime_type=\"video/mp4\",\n                        ),\n                        # The only sampling knob Google exposes\n                        video_metadata=types.VideoMetadata(fps=fps),\n                    ),\n                    types.Part(text=prompt),\n                ],\n            )\n        ],\n    )\n    # Cost envelope: visual tokens ~= fps * 60 * duration_min * 258\n    est_visual_tokens = int(fps * 60 * duration_min * TOKENS_PER_FRAME)\n    est_cost = duration_min * PRICE_PER_MIN * (fps / 1.0)\n    return {\n        \"fps\": fps,\n        \"answer\": response.text,\n        \"est_visual_tokens\": est_visual_tokens,\n        \"est_cost_usd\": round(est_cost, 4),\n    }\n\nprompt = \"What are the three main arguments the lecturer makes? Cite timestamps.\"\nfor fps in [0.5, 1.0, 2.0]:\n    result = ask_gemini(fps=fps, prompt=prompt, duration_min=30)\n    print(f\"[fps={result['fps']}] tokens~={result['est_visual_tokens']:,}  \"\n          f\"cost~=${result['est_cost_usd']}\\n  -> {result['answer'][:120]}...\\n\")",
+        "walkthrough": "이 code의 production-실용적 핵심:\n\n1. **`video_metadata=types.VideoMetadata(fps=fps)`** — Google이 노출한 sampling control은 **이것 하나뿐**이다. AKS/BOLT처럼 query-conditioning을 하고 싶다면 client에서 직접 frame을 골라 image part로 보내야 한다.\n\n2. **fps=0.5, 1, 2의 trade-off**:\n   - fps=0.5: 30분 video → visual 약 232K tokens, $0.225. 강의처럼 prompt-aware sampling이 약한 use case에 적합.\n   - fps=1 (default): visual 약 464K tokens, $0.45. 일반 narration/dialogue에 충분.\n   - fps=2: visual 약 928K tokens, $0.90. 1M context의 거의 절반을 시각 token이 차지한다. Sports/action용.\n\n3. **Cost envelope이 fps에 거의 선형**이다. Adaptive sampler가 fps를 동적으로 조정해주면 좋겠지만, Gemini는 그것을 user가 결정하게 둔다 — 그게 가장 predictable하기 때문이다.\n\n4. **Estimation은 visual만 포함**이다. Audio (1 Kbps), text prompt, output token은 별도. Production에서는 actual usage가 `response.usage_metadata`에서 정확히 나오므로 그것을 쓴다.\n\n5. 실제 운영에서는 use case 별로 fps를 한번 결정하면 그 후에는 거의 바꾸지 않는다. 이게 바로 commercial pattern이다 — sampling은 **policy decision**이지 매 query 결정이 아니다."
+      },
+      "industryEvaluation": {
+        "overview": "Senior video infrastructure engineer 채용 인터뷰는 candidate가 (a) 실제 production API의 sampling 정책을 정확히 알고 그 economic rationale을 articulate할 수 있는지, (b) inference-time과 index-time의 cost 구조 차이를 정량적으로 설명할 수 있는지, (c) 연구 SOTA를 production에 어떤 단계로 도입할지 판단할 수 있는지를 본다. 'AKS가 SOTA니까 도입하자'는 답은 junior 신호다.",
+        "whatEngineersLookFor": [
+          "Gemini 2.5 Pro의 1 fps default를 알고, 'human-speech granularity' + 'predictable cost' 두 rationale로 설명할 수 있다",
+          "videoMetadata.fps의 range (0.1~24)와 256-2M context의 trade-off를 분단위로 계산할 수 있다",
+          "Twelve Labs가 multi-vector dense embedding을 쓰는 이유 = retrieval에 최적화된 cost amortization 패턴임을 즉시 설명한다",
+          "OpenAI/Anthropic이 video를 deprioritize한 이유를 economic TCO와 serving architecture 측면에서 분석한다",
+          "Qwen2.5-VL 2 fps, InternVL uniform 16-32, LLaVA-Video uniform 64 같은 구체적 default를 외우고 있다",
+          "'왜 uniform이 default인가'에 'lazy/legacy'가 아니라 6가지 properties 중 4가지 이상을 든다",
+          "Adaptive sampler를 도입할 때 inference-time vs index-time 중 어느 쪽이 ROI가 좋은지 판단할 수 있다",
+          "Production rollout 시 fancy sampler를 day-one default가 아닌 'measured pain point 후 swap-in plugin'으로 설계한다"
+        ],
+        "redFlags": [
+          "'AKS가 SOTA니까 Gemini도 곧 도입할 것이다'라고 단순 추정한다",
+          "Twelve Labs와 Gemini를 같은 카테고리로 묶는다",
+          "OpenAI에 video API가 있다고 잘못 안다",
+          "Open-source defaults를 'training cost 때문'이라고만 설명한다",
+          "Index-time과 inference-time의 cost amortization 차이를 못 든다",
+          "'우리 시스템에 AKS 바로 넣자'고 한다",
+          "Mixpeek/Voxel51 같은 retrieval 시스템과 generative QA 시스템의 차이를 설명 못함",
+          "연구 paper의 accuracy gain만 보고 production cost properties를 평가에 포함하지 않음"
+        ],
+        "interviewQuestions": [
+          "**Q1.** Gemini 2.5 Pro의 default fps는 1입니다. 만약 당신이 강의 video 전용 SaaS를 만든다면 fps를 0.5로 낮춰서 비용을 절반으로 줄이고 싶을 겁니다. 어떤 측정으로 그 결정이 안전하다고 prove하시겠습니까? 어떤 edge case가 fps=0.5에서 실패할까요? 그리고 실패하는 video를 detect해서 fps=1로 fallback하는 system은 어떻게 설계하시겠습니까?",
+          "**Q2.** 당신 회사는 1시간짜리 회의 video 10만 개에 대해 'Q&A on demand' 서비스를 제공합니다. (a) Gemini를 매 query마다 호출하는 inference 방식과, (b) Twelve Labs로 index해두고 retrieval+generation하는 방식. 1년 동안 video당 평균 50개의 query가 발생한다고 가정할 때 두 모델의 cost를 분단위까지 추정하고, 어느 방식이 ROI가 높을지 판단하세요.",
+          "**Q3.** Qwen2.5-VL은 2 fps with FPS_MAX_FRAMES=768을 default로 씁니다. 당신이 이 model을 self-host해서 30분짜리 surgical video QA를 한다고 합시다. 2 fps × 30분 = 3,600 frame이 cap 768을 초과합니다. Qwen은 이때 uniform downsample을 하는데, 외과 의사가 'critical moment에서 frame이 빠졌다'고 컴플레인합니다. AKS/BOLT plug-in vs shot detection + multi-pass query 중 무엇을 고르겠습니까?"
+        ],
+        "masteryVsFamiliar": "**Familiar**한 후보는 'Gemini는 1 fps, Qwen은 2 fps'를 기억한다. **Mastery**를 가진 후보는 그 1 fps가 token economics (258 tokens × 60 sec × 60 min = 928,800 tokens/hr으로 1M context에 정확히 맞춘 설계)와 human-speech granularity라는 두 rationale의 교집합임을 알고, 더 나아가 inference-time cost amortization 구조 때문에 AKS/BOLT를 도입해도 사용자 latency가 늘어나 ROI가 낮다는 것을 즉석에서 계산한다. Twelve Labs를 보면 그들이 fancy sampling이 아니라 index-time cost를 query 1,000번에 amortize하는 economic architecture를 채택했음을 안다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "Gemini 2.5 Pro는 1 fps default — videoMetadata.fps 단 하나의 knob",
+          "content": "258 tokens/frame × 60 sec × 60 min = 약 928,800 tokens/hr → 1M context window에 정확히 1시간 fit. 분당 ~$0.015. Query-aware adaptive sampling은 없다."
+        },
+        {
+          "title": "Twelve Labs는 retrieval 시스템이지 generative QA가 아니다",
+          "content": "Marengo 3.0 / Pegasus 1.2가 multi-vector dense embedding (visual+audio+ASR+motion joint)을 6초 chunk마다 만드는 이유는, index time에 한번 비싸게 만들어두면 1,000번의 query가 그 cost를 amortize하기 때문이다."
+        },
+        {
+          "title": "OpenAI는 native video가 없고, Anthropic은 video를 받지 않는다",
+          "content": "OpenAI cookbook은 'client-side ~1 fps frame extraction → image batch'를 권장한다. Anthropic Claude는 image만. 두 frontier lab은 video TCO와 LLM-centric serving architecture 부적합 때문에 video understanding을 deprioritize했다."
+        },
+        {
+          "title": "Open-source defaults는 일관되게 uniform/fps-based",
+          "content": "Qwen2.5-VL 2 fps (768 cap), InternVL2.5/3 uniform 16-32, LLaVA-Video uniform 64, NVILA uniform 64. 누구도 query-aware adaptive를 default로 두지 않는다."
+        },
+        {
+          "title": "Index-time vs Inference-time이 sampling 정책의 분기점이다",
+          "content": "Inference-time 시스템은 매 query마다 sampling cost를 지불하므로 cheap한 uniform이 이긴다. Index-time 시스템은 등록 1회에 sampling cost를 amortize하므로 fancy multi-modal encoding이 가능하다."
+        },
+        {
+          "title": "Production은 정확도가 아니라 6가지 properties를 산다",
+          "content": "Predictable cost, easy benchmarking, no query-conditioning latency, no additional training, debuggable, known failure mode. known beats optimal."
+        },
+        {
+          "title": "Mixpeek은 retrieval이라서 shot detection이 가능하다",
+          "content": "Mixpeek은 PySceneDetect 기반 content-aware segmentation을 쓰는 드문 예외다. 이는 그들이 inference QA가 아닌 search/retrieval workload를 다루기 때문이지 fancy sampler가 보편적으로 production-ready여서가 아니다."
+        },
+        {
+          "title": "연구 SOTA는 swap-in plugin으로 설계하되 day-one default가 아니다",
+          "content": "Production rollout 순서는 (1) uniform/fps-based로 시작, (2) accuracy/cost pain point를 measure, (3) failing video class를 식별, (4) 그 class에 한해 AKS/BOLT를 plugin으로 swap-in, (5) variant별 A/B로 ROI 검증."
+        }
+      ]
+    },
+    {
+      "number": 9,
+      "emoji": "🔌",
+      "title": "Plug-and-Play Architecture Design",
+      "titleKr": "Plug-and-Play 아키텍처 설계",
+      "tldr": "Video-LLM 파이프라인은 6단계(input → decode → sample → encode → token-reduce → LLM)로 분해되며, sampler는 SOTA 교체가 가장 빈번한 swap point다. `Sampler.select(...) -> List[int]` 계약을 ABI로 고정하면, AKS·BOLT·Frame-Voyager·M-LLM을 encoder·LLM 재학습 없이 feature flag로 갈아끼울 수 있다. vLLM-Omni의 disaggregated serving과 Twelve Labs Embed API 스타일 frame-feature cache가 이 모듈식 설계의 production 레퍼런스다.",
+      "topics": [
+        "Canonical 6-stage video pipeline",
+        "Sampler.select() ABI contract",
+        "vLLM-Omni disaggregated serving",
+        "Frame-feature cache (Twelve Labs Embed 패턴)",
+        "6 anti-patterns",
+        "Feature-flagged sampler swap"
+      ],
+      "learningGoals": [
+        "비디오 파이프라인을 6단계 stage로 분해하고 각 stage의 책임 경계를 정의할 수 있다",
+        "`Sampler.select(frames, query, budget, scenes) -> List[int]` 계약이 왜 ABI 관점에서 옳은지 설명할 수 있다",
+        "vLLM-Omni 스타일 disaggregated graph를 설계하고 per-stage batching 이득을 추정할 수 있다",
+        "frame-feature cache의 key 설계와 invalidation 전략(`video_id:fps:model`)을 구현할 수 있다",
+        "6가지 anti-pattern을 production 코드에서 식별하고 리팩터링할 수 있다",
+        "encoder/LLM을 재학습하지 않고 sampler를 A/B 롤아웃하는 feature-flag 패턴을 설계할 수 있다"
+      ],
+      "overview": "8장까지 우리는 '어떤 sampler가 더 정확한가'를 다뤘다. 9장은 질문을 뒤집는다 — '*어떤 sampler든* 갈아끼울 수 있는 시스템을 어떻게 설계하는가'. SOTA는 6개월 주기로 바뀐다(AKS → BOLT → AdaRD-Key → FOCUS). encoder(CLIP/SigLIP)와 LLM(Qwen3-VL/LLaVA-Video)은 그보다 훨씬 느리게 바뀐다. 잘 설계된 파이프라인은 이 *시간 상수의 차이*를 인터페이스 경계로 흡수한다. 핵심은 단 하나의 계약이다 — sampler는 *프레임이 아니라 인덱스를 반환한다*. 이 한 줄짜리 ABI 결정이 disaggregated serving, frame-feature cache, feature-flag rollout, 그리고 6장에서 본 long-video 처리까지 전부 가능하게 만든다. 이 장은 vLLM-Omni(2025-11 reported 91.4% JCT 감소)와 Twelve Labs Embed API를 참조 구현으로 삼아, plug-and-play 아키텍처의 *불변 부분*과 *swappable 부분*을 분리하는 법을 다룬다.",
+      "sections": [
+        {
+          "title": "1. The Canonical 6-Stage Video Pipeline",
+          "content": "모든 video-LLM 추론 경로는 다음 6단계로 환원된다.\n\n```\n(1) Input        : URL / blob / 업로드된 파일 → bytes\n(2) Decode       : Decord / PyAV / NVDEC → ndarray[T, H, W, 3]\n(3) Sample       : T 프레임 중 N개 인덱스 선택  ← SWAP POINT\n(4) Encode       : CLIP / SigLIP / Marengo → Tensor[N, D_v]\n(5) Token-Reduce : SlowFast / HiCo / TokenMerge → Tensor[N', D_v]\n(6) LLM          : vLLM / TensorRT-LLM → text\n```\n\n각 stage가 plug-and-play가 되려면 *interface가 stage 사이 경계에서만* 정의되어야 한다. 즉 (2)→(3) 경계는 'T 프레임의 numpy array와 (옵션) 메타데이터'로, (3)→(4) 경계는 'List[int] 인덱스'로 못박혀 있어야 한다. 다음 표는 각 경계의 *불변 contract*다.\n\n| 경계 | 입력 타입 | 출력 타입 | 불변 메타 |\n|---|---|---|---|\n| Input → Decode | `bytes` or `Path` | `VideoHandle(reader, fps, T, hw)` | `video_id`, `sha256` |\n| Decode → Sample | `VideoHandle` | `List[int]` (frame indices) | `query`, `budget`, `scenes?` |\n| Sample → Encode | `List[int]` + `VideoHandle` | `Tensor[N, D_v]` | `model_id`, `preprocess_id` |\n| Encode → Reduce | `Tensor[N, D_v]` | `Tensor[N', D_v]` | `reduction_ratio` |\n| Reduce → LLM | `Tensor[N', D_v]` | `str` (생성 결과) | `prompt`, `tokenizer_id` |\n\n실수 패턴: 많은 초기 코드베이스가 stage (3)와 (4)를 한 함수에 묶어 `sample_and_encode()`로 노출한다. 이러면 sampler를 바꿀 때마다 encoder caller도 손대야 한다. *boundary가 코드 경계*가 아니라 *함수 시그니처 경계*여야 plug-and-play가 가능하다.\n\n실제 production stack 매핑:\n- **Decode**: Decord는 numpy zero-copy로 빠르지만 H.265 일부 코덱에서 PyAV로 fallback. NVIDIA stack에서는 NVDEC + DALI.\n- **Encode**: open-weights는 SigLIP-SO400M / CLIP-ViT-L/14, managed는 Twelve Labs Marengo 3.0 multi-vector.\n- **Token-Reduce**: VideoChat-Flash HiCo (1/50 비율), NVILA scale-then-compress, FastVID dynamic density.\n- **LLM**: vLLM 0.x continuous batching, paged KV cache."
+        },
+        {
+          "title": "2. The Sampler.select() Contract — Why Return Indices, Not Frames",
+          "content": "단 하나의 ABI 결정이 이 장의 핵심이다.\n\n```python\ndef select(\n    video: VideoHandle,           # 디코드 핸들 (lazy, frame 자체는 미반환)\n    query: str | None,            # query-aware sampler용; uniform은 무시\n    budget: int,                  # 반환할 프레임 수 (LLM context로 결정됨)\n    scenes: list[Scene] | None,   # shot 경계 (PySceneDetect, 옵션)\n) -> list[int]:\n    ...\n```\n\n**왜 `List[int]`인가?** 네 가지 이유.\n\n1) **메모리 비용**. 1시간 1080p @ 30fps = 108,000 프레임 × 6.2MB = 약 670GB raw. `List[PIL.Image]`를 반환하면 sampler가 RAM에 전부 적재해야 한다. 인덱스는 432KB. encoder는 자기가 필요한 시점에 lazy하게 가져간다.\n\n2) **caching의 자연스러운 key**. `(video_id, indices, encoder_id)`가 frame-feature cache의 자연스러운 hash key가 된다. 만약 frames를 반환했다면 byte-equality로 key를 잡아야 하고, JPEG re-encode가 한 번만 끼어도 cache miss.\n\n3) **disaggregated serving 호환**. vLLM-Omni처럼 sampler와 encoder가 다른 GPU pool에 있으면 frames를 RPC 경계로 보내는 비용은 indices의 ~10⁴배. indices는 gRPC payload가 KB 단위.\n\n4) **debuggability와 재현성**. 평가 시 'sampler X가 어떤 프레임을 골랐나'를 log에 남겨야 하는데, indices는 그대로 JSON-serializable. 8장에서 본 commercial gap 분석도 'index trace'가 있어야 가능하다.\n\n**`query`를 `str | None`으로 두는 이유**: uniform, fps-based, shot-based sampler는 query를 무시한다. AKS·BOLT·Frame-Voyager는 사용한다. Optional로 두면 caller가 *어떤 sampler가 underneath든 상관없이* 같은 코드로 호출 가능 — Liskov substitution이 plug-and-play의 본질이다.\n\n**`scenes`를 옵션으로 두는 이유**: PySceneDetect는 비싸다(1시간 비디오 약 30-90초). 이미 indexing 단계에서 계산해 둔 scene list가 있다면 sampler가 재사용. AKS·BOLT는 scene anchors를 hint로 쓸 때 정확도가 올라간다. 없으면 sampler 내부에서 fallback.\n\n**`budget: int` (token 아님 frame 수)**: token budget은 encoder + token-reducer 조합에 따라 다르다. sampler가 그걸 알 필요 없다. 'N개 인덱스만 골라라'가 layering violation을 막는다. caller가 `budget = llm_ctx_tokens // tokens_per_frame_after_reduction`을 계산해서 전달."
+        },
+        {
+          "title": "3. vLLM-Omni Disaggregated Serving",
+          "content": "monolithic video-LLM 서빙(`forward(video, prompt)` 한 호출)은 stage별 utilization 불균형을 낳는다. 1시간 비디오 처리 시:\n- Decode: CPU/NVDEC bound, ~3-8초\n- Sample(BOLT): SigLIP score 한 번, ~0.5초\n- Encode: GPU SigLIP-SO400M, 64 frames, ~0.2초\n- LLM prefill+decode: 64×729 vision tokens + text, ~6-15초\n\n같은 GPU에서 직렬화하면 stage들이 서로의 idle을 메꿔주지 못한다. **vLLM-Omni**(`vllm-project/vllm-omni`)는 2025년 11월 블로그(blog.vllm.ai/2025/11/30)에서 발표된 disaggregated graph로 이를 해결한다. encoder pool, sampler pool, LLM core를 *독립 stage*로 분리하고 각각 per-stage batching한다. 보고된 결과는 동기 baseline 대비 **91.4% JCT(job completion time) reduction**.\n\n**핵심 mechanism 세 가지:**\n\n1) **Per-stage batching**. encoder는 16 frames/batch로 GPU saturation, LLM은 paged KV cache로 8 requests/batch concurrent. stage마다 최적 batch size가 다르다는 사실을 받아들인다.\n\n2) **Async handoff via shared object store**. stage 사이에 frames/embeddings를 직접 전달하지 않고 in-cluster object store(예: Plasma/Ray, 혹은 자체 KV store)에 던진다. handle만 RPC. 우리의 `List[int]` contract가 이 구조에서 자연스럽게 맞물린다.\n\n3) **Sampler를 graph node로 격리**. sampler가 encoder와 같은 pool에 있을 수도 있고(AKS는 SigLIP을 sampling 단계에서 또 호출), LLM 쪽에 있을 수도 있다(GenS는 VideoLLM 자체가 retriever). 그래프 노드로 빼두면 어느 쪽으로 옮겨도 caller 코드 무수정.\n\n**우리의 reference graph:**\n```\n[Ingest] ─► [DecodeWorker pool (NVDEC×4)] ─► FrameStore (Redis/S3)\n                                                  │\n                ┌── [PySceneDetect lazy] ────────┤\n                ├── [Sampler Plugin pool]: AKS|BOLT|Voyager|M-LLM\n                ├── [Encoder pool (SigLIP×8)] ──► EmbedCache\n                ├── [TokenReducer (HiCo)]\n                └── [LLM serving (vLLM-Omni)]\n```\n\n**실용 tip**: stage 사이 queue depth를 모니터링하면 어느 stage가 bottleneck인지 즉시 드러난다. encoder queue가 자주 0이면 encoder pool을 줄이고 sampler pool을 키워라. lmms-eval로 offline 평가할 때는 직렬화로 충분하지만, production에서는 거의 항상 disaggregated가 이긴다."
+        },
+        {
+          "title": "4. Frame-Feature Cache — Compute Once, Re-Rank Many",
+          "content": "production에서 가장 비싼 작업은 *encode*다. SigLIP-SO400M으로 1시간 비디오 1fps(3600 프레임) 임베딩에 GPU 분 단위. 같은 비디오에 대해 query가 여러 번 들어오면(예: 강의 영상 + 사용자 100명) 매 query마다 re-encode하는 건 비합리적이다.\n\n**해결: per-frame embedding을 한 번 계산해 캐시**. 그러면 query 시점에는 sampler가 *embedding만 보고* 인덱스를 고른다 — cheap re-rank.\n\nTwelve Labs Embed API가 정확히 이 패턴을 외부 API로 노출한다. video를 한 번 ingest하면 Marengo 3.0의 multi-vector embeddings(joint visual+audio+ASR+motion, ~6초 chunk)가 저장되고, 이후 query는 그 vector space에서 ANN 검색.\n\n**자체 구현 시 cache key 설계:**\n```\nkey   = f\"{video_id}:{fps}:{encoder_model_id}\"\nvalue = Tensor[T_at_fps, D_v]  (per-frame embedding, fp16)\n```\n\n세 차원 모두 invalidation 의미를 갖는다:\n- `video_id`: 명백.\n- `fps`: 다른 fps로 디코딩하면 다른 프레임 집합. 1fps와 2fps embedding은 *섞어 쓰면 안 된다*.\n- `encoder_model_id`: SigLIP과 CLIP은 다른 vector space. embedding은 모델 교체 시 모두 무효.\n\n**invalidation 전략 세 가지:**\n\n1) **Content-addressed**. `sha256(video_bytes)`를 video_id로 쓰면 같은 컨텐츠 re-upload는 자동 cache hit. 비용 절감 큼.\n\n2) **TTL + encoder version pinning**. encoder를 SigLIP-v1 → SigLIP-v2로 올릴 때 *기존 cache는 그대로 두고* 새 key namespace 시작. dual-read 기간을 두고 점진 마이그레이션. 한 번에 무효화하면 GPU re-encode 폭주.\n\n3) **Sampler는 cache를 *consume only***. sampler가 cache에 쓰면 안 된다. 쓰기는 encoder stage에서만. 이 단방향성이 race condition을 막는다.\n\n**경계 case**: shot list도 캐시하라. PySceneDetect는 video별 1회 계산. key는 `{video_id}:scenes:{detector_version}`. AKS와 BOLT가 둘 다 hint로 쓸 수 있다.\n\n**얼마나 절약되나?** Twelve Labs의 가격 모델(~$0.07/1M input tokens on Bedrock)이 amortize되는 이유는 indexing이 1회, query가 N회이기 때문. 자체 구현 시에도 query 100회 가정하면 encoder GPU 비용을 두 자릿수 배수로 줄인다. 이게 8장에서 본 'production이 retrieval 시스템에서만 SOTA sampler를 쓰는' 이유의 경제적 근거다."
+        },
+        {
+          "title": "5. Six Anti-Patterns (그리고 각각 어떻게 망가지는가)",
+          "content": "production에서 반복적으로 발견되는 6가지 망가지는 패턴이다. 코드 리뷰 체크리스트로 써라.\n\n**(a) Uniform 8-frame on 1-hour video**\n증상: budget을 비디오 길이와 분리. 1시간 = 3600초를 8 프레임으로 → 450초당 1 프레임. 사건 단위가 다 사라진다. BOLT(arXiv:2503.21483) baseline에서 정확히 이 setup이 Video-MME long split 53.8 → 56.1 차이의 원인. 수정: `budget = clamp(min_b, video_seconds * frames_per_second_target, max_b)`.\n\n**(b) Sampling before shot detection**\n증상: uniform sample 후 SceneDetect 돌림. 이미 frame을 떨어뜨린 뒤라 shot 경계와 어긋남. 한 shot 안에서 같은 시점 여러 프레임이 뽑히고, 다른 shot은 통째로 누락. 수정: scene detect를 *decode 직후*, sample 위에 둔다. AKS/BOLT는 scene anchors를 hint로 받는다.\n\n**(c) Selection inside LLM pooling when scene evidence was discarded upstream**\n증상: upstream에서 uniform으로 8 프레임만 통과시키고, LLM의 attention pooling이 'token 중요도를 잘 학습할 거야'라고 기대. 이미 버려진 프레임의 정보는 attention이 복구하지 못한다. 'LLM이 알아서 할 것'은 sampling 결정을 *upstream에 둔* 시스템에서 통하는 말이다. 수정: 7장 token compression과 sampling을 *두 개의 독립 축*으로 다룬다.\n\n**(d) Fixed token budget independent of video length**\n증상: 30초든 1시간이든 vision token이 4608개로 고정. 짧은 비디오는 token이 낭비되고, 긴 비디오는 정보가 잘린다. 수정: `vision_tokens = f(video_seconds)` 함수로. NVILA의 'scale-then-compress'가 이 사고를 내장.\n\n**(e) Re-decoding per query instead of caching features**\n증상: 같은 비디오에 query 100번 들어오면 NVDEC 100번 → SigLIP 100번. cost가 query당 분 단위로 누적. 수정: §4의 frame-feature cache. content-addressed key. Twelve Labs Embed API 패턴.\n\n**(f) Sampler coupled to specific MLLM tokenizer**\n증상: sampler가 `qwen_vision_tokenizer.encode(frame)`를 직접 호출. Qwen3-VL → LLaVA-Video로 교체 시 sampler 코드 수정 불가피. 가장 흔한 plug-and-play 실패. 수정: §2의 `Sampler.select() -> List[int]` 계약 엄수. sampler는 *어떤 MLLM이 downstream인지 모른다*. encoder/tokenizer 호출은 stage (4) 이후에서만.\n\n각 anti-pattern은 단독으로도 SOTA의 정확도 이득을 모두 잡아먹는다. (a)+(e)가 같이 발생하면 Gemini 2.5 Pro 같은 *commercial* API에 한 query당 수십 센트씩 줄줄 새는 시스템이 된다. 8장의 commercial gap은 일정 부분 이런 anti-pattern이 외부 API 비용으로 노출되지 않는 데서 비롯된다."
+        },
+        {
+          "title": "6. Feature-Flagged Sampler Swap in Production",
+          "content": "SOTA sampler를 A/B 테스트하는 production 절차다. encoder와 LLM은 *건드리지 않는다*. §2의 contract를 지켰다면 다음이 한 PR 안에 들어간다.\n\n**Step 1: registry로 sampler 식별자 노출**\n```python\nSAMPLERS = {\n    \"uniform\":      UniformSampler(),\n    \"aks\":          AKSampler(encoder=\"siglip-so400m\"),\n    \"bolt\":         BoltSampler(encoder=\"siglip-so400m\"),\n    \"frame-voyager\":FrameVoyagerSampler(ckpt=\"...\"),\n    \"m-llm\":        MLLMSampler(scorer=\"qwen-vl-2b\"),\n}\n```\n\n**Step 2: feature-flag를 request-level로 inject**\n```python\nsampler_id = flags.get(\"video.sampler\", user_id=req.user_id, default=\"uniform\")\nsampler = SAMPLERS[sampler_id]\nindices = sampler.select(video, query=req.query, budget=req.budget, scenes=scenes)\n```\nLaunchDarkly/Statsig/자체 flag 시스템 어느 쪽이든. 핵심은 *결정 지점이 한 줄*이라는 것.\n\n**Step 3: 1% → 5% → 25% → 50% rollout**\n각 단계에서 본 지표:\n- 정확도: lmms-eval Video-MME long, MLVU, LongVideoBench (offline 평가는 매일 cron)\n- 비용: 평균 vision tokens/request, encoder GPU-seconds/request\n- 지연: p50/p95/p99 e2e latency\n- 안정성: sampler가 raise하는 비율\n\n**Step 4: shadow mode**\n새 sampler를 production traffic으로 돌리되 *응답은 control(uniform)으로 반환*. 두 결과를 비교 로깅. 정확도 회귀(regression) 없으면 rollout 진행. AKS·BOLT 같은 training-free sampler는 shadow 비용이 sampler GPU만큼만 들기 때문에 shadow가 현실적. learned sampler(Frame-Voyager, M-LLM)는 추가 모델 호스팅이라 비용 측정 필요.\n\n**Step 5: rollback contract**\nflag를 `uniform`으로 되돌리면 즉시 baseline 복귀. encoder와 LLM은 변경 없음이므로 *0초 rollback*. 이게 우리가 `Sampler.select()`를 이 모양으로 정의한 진짜 보상이다.\n\n**참고 평가 셋업**: lmms-eval(`video_decode_backend=decord`)에서 sampler를 config field로 둘 수 있다. CI에서 sampler 후보별 score를 cron으로 돌리고, dashboard에 시계열로. AKS가 LLaVA-Video-7B에서는 이기지만 Qwen3-VL에서는 회귀할 수 있다. 모델별 평가가 필수."
+        }
+      ],
+      "analogy": {
+        "title": "USB-C — 하나의 안정된 인터페이스가 생태계를 만든다",
+        "content": "노트북에 USB-C 포트가 있으면 모니터, 외장 SSD, 도크, 오디오 인터페이스, 충전기, 어떤 기기든 꽂힌다. 노트북 제조사는 *다음에 어떤 주변기기가 나올지 모른다*. 하지만 USB-C가 전압·데이터·alt-mode를 표준으로 못박아 뒀기 때문에 미래의 모니터도 *과거의 노트북*에 꽂힌다.\n\n`Sampler.select(video, query, budget, scenes) -> List[int]`는 video pipeline의 USB-C다.\n\n- **물리 핀 = 시그니처**: 인덱스 list 반환, query는 optional, budget은 frame 수. 이 5개 핀.\n- **alt-mode = 옵션 메타데이터**: scenes를 받으면 쓰고, 안 받으면 자체 fallback. monitor에 DisplayPort alt-mode가 옵션인 것과 같다.\n- **케이블 두께 = 호출 비용**: indices만 다니므로 RPC 경계로 보내도 KB. USB-C에서 100W power도, 40Gbps Thunderbolt도 같은 모양 케이블로 흐르는 것과 같다.\n- **chipset 호환성 = encoder/LLM 독립성**: 새 sampler(2026 FOCUS)가 나와도 노트북 본체(encoder + LLM)를 바꿀 필요 없다. 그냥 꽂는다.\n\nUSB-C 이전 세계를 기억하라 — Mini-USB, Micro-USB, Apple 30-pin, Lightning, 각각 다른 케이블. 그게 sampling 코드의 default 상태다: 매 sampler마다 caller가 자기 어댑터를 짠다. plug-and-play 아키텍처는 *그 어댑터를 한 번 더 들여다보지 않는 것*이 목표다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "`typing.Protocol`로 `Sampler` 계약을 정의하고, 세 구현(UniformSampler, AKSampler stub, BoltSampler stub)을 동일 caller가 호출하는 모습이다. 실제 AKS/BOLT 로직은 각 논문 레포(ncTimTang/AKS, sming256/BOLT)에 의존하지만, *interface boundary*는 이 한 파일에 다 담긴다. 이게 §2 contract의 코드 형태다.",
+        "code": "from __future__ import annotations\nfrom dataclasses import dataclass\nfrom typing import Protocol, runtime_checkable\nimport numpy as np\n\n@dataclass\nclass VideoHandle:\n    video_id: str\n    fps: float\n    num_frames: int\n    # lazy reader: get_frame(idx) -> np.ndarray[H, W, 3]\n    get_frame: callable\n\n@dataclass\nclass Scene:\n    start: int\n    end: int  # inclusive\n\n@runtime_checkable\nclass Sampler(Protocol):\n    \"\"\"Plug-and-play contract: returns frame indices, never frames.\"\"\"\n    name: str\n\n    def select(\n        self,\n        video: VideoHandle,\n        query: str | None,\n        budget: int,\n        scenes: list[Scene] | None = None,\n    ) -> list[int]: ...\n\nclass UniformSampler:\n    name = \"uniform\"\n    def select(self, video, query, budget, scenes=None):\n        if budget >= video.num_frames:\n            return list(range(video.num_frames))\n        idx = np.linspace(0, video.num_frames - 1, budget, dtype=int)\n        return idx.tolist()\n\nclass AKSampler:\n    \"\"\"Stub of AKS (CVPR 2025, arXiv:2502.21271).\n    Real impl: SigLIP scoring + relevance/coverage adaptive split.\"\"\"\n    name = \"aks\"\n    def __init__(self, scorer): self.scorer = scorer\n    def select(self, video, query, budget, scenes=None):\n        assert query is not None, \"AKS is query-aware\"\n        # 1) score all frames vs query (cached in production)\n        scores = self.scorer.score(video, query)  # shape [T]\n        # 2) adaptive top-k with coverage constraint over scenes\n        anchors = [s.start for s in (scenes or [])]\n        return _adaptive_topk(scores, budget, anchors)\n\nclass BoltSampler:\n    \"\"\"Stub of BOLT (CVPR 2025, arXiv:2503.21483).\n    Real impl: inverse-transform sampling on query-frame alignment.\"\"\"\n    name = \"bolt\"\n    def __init__(self, scorer): self.scorer = scorer\n    def select(self, video, query, budget, scenes=None):\n        assert query is not None\n        weights = self.scorer.score(video, query)\n        cdf = np.cumsum(np.clip(weights, 1e-6, None))\n        cdf /= cdf[-1]\n        us = (np.arange(budget) + 0.5) / budget\n        idx = np.searchsorted(cdf, us)\n        return np.clip(idx, 0, video.num_frames - 1).tolist()\n\ndef _adaptive_topk(scores, budget, anchors):\n    # simplified: take all anchors then top-k by score for remainder\n    base = sorted(set(anchors))[:budget]\n    if len(base) >= budget: return base[:budget]\n    remaining = budget - len(base)\n    ranked = np.argsort(-scores).tolist()\n    extra = [i for i in ranked if i not in set(base)][:remaining]\n    return sorted(base + extra)\n\n# ---- The pipeline calls them interchangeably ----\ndef run_pipeline(video: VideoHandle, query: str, sampler: Sampler,\n                 encoder, llm, budget: int = 64) -> str:\n    assert isinstance(sampler, Sampler), \"contract violation\"\n    indices = sampler.select(video, query=query, budget=budget)\n    frames = np.stack([video.get_frame(i) for i in indices])\n    vision = encoder.encode(frames)              # Tensor[N, D_v]\n    return llm.generate(query, vision_tokens=vision)",
+        "walkthrough": "`Sampler`는 `Protocol`이므로 상속 없이 *시그니처만 맞으면* 통과한다 — duck typing이 ABI다. 세 구현 모두 `select(...) -> list[int]`. `run_pipeline`은 어느 sampler가 들어와도 동일한 4줄로 처리하고, encoder/LLM은 *sampler를 모른다*. AKS와 BOLT는 query를 강제하지만 caller는 같은 호출. `_adaptive_topk`는 실제 AKS의 단순화 버전 — anchors(scene 경계)에 먼저 자리를 잡고 점수로 채워넣는다. 실전에서는 SigLIP/CLIP 점수 계산이 frame-feature cache에서 즉시 lookup된다는 점이 §4와 맞물린다. `assert isinstance(sampler, Sampler)`는 `@runtime_checkable` 덕분에 동작 — sigshape mismatch가 production에 새지 않게 막는 가벼운 contract 검사다."
+      },
+      "industryEvaluation": {
+        "overview": "9장은 시스템 설계 챕터다. senior engineer 평가는 'sampler 알고리즘을 아는가'보다 '*sampler 알고리즘이 6개월마다 바뀌는 세계에서 시스템을 어떻게 설계하는가*'에 집중된다. ABI 결정, rollout 절차, cache 의미론, 그리고 *왜 그렇게 설계해야 하는가*에 대한 trade-off 답변이 핵심.",
+        "whatEngineersLookFor": [
+          "`Sampler.select() -> List[int]`가 frames가 아니라 indices를 반환해야 하는 *네 가지* 이유(메모리, cache key, RPC, 재현성)를 즉답할 수 있는가",
+          "vLLM-Omni 식 disaggregated graph에서 per-stage batching 이득이 *어디서* 오는지(stage별 utilization 불일치)를 설명할 수 있는가",
+          "frame-feature cache key를 `video_id:fps:encoder_model_id`로 잡고, 각 차원의 invalidation 의미를 분리해 설명할 수 있는가",
+          "feature-flagged sampler swap의 1%→5%→25% rollout과 shadow mode 절차를 그릴 수 있는가",
+          "6 anti-pattern 중 본인 코드베이스에서 즉시 1개 이상을 지목할 수 있는가",
+          "encoder/LLM 교체 시간 상수가 sampler보다 훨씬 길다는 사실을 인터페이스 경계의 *근거*로 활용하는가"
+        ],
+        "redFlags": [
+          "'sampler는 그냥 frames 잘라 보내면 되지 않나'라고 답한다 — RPC/cache/메모리 의미론을 모르는 신호",
+          "sampler 안에서 LLM tokenizer를 직접 호출하는 코드를 정상이라고 생각한다 — anti-pattern (f) 직격",
+          "feature flag rollout 없이 'PR merge 후 100% 전환'을 production 표준이라고 본다",
+          "frame-feature cache invalidation을 '한 번에 다 비우면 된다'고 답한다 — encoder upgrade 시 GPU 폭주 위험을 모르는 신호",
+          "monolithic `forward(video, prompt)` 서빙을 disaggregated와 동등하다고 생각한다 — production load 경험 부재",
+          "anti-pattern (c)에 대해 'LLM attention이 알아서 한다'고 답한다 — 정보 손실의 비가역성을 모름"
+        ],
+        "interviewQuestions": [
+          "Q1. 당신의 sampler는 현재 `List[PIL.Image]`를 반환한다. 이걸 `List[int]`로 바꿔야 하는지, 바꿀 때 backward compatibility는 어떻게 유지할지, 그리고 *바꾸지 않았을 때* 어떤 production 시나리오에서 가장 먼저 터지는지 설명하라. (모범: cache hit ratio 하락 + RPC payload 폭증 + replay 어려움. dual-shim 시기 두고 마이그레이션.)",
+          "Q2. encoder를 SigLIP-v1에서 SigLIP-v2로 올린다. frame-feature cache 수십 TB가 v1 임베딩이다. 어떻게 무효화/마이그레이션할 것인가. dual-read 기간, key namespace 전략, rollback 경로, cost forecast를 답하라. (모범: 새 key namespace로 v2를 점진 채우고 dual-read; 일정 hit rate 달성 후 v1 evict; 절대 *flush-all* 금지 — GPU 폭주.)",
+          "Q3. AKS를 LLaVA-Video-7B 트래픽의 10%로 쏘려고 한다. shadow mode로 시작해 50%까지 가는 절차를 그려라. 어떤 metric을 dashboard에 두고, 어떤 신호에서 rollback할 것인가. AKS가 Qwen3-VL에서는 정확도 회귀가 나는데 LLaVA-Video에서는 이기는 이유 가설은 무엇인가. (모범: lmms-eval Video-MME long + MLVU CI cron, vision tokens/req, encoder GPU-s/req, p95 latency, raise 비율; 모델별 token tokenizer가 다르고 학습 분포가 달라 sampler 선호가 모델 의존적.)"
+        ],
+        "masteryVsFamiliar": "Familiar: AKS/BOLT가 plug-and-play라는 사실을 안다. 6-stage 파이프라인을 그릴 수 있다. — Mastery: `Sampler.select() -> List[int]`라는 *결정*이 왜 RPC·cache·rollback·재현성 네 축 모두에서 옳은 ABI인지 한 호흡으로 설명한다. vLLM-Omni 식 disaggregated graph를 자기 stack에 그릴 수 있고, frame-feature cache의 3-tuple key와 dual-read 마이그레이션 절차를 갖고 있다. 6 anti-pattern을 자기 코드베이스에서 즉시 grep할 수 있다. encoder/LLM의 시간 상수가 sampler보다 길다는 *경험적 관찰*을 인터페이스 경계 설계의 정당화 근거로 쓴다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "Sampler가 swap point다",
+          "content": "6-stage 파이프라인(input → decode → sample → encode → token-reduce → LLM)에서 SOTA 교체가 가장 빈번한 stage는 sample이다. encoder와 LLM의 변경 주기는 훨씬 길다. 이 시간 상수 차이를 인터페이스 경계로 흡수하라."
+        },
+        {
+          "title": "`select() -> List[int]`가 USB-C다",
+          "content": "프레임이 아니라 인덱스를 반환하는 ABI 하나가 메모리, cache key, RPC payload, 재현성 네 가지를 동시에 푼다. 이 한 줄 결정이 plug-and-play 아키텍처의 *유일한* 불변량이다."
+        },
+        {
+          "title": "Disaggregated serving은 monolithic을 거의 항상 이긴다",
+          "content": "vLLM-Omni 보고 91.4% JCT 감소는 per-stage batching과 비동기 handoff가 stage별 utilization 불일치를 흡수하기 때문이다. 우리의 `List[int]` contract가 이 구조에 자연스럽게 들어맞는다."
+        },
+        {
+          "title": "Frame-feature cache는 비용 모델을 뒤집는다",
+          "content": "key는 `video_id:fps:encoder_model_id`. encoding을 1회로 amortize하면 query당 sampler 비용은 cheap re-rank로 떨어진다. Twelve Labs Embed API가 이 패턴을 외부 API로 노출한다. encoder upgrade는 *flush가 아니라* dual-read 마이그레이션."
+        },
+        {
+          "title": "6 anti-pattern 중 (a)+(e)는 비용을 (c)+(f)는 정확도와 민첩성을 잡아먹는다",
+          "content": "Uniform 8 on 1-hour, sample-before-shot, LLM pooling에 미루기, 길이 무관 고정 budget, query마다 re-decode, sampler가 tokenizer를 직접 호출 — 한 anti-pattern이 SOTA 이득을 모두 무효화한다. 코드 리뷰 체크리스트로 만들라."
+        },
+        {
+          "title": "Feature-flag rollout은 sampler 교체의 표준 절차다",
+          "content": "shadow → 1% → 5% → 25% → 50% → 100%. encoder/LLM은 미동. rollback은 flag 한 줄. AKS가 LLaVA-Video에서 이긴다고 Qwen3-VL에서도 이긴다는 보장은 없으니 *모델별* lmms-eval CI가 필수."
+        },
+        {
+          "title": "ABI는 한 번만 정한다",
+          "content": "Mini-USB·Lightning·30-pin을 거친 USB-C의 교훈은 *확정된 인터페이스가 생태계를 만든다*는 것이다. `Sampler.select(video, query, budget, scenes) -> List[int]`를 팀의 RFC로 못박고, 2027년 새 SOTA가 와도 같은 시그니처로 들어오게 하라."
+        }
+      ]
+    },
+    {
+      "number": 10,
+      "emoji": "🧪",
+      "title": "Reference Architecture & Evaluation",
+      "titleKr": "Reference Architecture와 평가 — 직접 만들고 운영하기",
+      "tldr": "Chapter 1부터 9까지 배운 것을 하나의 swappable pipeline으로 묶는다. Ingest Queue → DecodeWorker → FrameStore → SceneSegmenter → Sampler Plugin → Encoder Pool → EmbedCache → TokenReducer → vLLM-Omni serving — chassis는 그대로 두고 sampler만 갈아끼우는 F1 race car 패턴. 5대 benchmark(Video-MME, MLVU, LongVideoBench, EgoSchema, Multi-Hop NIAH)는 lmms-eval로 돌리고, arxiv에 새 paper가 뜨면 3일 안에 wrap → hold-out eval → cost-vs-quality 비교 → feature-flag rollout → 프로덕션 metric 모니터링이라는 운영 사이클로 흡수한다. 2026 하반기에는 FrameMind/FrameThinker/A.I.R. 류 agentic sampler와 MSJoE 같은 joint sampler-MLLM evolution이 다음 SOTA 자리를 노리고 있다.",
+      "topics": [
+        "Reference modular architecture: 8-stage swappable pipeline",
+        "Video-MME / MLVU / LongVideoBench / EgoSchema / Multi-Hop NIAH 각각이 측정하는 것",
+        "lmms-eval을 표준 harness로 쓰는 법",
+        "3-day SOTA evaluation cycle (paper → production)",
+        "Production observability: tokens/query, latency p50/p99, frame-selection-time, encoder-utilization, cache hit rate",
+        "Agentic samplers (FrameMind, FrameThinker, A.I.R.) 및 joint sampler-MLLM evolution (MSJoE)",
+        "어디에 베팅할 것인가 — 향후 12개월 전망"
+      ],
+      "learningGoals": [
+        "Chapter 9의 interface를 사용해 8-stage reference architecture를 직접 설계할 수 있다",
+        "5대 video-LLM benchmark가 각각 무엇을 측정하는지, 언제 skip할 수 있는지 판단할 수 있다",
+        "lmms-eval harness로 sampler variant를 비교 평가하는 워크플로우를 구축할 수 있다",
+        "arxiv에 SOTA paper가 뜬 시점부터 production rollout까지 3일짜리 평가 사이클을 운영할 수 있다",
+        "비디오 파이프라인의 production observability metric 5종을 sampler-variant 단위로 트래킹할 수 있다",
+        "2026 하반기 agentic sampler와 joint sampler-MLLM evolution이 무엇을 바꿀지 평가하고 어디에 베팅할지 판단할 수 있다"
+      ],
+      "overview": "마지막 chapter. 지금까지 Chapter 1에서 frame sampling이 진짜 bottleneck이라는 thesis를 세웠고, Chapter 2-7에서 uniform부터 AKS/BOLT, Frame-Voyager, AdaRD-Key/FOCUS, LongVU, VideoChat-Flash까지 SOTA 가족을 살펴봤고, Chapter 8에서 commercial 현실(Gemini/Twelve Labs/Qwen-VL이 여전히 uniform)을 직시했고, Chapter 9에서 plug-and-play architecture의 계약을 정의했다. 이번 chapter는 capstone이다 — 그 모든 것을 실제 동작하는 reference architecture 하나로 묶고, lmms-eval로 평가하고, 다음 달 arxiv에 뜰 paper를 어떻게 3일 안에 평가-rollout할지 운영 워크플로우까지 설계한다. 비유는 명확하다: chassis는 그대로, engine은 매 시즌 갈아끼우는 F1 race car. Telemetry stays the same. 마지막 절에서는 2026 하반기 agentic sampler(FrameMind, FrameThinker, A.I.R.)와 joint sampler-MLLM evolution(MSJoE)이 어디로 가는지, 그리고 senior engineer로서 어디에 베팅해야 하는지 정리한다.",
+      "sections": [
+        {
+          "title": "1. Reference Modular Architecture — 8 Stages, 1 Swap Point",
+          "content": "Chapter 9의 인터페이스를 실제 stage들로 펼친 reference architecture는 다음과 같다.\n\n```\n[Ingest Queue (Kafka/SQS)]\n        ↓ video_id, url, query_id\n[DecodeWorker (Decord + NVDEC)]\n        ↓ ndarray[T,H,W,3], fps, duration\n[FrameStore (S3 raw + Redis hot index)]\n        ↓ frame handles, not pixels\n[SceneSegmenter (PySceneDetect ContentDetector)]\n        ↓ List[(t_start, t_end, shot_id)]\n[Sampler Plugin]   ← ★ swap point ★\n        ↓ List[int] frame indices, len ≤ max_frames\n[Encoder Pool (SigLIP-So400m / Marengo-3.0)]\n        ↓ Tensor[N, D_v]\n[EmbedCache (Redis vector + S3 cold)]\n        ↓ cache key = (video_id, frame_idx, encoder_version)\n[TokenReducer (SlowFast pooling / TokenMerge)]\n        ↓ Tensor[N', D_v], N' ≤ token_budget\n[LLM Serving (vLLM-Omni disaggregated)]\n        ↓ answer string + telemetry\n```\n\n각 stage가 왜 그 자리에 있는가:\n\n- **Ingest Queue**: 비동기 백프레셔. DecodeWorker가 GPU-bound이므로 queue로 흡수해야 burst 트래픽에 안 죽는다. video_id를 idempotency key로.\n- **DecodeWorker**: Decord + NVDEC 하드웨어 가속. CPU 디코딩은 1080p에서 30fps 못 따라간다.\n- **FrameStore (S3 + Redis)**: 디코딩한 raw pixel을 S3에 한 번만 저장하고 Redis에 hot index(video_id → S3 key list). 같은 영상에 대한 두 번째 query는 디코딩 skip.\n- **SceneSegmenter**: Chapter 2에서 본 PySceneDetect. Sampler보다 *앞에* 와야 한다 — anti-pattern #2(sampling before shot detection)를 피하기 위해. shot boundary는 sampler에게 anchor로 주어진다.\n- **Sampler Plugin** ★: Chapter 9의 `Sampler.select()` 계약. uniform / AKS / BOLT / Frame-Voyager / AdaRD-Key / FOCUS / Agentic — config flag 하나로 바꾼다.\n- **Encoder Pool**: SigLIP-So400m이 2026 기준 default. 멀티모달 검색이 함께라면 Twelve Labs Marengo-3.0(joint visual+audio+ASR+motion). pool화해서 batching 효율.\n- **EmbedCache**: 같은 (video_id, frame_idx, encoder_version) 조합은 한 번만 인코딩. cache hit rate가 production cost의 절반을 결정한다.\n- **TokenReducer**: Chapter 7의 SlowFast/TokenMerge/VideoChat-Flash HiCo. Sampling과 직교하는 축. 200 frame을 96 token으로 압축하는 일은 여기서.\n- **vLLM-Omni**: Chapter 9에서 본 disaggregated serving. encoder, sampler, LLM core를 독립 stage로 스케줄링, 91.4% JCT reduction.\n\nSwap point가 *하나*라는 게 핵심이다. Sampler를 바꿀 때 SceneSegmenter, EmbedCache, vLLM-Omni 어느 것도 건드리지 않는다."
+        },
+        {
+          "title": "2. The 5 Benchmarks Every Video-LLM Project Should Run",
+          "content": "lmms-eval(EvolvingLMMs-Lab/lmms-eval)이 사실상의 표준 harness다. `video_decode_backend=decord`, sampler를 config field로 받는다. 모든 새로운 sampler는 다음 5개로 측정한다.\n\n1. **Video-MME (Long split)** — 30-60분 비디오 QA, multi-domain. 'Long video understanding의 종합검사'. **언제 돌리나**: 모든 sampler. **언제 skip하나**: never.\n2. **MLVU** — 6분-2시간 비디오 multitask(plot QA, anomaly, temporal reasoning). 'Long video의 *다양성*'을 본다. **언제 돌리나**: 모든 sampler. **언제 skip하나**: Egocentric 전용 sampler면 우선순위 낮춤.\n3. **LongVideoBench** — referring question(영상 속 특정 시점·객체를 가리키는 질문). 'Query-aware sampler의 진가'를 본다. AKS/BOLT/AdaRD-Key의 강점이 가장 잘 드러나는 곳. **언제 돌리나**: query-aware sampler 평가 시 필수.\n4. **EgoSchema** — long-form egocentric(1인칭) QA. 'Egocentric domain shift에 robust한가'를 본다. **언제 돌리나**: AR/wearable/로보틱스 타겟.\n5. **Multi-Hop NIAH (VideoChat-Flash)** — 10K-frame needle-in-haystack, 여러 시점에 흩어진 needle을 찾는다. 'Context length × token compression의 극한'을 본다. **언제 돌리나**: 1시간+ 영상, hour-scale 시스템.\n\n실전 팁: 처음에는 Video-MME Long + LongVideoBench 두 개만 돌려도 sampler의 신호가 충분히 나온다. MLVU/EgoSchema는 도메인 fit 검증용, Multi-Hop NIAH는 hour-scale claim 검증용으로 분리하는 게 cost-effective."
+        },
+        {
+          "title": "3. The 3-Day Operational Workflow — Paper to Production",
+          "content": "다음 달 arxiv에 'Foo-Sampler beats AKS by 4 pts on Video-MME'라는 paper가 뜬다고 하자. 3일 안에 production-ready 평가가 끝나야 한다.\n\n**Day 0 (paper drops)** — abstract + benchmark table 30분 스캔. 우리 도메인(긴 영상? query-aware?)에 fit하는지, 코드 공개인지 1차 게이트.\n\n**Day 1 — (a) Wrap as Sampler protocol.** Chapter 9의 `Sampler.select(video, query, max_frames) -> List[int]` 계약으로 paper code를 어댑터로 감싼다. 보통 2-4시간.\n\n**Day 1 후반 — (b) Hold-out subset eval.** Full benchmark는 비싸다. 우리가 미리 떼둔 200-sample hold-out(Video-MME Long 100 + LongVideoBench 100)으로 smoke test. lmms-eval `--limit 200`. 4-6시간.\n\n**Day 2 — (c) Cost-vs-quality 비교.** 같은 hold-out에서 (i) accuracy, (ii) frame-selection-time, (iii) tokens/query, (iv) GPU-sec/query를 현재 production sampler와 나란히 표로. 'AKS 대비 +3.2 pts 정확도지만 frame-selection-time 4배'면 reject.\n\n**Day 2 후반 — (d) Feature-flag rollout 준비.** 새 sampler를 `sampler.variant=foo_sampler_v1`로 등록. shadow mode부터 — production traffic의 5%에 두 sampler를 동시에 돌려서 *답은 기존 것을 쓰되* metric만 양쪽 기록.\n\n**Day 3 — (e) 1% → 10% → 50% canary, monitor.** sampler-variant별로 위에서 정의한 모든 production metric을 본다. p99 latency가 회귀하지 않고 quality proxy(thumbs-up rate, follow-up question rate)가 동등 이상이면 100%. 회귀하면 즉시 flag off.\n\n3일이 빡빡해 보이지만, Chapter 9의 plug-and-play 계약이 있으면 이게 가능하다. 계약이 없으면 같은 작업이 2-3주짜리 프로젝트가 된다."
+        },
+        {
+          "title": "4. Production Observability — 5 Metrics × N Sampler Variants",
+          "content": "Video pipeline은 일반 LLM serving보다 관찰 면이 넓다. 다음 5개를 **per-sampler-variant**로 트래킹한다. Prometheus 라벨 하나(sampler_variant)를 모든 metric에 박는 게 핵심.\n\n1. **tokens/query** — 한 query에 LLM이 받는 vision token 수의 분포. Sampler가 token economics를 결정한다. p50/p95/max. 비용의 직접 proxy.\n2. **latency p50/p99** — end-to-end (ingest → answer). p99가 진실을 말한다. Sampler가 무거우면 p99에 먼저 나타난다.\n3. **frame-selection-time** — Sampler 단계만의 wall-clock. AKS/AdaRD-Key는 max-volume 최적화로 인해 uniform 대비 50-200ms 더 걸린다.\n4. **encoder-utilization** — SigLIP/Marengo GPU pool의 평균 utilization. 60% 미만이면 batching이 작거나 pool이 과대. 95%+면 saturated, capacity 추가 필요.\n5. **cache hit rate** — EmbedCache의 hit/miss. production에서 같은 영상이 여러 query를 받으면 hit rate가 70%+가 되어야 한다.\n\n선택 metric으로 **answer-quality proxy** — thumbs-up rate, follow-up question rate(나쁜 답일수록 follow-up 많음), task completion rate. Offline benchmark accuracy와 production quality는 완전히 같지 않다. 둘 다 본다.\n\nDashboard 단일 화면 원칙: 한 화면에 5 metric × 활성 sampler variant 전부. 'BOLT v1 vs AKS v2 vs foo_sampler_v1' 세 곡선이 같이 보여야 의사결정이 빠르다."
+        },
+        {
+          "title": "5. The Next 12 Months — Where to Bet",
+          "content": "2026 6월 기준, 두 개의 큰 트렌드가 다음 SOTA 자리를 두고 다투고 있다.\n\n**(a) Agentic samplers** — VLM 자신이 `request_frames(t_start, t_end, fps)` tool call을 chain-of-thought 중간에 발화하는 패턴.\n- **FrameThinker (arXiv:2509.24304)** — 'Think → request frames → think again' 루프\n- **FrameMind (arXiv:2509.24008)** — episodic memory + selective recall\n- **A.I.R. (arXiv:2510.04428)** — Agentic Iterative Reasoning, 비용 인식형 toolcall 예산\n\n장점: query 복잡도에 따라 frame budget을 dynamic하게. 단점: tool-call latency가 sequential이라 p99에 치명적. '16 frame vs 256 frame' 같은 단순 비교가 안 됨. 베팅 가이드: long-form *interactive* 제품(agent 식으로 사용자와 turn-taking)에는 베팅, batch QA API에는 보류.\n\n**(b) Joint sampler-MLLM evolution (MSJoE 계열)** — sampler와 MLLM을 *함께* 학습. Chapter 4의 learned sampler가 frozen MLLM을 가정한 것과 달리, 이쪽은 양쪽을 같이 진화시킨다. 장점: plug-and-play 계약을 깨는 대신 end-to-end 최적해에 가까움. 단점: 본 강의의 swap-point 철학과 정면 충돌 — sampler를 바꾸려면 MLLM도 다시 학습. 베팅 가이드: in-house MLLM을 *직접 보유*한 팀(Google, Meta, OpenGVLab)에는 강력, 모델을 외부 API로 호출하는 팀에는 무관.\n\n현실적 portfolio: production chassis는 우리 reference architecture 유지, sampler engine slot에 (1) 현재 베스트 training-free(2026 초 기준 AdaRD-Key/FOCUS 계열), (2) experiment slot에 agentic sampler 1종, (3) 모니터링 슬롯에 joint-evolution 동향. F1처럼, 시즌마다 engine을 교체하되 chassis는 5년 쓴다."
+        }
+      ],
+      "analogy": {
+        "title": "Swappable-Engine F1 Race Car",
+        "content": "F1 팀은 매 시즌 engine을 갈아끼우지만, chassis(monocoque), suspension geometry, telemetry harness, pit-stop protocol은 그대로 둔다. Engineer가 새 engine을 wind tunnel에서 평가하는 표준 절차가 있고, 같은 telemetry로 lap time을 비교한다. 우리 video-LLM pipeline도 동일하다.\n\n- **Chassis** = Ingest Queue + DecodeWorker + FrameStore + SceneSegmenter + EmbedCache + TokenReducer + vLLM-Omni. 한 번 잘 만들면 2-3년 쓴다.\n- **Engine** = Sampler Plugin. AKS, BOLT, AdaRD-Key, FOCUS, FrameMind — 매 분기 SOTA가 바뀐다.\n- **Telemetry** = tokens/query, latency p99, frame-selection-time, encoder-utilization, cache hit rate. 어떤 engine을 끼워도 *동일한* 5개 게이지를 본다.\n- **Wind tunnel** = lmms-eval + 5대 benchmark. 새 engine을 production에 올리기 전 standardized test.\n- **Pit stop** = feature flag. shadow → 1% → 10% → 100% canary. 문제 생기면 즉시 이전 engine으로 롤백.\n\n2026년 우승팀은 *engine을 가장 잘 만든 팀*이 아니라 *engine 교체를 가장 빨리 하는 팀*이다. Paper drop → 3 day eval cycle → production rollout이 우리의 lap time이다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "Course 전체에서 가장 야심찬 코드 예제. Chapter 9의 Sampler 계약 위에 reference architecture 전체를 하나의 VideoLLMPipeline 클래스로 묶고, 'uniform → aks' swap을 config 한 줄로 시연하고, lmms-eval-style evaluate() 메서드로 hold-out subset을 돌린다. Stub은 실제 production에서 Decord, PySceneDetect, SigLIP, vLLM-Omni client로 대체된다.",
+        "code": "from dataclasses import dataclass, field\nfrom typing import Protocol, List, Dict, Any\nimport time, numpy as np\n\n# === Chapter 9 contracts ===\nclass Sampler(Protocol):\n    name: str\n    def select(self, video: np.ndarray, query: str, max_frames: int,\n               shots: List[tuple]) -> List[int]: ...\n\nclass UniformSampler:\n    name = \"uniform\"\n    def select(self, video, query, max_frames, shots):\n        T = len(video); return list(np.linspace(0, T-1, max_frames, dtype=int))\n\nclass AKSSampler:  # Tang et al. CVPR 2025, arXiv:2502.21271\n    name = \"aks\"\n    def __init__(self, clip_scorer): self.scorer = clip_scorer\n    def select(self, video, query, max_frames, shots):\n        scores = self.scorer(video, query)            # relevance\n        anchors = [s[0] for s in shots][:max_frames]  # coverage from shots\n        ranked = sorted(set(anchors) | set(np.argsort(-scores)[:max_frames*2]),\n                        key=lambda i: -scores[i])\n        return sorted(ranked[:max_frames])\n\nclass FOCUSSampler:  # arXiv:2510.27280, combinatorial bandit\n    name = \"focus\"\n    def select(self, video, query, max_frames, shots): ...  # stub\n\n# === Pipeline stages ===\n@dataclass\nclass PipelineConfig:\n    sampler_variant: str = \"uniform\"\n    max_frames: int = 32\n    token_budget: int = 2048\n    encoder: str = \"siglip-so400m\"\n\nclass VideoLLMPipeline:\n    def __init__(self, cfg: PipelineConfig, samplers: Dict[str, Sampler],\n                 decoder, segmenter, encoder, reducer, llm, cache):\n        self.cfg, self.samplers = cfg, samplers\n        self.decoder, self.segmenter = decoder, segmenter\n        self.encoder, self.reducer, self.llm, self.cache = encoder, reducer, llm, cache\n        self.telemetry: List[Dict[str, Any]] = []\n\n    def answer(self, video_id: str, url: str, query: str) -> str:\n        t0 = time.perf_counter()\n        video = self.decoder.decode(url)                  # Decord + NVDEC\n        shots = self.segmenter.segment(video)             # PySceneDetect\n        t_sample = time.perf_counter()\n        idx = self.samplers[self.cfg.sampler_variant].select(\n            video, query, self.cfg.max_frames, shots)     # ★ swap point ★\n        frame_sel_ms = (time.perf_counter() - t_sample) * 1000\n        feats = self.cache.get_or_compute(\n            video_id, idx, lambda f: self.encoder.embed(video[f]))\n        tokens = self.reducer.reduce(feats, self.cfg.token_budget)\n        answer = self.llm.generate(query, tokens)         # vLLM-Omni\n        self.telemetry.append({\n            \"sampler_variant\": self.cfg.sampler_variant,\n            \"tokens_per_query\": tokens.shape[0],\n            \"latency_ms\": (time.perf_counter() - t0) * 1000,\n            \"frame_selection_ms\": frame_sel_ms,\n            \"cache_hit_rate\": self.cache.hit_rate(),\n        })\n        return answer\n\n    def evaluate(self, benchmark: List[Dict], gold_fn) -> Dict[str, float]:\n        # lmms-eval-style hold-out runner (e.g. Video-MME Long 100 samples)\n        correct = 0\n        for ex in benchmark:\n            pred = self.answer(ex[\"video_id\"], ex[\"url\"], ex[\"query\"])\n            correct += int(gold_fn(pred, ex[\"answer\"]))\n        t = [m for m in self.telemetry if m[\"sampler_variant\"] == self.cfg.sampler_variant]\n        return {\"variant\": self.cfg.sampler_variant,\n                \"accuracy\": correct / len(benchmark),\n                \"p99_latency_ms\": float(np.percentile([m[\"latency_ms\"] for m in t], 99)),\n                \"avg_tokens\": float(np.mean([m[\"tokens_per_query\"] for m in t])),\n                \"avg_frame_sel_ms\": float(np.mean([m[\"frame_selection_ms\"] for m in t]))}",
+        "walkthrough": "네 가지가 한 번에 보이도록 설계했다. (1) **Sampler Protocol** 하나(이 강의 Chapter 9의 핵심 계약)에 UniformSampler, AKSSampler, FOCUSSampler가 모두 동일한 시그니처로 꽂힌다 — 이게 swap point다. (2) **VideoLLMPipeline** 클래스가 Decoder → SceneSegmenter → Sampler → EmbedCache → TokenReducer → LLM의 8-stage chassis를 한 메서드(answer)로 흐르게 한다 — chassis는 sampler가 무엇이든 바뀌지 않는다. (3) **Telemetry** 리스트가 sampler_variant 라벨과 함께 5개 metric(tokens/query, latency, frame-selection-time, cache hit rate, accuracy)을 자동 수집 — Prometheus exporter로 바로 변환 가능. (4) **evaluate()** 가 lmms-eval 스타일 hold-out 평가를 돌리고 variant별 비교 가능한 dict을 반환 — 3-day workflow가 그대로 코드로 표현된다: `cfg.sampler_variant`를 'uniform'에서 'aks'로 바꾸고, accuracy가 오르고 p99 latency가 10% 이하로 회귀하면 feature flag로 1% canary 시작. 실제 production에서는 decoder가 Decord+NVDEC, segmenter가 PySceneDetect ContentDetector, encoder가 SigLIP-So400m 또는 Twelve Labs Marengo 클라이언트, llm이 vLLM-Omni gRPC 클라이언트로 바뀐다 — 인터페이스는 그대로다."
+      },
+      "industryEvaluation": {
+        "overview": "Senior video-LLM engineer 면접에서는 이 capstone 단계가 실력의 임계점이다. (a) 5대 benchmark 각각이 무엇을 측정하고 언제 skip할 수 있는지, (b) SOTA paper를 production sampler로 평가-rollout하는 cost-vs-quality 워크플로우, (c) video pipeline 고유의 production observability 5종, (d) 2026 하반기 어디에 베팅할지 — 이 네 가지를 모두 말할 수 있어야 senior로 인정된다.",
+        "whatEngineersLookFor": [
+          "5대 benchmark 각각이 측정하는 것을 한 문장으로 구분할 수 있는가 — 'Video-MME=종합', 'LongVideoBench=referring query', 'EgoSchema=egocentric', 'MLVU=multitask 다양성', 'Multi-Hop NIAH=10K-frame stress'",
+          "SOTA paper를 보고 3일 안에 hold-out → cost-vs-quality 비교 → feature-flag canary로 흡수하는 운영 사이클을 그릴 수 있는가",
+          "sampler_variant 라벨을 모든 metric에 박아 per-variant 비교 dashboard를 설계할 수 있는가",
+          "Agentic sampler(FrameMind/FrameThinker/A.I.R.)의 p99 latency 약점, joint sampler-MLLM evolution(MSJoE)의 plug-and-play 파괴 트레이드오프를 동시에 설명할 수 있는가",
+          "reference architecture를 그릴 때 SceneSegmenter가 Sampler *앞에* 오는 이유(anti-pattern #2 회피)와 EmbedCache가 Encoder *뒤*에 오는 이유(같은 영상의 두 번째 query 비용 절감)를 말할 수 있는가",
+          "lmms-eval을 그냥 'benchmark 돌리는 툴'이 아니라 'sampler를 config field로 받는 표준 harness'로 인지하고 있는가"
+        ],
+        "redFlags": [
+          "'벤치마크는 Video-MME만 돌리면 된다' — LongVideoBench와 Multi-Hop NIAH가 측정하는 축이 완전히 다르다",
+          "'SOTA paper 나오면 일단 production에 넣고 본다' — hold-out 평가 단계 없이는 회귀 위험 통제 불가",
+          "'latency 평균만 본다' — video pipeline은 p99가 진실. tail이 GPU 큐잉, agentic tool-call 비용을 드러낸다",
+          "'sampler를 바꾸면 SceneSegmenter도 같이 바꿔야 한다' — chassis와 engine을 구분 못하는 신호",
+          "'agentic sampler가 무조건 다음 SOTA다' 또는 '여전히 uniform이 답이다' — 둘 다 차원 환원",
+          "'cache hit rate는 인프라 metric이지 ML metric이 아니다' — production video 시스템에서는 cost의 절반을 결정하므로 양쪽 모두"
+        ],
+        "interviewQuestions": [
+          "Video-MME Long split, LongVideoBench, Multi-Hop NIAH를 모두 돌리면 cost가 너무 크다. 셋 중 하나만 골라야 한다면 무엇을 어떤 기준으로 고르겠나? '5분 이하 영상만 다루는 추천 시스템'과 '1시간+ 회의 요약 시스템' 두 제품을 각각 가정해서 답해라.",
+          "arxiv:25XX.XXXXX 'Bar-Sampler beats AKS by 2.1 pts on Video-MME Long, 4 pts on LongVideoBench, but frame-selection time is 380ms (AKS: 80ms)'. 이 paper가 어제 dropped. 너는 video-LLM agent product의 staff engineer다. 3일 안에 production rollout 여부를 결정해야 한다 — Day 1/2/3 각각 무엇을 하고, go/no-go 결정의 정량 기준을 구체적으로 제시해라.",
+          "2026 하반기 FrameMind/FrameThinker/A.I.R. 류 agentic sampler에 reference architecture의 Sampler slot을 내줄 것인가? '내준다'면 chassis의 어느 부분(token budget, latency SLA, vLLM-Omni stage graph)을 같이 바꿔야 하는가? '안 내준다'면 어떤 신호가 보이면 마음을 바꿀 것인가?"
+        ],
+        "masteryVsFamiliar": "**Familiar**: 'lmms-eval로 Video-MME 돌릴 줄 안다', 'AKS와 uniform 비교해본 적 있다', 'SigLIP로 frame 임베딩 만들어본 적 있다'. **Mastery**: paper drop부터 production rollout까지 3-day cycle을 *팀 SOP*로 문서화해본 적 있다 / sampler_variant 라벨을 metric pipeline 전체에 박아 두 variant를 dashboard에서 비교한 적 있다 / agentic sampler의 p99 latency 회귀를 실측해서 reject한 적 있다 / 'chassis는 두고 engine만 갈아끼운다'는 의사결정 frame을 팀 전체가 공유하도록 만든 적 있다. Familiar는 한 chapter씩 알지만, Mastery는 10개 chapter를 *하나의 운영 시스템*으로 통합한다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "Chassis 1개, Engine은 매 분기",
+          "content": "Ingest Queue → DecodeWorker → FrameStore → SceneSegmenter → Sampler Plugin → Encoder Pool → EmbedCache → TokenReducer → vLLM-Omni 8-stage chassis는 2-3년 쓴다. Sampler engine만 매 분기 갈아끼운다. 이 분리가 production video-LLM 팀의 핵심 자산이다."
+        },
+        {
+          "title": "5대 benchmark는 측정 축이 모두 다르다",
+          "content": "Video-MME=종합 long, MLVU=multitask 다양성, LongVideoBench=referring query, EgoSchema=egocentric, Multi-Hop NIAH=10K-frame stress. 하나로 SOTA 주장 금지. 도메인에 따라 우선순위는 달라지되, lmms-eval로 standardized harness 유지."
+        },
+        {
+          "title": "3-day eval cycle이 lap time이다",
+          "content": "Paper drop → wrap as Sampler protocol(D1) → hold-out subset eval(D1) → cost-vs-quality 비교(D2) → feature-flag rollout(D2-3) → production monitor(D3+). Chapter 9 계약이 없으면 같은 일이 3주 걸린다."
+        },
+        {
+          "title": "per-sampler-variant 라벨이 observability의 핵심",
+          "content": "tokens/query, latency p50/p99, frame-selection-time, encoder-utilization, cache hit rate — 5개 metric을 모두 sampler_variant 라벨과 함께 수집. 한 dashboard에서 variant 곡선이 겹쳐 보여야 결정이 빠르다."
+        },
+        {
+          "title": "answer-quality proxy는 따로 본다",
+          "content": "Offline benchmark accuracy ≠ production answer quality. thumbs-up rate, follow-up question rate, task completion rate를 sampler-variant별로 트래킹. 둘이 어긋날 때가 가장 학습이 크다."
+        },
+        {
+          "title": "Agentic sampler는 interactive 제품, joint evolution은 in-house MLLM 팀",
+          "content": "FrameMind/FrameThinker/A.I.R.는 turn-taking interactive 제품에 적합, p99 latency 약점 때문에 batch API에는 보류. MSJoE 류 joint sampler-MLLM evolution은 자체 모델 보유 팀(Google/Meta/OpenGVLab)에 강력, 외부 API 호출 팀에는 무관."
+        },
+        {
+          "title": "production exception은 retrieval이지 inference가 아니다",
+          "content": "Mixpeek scene chunking, Twelve Labs Marengo dense embed가 상용에서 동작하는 이유는 cost가 index time에 amortize되기 때문. Inference-time SOTA sampler를 production에 넣을 때는 EmbedCache가 같은 amortization을 만들어 줘야 한다."
+        },
+        {
+          "title": "마지막 thesis 회수",
+          "content": "Chapter 1에서 시작한 명제 — '비디오 LLM의 진짜 병목은 모델 크기가 아니라 어떤 frame이 context를 통과하느냐'. 10개 chapter 후 이 명제는 reference architecture의 swap point 1개로 응결된다. 그 자리를 비워두고 최신 SOTA를 갈아끼울 수 있는 팀이 다음 12개월의 우승자다."
+        }
+      ]
+    }
+  ]
+}

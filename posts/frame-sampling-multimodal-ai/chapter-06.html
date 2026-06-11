@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch6: Long-Video Sampling — LongVU, Hour-LLaVA, VideoMarathon — Frame Sampling for Multimodal AI — direcf</title>
+  <meta name="description" content="5분 클립과 1시간 영상은 다른 시스템이다. LongVU의 DINOv2 기반 temporal pruning, Hour-LLaVA의 MemAug 메모리 모듈, 9.7K-hour VideoMarathon 데이터셋, 그리고 HourVideo 벤치마크가 hour-scale의 phase transition을 어떻게 다루는지 본다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child{margin-bottom:0}
+.sb-block strong{color:var(--text)}
+.sb-block code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/multimodal-ai">Frame Sampling for Multimodal AI</a><span class="sep">›</span>
+        <strong>Ch06 Long-Video Sampling — LongVU, Hour-LLaVA, VideoMarathon</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 06 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🎞️</div>
+      <h1 class="chapter-title">Long-Video Sampling — LongVU, Hour-LLaVA, VideoMarathon</h1>
+      <div class="chapter-title-kr">Long-Video 샘플링 — LongVU, Hour-LLaVA, VideoMarathon</div>
+      <div class="chapter-tldr">5분 클립과 1시간 영상은 다른 시스템이다. LongVU의 DINOv2 기반 temporal pruning, Hour-LLaVA의 MemAug 메모리 모듈, 9.7K-hour VideoMarathon 데이터셋, 그리고 HourVideo 벤치마크가 hour-scale의 phase transition을 어떻게 다루는지 본다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-06.png" alt="Chapter 6 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 6 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">6 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>30분-1시간-6시간 구간에서 token budget이 어떻게 폭발하는지 정량적으로 설명할 수 있다</li><li>LongVU의 DINOv2 temporal pruning이 왜 CLIP similarity보다 redundancy 검출에 강한지 말할 수 있다</li><li>Hour-LLaVA의 MemAug가 어떻게 1 FPS hour-long training을 가능하게 하는지 설명할 수 있다</li><li>HourVideo가 Video-MME long split / EgoSchema / MLVU와 어떻게 다른 능력을 측정하는지 구분할 수 있다</li><li>Atkinson-Shiffrin식 episodic memory 패턴을 video 시스템에 어떻게 적용하는지 안다</li><li>memory-augmented sampling을 직접 sketch할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>Chapter 3–5는 5분짜리 영상에서 어떤 frame을 고를지를 다뤘다. 그러나 1시간이 넘어가는 순간 문제의 성격이 바뀐다. 1 fps만 해도 3,600 frame이고, 6시간이면 21,600 frame이다. SigLIP token 256개씩만 잡아도 token이 백만 단위로 폭발한다. 이건 단순히 &#x27;sampler를 더 영리하게&#x27;로 해결할 영역이 아니다. 인간이 War &amp; Peace를 읽을 때 한 페이지씩 다 외우는 게 아니라 chapter 요약과 메모를 쓰는 것처럼, hour-scale video도 *episodic memory* 라는 다른 인지 시스템이 필요하다. 이 챕터는 LongVU(ICLR 2025, Meta, arXiv:2410.17434)의 spatiotemporal adaptive compression, Hour-LLaVA(NeurIPS 2025 Spotlight)의 MemAug + VideoMarathon 9.7K-hour 데이터셋, 그리고 HourVideo 벤치마크가 이 phase transition을 어떻게 풀고 있는지를 본다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>1. Hour-scale에서 일어나는 phase transition</h2><p>먼저 token이 얼마나 폭발하는지 보자. SigLIP per-frame ≈ 256 vision token, frame 당 평균치로 잡자.</p>
+<p>| 길이 | 1 fps frames | Tokens(256/frame) | 1M ctx 대비 |
+|---|---|---|---|
+| 5분 | 300 | 76.8K | 7.6% |
+| 30분 | 1,800 | 460K | 46% |
+| 1시간 | 3,600 | 921K | 92% |
+| 6시간 | 21,600 | 5.5M | 553% |</p>
+<p>5분에서는 어떤 sampler든 다 들어간다. 30분에서는 query-aware adaptive sampling (Chapter 3–5)이 충분히 효과적이다. 그러나 <strong>1시간을 넘는 순간 1M context에도 1 fps가 안 들어간다</strong>. 6시간이면 token compression(VideoChat-Flash의 1/50 HiCo) 없이는 시작도 못한다.</p>
+<p>그리고 token만의 문제가 아니다. 1시간 영상에서는 사건이 *시간적으로 분산*되어 있다. &#x27;A 인물이 B를 보고 어떻게 반응했나?&#x27;라는 질문에 A와 B가 40분 차이로 등장할 수 있다. 5분 clip의 short-range attention pattern은 여기서 깨진다. 이게 hour-scale의 phase transition 두 축이다: <strong>token explosion</strong> + <strong>temporal dispersion</strong>.</p>
+<p>결론: hour-scale은 &#x27;sampler를 더 영리하게&#x27;가 아니라 &#x27;memory 시스템을 추가&#x27;하는 새로운 design axis를 요구한다.</p></div><div class="sb-block"><h2>2. LongVU — DINOv2 temporal pruning + cross-attention spatial reduction</h2><p>LongVU(Shen et al., Meta, ICLR 2025, arXiv:2410.17434)는 hour-scale의 첫 production-ready 솔루션 중 하나다. 핵심 통찰은 <strong>spatiotemporal adaptive compression</strong>: 시간 축과 공간 축을 *서로 다른 방법*으로 압축한다.</p>
+<p><strong>Temporal axis — DINOv2 similarity pruning.</strong> 인접 frame이 비슷하면 둘 중 하나를 버린다. 여기서 결정적인 디테일은 *어떤 encoder의 similarity를 쓰느냐*다. LongVU는 CLIP이 아니라 <strong>DINOv2</strong> embedding의 cosine similarity를 쓴다. 이유는 분명하다:</p>
+<p>- CLIP은 *언어-정렬* representation이라 &#x27;a person walking&#x27;과 &#x27;a person standing&#x27;을 의미적으로 비슷하다고 평가한다. redundancy 판정에 부적합.
+- DINOv2는 *self-supervised visual* representation이라 픽셀 수준 변화(자세, 시점, 조명)에 민감하다. 진짜로 시각적 정보가 새로운지 판단하는 데 적합.</p>
+<p>즉 &#x27;semantically similar but visually different&#x27; frame을 CLIP similarity로 자르면 정보가 날아간다. DINOv2 similarity는 visual redundancy를 정확히 잡는다. 이게 LongVU의 핵심 design choice다.</p>
+<p><strong>Spatial axis — cross-attention reduction.</strong> Temporal pruning을 통과한 frame에 대해서도, 모든 patch를 다 LLM에 넣지 않는다. Query text를 condition으로 cross-attention을 돌려서 query와 관련 있는 patch만 살린다. 결과적으로 같은 token budget으로 훨씬 긴 영상을 처리한다.</p>
+<p>중요한 건 두 축이 *순서*가 있다는 것이다: temporal 먼저, spatial 그 다음. 왜? Frame 하나를 통째로 버리는 게 patch를 버리는 것보다 비용 효율이 훨씬 좋기 때문이다.</p></div><div class="sb-block"><h2>3. Hour-LLaVA / VideoMarathon — MemAug와 9.7K-hour 데이터셋</h2><p>LongVU가 &#x27;compression을 잘하자&#x27;였다면 Hour-LLaVA(Lin et al., NeurIPS 2025 Spotlight)는 &#x27;memory를 추가하자&#x27;다. 핵심 구성요소 두 개.</p>
+<p><strong>MemAug (Memory Augmentation module).</strong> 영상을 chunk 단위(예: 30초)로 자르고, 각 chunk를 작은 memory token bank로 압축한다. 새 chunk가 들어올 때 *과거의 memory bank*를 cross-attention key/value로 참조한다. 즉 LLM이 현재 chunk를 처리하면서 과거 chunk의 압축된 표현을 읽는다. 이건 사실상 Transformer-XL의 segment-recurrent memory를 video에 도입한 셈이다. 결과: <strong>1 FPS로 1시간 영상을 end-to-end 학습 가능</strong>.</p>
+<p><strong>VideoMarathon 데이터셋.</strong> Hour-LLaVA의 진짜 임팩트는 데이터셋이다. <strong>9,700 시간 분량의 hour-long video + QA pair</strong>를 공개했다. 비교: 기존 LLaVA-Video 178K 클립의 평균 길이가 ~1분대인 걸 생각하면, hour-long training data는 처음으로 산업 규모에 도달했다. &#x27;hour-scale을 풀려면 hour-scale 데이터로 학습해야 한다&#x27;는 당연한 명제가 처음으로 가능해진 것.</p>
+<p>MemAug + VideoMarathon 조합의 결론은 단순하다: hour-scale은 inference-time trick(더 영리한 sampler)만으로는 못 풀고, *training distribution이 hour-scale이어야* 한다.</p></div><div class="sb-block"><h2>4. HourVideo 벤치마크 — 무엇을 측정하나</h2><p>Hour-scale 시대의 benchmark가 따로 필요한 이유는 기존 benchmark가 hour-scale의 진짜 능력을 측정하지 못해서다. 비교해보자.</p>
+<p>| 벤치마크 | 평균 길이 | 측정하는 능력 |
+|---|---|---|
+| Video-MME (Long split) | ~30–60분 | comprehensive QA, multi-domain |
+| MLVU | 평균 10분대 | multitask long-video understanding |
+| LongVideoBench | 8분–1시간 | referred-question QA (referring expression 포함) |
+| EgoSchema | 3분 | egocentric long-form (실은 &#x27;long&#x27;이 아님) |
+| <strong>HourVideo</strong> | <strong>1시간 전후</strong> | <strong>temporal reasoning, causal chain, narrative summarization</strong> |
+| Multi-Hop NIAH | 10K frame | needle-in-haystack (retrieval 능력만) |</p>
+<p>HourVideo의 차별점:
+- 단일 timestamp 한 곳 보면 풀리는 question을 의도적으로 배제
+- *temporal reasoning chain*(&#x27;A 다음에 B가 일어났고 그 결과 C가 발생한 이유는?&#x27;)
+- *long-range narrative summarization*
+- *causal attribution* across hour-scale gap</p>
+<p>Video-MME long split이 여전히 &#x27;long-range retrieval+QA&#x27;를 측정하는 데 비해, HourVideo는 &#x27;hour-scale에서의 reasoning&#x27;을 직접 겨눈다. NIAH는 retrieval만 측정해서 reasoning을 빠뜨린다. 그래서 hour-scale 시스템 평가에서는 NIAH(retrieval baseline) + HourVideo(reasoning) 조합이 표준이 되고 있다.</p></div><div class="sb-block"><h2>5. Episodic memory 패턴 — Atkinson-Shiffrin과 RAG-for-video</h2><p>한 발 떨어져서 패턴을 보자. Hour-scale video understanding이 수렴하고 있는 architectural pattern은 사실 인지심리학의 Atkinson-Shiffrin memory model과 정확히 같다.</p>
+<p>- <strong>Sensory register</strong> ≈ raw frame decode
+- <strong>Short-term / working memory</strong> ≈ 현재 chunk의 full-resolution token
+- <strong>Long-term memory</strong> ≈ 압축된 memory bank (MemAug의 memory token)
+- <strong>Retrieval</strong> ≈ query 시점에 memory bank에서 관련 token을 cross-attention으로 꺼냄</p>
+<p>이건 RAG-for-text와도 구조적으로 같다. 차이는 retrieval unit이 document chunk가 아니라 *video segment의 압축 표현*이라는 것. &#x27;video as a stream of episodes, each episode as a retrievable memory&#x27;.</p>
+<p>이 패턴이 의미하는 것: hour-scale을 풀려고 등장한 시스템들(LongVU, Hour-LLaVA, VideoChat-Flash의 HiCo)이 표면적으로는 &#x27;compression&#x27;이라는 이름을 달고 있지만, 더 깊은 차원에서는 다 *episodic memory를 학습하고 있다*. 그래서 Chapter 7의 token-level compression과 이 챕터의 long-video sampling이 결국 같은 방향으로 수렴한다. 둘 다 &#x27;video를 memory로 추상화&#x27;하려는 시도다.</p>
+<p>실무적 함의: hour-scale 시스템을 설계할 때 &#x27;sampler&#x27; 모듈만 swap하는 Chapter 3–5의 plug-and-play 패러다임은 부족하다. <strong>memory module도 swap 대상으로 분리</strong>해야 한다. Sampler.select() 옆에 MemoryStore.write() / MemoryStore.retrieve()가 인터페이스로 같이 있어야 한다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">War &amp; Peace를 읽기 vs 단편 소설 읽기</div>
+      <div class="a-body"><p>단편 소설은 처음부터 끝까지 한 호흡으로 읽는다. 모든 디테일을 working memory에 올려두고 마지막 페이지까지 끌고 간다. 이게 5분 video clip의 모델이다 — frame 전부를 context에 넣고 LLM의 attention이 다 처리한다.</p>
+<p>War &amp; Peace를 같은 방식으로 읽으려고 하면 망한다. 1,200페이지를 working memory에 다 올릴 수 없다. 그래서 사람은 다른 인지 시스템을 동원한다: chapter 끝에서 무슨 일이 일어났는지 *요약 메모*를 쓰고, 등장인물 관계도를 *외부 노트*에 그리고, 100페이지 전에 누가 누구한테 뭘 약속했는지가 필요해지면 *목차로 돌아가서 다시 찾아본다*. 즉 working memory + long-term memory + retrieval이 협력한다.</p>
+<p>Hour-scale video도 똑같다. &#x27;frame을 더 영리하게 고른다(sampler)&#x27;는 단편 소설을 더 잘 읽는 기술이다. 하지만 1시간 영상에서 진짜 필요한 건 &#x27;chapter 요약을 쓰는 기술&#x27;(MemAug), &#x27;시각적으로 중복인 페이지를 건너뛰는 기술&#x27;(LongVU의 DINOv2 pruning), 그리고 &#x27;나중에 다시 찾아볼 수 있게 인덱스를 만드는 기술&#x27;(memory bank retrieval)이다. 다른 인지 시스템을 동원해야 하는 영역으로 넘어가는 것이다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>Memory-augmented frame sampling의 sketch. 영상을 chunk 단위로 처리하면서 각 chunk를 small memory bank로 압축하고, query 시점에 memory bank를 retrieval해서 top-K relevant frame을 고른다. Encoder는 placeholder로 둔다 (실전에서는 SigLIP/DINOv2).</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import torch
+import torch.nn.functional as F
+from dataclasses import dataclass
+from typing import List, Callable
+
+@dataclass
+class MemorySlot:
+    chunk_id: int
+    frame_indices: List[int]
+    summary_emb: torch.Tensor   # [D], pooled chunk representation
+    frame_embs: torch.Tensor    # [T_chunk, D], per-frame for re-retrieval
+
+class MemoryAugmentedSampler:
+    def __init__(self, encode_fn: Callable, chunk_size: int = 60,
+                 mem_tokens_per_chunk: int = 4, topk_frames: int = 32):
+        self.encode = encode_fn
+        self.chunk_size = chunk_size     # 60 frames @ 1 fps = 1 min chunk
+        self.M = mem_tokens_per_chunk
+        self.K = topk_frames
+        self.memory: List[MemorySlot] = []
+
+    def _pool_to_memory(self, chunk_embs: torch.Tensor) -&gt; torch.Tensor:
+        # Attention-pooled summary: split chunk into M segments, mean-pool each.
+        T, D = chunk_embs.shape
+        seg = max(1, T // self.M)
+        pooled = torch.stack([chunk_embs[i*seg:(i+1)*seg].mean(0)
+                              for i in range(self.M)])
+        return pooled.mean(0)
+
+    def ingest(self, frames: torch.Tensor):
+        for c, start in enumerate(range(0, len(frames), self.chunk_size)):
+            chunk = frames[start:start + self.chunk_size]
+            embs = self.encode(chunk)
+            summary = self._pool_to_memory(embs)
+            self.memory.append(MemorySlot(
+                chunk_id=c,
+                frame_indices=list(range(start, start + len(chunk))),
+                summary_emb=summary, frame_embs=embs))
+
+    def query(self, query_emb: torch.Tensor) -&gt; List[int]:
+        # 1) Coarse: rank chunks by query vs summary similarity.
+        chunk_scores = torch.stack([
+            F.cosine_similarity(query_emb, m.summary_emb, dim=0)
+            for m in self.memory])
+        top_chunks = chunk_scores.topk(min(8, len(self.memory))).indices.tolist()
+        # 2) Fine: within winning chunks, score per-frame and take global top-K.
+        candidates = []
+        for ci in top_chunks:
+            m = self.memory[ci]
+            fs = F.cosine_similarity(query_emb.unsqueeze(0), m.frame_embs, dim=-1)
+            for idx, score in zip(m.frame_indices, fs.tolist()):
+                candidates.append((score, idx))
+        candidates.sort(reverse=True)
+        return [idx for _, idx in candidates[:self.K]]</code></pre>
+      <div class="c-walk"><p>세 가지 디자인 결정이 핵심이다. (1) <code>chunk_size=60</code>은 1 fps 기준 1분 chunk — Hour-LLaVA의 MemAug가 사용하는 segment 단위와 같은 정신이다. (2) <code>_pool_to_memory</code>는 attention-pooled summary로 chunk를 작은 memory representation으로 압축한다 — 실전 MemAug는 학습된 cross-attention pooler를 쓰지만 sketch에서는 segment-mean으로 단순화. (3) <code>query</code>는 <strong>two-stage retrieval</strong>이다: 먼저 chunk-level summary로 hour-scale에서 분 단위 거르고, 그 다음 winning chunk 안에서 frame-level로 정밀 ranking. 1시간 = 60 chunk = 60번 cosine으로 1차 필터 → 후보 chunk 8개 × 60 frame = 480 frame에 대해서만 fine ranking. 3,600 frame을 다 LLM에 넣지 않고도 query-relevant top-K를 가져온다. 이게 Atkinson-Shiffrin 패턴 그대로다: summary_emb = long-term memory, frame_embs = retrieval index, 최종 K개 frame = working memory로 LLM에 들어가는 것.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">Hour-scale은 &#x27;sampler 잘 짠다&#x27;에서 &#x27;memory 시스템을 설계한다&#x27;로 멘탈 모델이 바뀌는 지점이다. 시니어 엔지니어 평가에서는 후보가 (a) memory와 context의 tradeoff를 양적으로 이해하는지, (b) hour-scale benchmark가 측정하는 능력을 정확히 짚는지, (c) LongVU의 DINOv2 선택 같은 micro-design decision의 의도를 읽는지를 본다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>1시간 / 6시간 비디오에서 1 fps token budget이 얼마인지 즉석 계산 (백만 단위 token 폭발)</li><li>temporal pruning과 spatial reduction을 서로 *직교한 축*으로 다루는 사고</li><li>&#x27;training data distribution이 hour-scale이어야 한다&#x27;는 인식 (VideoMarathon 9.7K hours의 의의)</li><li>sampler-only 아키텍처와 memory-augmented 아키텍처의 인터페이스 차이를 코드 수준으로 분리</li><li>retrieval(NIAH)과 reasoning(HourVideo) benchmark의 측정 영역을 구분</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>&#x27;더 큰 context window면 해결된다&#x27;는 답 (token explosion 6시간 = 5.5M, 1M ctx로도 부족)</li><li>CLIP similarity로 temporal pruning을 하겠다는 제안 (semantic 정렬 때문에 visual redundancy 못 잡음)</li><li>memory를 stateless cache로만 보고 cross-attention key/value로 쓰는 학습 가능 representation으로 안 보는 시각</li><li>HourVideo와 EgoSchema를 &#x27;long-video benchmark&#x27;로 묶어버리는 평가 (&#x27;long&#x27;의 정의가 다르다)</li><li>hour-scale을 inference-time problem으로만 보고 training distribution 문제를 무시하는 관점</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>**Q1. Memory vs context tradeoff.** 1 fps 6시간 video를 처리해야 하고 1M context window가 있다. SigLIP 256 token/frame 가정. (a) naive로 다 넣었을 때 token이 얼마이고 몇 % over budget인지 계산하라. (b) hourly chunk + per-chunk 4 memory token으로 압축했을 때 token이 어떻게 변하는지 계산하라. (c) 이 둘 사이의 어떤 hybrid가 reasoning benchmark에서 더 잘 동작할 것 같은지, MemAug의 design을 근거로 논하라.</li><li>**Q2. HourVideo가 측정하는 것.** Video-MME long split, MLVU, EgoSchema, LongVideoBench, HourVideo, Multi-Hop NIAH 중 &#x27;hour-scale에서 causal reasoning across 40-minute gap&#x27;을 측정하는 데 가장 적합한 것은 무엇이고, 나머지가 왜 부족한지 설명하라.</li><li>**Q3. LongVU의 DINOv2 선택.** LongVU의 temporal pruning 모듈을 &#x27;CLIP similarity&#x27;로 바꾸려는 PR이 올라왔다. &#x27;CLIP이 이미 우리 인코더에 있고 추가 모델 weight를 안 쓴다&#x27;는 근거. 이 PR을 reject한다면 어떤 실패 케이스로 reviewer를 설득할 것인가?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> **Familiar**: LongVU, Hour-LLaVA, HourVideo 이름을 알고 &#x27;긴 영상을 잘 처리하는 모델/벤치마크&#x27;라고 한 문장으로 설명할 수 있다. **Mastery**: hour-scale의 phase transition을 token budget 계산으로 정량화하고, temporal/spatial을 직교 축으로 분리한 LongVU 설계와 episodic memory 패턴으로 수렴하는 Hour-LLaVA를 인지심리학적 패턴(Atkinson-Shiffrin)에 매핑한다. DINOv2 vs CLIP의 redundancy 검출 차이를 실패 시나리오로 설명할 수 있고, HourVideo가 reasoning을 NIAH가 retrieval을 측정한다는 평가 축의 분리를 설계 결정으로 가져온다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>Hour-scale은 phase transition이다</h3><p>1 fps 1시간 = 3,600 frame ≈ 921K token으로 1M context의 92%. 6시간이면 5.5M token으로 1M context를 553% 초과. sampling이 아닌 *memory system* 설계가 필요해진다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>LongVU는 spatiotemporal 축을 분리한다</h3><p>arXiv:2410.17434 (ICLR 2025, Meta). Temporal axis는 DINOv2 similarity pruning, spatial axis는 query-conditioned cross-attention reduction. Frame 단위 버리기가 patch 단위 버리기보다 비용 효율 좋아서 temporal이 항상 먼저.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>DINOv2 &gt; CLIP for redundancy 검출</h3><p>CLIP은 language-aligned라 &#x27;walking&#x27;과 &#x27;standing&#x27;을 의미적으로 가깝게 본다. visual redundancy 판단에는 self-supervised visual representation인 DINOv2가 더 정확하다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>MemAug는 segment-recurrent memory를 video에 도입했다</h3><p>Hour-LLaVA (NeurIPS 2025 Spotlight). 각 chunk를 memory token bank로 압축, 다음 chunk가 cross-attention K/V로 참조. 1 FPS hour-long end-to-end 학습 가능.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>VideoMarathon 9.7K-hour는 distribution shift을 푼다</h3><p>기존 long-video dataset이 평균 분 단위였던 데서 처음으로 hour-scale 학습 분포가 가능해졌다. hour-scale은 inference-time trick으로는 못 풀고 training distribution이 hour-scale이어야 한다는 명제의 실증.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>HourVideo는 reasoning을 직접 측정한다</h3><p>NIAH는 retrieval, EgoSchema는 3분이라 &#x27;long&#x27; 아님, Video-MME long split은 comprehensive QA. HourVideo만 hour-scale temporal reasoning과 causal chain을 직접 겨눈다. NIAH(retrieval) + HourVideo(reasoning) 조합이 표준 평가축.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>수렴하는 패턴은 episodic memory다</h3><p>LongVU의 compression, Hour-LLaVA의 MemAug, VideoChat-Flash의 HiCo가 표면적으로 다 다르지만 모두 Atkinson-Shiffrin의 sensory-working-long-term memory + retrieval 구조로 수렴한다. RAG-for-video라는 멘탈 모델이 가장 정확하다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>Plug-and-play 인터페이스에 memory를 1급 객체로 올려야 한다</h3><p>Chapter 9에서 다룰 Sampler.select() 옆에 MemoryStore.write() / retrieve()가 동등한 swap point로 분리되어야 한다. hour-scale 시스템에서 memory는 sampler의 부속이 아니라 independent 모듈이다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-05.html">← The Relevance × Diversity Frontier — Q-Frame, AdaRD-Key, FOCUS</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-07.html">Token-Level Compression — VideoChat-Flash, NVILA, FastVID →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+</body></html>

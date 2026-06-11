@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch5: The Relevance × Diversity Frontier — Q-Frame, AdaRD-Key, FOCUS — Frame Sampling for Multimodal AI — direcf</title>
+  <meta name="description" content="2025년 ICCV의 Q-Frame(Xiaomi, arXiv:2506.22139)과 2026년 ICLR submission인 AdaRD-Key(arXiv:2510.02778), FOCUS(arXiv:2510.27280)는 모두 같은 결론에 도달했다: pure relevance만으로는 redundant한 near-identical frame을 골라 temporal evolution을 놓친다. relevance × diversity가 새로운 frontier이고, log-det / max-volume / multi-armed bandit이 그 수학적 언어가 되었다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child{margin-bottom:0}
+.sb-block strong{color:var(--text)}
+.sb-block code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/multimodal-ai">Frame Sampling for Multimodal AI</a><span class="sep">›</span>
+        <strong>Ch05 The Relevance × Diversity Frontier — Q-Frame, AdaRD-Key, FOCUS</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 05 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🌐</div>
+      <h1 class="chapter-title">The Relevance × Diversity Frontier — Q-Frame, AdaRD-Key, FOCUS</h1>
+      <div class="chapter-title-kr">Relevance × Diversity Frontier — Q-Frame, AdaRD-Key, FOCUS</div>
+      <div class="chapter-tldr">2025년 ICCV의 Q-Frame(Xiaomi, arXiv:2506.22139)과 2026년 ICLR submission인 AdaRD-Key(arXiv:2510.02778), FOCUS(arXiv:2510.27280)는 모두 같은 결론에 도달했다: pure relevance만으로는 redundant한 near-identical frame을 골라 temporal evolution을 놓친다. relevance × diversity가 새로운 frontier이고, log-det / max-volume / multi-armed bandit이 그 수학적 언어가 되었다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-05.png" alt="Chapter 5 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 5 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">7 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>pure relevance sampler가 왜 redundant frame을 뽑는지 정량적으로 설명할 수 있다</li><li>log-det diversity term이 Determinantal Point Process(DPP)와 어떻게 연결되는지 이해한다</li><li>Q-Frame의 per-frame multi-resolution이 token budget 안에서 왜 효율적인지 설명할 수 있다</li><li>AdaRD-Key의 gating 메커니즘이 weak query에서 왜 diversity-only로 fallback해야 하는지 이해한다</li><li>FOCUS의 multi-armed bandit framing이 large frame pool + expensive evaluator 상황에 왜 맞는지 안다</li><li>greedy submodular maximization으로 relevance × diversity selector를 직접 구현할 수 있다</li><li>2026년 SOTA가 수렴한 세 축(training-free / query-aware / frame×diversity)을 자신의 시스템에 매핑할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>Chapter 3-4에서 query-aware adaptive sampler(AKS, BOLT)와 learned sampler(Frame-Voyager, M-LLM, GenS)를 봤다. 이들의 공통 약점은 *pure relevance bias*다 — query–frame similarity가 높은 frame을 K개 뽑으면, 그 K개가 사실상 같은 순간(같은 shot, 같은 객체, 같은 카메라 각도)을 가리키는 경우가 압도적으로 많다. 1시간짜리 cooking video에서 &#x27;how does the chef season the steak?&#x27;라는 query를 던지면 seasoning 장면 0.5초 안의 거의 동일한 30 프레임이 top-30을 다 차지한다. 정답에 필요한 *before / during / after* 구조는 사라진다.</p>
+<p>2025 후반부터 2026 ICLR submission 시즌까지 이 문제를 정면으로 겨냥한 세 논문이 등장했다. ICCV 2025의 <strong>Q-Frame</strong>(Xiaomi, arXiv:2506.22139)은 query-aware selection에 *per-frame multi-resolution* 축을 추가해 같은 token budget 안에서 더 많은 시간적 분산을 확보했다. ICLR 2026 submission <strong>AdaRD-Key</strong>(arXiv:2510.02778)는 Relevance × log-det Diversity의 Max-Volume objective를 명시적으로 풀고, weak query에서는 diversity-only로 자동 전환하는 gating을 도입했다. 같은 시즌의 <strong>FOCUS</strong>(arXiv:2510.27280)는 frame selection을 combinatorial pure-exploration multi-armed bandit으로 다시 정의해, Bernstein confidence bound로 20분 이상 LongVideoBench에서 frame의 2% 미만만 보면서 +11.9%를 얻었다.</p>
+<p>이 chapter는 (1) 왜 pure relevance가 실패하는지 정량적으로 보고, (2) 세 논문을 한 줄로 묶는 mathematical lens — log-det / max-volume / bandit — 을 정리한 뒤, (3) portfolio diversification analogy로 직관을 잡고, (4) 30줄 짜리 greedy relevance × diversity selector를 직접 구현한다. 마지막으로 2026 frontier가 수렴한 세 축(training-free vs learned, query-aware vs agnostic, frame-level vs token-level)에서 우리가 어디 서 있는지 좌표를 찍는다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>1. Why Pure Relevance Fails — Redundancy Collapse</h2><p>가장 단순한 query-aware sampler를 생각하자. 비디오의 모든 frame을 SigLIP/CLIP으로 encoding하고, query embedding과 cosine similarity를 계산해 top-K를 뽑는다. 이게 BOLT(arXiv:2503.21483)의 inverse-transform 이전 baseline이고, naive CLIP-filter baseline이며, 실제 production에서 가장 자주 보는 패턴이다.</p>
+<p>실패 모드는 <strong>redundancy collapse</strong>다. similarity가 높은 frame들은 시간축에서 *클러스터링*된다 — 동일 shot, 동일 객체, 미세하게 다른 카메라 각도. K=8을 뽑으면 8개가 0.5초 윈도 안에 다 들어가는 경우가 흔하다. AdaRD-Key 논문의 ablation에서 pure relevance top-K는 LongVideoBench의 다단계 질문(예: &#x27;before X, what was Y doing?&#x27;)에서 정확도가 random uniform보다 낮게 떨어진다. 시간적 *evolution*을 잡지 못하기 때문이다.</p>
+<p>수학적으로 보면 명확하다. K개 frame의 information content는 단순 sum이 아니라 *submodular*하다. 두 번째 frame이 첫 번째와 거의 같다면 marginal gain은 0에 가깝다. pure relevance는 이 submodularity를 모델링하지 않는다. 그래서 sum(rel(f_i))만 maximize하면 marginal gain이 0인 frame을 계속 추가한다.</p>
+<p>Chapter 3의 AKS가 prompt relevance와 *coverage*를 함께 본 이유, BOLT가 *inverse-transform*으로 weight 분포를 펼쳐서 뽑은 이유가 여기에 있다. 2025–2026의 세 frontier 논문은 같은 직관을 더 explicit한 수학으로 다시 쓴다 — coverage/spread를 <strong>diversity term</strong>으로 형식화하고, 그 term을 log-det이나 bandit exploration으로 정의한다.</p></div><div class="sb-block"><h2>2. Q-Frame (ICCV 2025, Xiaomi) — Multi-Resolution under Token Budget</h2><p>Q-Frame(arXiv:2506.22139, Zhang et al., Xiaomi)은 ICCV 2025에 accept된 training-free, model-agnostic sampler다. 핵심 통찰은 두 가지다.</p>
+<p><strong>첫째, query-aware selection</strong>: CLIP-style scoring으로 frame–query relevance를 계산하되, naive top-K가 아니라 *relevance 분포를 따라 spread*시키는 방식으로 인덱스를 뽑는다 (BOLT의 inverse-transform과 사상은 유사하지만 Q-Frame은 그 위에 multi-resolution을 얹는 게 차별점이다).</p>
+<p><strong>둘째, per-frame multi-resolution under token budget</strong>: 모든 frame을 같은 해상도로 인코딩하지 않는다. relevance가 높은 frame은 고해상도(=많은 vision token)로, 낮은 frame은 저해상도(=적은 token)로 인코딩한다. 총 token budget T가 주어졌을 때, frame f_i에 해상도 r_i를 할당하는 문제를 풀면 같은 T 아래서 더 많은 frame을 cover할 수 있다.</p>
+<p>이게 왜 diversity와 연결되는가? 동일 budget으로 더 많은 frame을 통과시킬 수 있다는 것은, *temporal coverage*가 자동으로 늘어난다는 뜻이다. high-relevance cluster에 있는 frame들은 어차피 비슷하므로 그중 하나만 고해상도로, 나머지는 저해상도로 (혹은 drop) 처리하면 budget을 outside-cluster의 일부 frame을 끌어오는 데 쓸 수 있다.</p>
+<p>Q-Frame은 model-agnostic이다 — LLaVA-Video, Qwen2.5-VL, InternVL2.5 같은 downstream Video-LLM의 vision encoder 앞단에 그대로 끼워 넣는다. Chapter 9에서 다룰 plug-and-play interface 관점에서 보면 <code>Sampler.select() -&gt; (indices, resolutions)</code> 으로 시그니처가 한 칸 늘어난 형태다.</p></div><div class="sb-block"><h2>3. AdaRD-Key (ICLR 2026 submission) — Max-Volume Objective</h2><p>AdaRD-Key(arXiv:2510.02778, Xian et al.)는 ICLR 2026 submission으로, relevance × diversity를 <strong>Max-Volume objective</strong>로 명시적으로 푼다.</p>
+<p><strong>Objective</strong>: 선택된 frame index set S에 대해,</p>
+<p><code>`</code>
+J(S) = α · Σ_{i∈S} rel(f_i, q)  +  (1-α) · logdet(K_S + εI)
+<code>`</code></p>
+<p>여기서 K_S는 선택된 frame들의 feature Gram matrix다. <code>logdet(K_S)</code>는 feature space에서 그 frame들이 *얼마나 큰 volume*을 span하는지 측정한다. 동일한 frame을 두 번 넣으면 K_S는 rank-deficient가 되어 logdet은 -∞로 발산한다(ε regularizer로 막는다). 즉 redundant frame은 자동으로 penalize된다.</p>
+<p>log-det diversity는 <strong>Determinantal Point Process(DPP)</strong>의 핵심 수학이다. DPP에서 set S가 뽑힐 확률은 det(L_S)에 비례하고, log을 취하면 log-det 형태가 된다. DPP는 추천 시스템(Netflix), summarization, mini-batch selection 등에서 &#x27;diverse but high-quality&#x27; set을 뽑을 때 표준 도구다. AdaRD-Key는 이 도구를 frame sampling에 가져왔다.</p>
+<p><strong>Greedy approximation</strong>: logdet은 set function으로 submodular이고, relevance sum은 modular다. 둘의 weighted sum은 여전히 submodular이므로, <strong>greedy algorithm</strong>이 (1 - 1/e) 근사를 보장한다. 즉 매 step에서 marginal gain이 가장 큰 frame을 하나씩 추가하면 된다. K=8, K=32 같은 실용적 size에서 greedy로 충분하다.</p>
+<p><strong>Weak-query gating</strong>: AdaRD-Key의 두 번째 contribution이다. query가 &#x27;describe the video&#x27; 같은 weak/generic query면 relevance signal이 거의 uniform하다 — 모든 frame의 rel score가 비슷하다. 이 경우 relevance term은 정보가 없으므로 α를 자동으로 0으로 만들어 <strong>diversity-only</strong>로 fallback한다. 반대로 query가 &#x27;when does the woman pick up the red mug?&#x27; 같은 strong/specific query면 α를 크게 둔다. gating은 query embedding의 entropy나 rel score 분포의 분산으로 결정된다.</p>
+<p>result: LongVideoBench, MLVU에서 동급 frame budget의 BOLT/AKS 대비 추가 이득을 보고한다 (paper Table 2).</p></div><div class="sb-block"><h2>4. FOCUS (ICLR 2026 submission) — Combinatorial Pure-Exploration Bandit</h2><p>FOCUS(arXiv:2510.27280)는 frame selection을 <strong>combinatorial pure-exploration multi-armed bandit</strong>으로 reframe한다. 같은 ICLR 2026 cycle의 submission이고, 가장 자극적인 결과 — <strong>20분 이상 LongVideoBench에서 전체 frame의 &lt;2%만 보면서 +11.9%</strong> — 를 보고한다.</p>
+<p><strong>Bandit framing</strong>: 각 frame을 &#x27;arm&#x27;으로 본다. arm을 pull한다는 것은 그 frame을 (비싼) downstream evaluator — 예를 들어 VideoLLM 자체나 captioner — 에 넣어서 reward(=query에 대한 informativeness)를 측정한다는 의미다. 한 시간 비디오에는 수만 개 frame이 있고, 모든 frame을 evaluator에 넣는 건 불가능하다. 우리가 알고 싶은 건 *top-K arm 집합* 자체(combinatorial) — 어떤 frame이 *개별적으로* best인지가 아니라 어떤 *K-tuple*이 best인지.</p>
+<p><strong>Pure exploration</strong>: 일반 bandit은 exploration-exploitation trade-off지만, pure exploration은 *오직 best arm/set identification*만 목표로 한다. classification: 보상을 최대화하는 게 아니라 최소 횟수의 pull로 best set을 옳게 identify하는 것.</p>
+<p><strong>Bernstein confidence bound</strong>: FOCUS는 Bernstein inequality 기반 confidence interval로 arm마다 estimated reward의 신뢰구간을 유지한다. 어떤 frame의 upper bound가 다른 frame의 lower bound보다 명확히 낮으면 그 frame은 즉시 제거(elimination). 남은 후보군에서 confidence가 가장 넓은 frame을 다음에 pull한다. 결과적으로 명확히 나쁜 frame은 빠르게 버려지고, &#x27;top-K boundary&#x27; 근처의 어려운 frame에만 evaluator budget을 쓴다.</p>
+<p><strong>왜 이게 diversity와 연결되는가</strong>: combinatorial pure exploration은 *K-set의 joint reward*를 본다. K개를 함께 평가하므로, 서로 중복된 K-set은 joint reward가 낮게 측정된다(같은 정보 K번 = K배가 아님). 이 평가 함수 자체에 diversity가 내장되어 있다.</p>
+<p><strong>어디에 맞는가</strong>: (a) frame pool이 매우 클 때 (1시간+, 1 fps만 해도 3600 frame), (b) per-frame 평가가 *비쌀 때* (captioner 호출, VideoLLM 부분 inference). 이 두 조건이 둘 다 강하면 bandit의 sample-complexity gain이 압도적이다. AKS/BOLT는 CLIP 한 번에 모든 frame 점수가 나오므로 bandit이 불필요했지만, evaluator가 더 무거워지는 2026 agentic loop 시대(Chapter 9에서 다룰 FrameThinker, FrameMind)에는 bandit이 자연스럽다.</p></div><div class="sb-block"><h2>5. The Three Axes 2026 Converged On</h2><p>AKS, BOLT, Frame-Voyager, M-LLM, GenS, Q-Frame, AdaRD-Key, FOCUS — 2024 말부터 2026 초까지의 SOTA sampler들을 모아두면 세 개의 직교 축이 보인다.</p>
+<p><strong>축 1: Training-free vs Learned</strong>
+- Training-free: AKS, BOLT, Q-Frame, AdaRD-Key, FOCUS — frozen CLIP/SigLIP embedding 위에서 objective만 푼다. 운영상 &#x27;pip install, 끝&#x27;.
+- Learned: Frame-Voyager(arXiv:2410.03226), M-LLM(arXiv:2502.19680), GenS(arXiv:2503.09146) — 별도 학습 단계 필요. supervised signal로 인해 성능 상한은 높지만, 새 domain에 가면 재학습.</p>
+<p><strong>축 2: Query-aware vs Agnostic</strong>
+- Query-aware: 위 거의 전부.
+- Agnostic: PySceneDetect, uniform, fps-based — query를 모름. retrieval indexing에는 적합(질의어를 미리 모름), 단일 질의 inference에는 sub-optimal.</p>
+<p><strong>축 3: Frame-level vs Token-level</strong>
+- Frame-level: 위 sampler 전부 — &#x27;K개 frame을 고른다&#x27;가 목표.
+- Token-level: VideoChat-Flash(arXiv:2501.00574), NVILA(arXiv:2412.04468), FastVID(arXiv:2503.11187) — frame은 다 받되 *token*을 압축. Chapter 7에서 다룰 직교 축.</p>
+<p><strong>2026이 서 있는 좌표</strong>: training-free + query-aware + frame-level + relevance × diversity. Q-Frame / AdaRD-Key / FOCUS가 같은 좌표에 모인 게 우연이 아니다. 이 좌표는 (a) 어떤 downstream Video-LLM에도 swap-in 가능하고(plug-and-play), (b) query를 알 수 있는 inference time에 강하고, (c) Chapter 7의 token compression과 *직교*하므로 stack 가능하다(sampler→token compressor 순으로 쌓는다). frontier는 이 좌표를 정교화하는 방향 — gating, multi-resolution, bandit budget — 으로 움직이고 있다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">Portfolio Diversification — α(alpha)와 Covariance</div>
+      <div class="a-body"><p>target return을 가진 stock portfolio를 짤 때 두 가지를 동시에 본다.</p>
+<p>1. <strong>Expected return (alpha)</strong>: 각 stock의 기대 수익률. 높은 게 좋다. → relevance(query, frame).
+2. <strong>Covariance</strong>: 보유 stock 사이의 상관관계. 모든 stock이 같은 섹터(예: 전부 반도체)면 한 번의 시장 충격에 다 같이 무너진다. covariance가 낮은(uncorrelated) stock을 섞어야 분산이 작아진다. → frame features 사이의 redundancy.</p>
+<p>Modern Portfolio Theory의 핵심은 그래서 *return × diversification*이지 return only가 아니다. 정확히 같은 구조가 frame sampling에 나타난다.</p>
+<p>- &#x27;모든 자금을 alpha가 가장 높은 한 종목에 몰빵&#x27; = pure relevance top-K. cluster collapse.
+- &#x27;alpha와 분산을 함께 최대화&#x27; = relevance × diversity.</p>
+<p>log-det이 covariance와 직접 연결된다. 포트폴리오의 위험 분산도는 covariance matrix Σ의 determinant로 측정할 수 있다 — det(Σ)가 크면 자산들이 *큰 volume*을 span한다(=서로 잘 분산되어 있다). frame feature Gram matrix K_S의 log-det이 정확히 같은 양이다. AdaRD-Key의 Max-Volume objective는 &#x27;expected return α만큼은 챙기되 covariance volume도 키워라&#x27;다.</p>
+<p>FOCUS의 bandit framing은 portfolio 비유의 다른 측면이다. 모든 종목을 일일이 분석할 수 없을 때, 분석 비용 자체를 최소화하면서 best-K portfolio를 *식별*하는 문제. quant trading의 &#x27;best arm identification&#x27; 알고리듬이 그대로 옮겨온다.</p>
+<p>이 비유에서 빠뜨리지 말 것: α(weight)는 hyperparameter가 아니라 *query에 의존*한다. weak query = market regime이 불확실 → diversification으로 보수적 운용. strong query = high-conviction view → alpha에 더 베팅. AdaRD-Key의 gating이 이 &#x27;regime-dependent α&#x27;를 명시적으로 학습한다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>30~40줄짜리 greedy relevance × diversity selector. AdaRD-Key의 Max-Volume objective를 단순화한 버전으로, frame feature와 query embedding이 주어지면 K개 frame을 고른다. submodular greedy로 매 step marginal gain이 가장 큰 frame을 추가한다. 실행 가능하고, NumPy만 쓴다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import numpy as np
+
+def relevance_diversity_select(
+    frame_features: np.ndarray,   # [N, D], L2-normalized
+    query_emb: np.ndarray,        # [D], L2-normalized
+    K: int,
+    alpha: float = 0.6,
+    eps: float = 1e-3,
+) -&gt; list[int]:
+    &quot;&quot;&quot;Greedy submodular max of:  alpha * sum(rel)  +  (1-alpha) * logdet(K_S + eps*I).
+
+    AdaRD-Key style Max-Volume objective, simplified.
+    &quot;&quot;&quot;
+    N = frame_features.shape[0]
+    rel = frame_features @ query_emb              # [N], cosine since both normalized
+    sim = frame_features @ frame_features.T       # [N, N] Gram matrix (kernel)
+
+    selected: list[int] = []
+    remaining = set(range(N))
+    for _ in range(min(K, N)):
+        best_idx, best_gain = -1, -np.inf
+        if selected:
+            K_S = sim[np.ix_(selected, selected)] + eps * np.eye(len(selected))
+            sign, cur_logdet = np.linalg.slogdet(K_S)
+            cur_logdet = cur_logdet if sign &gt; 0 else -np.inf
+        else:
+            cur_logdet = 0.0
+        for i in remaining:
+            cand = selected + [i]
+            K_C = sim[np.ix_(cand, cand)] + eps * np.eye(len(cand))
+            sign, new_logdet = np.linalg.slogdet(K_C)
+            if sign &lt;= 0:
+                continue
+            div_gain = new_logdet - cur_logdet
+            gain = alpha * rel[i] + (1.0 - alpha) * div_gain
+            if gain &gt; best_gain:
+                best_gain, best_idx = gain, i
+        if best_idx &lt; 0:
+            break
+        selected.append(best_idx)
+        remaining.remove(best_idx)
+    return sorted(selected)
+
+
+if __name__ == &quot;__main__&quot;:
+    rng = np.random.default_rng(0)
+    D, N = 64, 200
+    # synthetic: 3 clusters of frames, the first cluster aligns with the query.
+    centers = rng.standard_normal((3, D))
+    feats = np.vstack([c + 0.1 * rng.standard_normal((N // 3, D)) for c in centers])
+    feats /= np.linalg.norm(feats, axis=1, keepdims=True)
+    query = centers[0] / np.linalg.norm(centers[0])
+
+    pure_relevance = np.argsort(-(feats @ query))[:8].tolist()
+    rel_div = relevance_diversity_select(feats, query, K=8, alpha=0.6)
+    print(&quot;pure relevance top-8 cluster ids:&quot;, [i // (N // 3) for i in pure_relevance])
+    print(&quot;relevance x diversity cluster ids:&quot;, [i // (N // 3) for i in rel_div])</code></pre>
+      <div class="c-walk"><p><code>frame_features</code>는 SigLIP/CLIP으로 인코딩된 L2-normalized frame embedding이라고 가정한다. <code>rel = features @ query</code>는 cosine relevance가 된다. <code>sim</code>은 모든 frame 쌍의 Gram matrix이고 log-det diversity의 입력이다.</p>
+<p>greedy loop은 매 step에서 (a) 현재 선택된 set의 log-det을 한 번 계산하고, (b) 후보 frame i를 추가했을 때 log-det 증가분 <code>div_gain</code>을 구하고, (c) <code>alpha * rel[i] + (1-alpha) * div_gain</code>의 marginal gain이 최대인 frame을 고른다. submodular function의 standard greedy로 (1 - 1/e) 근사를 보장한다.</p>
+<p><code>eps * I</code>는 K_S가 rank-deficient(중복 frame)일 때 log-det이 -∞로 가는 걸 막는 regularizer다. 실전에서는 eps를 1e-3 ~ 1e-2 범위로 두고, frame feature가 normalized라는 가정 하에서 안정적이다.</p>
+<p><code>__main__</code> 데모는 3개 cluster의 synthetic frame을 만들고 cluster 0이 query와 align되도록 설계한다. <strong>pure relevance top-8은 거의 전부 cluster 0</strong>을 뽑는다 — redundancy collapse. <strong>relevance × diversity는 cluster 0을 다수 뽑되 cluster 1, 2에서도 몇 개를 끌어온다</strong>. 실제 비디오에서 cluster 1, 2가 &#x27;before&#x27;와 &#x27;after&#x27; frame이라면 정답을 위한 temporal context를 확보한 셈이다.</p>
+<p>프로덕션 코드에서 바꿀 점: (1) Cholesky rank-1 update로 매 step O(N·k) 대신 O(N·k²)을 O(N·k)로 낮춘다. (2) eps와 alpha를 AdaRD-Key의 gating으로 query-dependent하게 만든다 — rel 분포의 분산이 작으면 alpha→0(diversity-only). (3) frame feature는 frame-level 평균 대신 multi-token average pool을 쓰면 더 잘 동작한다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">Senior video-LLM 엔지니어가 후보자가 &#x27;sampler 직접 디자인&#x27;할 수 있는 사람인지 보는 신호. CVPR-tier 논문 한 줄 인용은 누구나 한다. 진짜로 보고 싶은 건 *왜* diversity term이 필요한지, *어떤* objective family에서 log-det이 나오는지, *언제* bandit이 cost-justifiable한지.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>pure relevance가 cluster collapse한다는 사실을 *실제 데이터*로 본 경험</li><li>log-det diversity와 DPP의 관계, 그리고 그게 portfolio covariance와 같은 수학적 구조라는 걸 직관적으로 설명할 수 있는가</li><li>submodular function의 greedy (1 - 1/e) 보장이 어디서 오는지 한 줄로 설명할 수 있는가 (Nemhauser-Wolsey-Fisher)</li><li>weak query 상황에서 relevance term을 *낮춰야* 한다는 gating 직관</li><li>bandit framing이 항상 필요한 게 아니라 (a) 큰 pool + (b) 비싼 per-frame evaluator의 두 조건이 *동시에* 성립할 때 정당화된다는 비용 분석</li><li>training-free / query-aware / frame-level이라는 2026의 좌표를 자기 시스템의 좌표와 비교하고 gap을 식별할 수 있는가</li><li>Q-Frame의 multi-resolution이 token budget이라는 *제약*에서 자연스럽게 도출되는 결과이며, budget 무제한이면 의미가 없다는 점을 이해하는가</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>&#x27;diversity는 그냥 frame을 골고루 뽑는 거 아니에요?&#x27; — uniform sampling과 log-det max-volume의 차이를 모름</li><li>logdet이 -∞로 발산하는 numerical 문제와 그 해결책(eps regularizer)을 모른 채 &#x27;논문대로 구현했어요&#x27;라고 함</li><li>DPP를 들어본 적 없거나 &#x27;추천에서만 쓰는 것 같던데요&#x27;라고 함</li><li>weak query gating을 듣고 &#x27;query를 prompt engineering으로 강하게 만들면 되지 않나요?&#x27;라고 답함</li><li>bandit이 *모든* video sampling 문제에 좋다고 말함</li><li>Q-Frame과 AdaRD-Key가 &#x27;같은 거 아니냐&#x27;고 말함</li><li>&#x27;training-free라서 SOTA 못 깬다&#x27;는 편견</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>Q1. 1시간짜리 cooking video에서 &#x27;how does the chef season the steak?&#x27;라는 query로 K=16 frame을 뽑아야 한다. naive CLIP top-16이 실패하는 모드를 정확히 묘사하고, AdaRD-Key의 Max-Volume objective가 *왜* 그 실패를 정량적으로 고치는지 설명하라. log-det이 0(혹은 -∞)에 가까워질 때 일어나는 일을 수식 수준에서 답하라.</li><li>Q2. 당신의 production 시스템은 frame당 GPT-4V caption을 호출하고 그 caption으로 frame을 평가한다(API 호출 비용 $0.01/frame). 비디오는 평균 2시간, 1 fps 추출 시 7,200 frame이다. K=32를 골라야 한다. (a) AdaRD-Key(CLIP 기반 log-det) vs FOCUS(bandit-pure-exploration) 중 어느 쪽이 *비용* 관점에서 정당한지, (b) Bernstein bound 기반 elimination이 평균 몇 회의 GPT-4V 호출 안에서 끝날지 sample complexity의 order를 sketch하라.</li><li>Q3. Q-Frame의 per-frame multi-resolution과 Chapter 7에서 다룰 VideoChat-Flash의 token-level HiCo compression은 둘 다 &#x27;token budget을 줄인다&#x27;는 점에서 닮아 보인다. 두 접근이 stack 가능한지(같은 pipeline에 둘 다 넣어도 되는지), 어느 순서로 두어야 하는지, 그리고 *trade-off가 충돌하는* 구체적 시나리오 하나를 들어라.</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> **Familiar(논문 읽음)**: &#x27;Q-Frame, AdaRD-Key, FOCUS가 relevance × diversity 방향이고 ICLR 2026 submission이다&#x27;라고 말한다. arXiv ID와 한 줄 contribution을 댈 수 있다.
+
+**Mastery(직접 구현/배포 가능)**: (1) log-det objective를 numpy로 30줄에 짜고 eps regularizer의 필요성을 시연한다. (2) weak query gating을 &#x27;왜&#x27; 넣어야 하는지 — rel score 분포의 분산이 작을 때 alpha를 낮춰야 한다는 — entropy 관점에서 유도한다. (3) bandit framing의 비용-편익 분석을 자기 시스템 숫자(frame pool size × evaluator cost)로 정량화하고 &#x27;AKS면 충분 / FOCUS가 정당화됨&#x27;의 경계선을 그릴 수 있다. (4) 2026 frontier가 수렴한 좌표(training-free + query-aware + frame×diversity)를 자기 production stack의 좌표와 그려놓고 다음 분기에 옮길 한 칸을 정한다. (5) Q-Frame의 multi-resolution을 Chapter 7의 token compression과 *직교 축*으로 인식하고 둘을 stack한 architecture를 그릴 수 있다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>Pure relevance는 redundancy collapse한다</h3><p>query–frame similarity top-K는 시간축에서 cluster된 거의 동일한 frame을 뽑는다. K개의 marginal information은 1개와 거의 같다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>log-det diversity는 DPP/portfolio covariance와 같은 수학</h3><p>AdaRD-Key의 Max-Volume objective `α·sum(rel) + (1-α)·logdet(K_S + εI)`는 Determinantal Point Process의 핵심 수학과 동일하다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>Greedy submodular는 (1-1/e) 보장</h3><p>relevance + log-det weighted sum은 submodular다. greedy는 OPT의 (1-1/e)≈0.632까지 보장한다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>Q-Frame은 token budget을 multi-resolution으로 해체한다</h3><p>같은 token budget T 아래서 high-relevance frame은 고해상도, low는 저해상도로 인코딩. 결과적으로 더 많은 frame을 cover해 temporal diversity가 부수효과로 늘어난다(arXiv:2506.22139).</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>AdaRD-Key의 gating: weak query에서는 diversity-only</h3><p>query가 generic하면 relevance signal이 거의 uniform이고 정보가 없다. 이때 α=0으로 자동 전환해 log-det만 maximize → 사실상 DPP sampling(arXiv:2510.02778).</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>FOCUS의 bandit은 large pool + expensive evaluator일 때만 정당화</h3><p>combinatorial pure-exploration bandit + Bernstein bound는 frame pool이 수천~수만이고 per-frame 평가가 비쌀 때 비로소 ROI가 양수다. 20분+ LongVideoBench에서 frame의 &lt;2%로 +11.9% 결과는 이 두 조건이 충족된 케이스다(arXiv:2510.27280).</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>2026 frontier는 한 좌표로 수렴했다</h3><p>training-free + query-aware + frame-level + relevance × diversity. Q-Frame, AdaRD-Key, FOCUS가 같은 좌표에 모인 건 우연이 아니다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>Diversity term은 hyperparameter가 아니라 query-dependent</h3><p>α를 fixed 0.5로 두는 건 baseline이고, 실제 frontier는 α를 query embedding entropy 혹은 rel 분포 분산으로 동적으로 정한다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-04.html">← Learned Samplers — Frame-Voyager, M-LLM, GenS</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-06.html">Long-Video Sampling — LongVU, Hour-LLaVA, VideoMarathon →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+</body></html>

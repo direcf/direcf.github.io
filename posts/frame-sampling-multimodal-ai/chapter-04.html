@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch4: Learned Samplers — Frame-Voyager, M-LLM, GenS — Frame Sampling for Multimodal AI — direcf</title>
+  <meta name="description" content="Training-free sampler가 휴리스틱으로 &#x27;관련성&#x27;을 정의했다면, learned sampler는 downstream VLM의 정답률 자체를 supervision으로 쓴다. Frame-Voyager(ICLR 2025)는 단일 프레임이 아니라 **프레임 조합**을 ranking하고, M-LLM Selector(CVPR 2025, Amazon)는 spatial importance와 temporal coherence를 분리해 점수화하며, GenS(ACL 2025 Findings, Salesforce)는 VideoLLM 자체를 generative retriever로 써서 프레임 인덱스를 직접 생성한다. LongVideoBench에서 GenS는 Aria +13.4pt, GPT-4o +13.6pt를 기록했다. 세 모델 모두 downstream VLM을 frozen으로 두는 plug-and-play를 유지한다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child{margin-bottom:0}
+.sb-block strong{color:var(--text)}
+.sb-block code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/multimodal-ai">Frame Sampling for Multimodal AI</a><span class="sep">›</span>
+        <strong>Ch04 Learned Samplers — Frame-Voyager, M-LLM, GenS</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 04 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🎓</div>
+      <h1 class="chapter-title">Learned Samplers — Frame-Voyager, M-LLM, GenS</h1>
+      <div class="chapter-title-kr">Learned Sampler — Frame-Voyager, M-LLM, GenS</div>
+      <div class="chapter-tldr">Training-free sampler가 휴리스틱으로 &#x27;관련성&#x27;을 정의했다면, learned sampler는 downstream VLM의 정답률 자체를 supervision으로 쓴다. Frame-Voyager(ICLR 2025)는 단일 프레임이 아니라 **프레임 조합**을 ranking하고, M-LLM Selector(CVPR 2025, Amazon)는 spatial importance와 temporal coherence를 분리해 점수화하며, GenS(ACL 2025 Findings, Salesforce)는 VideoLLM 자체를 generative retriever로 써서 프레임 인덱스를 직접 생성한다. LongVideoBench에서 GenS는 Aria +13.4pt, GPT-4o +13.6pt를 기록했다. 세 모델 모두 downstream VLM을 frozen으로 두는 plug-and-play를 유지한다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-04.png" alt="Chapter 4 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 4 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">6 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>왜 단일 프레임 ranking이 실패하고 combinational ranking이 이기는지 정보이론적으로 설명할 수 있다</li><li>M-LLM Selector의 spatial branch와 temporal branch가 각각 무엇을 보정하는지 구분할 수 있다</li><li>GenS의 generative retrieval이 일반 retriever와 어떻게 다른지, autoregressive head가 왜 long-range coherence를 잡는지 안다</li><li>Downstream VLM accuracy를 reward로 backprop하기 위한 surrogate loss를 설계할 수 있다</li><li>자체 video corpus와 안정적인 downstream VLM이 있을 때 train-free에서 learned로 넘어갈 시점을 판단할 수 있다</li><li>Sampler를 학습한 후에도 downstream LLM을 건드리지 않고 swap할 수 있는 modular boundary를 유지할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>3장에서 다룬 AKS와 BOLT는 training-free였다. 휴리스틱으로 query–frame relevance와 coverage를 정의하고 그 위에서 최적화했다. 하지만 휴리스틱에는 한계가 있다 — &#x27;relevance&#x27;를 CLIP cosine similarity로 정의한 순간 우리는 CLIP의 편향을 그대로 물려받는다. 4장의 출발점은 단순하다. <strong>downstream VLM의 정답률이 곧 ground truth라면, 그 신호로 sampler를 직접 학습하면 안 되는가?</strong> 2025년의 세 landmark 논문이 이 질문에 서로 다른 방향으로 답했다.</p>
+<p>Frame-Voyager(arXiv:2410.03226, ICLR 2025)는 <strong>무엇을 ranking하느냐</strong>를 바꿨다. 기존 sampler들은 프레임 하나하나에 점수를 매기고 top-K를 골랐다. Frame-Voyager는 *프레임 조합* 자체에 점수를 매긴다. 8프레임을 뽑는 문제에서 단일 프레임 점수 합이 최대인 조합과 실제로 VLM이 정답을 맞히는 조합은 다르다는 통찰이다.</p>
+<p>M-LLM Frame Selector(arXiv:2502.19680, CVPR 2025, Amazon)는 <strong>누가 점수를 매기느냐</strong>를 바꿨다. CLIP이 아니라 multimodal LLM 자체가 두 가지 분리된 점수 — 개별 프레임의 spatial importance와 프레임 시퀀스의 temporal coherence — 를 매긴다. 그리고 그 점수를 frozen downstream Video-LLM에 그대로 꽂는다.</p>
+<p>GenS(arXiv:2503.09146, ACL 2025 Findings, Salesforce / Li Junnan팀)는 한 발 더 나갔다. <strong>점수를 매기지 않고 인덱스를 생성한다.</strong> VideoLLM이 입력 비디오와 질의를 보고 autoregressive하게 &#x27;frame 42, 117, 203, ...&#x27;을 텍스트 토큰으로 emit한다. LongVideoBench에서 Aria 기반 +13.4pt, GPT-4o 기반 +13.6pt라는 결과로 generative retrieval의 우월성을 보였다.</p>
+<p>세 접근 모두 공통점이 있다 — downstream VLM은 frozen이다. Sampler만 학습하고, 학습된 sampler는 LLaVA-Video든 Qwen2.5-VL든 GPT-4o든 그대로 꽂힌다. Plug-and-play 계약은 유지된다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>4.1 왜 train-free에서 trained로 넘어가야 하는가</h2><p>AKS와 BOLT가 충분히 강력한데 왜 굳이 학습하는가? 세 가지 한계 때문이다.</p>
+<p><strong>첫째, relevance proxy의 편향.</strong> AKS와 BOLT는 CLIP/SigLIP의 query–frame similarity를 relevance로 쓴다. CLIP은 정적인 객체 인식에 강하지만 행동, 인과, 시간적 추론에는 약하다. &#x27;Why did the man drop the cup?&#x27;이라는 질문에서 컵을 보여주는 모든 프레임이 높은 점수를 받지만, 정작 손이 미끄러지는 결정적 프레임은 낮은 점수를 받는다. CLIP은 &#x27;왜&#x27;를 모른다.</p>
+<p><strong>둘째, 조합의 비선형성.</strong> 8프레임을 고를 때, 각 프레임 점수의 합이 최대인 조합이 VLM 정답률을 최대화하지는 않는다. Frame-Voyager 논문이 보인 핵심 관찰이다 — 단일 프레임 ranking은 redundant한 high-score 프레임을 모으는 경향이 있고, VLM은 다양성이 필요한 질문에서 실패한다.</p>
+<p><strong>셋째, downstream VLM의 인식 특성을 무시.</strong> Sampler가 고른 프레임이 &#x27;인간 보기엔 좋다&#x27;와 &#x27;특정 VLM이 정답을 맞히는 데 좋다&#x27;는 다르다. Qwen2.5-VL이 잘 읽는 프레임과 LLaVA-Video가 잘 읽는 프레임은 다르다. Trained sampler는 이 차이를 흡수할 수 있다.</p>
+<p>반대 방향의 비용도 명확하다 — (frames, query, correctness) triplet을 수집해야 하고, downstream VLM이 바뀌면 재학습해야 한다. 그래서 train-free와 trained의 경계는 &#x27;video corpus의 안정성&#x27;과 &#x27;downstream VLM의 안정성&#x27; 두 축이다. 둘 다 안정적이면 trained가 이기고, 어느 하나라도 흔들리면 train-free가 안전하다.</p></div><div class="sb-block"><h2>4.2 Frame-Voyager — Combinational Ranking (ICLR 2025)</h2><p>Frame-Voyager(arXiv:2410.03226, Yu et al.)의 핵심 슬로건은 &#x27;rank combinations, not frames&#x27;이다.</p>
+<p><strong>문제 정식화.</strong> 비디오 V에서 8프레임을 뽑는다고 하자. 가능한 조합은 C(T, 8)개. 각 조합 S에 대해 downstream VLM이 정답을 맞히는지를 reward r(S) ∈ {0,1}로 본다. 목표는 r(S)가 높은 조합을 선호하도록 scorer f(S, q)를 학습하는 것이다.</p>
+<p><strong>Combinational ranking loss.</strong> 학습 데이터는 한 query q에 대해 여러 조합 {S_1, S_2, ...}을 샘플링하고, 각각을 downstream VLM에 통과시켜 reward를 얻은 후 pairwise ranking loss로 학습한다.</p>
+<p>L = Σ_{i,j: r(S_i)&gt;r(S_j)} max(0, m - f(S_i, q) + f(S_j, q))</p>
+<p>Scorer f는 조합 안의 프레임들을 함께 encoding한다 (transformer로 cross-attention). 그래서 &#x27;A와 B는 같이 있을 때 의미 있다&#x27;는 신호가 학습된다.</p>
+<p><strong>Inference.</strong> 모든 조합을 enumerate하는 건 불가능하므로 beam search나 greedy improvement로 근사한다. 논문은 candidate pool을 CLIP top-K로 줄인 후 그 위에서 조합 ranking을 한다.</p>
+<p><strong>결과.</strong> Video-MME long split, MVBench, NExT-QA에서 단일 프레임 ranking 대비 일관되게 우위. 특히 multi-hop 추론이 필요한 질문에서 격차가 커진다.</p>
+<p><strong>왜 조합이 이기는가?</strong> 정보이론으로 보면 H(answer | frames) — 8개 프레임을 봤을 때 정답의 조건부 엔트로피 — 를 최소화하는 것이 목표인데, 이건 sum of mutual information이 아니라 joint mutual information이다. Joint는 조합 단위로만 측정 가능하다.</p></div><div class="sb-block"><h2>4.3 M-LLM Frame Selector — Spatial + Temporal Dual Scoring (CVPR 2025, Amazon)</h2><p>M-LLM Frame Selector(arXiv:2502.19680, Hu et al., Amazon)는 &#x27;scorer로 무엇을 쓰느냐&#x27;를 재정의했다. CLIP 대신 multimodal LLM을 쓴다.</p>
+<p><strong>Dual branch 구조.</strong>
+- <strong>Spatial importance branch</strong>: 한 프레임씩 보면서 &#x27;this frame is relevant to query&#x27;를 M-LLM에 묻고 logit을 뽑는다. 단일 프레임 점수.
+- <strong>Temporal coherence branch</strong>: 후보 프레임들의 시퀀스를 한꺼번에 보고 &#x27;this sequence is coherent for answering query&#x27;를 묻는다. 시퀀스 점수.</p>
+<p>두 점수를 weighted sum하여 최종 selection criterion으로 쓴다.</p>
+<p><strong>왜 두 개로 나누나?</strong> Spatial은 &#x27;each frame must be informative&#x27;를 강제하고, temporal은 &#x27;frames must tell a story together&#x27;를 강제한다. 한 점수로 합치면 둘 중 하나가 다른 하나를 덮어버린다. 명시적으로 분리해야 학습이 안정적이다.</p>
+<p><strong>Plug-and-play.</strong> Selector M-LLM은 학습 가능하지만 downstream Video-LLM은 frozen이다. LLaVA-Video, VideoLLaMA, InternVL 어떤 downstream에도 그대로 꽂힌다. Amazon이 이 구조를 미는 이유는 명확하다 — 그들의 production stack에는 Bedrock에 다양한 VLM이 있고, sampler 하나로 모두 커버하고 싶다.</p>
+<p><strong>학습 신호.</strong> Downstream VLM accuracy를 reward로 쓰되, M-LLM scorer의 출력 logit에 대한 RL/preference learning으로 propagate한다. 직접 backprop이 안 되니 reward를 weak supervision으로 변환한다 (5절 코드 예제 참고).</p>
+<p><strong>결과.</strong> Video-MME, MLVU, NExT-QA에서 uniform 대비 5–8pt, AKS 대비 1–3pt 추가 개선. CLIP 기반 sampler가 놓치는 &#x27;temporal causality&#x27; 질문에서 특히 강하다.</p></div><div class="sb-block"><h2>4.4 GenS — VideoLLM as Generative Retriever (ACL 2025 Findings, Salesforce)</h2><p>GenS(arXiv:2503.09146, Yao et al., Salesforce / Li Junnan팀)는 가장 급진적인 접근이다. <strong>Scoring을 버리고 generation으로 갔다.</strong></p>
+<p><strong>핵심 아이디어.</strong> VideoLLM에 비디오와 질의를 주고 &#x27;Which frame indices should I attend to?&#x27;라고 prompt한다. 모델이 autoregressive하게 &#x27;[12, 47, 89, 134, ...]&#x27;을 텍스트 토큰으로 emit한다. 이 indices를 downstream VLM에 전달.</p>
+<p><strong>왜 generative가 이기는가?</strong>
+- <strong>Long-range dependency</strong>: Autoregressive head는 &#x27;이전에 뽑은 인덱스를 보고 다음 인덱스를 결정&#x27;할 수 있다. Frame i를 골랐다면 frame i 근처의 redundancy를 피해 frame j를 다음에 고른다. Pointwise scorer는 이 dependency를 못 잡는다.
+- <strong>Variable selection size</strong>: VLM이 stop token을 emit하면 selection 종료. 질문마다 필요한 프레임 수가 다를 수 있는데, 이 가변성을 자연스럽게 처리한다.
+- <strong>Joint distribution 학습</strong>: P(S | V, q)를 인덱스 시퀀스의 autoregressive factorization으로 학습 — Frame-Voyager의 combinational ranking을 generative하게 일반화한 셈.</p>
+<p><strong>학습.</strong> Downstream VLM의 정답률이 높은 frame sequence를 ground truth로 삼아 standard language modeling loss로 학습한다. 즉, instruction tuning과 동형이다 — &#x27;video + query → frame indices&#x27; 형식의 supervised fine-tuning.</p>
+<p><strong>Benchmark 결과.</strong> LongVideoBench에서:
+- Aria-25B + GenS: 기존 uniform 대비 <strong>+13.4pt</strong>
+- GPT-4o + GenS: 기존 uniform 대비 <strong>+13.6pt</strong></p>
+<p>이 격차는 다른 어떤 sampler보다 크다. Generative retrieval이 long video에서 특히 강하다는 강한 증거.</p>
+<p><strong>비용.</strong> 단점은 inference 비용이다. VideoLLM을 두 번 호출 — 한 번은 selection, 한 번은 final answer. Sampling 자체에 VLM 호출이 들어가므로 latency budget이 큰 production에는 부담스럽다. Offline indexing이나 batch processing에서 이상적이다.</p></div><div class="sb-block"><h2>4.5 Training-Free vs Trained Decision Tree</h2><p>언제 trained sampler를 학습할 가치가 있는가? 의사결정 트리.</p>
+<p><strong>Q1. 자체 video corpus가 있는가?</strong>
+- 없음 (사용자가 임의의 URL을 던짐) → train-free 추천. 학습 분포가 inference 분포와 다르면 trained sampler가 오히려 떨어진다.
+- 있음 (자사 콘텐츠, 정해진 도메인) → Q2로.</p>
+<p><strong>Q2. Downstream VLM이 안정적인가? (6개월 이상 고정 또는 fine-tune 통제 가능)</strong>
+- 불안정 (월마다 GPT-4o → Gemini → Claude로 갈아탐) → train-free. Sampler 재학습 비용이 누적된다.
+- 안정 → Q3로.</p>
+<p><strong>Q3. Labeled QA 데이터가 있는가? (&gt;10K 정도)</strong>
+- 없음 → GenS-style self-supervised 학습 시도하거나, train-free에 머무름.
+- 있음 → Q4로.</p>
+<p><strong>Q4. Latency 예산은?</strong>
+- &lt;500ms p50 → Frame-Voyager 또는 M-LLM Selector (compact scorer). GenS는 부담.
+- ≥2s 또는 offline → GenS가 최강.</p>
+<p><strong>Q5. Frame budget이 매우 작은가? (≤8 frames)</strong>
+- Yes → Combinational ranking(Frame-Voyager) 효과가 크다.
+- No (≥32 frames) → 단순한 M-LLM scoring으로 충분할 수 있다.</p>
+<p><strong>경험칙 — 학습 비용 손익분기점.</strong> Trained sampler는 보통 학습에 100–500 A100 hours가 든다. 그 비용을 inference 시 절약되는 token 비용으로 회수하려면 대략 <strong>월간 10만 query 이상</strong> 처리할 때 의미가 있다. 그 이하 규모면 AKS/BOLT가 운영상 더 합리적이다.</p></div><div class="sb-block"><h2>4.6 Plug-and-Play 인터페이스가 유지되는 이유</h2><p>세 sampler 모두 downstream VLM을 <strong>frozen</strong>으로 둔다. 이게 단순한 엔지니어링 편의가 아니라 학술적 선택이다 — Sampler 학습 신호가 downstream VLM의 gradient를 타고 흐르지 않게 분리함으로써 sampler가 *특정 VLM에 overfit하지 않도록* 막는다.</p>
+<p><strong>계약 (Sampler interface).</strong>
+<code>`</code>
+select(video: Tensor[T,H,W,3],
+       query: str,
+       max_frames: int) -&gt; List[int]  # frame indices
+<code>`</code></p>
+<p>Frame-Voyager, M-LLM Selector, GenS 모두 이 동일한 signature를 따른다. 이 덕분에 아래가 가능하다.</p>
+<p>- <strong>Swap downstream VLM</strong>: LLaVA-Video-7B로 학습한 sampler를 Qwen2.5-VL에 꽂아도 작동한다 (성능 일부 손실은 있지만 catastrophic하지 않다).
+- <strong>Swap sampler at inference</strong>: 같은 pipeline에서 짧은 비디오는 AKS, 긴 비디오는 GenS로 라우팅 가능.
+- <strong>A/B test</strong>: Sampler만 바꿔 latency/accuracy trade-off 측정.</p>
+<p><strong>유지 안 되는 경우 — 안티패턴.</strong> Sampler 학습 시 downstream VLM의 internal feature(중간 layer activation)를 쓰면 plug-and-play가 깨진다. 이건 sampler가 그 VLM의 internals에 묶이는 결과. 세 논문 모두 이를 피해 black-box reward만 쓴다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">Apprentice film editor vs algorithmic editor</div>
+      <div class="a-body"><p>3장에서 본 AKS/BOLT는 algorithmic editor였다. &#x27;대화 장면이 길면 컷, 액션이 빠르면 더 많이 컷&#x27;같은 규칙을 손으로 짜놓고, 새 영화가 들어오면 그 규칙대로 자른다. 빠르고, 예측 가능하고, 어떤 영화에든 그대로 돌아간다.</p>
+<p>4장의 learned sampler는 <strong>director&#x27;s cut 100편을 보여주며 키운 견습 편집자</strong>다. Christopher Nolan이 어떻게 잘랐는지, Bong Joon-ho가 어떻게 잘랐는지를 보면서 &#x27;아, 긴장이 풀리기 직전의 1초를 살려야 하는구나&#x27; 같은 *taste*를 익혔다. 새 영화에서도 그 taste가 작동한다.</p>
+<p>하지만 견습 편집자에게도 약점이 있다.
+- <strong>학습 비용</strong>: 100편의 director&#x27;s cut과 raw footage를 수집해야 한다. Frame-Voyager/M-LLM/GenS의 (frames, query, correctness) triplet에 해당.
+- <strong>분포 외 영화</strong>: 누아르만 보고 자란 편집자는 코미디에서 헤맨다. Train-free는 장르를 안 가린다.
+- <strong>감독이 바뀌면 다시 배워야</strong>: Downstream VLM이 바뀌면 sampler 재학습.</p>
+<p>세 sampler 간에도 성격이 다르다.
+- <strong>Frame-Voyager</strong>는 &#x27;한 장면 안의 컷들이 어떻게 조합되어야 하는지&#x27;를 배운 편집자 — 단일 컷이 아니라 조합을 본다.
+- <strong>M-LLM Selector</strong>는 &#x27;각 컷의 미학(spatial)&#x27;과 &#x27;컷의 흐름(temporal)&#x27;을 따로 평가하는 편집자 — Amazon이 좋아할 만한 modular 사람.
+- <strong>GenS</strong>는 자기가 직접 &#x27;여기, 여기, 여기 자르세요&#x27;라고 *말하는* 편집자 — scoring이 아니라 generation. 가장 비싸지만 long video에서 가장 정확하다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>아래는 작은 learned scorer를 학습하는 toy training loop이다. CLIP feature 위에 MLP를 얹어 &#x27;frame이 query에 얼마나 유용한가&#x27;를 예측하되, <strong>supervision은 downstream VLM의 정답률</strong>에서 온다. Frame-Voyager의 combinational ranking과 M-LLM Selector의 reward-based learning을 단순화한 형태. Runnable Python으로 작성했고, 실제 학습에는 더 큰 batch와 hard negative mining이 필요하다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.utils.data import DataLoader, Dataset
+import random
+
+# -----------------------------------------------------------
+# 1) Scorer: CLIP feature를 받아 frame-level score를 emit
+#    조합 점수는 frame score의 attention-weighted sum으로 정의
+# -----------------------------------------------------------
+class CombinationalScorer(nn.Module):
+    def __init__(self, d_clip=768, d_text=768, d_hidden=512):
+        super().__init__()
+        self.frame_proj = nn.Linear(d_clip, d_hidden)
+        self.text_proj  = nn.Linear(d_text, d_hidden)
+        # Cross-attention: 조합 안 frame들이 서로를 의식하도록
+        self.cross_attn = nn.MultiheadAttention(d_hidden, num_heads=8, batch_first=True)
+        self.head = nn.Sequential(nn.Linear(d_hidden, d_hidden), nn.GELU(),
+                                  nn.Linear(d_hidden, 1))
+
+    def forward(self, frame_feats, text_feat):
+        # frame_feats: [B, K, d_clip]   (K = combination size, e.g. 8)
+        # text_feat:   [B, d_text]
+        f = self.frame_proj(frame_feats)              # [B, K, H]
+        t = self.text_proj(text_feat).unsqueeze(1)    # [B, 1, H]
+        # query=text, key/value=frames → frame들이 query 맥락에서 재해석됨
+        attended, _ = self.cross_attn(t.expand(-1, f.size(1), -1), f, f)
+        fused = f + attended                          # [B, K, H]
+        per_frame_score = self.head(fused).squeeze(-1)  # [B, K]
+        # 조합 점수 = frame score들의 합 (단순화). 실제로는 set-transformer pooling 권장.
+        combo_score = per_frame_score.sum(dim=-1)     # [B]
+        return combo_score, per_frame_score
+
+# -----------------------------------------------------------
+# 2) Training data: (frame_feats, query_feat, S_pos, S_neg, reward_pos, reward_neg)
+# -----------------------------------------------------------
+class FrameComboDataset(Dataset):
+    def __init__(self, samples):
+        self.samples = samples
+    def __len__(self): return len(self.samples)
+    def __getitem__(self, i):
+        s = self.samples[i]
+        return (s[&#x27;video_feats&#x27;][s[&#x27;pos_idx&#x27;]],
+                s[&#x27;video_feats&#x27;][s[&#x27;neg_idx&#x27;]],
+                s[&#x27;q_feat&#x27;])
+
+# -----------------------------------------------------------
+# 3) Combinational ranking loss (margin-based pairwise)
+# -----------------------------------------------------------
+def ranking_loss(scorer, pos_feats, neg_feats, q_feat, margin=0.5):
+    pos_score, _ = scorer(pos_feats, q_feat)
+    neg_score, _ = scorer(neg_feats, q_feat)
+    return F.relu(margin - pos_score + neg_score).mean()
+
+# -----------------------------------------------------------
+# 4) Training loop. VLM gradient는 흐르지 않는다.
+# -----------------------------------------------------------
+def train(scorer, dataset, epochs=3, lr=1e-4, bs=32):
+    loader = DataLoader(dataset, batch_size=bs, shuffle=True)
+    opt = torch.optim.AdamW(scorer.parameters(), lr=lr)
+    for ep in range(epochs):
+        total = 0.0
+        for pos, neg, q in loader:
+            opt.zero_grad()
+            loss = ranking_loss(scorer, pos, neg, q)
+            loss.backward()
+            opt.step()
+            total += loss.item()
+        print(f&quot;epoch {ep}: loss={total/len(loader):.4f}&quot;)
+
+# -----------------------------------------------------------
+# 5) Inference: K-frame budget이 주어지면 candidate pool에서 best combo 선택
+# -----------------------------------------------------------
+@torch.no_grad()
+def select_frames(scorer, video_feats, q_feat, K=8, n_trials=200):
+    T = video_feats.size(0)
+    best_score, best_idx = -1e9, None
+    for _ in range(n_trials):
+        idx = sorted(random.sample(range(T), K))
+        feats = video_feats[idx].unsqueeze(0)
+        score, _ = scorer(feats, q_feat.unsqueeze(0))
+        if score.item() &gt; best_score:
+            best_score, best_idx = score.item(), idx
+    return best_idx</code></pre>
+      <div class="c-walk"><p>이 코드의 핵심은 <strong>VLM의 gradient가 sampler로 흐르지 않는다</strong>는 점이다. Downstream VLM은 학습 데이터를 만들 때만 호출된다 — &#x27;combination S_pos를 VLM에 줬더니 정답을 맞혔다, S_neg를 줬더니 틀렸다&#x27;라는 0/1 label만 추출하고 그 이후로는 VLM을 건드리지 않는다.</p>
+<p>Cross_attention이 Frame-Voyager의 핵심을 단순화한 부분이다. 각 frame의 representation이 *같은 조합 안 다른 frame들*과 *query*를 함께 보고 갱신된다. 그래서 &#x27;A와 B가 같이 있을 때 의미 있다&#x27;는 신호가 학습된다. 이 attention이 없으면 frame score가 독립적으로 결정되고 코드는 단순 pointwise scorer로 퇴화한다.</p>
+<p>ranking_loss는 Frame-Voyager의 combinational ranking을 그대로 따른다. 절대 score가 아니라 *상대 ordering*만 학습한다. 이게 reward sparsity에 강한 이유 — VLM이 정답을 맞힌 조합과 틀린 조합 두 개만 있으면 학습 신호가 만들어진다.</p>
+<p>select_frames는 inference. 실제 production에서는 (a) CLIP/SigLIP top-N으로 후보 pool을 만들고, (b) beam search나 greedy swap으로 조합을 정련한다. 본 코드는 random sampling으로 단순화했다.</p>
+<p>M-LLM Selector로 확장하려면 head를 두 개로 나누고 (spatial logit, temporal coherence logit) weighted sum하면 된다. GenS로 확장하려면 scorer 대신 작은 autoregressive transformer를 두고 frame index를 token으로 emit하도록 LM loss로 학습한다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">Senior 면접관은 후보가 &#x27;trained sampler가 무조건 좋다&#x27;고 답하는지를 본다. 좋은 답은 *언제 학습할 가치가 있는가*에 대한 비용-이익 reasoning이다. Frame-Voyager의 combinational ranking을 정확히 설명할 수 있는지, downstream VLM accuracy를 어떻게 supervision으로 변환하는지를 구체적으로 짚을 수 있는지가 갈림점이다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>**Combinational ranking을 정확히 이해하는가** — 단일 프레임 점수 합이 최대인 조합과 VLM 정답률이 최대인 조합이 *왜 다른지*를 informational 관점에서 설명할 수 있는지</li><li>**Downstream reward를 sampler 학습 신호로 변환하는 구체적 방법** — &#x27;VLM은 0/1 reward를 제공하고 sampler는 그 위에서 ranking/RL/SFT loss로 학습한다&#x27;고 답하는지</li><li>**Plug-and-play 경계를 유지하는 설계 선택** — Frame-Voyager/M-LLM/GenS 모두 downstream VLM을 frozen으로 둔다는 사실과 그 이유 (VLM 종속 overfit 방지, 운영상 swap 용이성)를 안다</li><li>**Train-free vs trained의 손익분기점** — &#x27;video corpus 안정성&#x27;과 &#x27;downstream VLM 안정성&#x27; 두 축으로 답하는지. 둘 다 흔들리면 trained가 손해라는 점을 짚는지</li><li>**GenS의 generative retrieval이 왜 pointwise scoring보다 long video에서 강한지** — autoregressive head가 conditional dependency를 잡는다는 점</li><li>**Latency / 비용 trade-off 인식** — GenS는 VLM을 두 번 호출하므로 latency 부담이 크다는 점</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>&#x27;Trained가 항상 train-free보다 좋다&#x27;는 무조건적 주장</li><li>Combinational ranking을 &#x27;top-K를 더 정교하게 고르는 방법&#x27;이라고 잘못 설명</li><li>&#x27;Downstream VLM을 sampler와 jointly fine-tune&#x27;한다고 답함 — 세 논문 모두 frozen인데 plug-and-play를 깨는 설계 제안</li><li>GenS의 +13.4/+13.6pt 같은 구체 수치를 모르거나 follow-up에 답을 못 함</li><li>M-LLM Selector의 spatial/temporal dual branch 중 하나로 통합 가능하다고 잘못 단순화</li><li>&#x27;학습 데이터는 인간 annotator가 만든다&#x27;고 답함 — 세 논문 모두 downstream VLM correctness를 weak label로 자동 생성</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>**Q1. 당신 회사는 자체 e-learning video corpus 30만 시간을 보유하고 있고 downstream VLM으로 LLaVA-Video-72B를 6개월 이상 쓰고 있다. 학생들의 질의응답 query log가 일 50만 건 들어온다. AKS(train-free)와 Frame-Voyager-style trained sampler 중 어느 쪽으로 가야 하는가? 손익분기점을 어떻게 계산하나?**</li><li>**Q2. Frame-Voyager는 왜 단일 프레임 ranking이 아니라 조합 ranking을 쓰는가? &#x27;조합 ranking은 C(T,K)로 폭발한다&#x27;는 반론에 어떻게 답하는가?**</li><li>**Q3. (frames, query, VLM_correctness) triplet 학습 데이터를 어떻게 구성하나? Sampling 분포의 편향 문제는?**</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> **Familiar**: &#x27;Frame-Voyager는 ICLR 2025 paper, M-LLM Selector는 Amazon CVPR 2025, GenS는 Salesforce ACL 2025&#x27;라고 이름과 출처를 말한다. &#x27;Trained가 train-free보다 정확도 높다&#x27;는 큰 그림을 안다.
+
+**Mastery**: (a) 단일 프레임 ranking이 joint mutual information을 못 잡는다는 informational 분석으로 combinational ranking의 필연성을 설명한다. (b) Downstream VLM을 frozen으로 두는 plug-and-play 계약이 단순한 편의가 아니라 *sampler가 특정 VLM에 overfit하지 않게 하는 학술적 선택*임을 안다. (c) 자체 corpus 크기, query 볼륨, VLM 안정성 세 축으로 train-free vs trained 손익분기점을 구체적 수치로 추정한다. (d) GenS의 generative retrieval이 long video에서 +13pt 이상 격차를 내는 이유를 conditional dependency 학습 관점에서 설명한다. (e) 면접에서 &#x27;M-LLM Selector를 GenS로 마이그레이션할 때 어디가 깨지나&#x27;라는 응용 질문에 답할 수 있다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>단일 프레임 ranking은 joint mutual information을 못 잡는다</h3><p>각 프레임 점수의 합이 최대인 조합과 VLM 정답률이 최대인 조합은 다르다. Frame-Voyager(arXiv:2410.03226)의 combinational ranking은 *조합 자체*를 ranking 단위로 두어 redundancy를 피하고 frame 간 상호보완성을 학습한다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>Sampler 학습 신호는 downstream VLM의 정답률에서 자동 생성된다</h3><p>세 논문 모두 인간 annotator가 아니라 downstream VLM correctness를 weak label로 쓴다. (frames, query, 0/1 correctness) triplet은 자체 corpus와 query log만 있으면 *공짜로* 만들어진다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>M-LLM Selector는 spatial과 temporal을 분리해야 학습이 안정적이다</h3><p>Amazon CVPR 2025 논문(arXiv:2502.19680)의 dual branch는 한 점수로 합치면 한 신호가 다른 신호를 덮어버린다는 경험적 관찰에서 나왔다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>GenS는 scoring이 아니라 generation으로 long video에서 +13pt를 만든다</h3><p>VideoLLM이 frame index를 autoregressive하게 emit하는 generative retrieval(arXiv:2503.09146). LongVideoBench에서 Aria +13.4pt, GPT-4o +13.6pt.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>Plug-and-play는 downstream VLM을 frozen으로 두기 때문에 유지된다</h3><p>세 sampler 모두 VLM gradient를 흘리지 않는다. VLM을 black-box reward로 다루는 이 설계가 sampler를 특정 VLM에 overfit시키지 않게 한다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>Train-free에서 trained로 넘어가는 손익분기점은 corpus 안정성과 query 볼륨이다</h3><p>자체 video corpus가 있고 downstream VLM이 6개월 이상 고정이며 월간 query가 10만 건 이상일 때 trained가 이긴다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>학습 비용은 trained sampler의 진짜 가격표다</h3><p>Frame-Voyager급 sampler 학습은 보통 100–500 A100 hours가 들고, downstream VLM이 바뀔 때마다 재학습 압력이 있다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>GenS의 latency 부담은 offline indexing에 적합한 구조다</h3><p>GenS는 VideoLLM을 selection과 generation 두 번 호출한다. Real-time chat에는 부담이지만 offline batch processing, video library indexing에는 적합.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-03.html">← Query-Aware Adaptive Sampling — AKS &amp; BOLT</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-05.html">The Relevance × Diversity Frontier — Q-Frame, AdaRD-Key, FOCUS →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+</body></html>

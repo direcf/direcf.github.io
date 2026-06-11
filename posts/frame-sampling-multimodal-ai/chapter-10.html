@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch10: Reference Architecture &amp; Evaluation — Frame Sampling for Multimodal AI — direcf</title>
+  <meta name="description" content="Chapter 1부터 9까지 배운 것을 하나의 swappable pipeline으로 묶는다. Ingest Queue → DecodeWorker → FrameStore → SceneSegmenter → Sampler Plugin → Encoder Pool → EmbedCache → TokenReducer → vLLM-Omni serving — chassis는 그대로 두고 sampler만 갈아끼우는 F1 race car 패턴. 5대 benchmark(Video-MME, MLVU, LongVideoBench, EgoSchema, Multi-Hop NIAH)는 lmms-eval로 돌리고, arxiv에 새 paper가 뜨면 3일 안에 wrap → hold-out eval → cost-vs-quality 비교 → feature-flag rollout → 프로덕션 metric 모니터링이라는 운영 사이클로 흡수한다. 2026 하반기에는 FrameMind/FrameThinker/A.I.R. 류 agentic sampler와 MSJoE 같은 joint sampler-MLLM evolution이 다음 SOTA 자리를 노리고 있다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child{margin-bottom:0}
+.sb-block strong{color:var(--text)}
+.sb-block code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/multimodal-ai">Frame Sampling for Multimodal AI</a><span class="sep">›</span>
+        <strong>Ch10 Reference Architecture &amp; Evaluation</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 10 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🧪</div>
+      <h1 class="chapter-title">Reference Architecture &amp; Evaluation</h1>
+      <div class="chapter-title-kr">Reference Architecture와 평가 — 직접 만들고 운영하기</div>
+      <div class="chapter-tldr">Chapter 1부터 9까지 배운 것을 하나의 swappable pipeline으로 묶는다. Ingest Queue → DecodeWorker → FrameStore → SceneSegmenter → Sampler Plugin → Encoder Pool → EmbedCache → TokenReducer → vLLM-Omni serving — chassis는 그대로 두고 sampler만 갈아끼우는 F1 race car 패턴. 5대 benchmark(Video-MME, MLVU, LongVideoBench, EgoSchema, Multi-Hop NIAH)는 lmms-eval로 돌리고, arxiv에 새 paper가 뜨면 3일 안에 wrap → hold-out eval → cost-vs-quality 비교 → feature-flag rollout → 프로덕션 metric 모니터링이라는 운영 사이클로 흡수한다. 2026 하반기에는 FrameMind/FrameThinker/A.I.R. 류 agentic sampler와 MSJoE 같은 joint sampler-MLLM evolution이 다음 SOTA 자리를 노리고 있다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-10.png" alt="Chapter 10 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 10 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">6 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>Chapter 9의 interface를 사용해 8-stage reference architecture를 직접 설계할 수 있다</li><li>5대 video-LLM benchmark가 각각 무엇을 측정하는지, 언제 skip할 수 있는지 판단할 수 있다</li><li>lmms-eval harness로 sampler variant를 비교 평가하는 워크플로우를 구축할 수 있다</li><li>arxiv에 SOTA paper가 뜬 시점부터 production rollout까지 3일짜리 평가 사이클을 운영할 수 있다</li><li>비디오 파이프라인의 production observability metric 5종을 sampler-variant 단위로 트래킹할 수 있다</li><li>2026 하반기 agentic sampler와 joint sampler-MLLM evolution이 무엇을 바꿀지 평가하고 어디에 베팅할지 판단할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>마지막 chapter. 지금까지 Chapter 1에서 frame sampling이 진짜 bottleneck이라는 thesis를 세웠고, Chapter 2-7에서 uniform부터 AKS/BOLT, Frame-Voyager, AdaRD-Key/FOCUS, LongVU, VideoChat-Flash까지 SOTA 가족을 살펴봤고, Chapter 8에서 commercial 현실(Gemini/Twelve Labs/Qwen-VL이 여전히 uniform)을 직시했고, Chapter 9에서 plug-and-play architecture의 계약을 정의했다. 이번 chapter는 capstone이다 — 그 모든 것을 실제 동작하는 reference architecture 하나로 묶고, lmms-eval로 평가하고, 다음 달 arxiv에 뜰 paper를 어떻게 3일 안에 평가-rollout할지 운영 워크플로우까지 설계한다. 비유는 명확하다: chassis는 그대로, engine은 매 시즌 갈아끼우는 F1 race car. Telemetry stays the same. 마지막 절에서는 2026 하반기 agentic sampler(FrameMind, FrameThinker, A.I.R.)와 joint sampler-MLLM evolution(MSJoE)이 어디로 가는지, 그리고 senior engineer로서 어디에 베팅해야 하는지 정리한다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>1. Reference Modular Architecture — 8 Stages, 1 Swap Point</h2><p>Chapter 9의 인터페이스를 실제 stage들로 펼친 reference architecture는 다음과 같다.</p>
+<p><code>`</code>
+[Ingest Queue (Kafka/SQS)]
+        ↓ video_id, url, query_id
+[DecodeWorker (Decord + NVDEC)]
+        ↓ ndarray[T,H,W,3], fps, duration
+[FrameStore (S3 raw + Redis hot index)]
+        ↓ frame handles, not pixels
+[SceneSegmenter (PySceneDetect ContentDetector)]
+        ↓ List[(t_start, t_end, shot_id)]
+[Sampler Plugin]   ← ★ swap point ★
+        ↓ List[int] frame indices, len ≤ max_frames
+[Encoder Pool (SigLIP-So400m / Marengo-3.0)]
+        ↓ Tensor[N, D_v]
+[EmbedCache (Redis vector + S3 cold)]
+        ↓ cache key = (video_id, frame_idx, encoder_version)
+[TokenReducer (SlowFast pooling / TokenMerge)]
+        ↓ Tensor[N&#x27;, D_v], N&#x27; ≤ token_budget
+[LLM Serving (vLLM-Omni disaggregated)]
+        ↓ answer string + telemetry
+<code>`</code></p>
+<p>각 stage가 왜 그 자리에 있는가:</p>
+<p>- <strong>Ingest Queue</strong>: 비동기 백프레셔. DecodeWorker가 GPU-bound이므로 queue로 흡수해야 burst 트래픽에 안 죽는다. video_id를 idempotency key로.
+- <strong>DecodeWorker</strong>: Decord + NVDEC 하드웨어 가속. CPU 디코딩은 1080p에서 30fps 못 따라간다.
+- <strong>FrameStore (S3 + Redis)</strong>: 디코딩한 raw pixel을 S3에 한 번만 저장하고 Redis에 hot index(video_id → S3 key list). 같은 영상에 대한 두 번째 query는 디코딩 skip.
+- <strong>SceneSegmenter</strong>: Chapter 2에서 본 PySceneDetect. Sampler보다 *앞에* 와야 한다 — anti-pattern #2(sampling before shot detection)를 피하기 위해. shot boundary는 sampler에게 anchor로 주어진다.
+- <strong>Sampler Plugin</strong> ★: Chapter 9의 <code>Sampler.select()</code> 계약. uniform / AKS / BOLT / Frame-Voyager / AdaRD-Key / FOCUS / Agentic — config flag 하나로 바꾼다.
+- <strong>Encoder Pool</strong>: SigLIP-So400m이 2026 기준 default. 멀티모달 검색이 함께라면 Twelve Labs Marengo-3.0(joint visual+audio+ASR+motion). pool화해서 batching 효율.
+- <strong>EmbedCache</strong>: 같은 (video_id, frame_idx, encoder_version) 조합은 한 번만 인코딩. cache hit rate가 production cost의 절반을 결정한다.
+- <strong>TokenReducer</strong>: Chapter 7의 SlowFast/TokenMerge/VideoChat-Flash HiCo. Sampling과 직교하는 축. 200 frame을 96 token으로 압축하는 일은 여기서.
+- <strong>vLLM-Omni</strong>: Chapter 9에서 본 disaggregated serving. encoder, sampler, LLM core를 독립 stage로 스케줄링, 91.4% JCT reduction.</p>
+<p>Swap point가 *하나*라는 게 핵심이다. Sampler를 바꿀 때 SceneSegmenter, EmbedCache, vLLM-Omni 어느 것도 건드리지 않는다.</p></div><div class="sb-block"><h2>2. The 5 Benchmarks Every Video-LLM Project Should Run</h2><p>lmms-eval(EvolvingLMMs-Lab/lmms-eval)이 사실상의 표준 harness다. <code>video_decode_backend=decord</code>, sampler를 config field로 받는다. 모든 새로운 sampler는 다음 5개로 측정한다.</p>
+<p>1. <strong>Video-MME (Long split)</strong> — 30-60분 비디오 QA, multi-domain. &#x27;Long video understanding의 종합검사&#x27;. <strong>언제 돌리나</strong>: 모든 sampler. <strong>언제 skip하나</strong>: never.
+2. <strong>MLVU</strong> — 6분-2시간 비디오 multitask(plot QA, anomaly, temporal reasoning). &#x27;Long video의 *다양성*&#x27;을 본다. <strong>언제 돌리나</strong>: 모든 sampler. <strong>언제 skip하나</strong>: Egocentric 전용 sampler면 우선순위 낮춤.
+3. <strong>LongVideoBench</strong> — referring question(영상 속 특정 시점·객체를 가리키는 질문). &#x27;Query-aware sampler의 진가&#x27;를 본다. AKS/BOLT/AdaRD-Key의 강점이 가장 잘 드러나는 곳. <strong>언제 돌리나</strong>: query-aware sampler 평가 시 필수.
+4. <strong>EgoSchema</strong> — long-form egocentric(1인칭) QA. &#x27;Egocentric domain shift에 robust한가&#x27;를 본다. <strong>언제 돌리나</strong>: AR/wearable/로보틱스 타겟.
+5. <strong>Multi-Hop NIAH (VideoChat-Flash)</strong> — 10K-frame needle-in-haystack, 여러 시점에 흩어진 needle을 찾는다. &#x27;Context length × token compression의 극한&#x27;을 본다. <strong>언제 돌리나</strong>: 1시간+ 영상, hour-scale 시스템.</p>
+<p>실전 팁: 처음에는 Video-MME Long + LongVideoBench 두 개만 돌려도 sampler의 신호가 충분히 나온다. MLVU/EgoSchema는 도메인 fit 검증용, Multi-Hop NIAH는 hour-scale claim 검증용으로 분리하는 게 cost-effective.</p></div><div class="sb-block"><h2>3. The 3-Day Operational Workflow — Paper to Production</h2><p>다음 달 arxiv에 &#x27;Foo-Sampler beats AKS by 4 pts on Video-MME&#x27;라는 paper가 뜬다고 하자. 3일 안에 production-ready 평가가 끝나야 한다.</p>
+<p><strong>Day 0 (paper drops)</strong> — abstract + benchmark table 30분 스캔. 우리 도메인(긴 영상? query-aware?)에 fit하는지, 코드 공개인지 1차 게이트.</p>
+<p><strong>Day 1 — (a) Wrap as Sampler protocol.</strong> Chapter 9의 <code>Sampler.select(video, query, max_frames) -&gt; List[int]</code> 계약으로 paper code를 어댑터로 감싼다. 보통 2-4시간.</p>
+<p><strong>Day 1 후반 — (b) Hold-out subset eval.</strong> Full benchmark는 비싸다. 우리가 미리 떼둔 200-sample hold-out(Video-MME Long 100 + LongVideoBench 100)으로 smoke test. lmms-eval <code>--limit 200</code>. 4-6시간.</p>
+<p><strong>Day 2 — (c) Cost-vs-quality 비교.</strong> 같은 hold-out에서 (i) accuracy, (ii) frame-selection-time, (iii) tokens/query, (iv) GPU-sec/query를 현재 production sampler와 나란히 표로. &#x27;AKS 대비 +3.2 pts 정확도지만 frame-selection-time 4배&#x27;면 reject.</p>
+<p><strong>Day 2 후반 — (d) Feature-flag rollout 준비.</strong> 새 sampler를 <code>sampler.variant=foo_sampler_v1</code>로 등록. shadow mode부터 — production traffic의 5%에 두 sampler를 동시에 돌려서 *답은 기존 것을 쓰되* metric만 양쪽 기록.</p>
+<p><strong>Day 3 — (e) 1% → 10% → 50% canary, monitor.</strong> sampler-variant별로 위에서 정의한 모든 production metric을 본다. p99 latency가 회귀하지 않고 quality proxy(thumbs-up rate, follow-up question rate)가 동등 이상이면 100%. 회귀하면 즉시 flag off.</p>
+<p>3일이 빡빡해 보이지만, Chapter 9의 plug-and-play 계약이 있으면 이게 가능하다. 계약이 없으면 같은 작업이 2-3주짜리 프로젝트가 된다.</p></div><div class="sb-block"><h2>4. Production Observability — 5 Metrics × N Sampler Variants</h2><p>Video pipeline은 일반 LLM serving보다 관찰 면이 넓다. 다음 5개를 <strong>per-sampler-variant</strong>로 트래킹한다. Prometheus 라벨 하나(sampler_variant)를 모든 metric에 박는 게 핵심.</p>
+<p>1. <strong>tokens/query</strong> — 한 query에 LLM이 받는 vision token 수의 분포. Sampler가 token economics를 결정한다. p50/p95/max. 비용의 직접 proxy.
+2. <strong>latency p50/p99</strong> — end-to-end (ingest → answer). p99가 진실을 말한다. Sampler가 무거우면 p99에 먼저 나타난다.
+3. <strong>frame-selection-time</strong> — Sampler 단계만의 wall-clock. AKS/AdaRD-Key는 max-volume 최적화로 인해 uniform 대비 50-200ms 더 걸린다.
+4. <strong>encoder-utilization</strong> — SigLIP/Marengo GPU pool의 평균 utilization. 60% 미만이면 batching이 작거나 pool이 과대. 95%+면 saturated, capacity 추가 필요.
+5. <strong>cache hit rate</strong> — EmbedCache의 hit/miss. production에서 같은 영상이 여러 query를 받으면 hit rate가 70%+가 되어야 한다.</p>
+<p>선택 metric으로 <strong>answer-quality proxy</strong> — thumbs-up rate, follow-up question rate(나쁜 답일수록 follow-up 많음), task completion rate. Offline benchmark accuracy와 production quality는 완전히 같지 않다. 둘 다 본다.</p>
+<p>Dashboard 단일 화면 원칙: 한 화면에 5 metric × 활성 sampler variant 전부. &#x27;BOLT v1 vs AKS v2 vs foo_sampler_v1&#x27; 세 곡선이 같이 보여야 의사결정이 빠르다.</p></div><div class="sb-block"><h2>5. The Next 12 Months — Where to Bet</h2><p>2026 6월 기준, 두 개의 큰 트렌드가 다음 SOTA 자리를 두고 다투고 있다.</p>
+<p><strong>(a) Agentic samplers</strong> — VLM 자신이 <code>request_frames(t_start, t_end, fps)</code> tool call을 chain-of-thought 중간에 발화하는 패턴.
+- <strong>FrameThinker (arXiv:2509.24304)</strong> — &#x27;Think → request frames → think again&#x27; 루프
+- <strong>FrameMind (arXiv:2509.24008)</strong> — episodic memory + selective recall
+- <strong>A.I.R. (arXiv:2510.04428)</strong> — Agentic Iterative Reasoning, 비용 인식형 toolcall 예산</p>
+<p>장점: query 복잡도에 따라 frame budget을 dynamic하게. 단점: tool-call latency가 sequential이라 p99에 치명적. &#x27;16 frame vs 256 frame&#x27; 같은 단순 비교가 안 됨. 베팅 가이드: long-form *interactive* 제품(agent 식으로 사용자와 turn-taking)에는 베팅, batch QA API에는 보류.</p>
+<p><strong>(b) Joint sampler-MLLM evolution (MSJoE 계열)</strong> — sampler와 MLLM을 *함께* 학습. Chapter 4의 learned sampler가 frozen MLLM을 가정한 것과 달리, 이쪽은 양쪽을 같이 진화시킨다. 장점: plug-and-play 계약을 깨는 대신 end-to-end 최적해에 가까움. 단점: 본 강의의 swap-point 철학과 정면 충돌 — sampler를 바꾸려면 MLLM도 다시 학습. 베팅 가이드: in-house MLLM을 *직접 보유*한 팀(Google, Meta, OpenGVLab)에는 강력, 모델을 외부 API로 호출하는 팀에는 무관.</p>
+<p>현실적 portfolio: production chassis는 우리 reference architecture 유지, sampler engine slot에 (1) 현재 베스트 training-free(2026 초 기준 AdaRD-Key/FOCUS 계열), (2) experiment slot에 agentic sampler 1종, (3) 모니터링 슬롯에 joint-evolution 동향. F1처럼, 시즌마다 engine을 교체하되 chassis는 5년 쓴다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">Swappable-Engine F1 Race Car</div>
+      <div class="a-body"><p>F1 팀은 매 시즌 engine을 갈아끼우지만, chassis(monocoque), suspension geometry, telemetry harness, pit-stop protocol은 그대로 둔다. Engineer가 새 engine을 wind tunnel에서 평가하는 표준 절차가 있고, 같은 telemetry로 lap time을 비교한다. 우리 video-LLM pipeline도 동일하다.</p>
+<p>- <strong>Chassis</strong> = Ingest Queue + DecodeWorker + FrameStore + SceneSegmenter + EmbedCache + TokenReducer + vLLM-Omni. 한 번 잘 만들면 2-3년 쓴다.
+- <strong>Engine</strong> = Sampler Plugin. AKS, BOLT, AdaRD-Key, FOCUS, FrameMind — 매 분기 SOTA가 바뀐다.
+- <strong>Telemetry</strong> = tokens/query, latency p99, frame-selection-time, encoder-utilization, cache hit rate. 어떤 engine을 끼워도 *동일한* 5개 게이지를 본다.
+- <strong>Wind tunnel</strong> = lmms-eval + 5대 benchmark. 새 engine을 production에 올리기 전 standardized test.
+- <strong>Pit stop</strong> = feature flag. shadow → 1% → 10% → 100% canary. 문제 생기면 즉시 이전 engine으로 롤백.</p>
+<p>2026년 우승팀은 *engine을 가장 잘 만든 팀*이 아니라 *engine 교체를 가장 빨리 하는 팀*이다. Paper drop → 3 day eval cycle → production rollout이 우리의 lap time이다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>Course 전체에서 가장 야심찬 코드 예제. Chapter 9의 Sampler 계약 위에 reference architecture 전체를 하나의 VideoLLMPipeline 클래스로 묶고, &#x27;uniform → aks&#x27; swap을 config 한 줄로 시연하고, lmms-eval-style evaluate() 메서드로 hold-out subset을 돌린다. Stub은 실제 production에서 Decord, PySceneDetect, SigLIP, vLLM-Omni client로 대체된다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">from dataclasses import dataclass, field
+from typing import Protocol, List, Dict, Any
+import time, numpy as np
+
+# === Chapter 9 contracts ===
+class Sampler(Protocol):
+    name: str
+    def select(self, video: np.ndarray, query: str, max_frames: int,
+               shots: List[tuple]) -&gt; List[int]: ...
+
+class UniformSampler:
+    name = &quot;uniform&quot;
+    def select(self, video, query, max_frames, shots):
+        T = len(video); return list(np.linspace(0, T-1, max_frames, dtype=int))
+
+class AKSSampler:  # Tang et al. CVPR 2025, arXiv:2502.21271
+    name = &quot;aks&quot;
+    def __init__(self, clip_scorer): self.scorer = clip_scorer
+    def select(self, video, query, max_frames, shots):
+        scores = self.scorer(video, query)            # relevance
+        anchors = [s[0] for s in shots][:max_frames]  # coverage from shots
+        ranked = sorted(set(anchors) | set(np.argsort(-scores)[:max_frames*2]),
+                        key=lambda i: -scores[i])
+        return sorted(ranked[:max_frames])
+
+class FOCUSSampler:  # arXiv:2510.27280, combinatorial bandit
+    name = &quot;focus&quot;
+    def select(self, video, query, max_frames, shots): ...  # stub
+
+# === Pipeline stages ===
+@dataclass
+class PipelineConfig:
+    sampler_variant: str = &quot;uniform&quot;
+    max_frames: int = 32
+    token_budget: int = 2048
+    encoder: str = &quot;siglip-so400m&quot;
+
+class VideoLLMPipeline:
+    def __init__(self, cfg: PipelineConfig, samplers: Dict[str, Sampler],
+                 decoder, segmenter, encoder, reducer, llm, cache):
+        self.cfg, self.samplers = cfg, samplers
+        self.decoder, self.segmenter = decoder, segmenter
+        self.encoder, self.reducer, self.llm, self.cache = encoder, reducer, llm, cache
+        self.telemetry: List[Dict[str, Any]] = []
+
+    def answer(self, video_id: str, url: str, query: str) -&gt; str:
+        t0 = time.perf_counter()
+        video = self.decoder.decode(url)                  # Decord + NVDEC
+        shots = self.segmenter.segment(video)             # PySceneDetect
+        t_sample = time.perf_counter()
+        idx = self.samplers[self.cfg.sampler_variant].select(
+            video, query, self.cfg.max_frames, shots)     # ★ swap point ★
+        frame_sel_ms = (time.perf_counter() - t_sample) * 1000
+        feats = self.cache.get_or_compute(
+            video_id, idx, lambda f: self.encoder.embed(video[f]))
+        tokens = self.reducer.reduce(feats, self.cfg.token_budget)
+        answer = self.llm.generate(query, tokens)         # vLLM-Omni
+        self.telemetry.append({
+            &quot;sampler_variant&quot;: self.cfg.sampler_variant,
+            &quot;tokens_per_query&quot;: tokens.shape[0],
+            &quot;latency_ms&quot;: (time.perf_counter() - t0) * 1000,
+            &quot;frame_selection_ms&quot;: frame_sel_ms,
+            &quot;cache_hit_rate&quot;: self.cache.hit_rate(),
+        })
+        return answer
+
+    def evaluate(self, benchmark: List[Dict], gold_fn) -&gt; Dict[str, float]:
+        # lmms-eval-style hold-out runner (e.g. Video-MME Long 100 samples)
+        correct = 0
+        for ex in benchmark:
+            pred = self.answer(ex[&quot;video_id&quot;], ex[&quot;url&quot;], ex[&quot;query&quot;])
+            correct += int(gold_fn(pred, ex[&quot;answer&quot;]))
+        t = [m for m in self.telemetry if m[&quot;sampler_variant&quot;] == self.cfg.sampler_variant]
+        return {&quot;variant&quot;: self.cfg.sampler_variant,
+                &quot;accuracy&quot;: correct / len(benchmark),
+                &quot;p99_latency_ms&quot;: float(np.percentile([m[&quot;latency_ms&quot;] for m in t], 99)),
+                &quot;avg_tokens&quot;: float(np.mean([m[&quot;tokens_per_query&quot;] for m in t])),
+                &quot;avg_frame_sel_ms&quot;: float(np.mean([m[&quot;frame_selection_ms&quot;] for m in t]))}</code></pre>
+      <div class="c-walk"><p>네 가지가 한 번에 보이도록 설계했다. (1) <strong>Sampler Protocol</strong> 하나(이 강의 Chapter 9의 핵심 계약)에 UniformSampler, AKSSampler, FOCUSSampler가 모두 동일한 시그니처로 꽂힌다 — 이게 swap point다. (2) <strong>VideoLLMPipeline</strong> 클래스가 Decoder → SceneSegmenter → Sampler → EmbedCache → TokenReducer → LLM의 8-stage chassis를 한 메서드(answer)로 흐르게 한다 — chassis는 sampler가 무엇이든 바뀌지 않는다. (3) <strong>Telemetry</strong> 리스트가 sampler_variant 라벨과 함께 5개 metric(tokens/query, latency, frame-selection-time, cache hit rate, accuracy)을 자동 수집 — Prometheus exporter로 바로 변환 가능. (4) <strong>evaluate()</strong> 가 lmms-eval 스타일 hold-out 평가를 돌리고 variant별 비교 가능한 dict을 반환 — 3-day workflow가 그대로 코드로 표현된다: <code>cfg.sampler_variant</code>를 &#x27;uniform&#x27;에서 &#x27;aks&#x27;로 바꾸고, accuracy가 오르고 p99 latency가 10% 이하로 회귀하면 feature flag로 1% canary 시작. 실제 production에서는 decoder가 Decord+NVDEC, segmenter가 PySceneDetect ContentDetector, encoder가 SigLIP-So400m 또는 Twelve Labs Marengo 클라이언트, llm이 vLLM-Omni gRPC 클라이언트로 바뀐다 — 인터페이스는 그대로다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">Senior video-LLM engineer 면접에서는 이 capstone 단계가 실력의 임계점이다. (a) 5대 benchmark 각각이 무엇을 측정하고 언제 skip할 수 있는지, (b) SOTA paper를 production sampler로 평가-rollout하는 cost-vs-quality 워크플로우, (c) video pipeline 고유의 production observability 5종, (d) 2026 하반기 어디에 베팅할지 — 이 네 가지를 모두 말할 수 있어야 senior로 인정된다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>5대 benchmark 각각이 측정하는 것을 한 문장으로 구분할 수 있는가 — &#x27;Video-MME=종합&#x27;, &#x27;LongVideoBench=referring query&#x27;, &#x27;EgoSchema=egocentric&#x27;, &#x27;MLVU=multitask 다양성&#x27;, &#x27;Multi-Hop NIAH=10K-frame stress&#x27;</li><li>SOTA paper를 보고 3일 안에 hold-out → cost-vs-quality 비교 → feature-flag canary로 흡수하는 운영 사이클을 그릴 수 있는가</li><li>sampler_variant 라벨을 모든 metric에 박아 per-variant 비교 dashboard를 설계할 수 있는가</li><li>Agentic sampler(FrameMind/FrameThinker/A.I.R.)의 p99 latency 약점, joint sampler-MLLM evolution(MSJoE)의 plug-and-play 파괴 트레이드오프를 동시에 설명할 수 있는가</li><li>reference architecture를 그릴 때 SceneSegmenter가 Sampler *앞에* 오는 이유(anti-pattern #2 회피)와 EmbedCache가 Encoder *뒤*에 오는 이유(같은 영상의 두 번째 query 비용 절감)를 말할 수 있는가</li><li>lmms-eval을 그냥 &#x27;benchmark 돌리는 툴&#x27;이 아니라 &#x27;sampler를 config field로 받는 표준 harness&#x27;로 인지하고 있는가</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>&#x27;벤치마크는 Video-MME만 돌리면 된다&#x27; — LongVideoBench와 Multi-Hop NIAH가 측정하는 축이 완전히 다르다</li><li>&#x27;SOTA paper 나오면 일단 production에 넣고 본다&#x27; — hold-out 평가 단계 없이는 회귀 위험 통제 불가</li><li>&#x27;latency 평균만 본다&#x27; — video pipeline은 p99가 진실. tail이 GPU 큐잉, agentic tool-call 비용을 드러낸다</li><li>&#x27;sampler를 바꾸면 SceneSegmenter도 같이 바꿔야 한다&#x27; — chassis와 engine을 구분 못하는 신호</li><li>&#x27;agentic sampler가 무조건 다음 SOTA다&#x27; 또는 &#x27;여전히 uniform이 답이다&#x27; — 둘 다 차원 환원</li><li>&#x27;cache hit rate는 인프라 metric이지 ML metric이 아니다&#x27; — production video 시스템에서는 cost의 절반을 결정하므로 양쪽 모두</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>Video-MME Long split, LongVideoBench, Multi-Hop NIAH를 모두 돌리면 cost가 너무 크다. 셋 중 하나만 골라야 한다면 무엇을 어떤 기준으로 고르겠나? &#x27;5분 이하 영상만 다루는 추천 시스템&#x27;과 &#x27;1시간+ 회의 요약 시스템&#x27; 두 제품을 각각 가정해서 답해라.</li><li>arxiv:25XX.XXXXX &#x27;Bar-Sampler beats AKS by 2.1 pts on Video-MME Long, 4 pts on LongVideoBench, but frame-selection time is 380ms (AKS: 80ms)&#x27;. 이 paper가 어제 dropped. 너는 video-LLM agent product의 staff engineer다. 3일 안에 production rollout 여부를 결정해야 한다 — Day 1/2/3 각각 무엇을 하고, go/no-go 결정의 정량 기준을 구체적으로 제시해라.</li><li>2026 하반기 FrameMind/FrameThinker/A.I.R. 류 agentic sampler에 reference architecture의 Sampler slot을 내줄 것인가? &#x27;내준다&#x27;면 chassis의 어느 부분(token budget, latency SLA, vLLM-Omni stage graph)을 같이 바꿔야 하는가? &#x27;안 내준다&#x27;면 어떤 신호가 보이면 마음을 바꿀 것인가?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> **Familiar**: &#x27;lmms-eval로 Video-MME 돌릴 줄 안다&#x27;, &#x27;AKS와 uniform 비교해본 적 있다&#x27;, &#x27;SigLIP로 frame 임베딩 만들어본 적 있다&#x27;. **Mastery**: paper drop부터 production rollout까지 3-day cycle을 *팀 SOP*로 문서화해본 적 있다 / sampler_variant 라벨을 metric pipeline 전체에 박아 두 variant를 dashboard에서 비교한 적 있다 / agentic sampler의 p99 latency 회귀를 실측해서 reject한 적 있다 / &#x27;chassis는 두고 engine만 갈아끼운다&#x27;는 의사결정 frame을 팀 전체가 공유하도록 만든 적 있다. Familiar는 한 chapter씩 알지만, Mastery는 10개 chapter를 *하나의 운영 시스템*으로 통합한다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>Chassis 1개, Engine은 매 분기</h3><p>Ingest Queue → DecodeWorker → FrameStore → SceneSegmenter → Sampler Plugin → Encoder Pool → EmbedCache → TokenReducer → vLLM-Omni 8-stage chassis는 2-3년 쓴다. Sampler engine만 매 분기 갈아끼운다. 이 분리가 production video-LLM 팀의 핵심 자산이다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>5대 benchmark는 측정 축이 모두 다르다</h3><p>Video-MME=종합 long, MLVU=multitask 다양성, LongVideoBench=referring query, EgoSchema=egocentric, Multi-Hop NIAH=10K-frame stress. 하나로 SOTA 주장 금지. 도메인에 따라 우선순위는 달라지되, lmms-eval로 standardized harness 유지.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>3-day eval cycle이 lap time이다</h3><p>Paper drop → wrap as Sampler protocol(D1) → hold-out subset eval(D1) → cost-vs-quality 비교(D2) → feature-flag rollout(D2-3) → production monitor(D3+). Chapter 9 계약이 없으면 같은 일이 3주 걸린다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>per-sampler-variant 라벨이 observability의 핵심</h3><p>tokens/query, latency p50/p99, frame-selection-time, encoder-utilization, cache hit rate — 5개 metric을 모두 sampler_variant 라벨과 함께 수집. 한 dashboard에서 variant 곡선이 겹쳐 보여야 결정이 빠르다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>answer-quality proxy는 따로 본다</h3><p>Offline benchmark accuracy ≠ production answer quality. thumbs-up rate, follow-up question rate, task completion rate를 sampler-variant별로 트래킹. 둘이 어긋날 때가 가장 학습이 크다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>Agentic sampler는 interactive 제품, joint evolution은 in-house MLLM 팀</h3><p>FrameMind/FrameThinker/A.I.R.는 turn-taking interactive 제품에 적합, p99 latency 약점 때문에 batch API에는 보류. MSJoE 류 joint sampler-MLLM evolution은 자체 모델 보유 팀(Google/Meta/OpenGVLab)에 강력, 외부 API 호출 팀에는 무관.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>production exception은 retrieval이지 inference가 아니다</h3><p>Mixpeek scene chunking, Twelve Labs Marengo dense embed가 상용에서 동작하는 이유는 cost가 index time에 amortize되기 때문. Inference-time SOTA sampler를 production에 넣을 때는 EmbedCache가 같은 amortization을 만들어 줘야 한다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>마지막 thesis 회수</h3><p>Chapter 1에서 시작한 명제 — &#x27;비디오 LLM의 진짜 병목은 모델 크기가 아니라 어떤 frame이 context를 통과하느냐&#x27;. 10개 chapter 후 이 명제는 reference architecture의 swap point 1개로 응결된다. 그 자리를 비워두고 최신 SOTA를 갈아끼울 수 있는 팀이 다음 12개월의 우승자다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-09.html">← Plug-and-Play Architecture Design</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <span></span>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+</body></html>

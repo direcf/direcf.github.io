@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch3: Query-Aware Adaptive Sampling — AKS &amp; BOLT — Frame Sampling for Multimodal AI — direcf</title>
+  <meta name="description" content="CVPR 2025의 AKS(arXiv:2502.21271)와 BOLT(arXiv:2503.21483)는 둘 다 training-free·plug-and-play query-aware sampler로, downstream VLM을 한 줄도 고치지 않은 채 LLaVA-Video-7B+AKS가 LLaVA-Video-72B uniform baseline을 넘어서고, BOLT는 8-frame budget만으로 Video-MME 53.8→56.1, MLVU 58.9→63.4를 달성한다. 두 방법의 공통 본질은 *relevance(질문 관련도)*와 *coverage(시간적 다양성)* 사이의 명시적 트레이드오프를 frozen CLIP score 위에서 푸는 데 있다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child{margin-bottom:0}
+.sb-block strong{color:var(--text)}
+.sb-block code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/multimodal-ai">Frame Sampling for Multimodal AI</a><span class="sep">›</span>
+        <strong>Ch03 Query-Aware Adaptive Sampling — AKS &amp; BOLT</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 03 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🧭</div>
+      <h1 class="chapter-title">Query-Aware Adaptive Sampling — AKS &amp; BOLT</h1>
+      <div class="chapter-title-kr">Query-Aware Adaptive Sampling — AKS와 BOLT</div>
+      <div class="chapter-tldr">CVPR 2025의 AKS(arXiv:2502.21271)와 BOLT(arXiv:2503.21483)는 둘 다 training-free·plug-and-play query-aware sampler로, downstream VLM을 한 줄도 고치지 않은 채 LLaVA-Video-7B+AKS가 LLaVA-Video-72B uniform baseline을 넘어서고, BOLT는 8-frame budget만으로 Video-MME 53.8→56.1, MLVU 58.9→63.4를 달성한다. 두 방법의 공통 본질은 *relevance(질문 관련도)*와 *coverage(시간적 다양성)* 사이의 명시적 트레이드오프를 frozen CLIP score 위에서 푸는 데 있다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-03.png" alt="Chapter 3 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 3 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>Query-aware keyframe selection을 relevance/coverage joint objective로 정식화할 수 있다</li><li>AKS의 recursive partition 알고리즘을 의사코드 수준으로 재현할 수 있다</li><li>BOLT의 inverse-transform sampling이 왜 stochastic diversity를 유지하면서 high-relevance 구간으로 mass를 쏠리게 하는지 설명할 수 있다</li><li>Training-free sampler가 frozen VLM·frozen encoder 환경에서 plug-and-play로 동작하는 인터페이스적 이유를 댈 수 있다</li><li>AKS·BOLT가 underperform하는 조건(짧은 클립, ambiguous query, query-irrelevant benchmark)을 식별할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>Chapter 2에서 본 uniform·fps·shot-detection baseline은 긴 비디오에서 두 가지 방식으로 무너졌다 — 정보 손실이 query와 무관하게 일어나거나, 반대로 query와 무관한 redundancy를 그대로 LLM에 떠넘기거나. 이 chapter는 2025년 CVPR에서 동시에 등장한 두 plug-and-play training-free sampler, <strong>AKS</strong>(Adaptive Keyframe Sampling, Tang et al., arXiv:2502.21271)와 <strong>BOLT</strong>(Liu et al., arXiv:2503.21483)를 다룬다. 두 방법은 같은 문제 — *질문 텍스트가 있을 때 어느 frame을 LLM의 context에 통과시킬 것인가* — 를 서로 다른 수학적 어법으로 푼다. AKS는 이를 <strong>constrained discrete optimization</strong>으로, BOLT는 <strong>importance-weighted stochastic sampling</strong>으로 정식화한다. 둘 다 frozen CLIP encoder만 호출하고, downstream VLM에는 손대지 않으며, 64–768 frame budget이 아니라 <strong>8–16 frame budget</strong> 안에서도 작동한다는 점에서 production-friendly한 첫 세대 query-aware sampler다. 이 chapter의 목표는 (a) 두 방법을 정식화하고, (b) AKS recursive partition을 직접 Python으로 구현해 보며, (c) 어떤 조건에서 둘이 uniform에 진다는 사실까지 솔직하게 정리하는 것이다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>3.1 The Objective — Relevance vs. Coverage as a Constrained Selection Problem</h2><p>비디오를 N개의 frame f_1, ..., f_N, 질문을 텍스트 q라고 하자. Sampler의 임무는 부분집합 S ⊆ {1, ..., N}을 고르는 것인데, 제약은 |S| = K로 LLM의 vision context 한계가 강제한다. 두 가지 효용을 동시에 키워야 한다. 첫째 <strong>relevance</strong> R(S; q) = Σ_{i ∈ S} sim(φ_v(f_i), φ_t(q)) — frozen CLIP/SigLIP encoder가 주는 query-frame cosine similarity의 총합. 둘째 <strong>coverage</strong> C(S) = spread({t_i : i ∈ S}) — 선택된 frame들의 timestamp가 비디오 전체를 얼마나 고르게 덮는가. AKS는 이를 명시적으로 max_{|S|=K} R(S; q) + λ · C(S) 형태의 joint objective로 푼다. λ → 0 극단은 top-K CLIP score 그대로 (지난 chapter의 anti-pattern: 한 장면에 score가 몰리면 8 frame 전부 같은 2초 구간에서 뽑힘), λ → ∞ 극단은 uniform sampling. 이 트레이드오프가 chapter 전체를 관통하는 축이다. BOLT는 같은 문제를 결정적(greedy)으로 풀지 않고, frame별 relevance score를 PDF로 해석한 뒤 inverse-transform sampling으로 stochastic하게 뽑는다 — 동일한 트레이드오프를 확률 분포 차원에서 표현하는 방식이다. 두 정식화의 공통점은 *질문 텍스트가 sampling 단계 안으로 들어왔다는 것*이고, 차이점은 *결정성 대 확률성, 명시적 partition 대 묵시적 CDF reweighting*이다.</p></div><div class="sb-block"><h2>3.2 AKS — Recursive Partition for Coverage-Aware Top-K</h2><p>AKS(Tang et al., CVPR 2025, arXiv:2502.21271, repo: github.com/ncTimTang/AKS)의 핵심 아이디어는 단순하다. 비디오를 시간축 위에서 <strong>recursive하게 절반으로 자르고</strong>, 각 절반에 frame budget을 분배한 뒤, *그 절반 안에서만* CLIP relevance score 기준 top-1을 뽑는다. 알고리즘은 세 단계다. (1) <strong>CLIP relevance scoring</strong>: 전체 N개 frame을 frozen CLIP visual encoder로 임베딩하고, query q의 text embedding과 cosine similarity를 계산해 score vector s ∈ R^N을 얻는다. (2) <strong>Recursive partition</strong>: 함수 AKS(s[l:r], k)가 들어오면 — k=1이면 구간 [l, r)에서 score 최댓값 인덱스 하나만 반환하고, k&gt;1이면 구간을 중간점 m에서 둘로 자른 뒤 budget을 절반씩(⌊k/2⌋, ⌈k/2⌉) 나눠 양쪽 재귀호출 결과를 union한다. (3) <strong>Adaptive top-up</strong>: 원논문은 또한 한 partition 안에서 score가 *너무 균일*(모두 낮거나 모두 비슷)할 때 그 partition을 더 쪼개지 않고 그 자리 uniform으로 대체하는 가벼운 fallback을 둔다 — 이는 &#x27;ambiguous query&#x27;에서 AKS가 uniform으로 우아하게 degrade되도록 만든다. 결과적으로 selected frame들은 시간축 위에서 (a) 비디오 전체를 덮으면서 (b) 각 구간 내부에서는 query 관련도가 가장 높은 frame을 고르는 *Pareto-front 근사*가 된다. 가장 인상적인 empirical 결과는 LLaVA-Video-7B + AKS가 LLaVA-Video-72B + uniform baseline을 LongVideoBench와 Video-MME long split에서 상회한다는 점이다 — 즉 *10× 작은 모델이 더 똑똑한 sampler 하나로 더 큰 모델을 이긴다*. Production 함의는 명확하다: VLM size를 키우기 전에 sampler를 query-aware로 바꿔라.</p></div><div class="sb-block"><h2>3.3 BOLT — Inverse-Transform Sampling on Query–Frame CDF</h2><p>BOLT(Liu et al., CVPR 2025, arXiv:2503.21483, repo: github.com/sming256/BOLT)는 AKS와 정반대의 mental model에서 출발한다. AKS가 &#x27;partition 안 결정적 argmax&#x27;라면 BOLT는 &#x27;relevance가 만든 분포에서의 확률적 뽑기&#x27;다. 절차는 다음과 같다. (1) frozen CLIP/SigLIP으로 모든 frame의 query alignment score s_i를 구한다. (2) 이를 양수화·정규화해 frame-level PDF p_i = softmax(s_i / τ)로 만든다 — 여기서 temperature τ가 chapter 3.1의 λ 역할을 한다 (τ → 0이면 결정적 top-K, τ → ∞이면 uniform). (3) PDF를 누적합해 CDF F_i = Σ_{j ≤ i} p_j를 만들고, u ∼ Uniform(0,1) K번을 뽑은 뒤 각 u에 대해 i* = min{i : F_i ≥ u}를 찾는다 — 표준 <strong>inverse-transform sampling</strong>이다. 이 한 줄짜리 트릭이 BOLT의 전부지만, 의미는 깊다. CDF가 high-relevance 구간에서 가파르게 올라가므로 sampling mass가 자연스럽게 그쪽으로 쏠리되, *모든 frame이 0이 아닌 확률을 갖기 때문에* 시간축의 전역 coverage가 확률적으로 유지된다. AKS의 recursive partition이 &#x27;coverage를 hard constraint으로&#x27; 강제했다면, BOLT는 &#x27;coverage를 stochastic regularizer로&#x27; 녹였다. 보고된 숫자는 결정적이다: 8-frame budget에서 Video-MME가 53.8→56.1, MLVU가 58.9→63.4 — uniform 대비 같은 비용으로 +2.3, +4.5 포인트를 그냥 얻는다. BOLT의 또 다른 장점은 *stochastic*이라는 점 자체다. 같은 query에 다른 sample을 뽑아 ensemble하면 추가 정확도를 살 수 있다 — AKS는 결정적이라 이 trick이 안 먹힌다.</p></div><div class="sb-block"><h2>3.4 Empirical Comparison and Where Each Wins</h2><p>두 sampler의 보고된 wins를 한 표로 요약한다. <strong>AKS</strong>: downstream VLM을 LLaVA-Video-7B로 고정하고 sampler만 uniform→AKS로 바꿨을 때 LongVideoBench/Video-MME long split에서 LLaVA-Video-72B+uniform을 상회 — 7B 모델이 72B를 이긴다는 것은 *sampling이 model scale의 일부를 대체 가능*하다는 강한 진술이다. <strong>BOLT</strong>: LLaVA-OneVision/LLaVA-Video 위에서 8-frame budget만으로 Video-MME 53.8→56.1(+2.3), MLVU 58.9→63.4(+4.5). 두 paper 모두 frame budget이 늘어날수록 uniform과의 격차가 *줄어든다*는 점은 솔직하게 보고한다 — 64 frame을 다 쓸 수 있다면 더 똑똑한 sampler의 marginal return은 작다. 그래서 두 방법의 진짜 자리는 *frame budget이 빡빡한* 환경이다: 모바일 inference, edge VLM, 또는 비디오 길이가 한 시간이라 8-frame 안에 모든 evidence를 우겨넣어야 하는 long-video setting. 반대로 *짧은 클립*(30초 미만)이나 *ambiguous query*(&#x27;describe this video&#x27; 류)에서는 두 방법 모두 uniform과 통계적으로 무차별해지거나 미세하게 진다. AKS는 partition fallback 덕에 ambiguous query에 좀 더 우아하게 degrade되고, BOLT는 stochastic ensemble로 variance를 흡수할 수 있다는 부차적 차이가 있다.</p></div><div class="sb-block"><h2>3.5 Why Training-Free Wins for Plug-and-Play</h2><p>두 방법이 2025년에 동시에 SOTA를 깬 *진짜* 이유는 알고리즘적 우아함이 아니라 <strong>인터페이스적 결정</strong>이다. 둘 다 downstream VLM, vision encoder, text encoder 어느 것도 fine-tuning하지 않는다. Chapter 9에서 정식화할 <code>Sampler.select(video, query, K) -&gt; indices</code> 계약 안에 깔끔하게 들어맞고, frozen LLaVA-Video, frozen Qwen2.5-VL, frozen InternVL3 어느 것 위에서도 동일하게 동작한다. Production 함의는 세 가지다. 첫째, <strong>deployment cost가 0</strong>이다 — model weight를 새로 분배하지 않고, kv-cache 호환성도 안 깨지고, vLLM-Omni 같은 disaggregated serving graph에서 sampler stage만 갈아끼우면 된다. 둘째, <strong>encoder 재사용</strong>이 자연스럽다 — Twelve Labs Embed API나 자체 SigLIP cache로 frame embedding을 미리 만들어 뒀다면, sampler는 그 cache 위에서 cosine score만 계산하면 끝이다. 비디오 1회 디코드·임베드 비용을 query 수에 amortize할 수 있다. 셋째, <strong>A/B test 비용이 싸다</strong> — 같은 frozen VLM에 AKS와 BOLT를 동시에 붙여 traffic split만 나누면 그대로 비교 가능하다. Chapter 4의 learned sampler들(Frame-Voyager, M-LLM Frame Selection, GenS)은 더 높은 ceiling을 보여주지만, 그 대가로 별도 학습 데이터·별도 model weight·별도 serving lane을 요구한다. AKS·BOLT가 &#x27;first deploy, then learn&#x27;의 첫 번째 단계인 이유다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">The Curator and the Librarian</div>
+      <div class="a-body"><p>같은 도서관 1만 권 장서에서 *방문객의 질문에 대답할* 8권을 골라 전시 테이블에 올린다고 상상해 보자. <strong>AKS는 큐레이터(curator)</strong>다. 큐레이터는 서가를 분야별로 절반씩 자른다 — 인문/자연, 다시 인문은 문학/철학, 자연은 물리/생물… 각 칸에서 *방문객 질문에 가장 가까운 책 한 권*만 뽑는다. 결과 테이블은 &#x27;내용 적합성&#x27;과 &#x27;전시 균형(coverage)&#x27; 두 축 모두를 만족한다. 결정적이고, 재현 가능하고, 같은 질문에 같은 8권이 나온다. <strong>BOLT는 사서(librarian)가 진행하는 가중 추첨(weighted lottery)</strong>이다. 사서는 모든 책에 질문 관련도 점수를 매겨 추첨함에 표를 그 점수만큼 더 많이 넣는다. 점수가 높은 책일수록 뽑힐 확률이 높지만, 0점인 책도 (작게) 들어가 있다. 8번 추첨하면 평균적으로 high-relevance 책이 다수지만, 매번 약간 다른 조합이 나온다 — 그래서 같은 질문에 두 번 추첨하면 *앙상블*이 된다. 두 방식 모두 &#x27;도서관 자체를 다시 짓지 않는다&#x27;는 점이 핵심이다. 책(frozen VLM), 분류표(frozen encoder), 서가 배치(serving infra)는 그대로 두고, *고르는 사람만* 바꾼다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>단순화한 AKS-style sampler를 처음부터 짜 본다. CLIP encoder는 placeholder로 두고, recursive partition 로직 자체에 집중한다. 실제 production에서는 <code>clip_encode</code>를 SigLIP 또는 OpenCLIP 호출로 바꾸고, frame embedding은 캐시에서 읽는다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import numpy as np
+from typing import List, Callable
+
+# --- Placeholder encoders (swap with SigLIP/OpenCLIP in production) ---
+def clip_encode_frames(frames: np.ndarray) -&gt; np.ndarray:
+    # frames: [N, H, W, 3] -&gt; [N, D]; deterministic fake encoder for demo
+    rng = np.random.default_rng(0)
+    return rng.standard_normal((len(frames), 512)).astype(np.float32)
+
+def clip_encode_text(query: str) -&gt; np.ndarray:
+    rng = np.random.default_rng(abs(hash(query)) % (2**32))
+    return rng.standard_normal(512).astype(np.float32)
+
+def cosine(a: np.ndarray, b: np.ndarray) -&gt; np.ndarray:
+    a = a / (np.linalg.norm(a, axis=-1, keepdims=True) + 1e-8)
+    b = b / (np.linalg.norm(b) + 1e-8)
+    return a @ b  # [N]
+
+# --- AKS recursive partition core ---
+def aks_partition(scores: np.ndarray, lo: int, hi: int, k: int,
+                  uniform_fallback_std: float = 1e-3) -&gt; List[int]:
+    &quot;&quot;&quot;Select k indices from scores[lo:hi] balancing relevance and coverage.&quot;&quot;&quot;
+    span = scores[lo:hi]
+    if k &lt;= 0 or len(span) == 0:
+        return []
+    # Fallback: if the partition is too flat, query is uninformative here.
+    if span.std() &lt; uniform_fallback_std or k &gt;= len(span):
+        step = max(len(span) // max(k, 1), 1)
+        return [lo + i * step for i in range(k) if lo + i * step &lt; hi]
+    if k == 1:
+        return [lo + int(np.argmax(span))]
+    mid = lo + len(span) // 2
+    left_k, right_k = k // 2, k - k // 2
+    return (aks_partition(scores, lo, mid, left_k, uniform_fallback_std)
+            + aks_partition(scores, mid, hi, right_k, uniform_fallback_std))
+
+def aks_select(frames: np.ndarray, query: str, k: int = 8) -&gt; List[int]:
+    frame_emb = clip_encode_frames(frames)            # [N, D]
+    query_emb = clip_encode_text(query)               # [D]
+    scores = cosine(frame_emb, query_emb)             # [N]
+    idx = aks_partition(scores, 0, len(scores), k)
+    return sorted(idx)
+
+if __name__ == &quot;__main__&quot;:
+    fake_video = np.zeros((200, 224, 224, 3), dtype=np.uint8)
+    picked = aks_select(fake_video, &quot;person opens a red door&quot;, k=8)
+    print(&quot;selected frame indices:&quot;, picked)</code></pre>
+      <div class="c-walk"><p><code>clip_encode_frames</code>와 <code>clip_encode_text</code>는 production에서 SigLIP/OpenCLIP 호출로 1:1 교체된다 — 인터페이스가 동일하므로 함수 본문만 바꾸면 된다. 핵심은 <code>aks_partition</code>이다. 재귀 함수는 (a) <code>k=1</code>이면 구간 내 argmax 한 점만 돌려주고(=relevance 우선), (b) <code>k&gt;1</code>이면 구간을 시간축 중간에서 둘로 잘라 budget을 절반씩 나눠 양쪽을 호출한 뒤 합친다(=coverage 강제). <code>uniform_fallback_std</code>는 본문 3.2에서 언급한 ambiguous-query fallback이다 — partition 안 score 분산이 너무 낮으면 query가 그 구간을 구별하지 못한다는 신호이므로 그냥 uniform으로 떨어진다. <code>aks_select</code>는 chapter 9에서 정식화할 <code>Sampler.select</code> 계약과 동일한 시그니처를 따른다 — 같은 인터페이스로 BOLT를 짠다면 마지막 두 줄을 <code>np.searchsorted(np.cumsum(softmax(scores/tau)), np.random.rand(k))</code>로 바꾸면 끝이다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">시니어 ML 엔지니어가 video-LLM 파이프라인 면접에서 query-aware sampler를 물을 때 노리는 지점은 세 곳이다: (a) relevance–coverage 트레이드오프를 *수식 수준에서* 말할 수 있는가, (b) training-free가 왜 deployment 차원에서 결정적인지 설명할 수 있는가, (c) 이 방법들이 *언제 실패하는지* 솔직히 짚을 수 있는가. 세 번째가 가장 중요하다 — paper의 강점만 외운 후보와 실제로 운영해 본 후보를 가르는 질문이다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>AKS·BOLT 둘 다 &#x27;CLIP score 위에서 무엇을 더 한다&#x27;까지 한 문장으로 압축할 수 있는가</li><li>Frame budget이 *작을 때* SOTA gap이 커지고 *클 때* 좁아진다는 사실을 알고 있는가</li><li>Frozen VLM 위에 sampler만 갈아끼울 수 있는 이유(인터페이스 계약, encoder 재사용, kv-cache 무관)를 production 언어로 말할 수 있는가</li><li>Stochastic sampler(BOLT)와 deterministic sampler(AKS)의 ensemble/재현성 trade-off를 인지하는가</li><li>Ambiguous query·짧은 클립에서는 uniform이 안 진다는 점을 &#x27;paper 광고&#x27;와 분리해 말할 수 있는가</li><li>Frame embedding을 Twelve Labs Embed/자체 cache로 amortize할 수 있다는 production-leverage point를 짚는가</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>&#x27;AKS가 그냥 더 좋다&#x27;고 말하고 frame budget·query type 조건을 안 따짐</li><li>BOLT의 inverse-transform sampling을 &#x27;top-K with noise&#x27;로 잘못 요약함</li><li>Training-free를 단순한 &#x27;cheap&#x27;으로 받고, plug-and-play 인터페이스 계약과 연결 못 함</li><li>LLaVA-Video-7B+AKS &gt; LLaVA-Video-72B uniform 결과를 들고 &#x27;그러므로 큰 모델은 필요 없다&#x27;고 일반화함</li><li>CLIP score 분포가 평평한 ambiguous query에서도 sampler가 자동으로 잘할 거라고 가정함</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>**Q1 (relevance–coverage 트레이드오프)**: AKS의 objective를 수식으로 쓰고, λ가 0 또는 ∞일 때 sampler가 각각 어떤 baseline으로 환원되는지 설명하라. 또한 같은 트레이드오프를 BOLT가 *어디서* 표현하는지 답하라. (정답 골자: max R + λ C, λ=0이면 top-K CLIP, λ=∞이면 uniform; BOLT는 softmax temperature τ가 같은 역할.)</li><li>**Q2 (training-free의 의미)**: &#x27;training-free라서 좋다&#x27;를 1) deployment cost, 2) encoder 재사용/cache, 3) A/B test 비용 세 측면에서 각각 production 언어로 설명하라. 만약 회사에 이미 SigLIP frame embedding cache가 있다면, AKS와 BOLT 도입 비용은 정확히 무엇이 추가되는가? (정답 골자: weight 재배포 0, cache 위 cosine·argmax/CDF만 추가, traffic split로 즉시 비교 가능.)</li><li>**Q3 (failure mode)**: 사내 dogfooding에서 query-aware sampler가 uniform 대비 *지는* 경우를 두 가지 이상 들고, 그 원인과 운영적 대응을 설명하라. (정답 골자: (i) 30초 미만 짧은 클립 — 정보 밀도가 이미 충분, sampler가 줄 marginal이 없음, 짧은 비디오는 uniform으로 라우팅; (ii) ambiguous query(&#x27;summarize this video&#x27;) — score 분포가 평평해져 partition fallback 또는 high-τ BOLT가 자동으로 uniform 근처로 수렴; (iii) frame budget이 64 이상 — gap 자체가 닫힘. 대응: video length·query embedding의 norm/entropy 기반 라우터로 sampler를 동적으로 끈다.)</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> **Familiar** 후보는 &#x27;AKS와 BOLT는 CVPR 2025 query-aware sampler이고 LLaVA-Video-7B+AKS가 72B를 이긴다&#x27;까지 말한다. **Mastery** 후보는 같은 사실을 *인터페이스* 언어로 다시 말한다 — &#x27;frozen VLM 위 `Sampler.select`만 바꾸는 plug-and-play다, 그래서 deployment risk가 0이고, encoder cache 위에서 cosine·argmax·CDF만 추가하면 끝이다, 그리고 frame budget이 작을 때만 의미가 있어서 우리 서비스의 traffic 중 long-video 비중을 먼저 본 뒤 도입을 결정한다&#x27;. 즉 *결과를 외운 사람*이 아니라 *결과의 운영 조건을 따지는 사람*이 mastery다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>Query가 sampling 안으로 들어왔다</h3><p>AKS·BOLT의 본질은 알고리즘이 아니라 *sampling stage에 query text가 입력으로 들어왔다는 사실 자체*다. Uniform·fps·shot-detection은 모두 query-agnostic이었다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>Relevance와 coverage는 항상 같이 푼다</h3><p>Top-K CLIP score만 쓰면 한 장면에 frame이 몰린다. AKS는 recursive partition으로, BOLT는 softmax temperature로 coverage를 강제한다. 어느 쪽이든 둘을 동시에 푸는 것이 핵심.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>AKS = 결정적 partition, BOLT = 확률적 CDF</h3><p>AKS는 시간축을 절반씩 잘라 각 칸에서 argmax — 재현 가능하고 분석하기 쉽다. BOLT는 score를 PDF로 보고 inverse-transform sampling — stochastic하지만 ensemble이 가능하다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>7B + 똑똑한 sampler &gt; 72B + uniform</h3><p>LLaVA-Video-7B+AKS가 LLaVA-Video-72B uniform baseline을 상회한다(arXiv:2502.21271). Model scale의 일부는 sampler가 대신 살 수 있다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>BOLT는 8-frame budget에서 결정적</h3><p>Video-MME 53.8→56.1, MLVU 58.9→63.4 (8 frames, arXiv:2503.21483). Frame budget이 작을수록 query-aware sampler의 marginal return이 크다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>Training-free가 plug-and-play를 만든다</h3><p>Downstream VLM·encoder를 안 건드리므로 weight 재배포 0, kv-cache 무관, vLLM-Omni 같은 disaggregated graph의 sampler stage만 교체. A/B test 비용도 traffic split 수준.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>Frame embedding cache와 궁합이 좋다</h3><p>Twelve Labs Embed API나 자체 SigLIP cache가 있으면 sampler는 cosine + argmax/CDF만 계산. Decode/encode 비용을 query 수에 amortize한다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>짧은 클립·ambiguous query·64+ budget에서는 진다</h3><p>30초 미만 클립, &#x27;describe this video&#x27; 류 모호한 질문, frame budget이 충분히 큰 경우엔 uniform과 무차별. Video length·query entropy 기반 라우터로 sampler를 동적으로 켜고 끄는 것이 운영 정답.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-02.html">← Classical Baselines and Where They Fail</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-04.html">Learned Samplers — Frame-Voyager, M-LLM, GenS →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+</body></html>
