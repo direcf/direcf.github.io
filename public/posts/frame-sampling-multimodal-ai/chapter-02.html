@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch2: Classical Baselines and Where They Fail — Frame Sampling for Multimodal AI — direcf</title>
+  <meta name="description" content="Uniform / fixed-fps / shot detection은 단순하지만 여전히 production의 기본값이다. 짧고 동질적인 비디오에서는 충분히 강하고, 비용·지연·구현 복잡도 면에서 압도적이다. 그러나 long video, query-specific reasoning, rare event, multi-event 추론에서는 정보 손실이 정량적으로 누적되며 무너진다. 이 chapter는 세 baseline의 수학적 정의, 산업이 이들을 고수하는 경제적 이유, 그리고 정확히 어떤 query에서 깨지는지를 코드와 함께 정리한다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/multimodal-ai">Frame Sampling for Multimodal AI</a><span class="sep">›</span>
+        <strong>Ch02 Classical Baselines and Where They Fail</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 02 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🎯</div>
+      <h1 class="chapter-title">Classical Baselines and Where They Fail</h1>
+      <div class="chapter-title-kr">고전적 baseline들 — 어디까지 효과적이고 언제 무너지는가</div>
+      <div class="chapter-tldr">Uniform / fixed-fps / shot detection은 단순하지만 여전히 production의 기본값이다. 짧고 동질적인 비디오에서는 충분히 강하고, 비용·지연·구현 복잡도 면에서 압도적이다. 그러나 long video, query-specific reasoning, rare event, multi-event 추론에서는 정보 손실이 정량적으로 누적되며 무너진다. 이 chapter는 세 baseline의 수학적 정의, 산업이 이들을 고수하는 경제적 이유, 그리고 정확히 어떤 query에서 깨지는지를 코드와 함께 정리한다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-02.png" alt="Chapter 2 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 2 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>Uniform / fixed-fps / shot-based 세 baseline을 수식 수준에서 정의하고 구현 코드를 짤 수 있다</li><li>Qwen2.5-VL fps=2, LLaVA-Video uniform 64, InternVL 16–32 같은 산업 default가 *왜* 그 값으로 정해졌는지 설명할 수 있다</li><li>주어진 query–video 조합에 대해 어느 baseline이 실패할지 사전에 예측할 수 있다</li><li>PySceneDetect의 threshold·min_scene_len·luma_only 같은 knob을 상황에 맞게 튜닝할 수 있다</li><li>Uniform sampling이 &#x27;stupid한 게 아니라 economically optimal&#x27;한 영역과 그렇지 않은 영역을 분리해 말할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>Chapter 1에서 frame sampling이 video LLM의 진짜 병목임을 봤다. 이번 chapter는 그 병목 앞에서 산업이 <em>지금 실제로</em> 쓰는 세 가지 고전 baseline — uniform, fixed-fps, shot detection — 을 정면으로 다룬다. 이 셋은 SOTA 논문이 매년 두 자릿수 %씩 깨고 있음에도 불구하고 Gemini 2.5 Pro, Qwen2.5-VL, LLaVA-Video, InternVL의 default로 그대로 살아 있다. 우리는 먼저 각 baseline의 수학을 정의하고, 그것이 <em>어떤 영역에서 정당화되는지</em> (짧고 homogeneous한 콘텐츠, 발화 중심 비디오, retrieval index 단계)를 본 뒤, <em>정확히 어디서 깨지는지</em>를 네 가지 failure mode로 분류한다. 마지막으로 uniform이 영구히 사라지지 않는 경제적·시스템적 이유를 검토한다. 이 chapter를 끝내면 '왜 SOTA가 production에 안 들어가는가'라는 질문에 한 줄로 답할 수 있게 된다 — 답은 알고리즘이 아니라 <em>예측 가능한 비용 함수</em>다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>1. Uniform sampling — 가장 단순하고 가장 끈질긴 baseline</h2><p>Uniform sampling은 길이 T 프레임의 비디오에서 N개의 frame을 고를 때 인덱스를 다음과 같이 결정한다.</p>
+<pre><code>i_k = round(k · (T − 1) / (N − 1)),  k = 0, 1, ..., N − 1
+</code></pre>
+<p>또는 segment-then-pick 방식으로 [0, T)를 N개의 동일 폭 segment로 나눠 각 segment의 중앙 또는 첫 frame을 고른다. 둘 다 동일하게 'query-agnostic, content-agnostic, deterministic'이다.</p>
+<p>이 단순한 함수가 2026년 현재 industry default다.
+- <strong>LLaVA-Video-7B / 72B</strong>: max_frames_num=64, 그 이상은 uniform downsample.
+- <strong>InternVL2.5 / InternVL3</strong>: 보통 16–32 frame uniform.
+- <strong>Qwen2.5-VL / Qwen3-VL</strong>: 명목상 fps=2.0이지만 <code>FPS_MAX_FRAMES=768</code> cap에 걸리면 사실상 uniform으로 downsample된다 (긴 영상에서는 2 fps가 아닌 'uniform 768'로 수렴).
+- <strong>NVILA / VILA-1.5</strong>: 64 frame, context에 들어가는 건 16 frame.
+- <strong>VideoChat-Flash</strong>: 1 fps + uniform 보조.</p>
+<p>8,600 frame짜리 5분 영상을 16 frame으로 줄이면 <em>정보 손실률</em> 은 단순 비율로 99.81%다. 이 손실이 치명적인지는 query와 콘텐츠에 달려 있는데, 핵심은 uniform이 <em>기대값 측면에서</em> 최적이라는 점이다. 콘텐츠와 query에 대한 사전지식이 0일 때, 각 frame이 동등하게 informative하다는 maximum entropy prior 아래에서 uniform sampling은 expected coverage를 최대화한다. 이게 산업이 'stupid한데도 안 버리는' 이유의 절반이다 — 나머지 절반은 비용이고 5절에서 다룬다.</p>
+<p>그러나 이 prior가 깨지는 순간 — 정보가 시간축 위에서 강하게 비균등하게 분포할 때 — uniform은 한 번에 무너진다. 예: 60분 강의 중 45분 30초에 한 슬라이드가 잠깐 뜨고 그게 답인 query라면, 16-frame uniform이 그 슬라이드를 잡을 확률은 약 16/T = 16/(60·60·30) ≈ 0.015% per relevant-second. 이게 needle-in-haystack failure의 기본 산수다.</p></div><div class="sb-block"><h2>2. Fixed-fps sampling — 시간 일관성과 Gemini 2.5 Pro의 1 fps 선택</h2><p>Fixed-fps는 uniform의 사촌이지만 frame 수가 아닌 <em>rate</em>를 고정한다.</p>
+<pre><code>sampled = [video[round(t · fps_src / fps_target)] for t in range(int(duration · fps_target))]
+</code></pre>
+<p>이 방식의 장점은 <em>시간 일관성</em>이다. 같은 콘텐츠에서 'N=16 uniform'은 1분짜리든 1시간짜리든 같은 frame 수를 주지만 sampling 밀도가 60배 다르고, 'fps=1'은 항상 1초당 1 frame이라 모델이 학습한 temporal density와 inference density가 일치한다.</p>
+<p>Gemini 2.5 Pro의 1 fps default는 우연이 아니다.
+- 영어/한국어 평균 발화 속도는 분당 130–180 단어 ≈ 초당 2–3 단어다. 1 frame/sec은 화자가 새 문장을 시작할 무렵 시각 context가 한 번씩 갱신되는 셈이다.
+- 강의·인터뷰·튜토리얼·뉴스 — 즉 'human-speech-paced' 콘텐츠 — 에서 1 fps는 거의 손실 없이 의미를 보존한다.
+- 1M token context와 결합하면 1 fps × 258 tokens/sec ≈ 약 1시간 영상이 default로 들어온다 (Gemini 공식 quoted 수치).</p>
+<p>그러나 1 fps는 다음에서 명확히 무너진다.
+- <strong>Sports</strong>: 축구 슛 모션은 약 0.3초. 1 fps는 그 순간을 정확히 놓치거나 잡거나 binary다.
+- <strong>Fight scene / 격투기</strong>: 펀치-블록 시퀀스가 200–400ms 단위로 일어남.
+- <strong>Magic trick / sleight-of-hand</strong>: 의도적으로 1 fps 이상의 속도로 동작이 가려짐.
+- <strong>자동차 사고 / 사고 분석</strong>: 결정적 frame이 1–3 frame에 압축됨.</p>
+<p>반대편 극단으로 fps를 너무 올리면 (예: 30 fps 그대로 1시간) token cost가 폭발한다 — 30 × 3600 × 258 ≈ 2,786만 token. 1 fps라는 선택은 '인간 인지 paced 콘텐츠에 대한 합리적 Nyquist rate'에 가깝다.</p></div><div class="sb-block"><h2>3. Shot detection — PySceneDetect와 retrieval pipeline의 자연스러운 anchor</h2><p>Shot detection은 'frame을 N개 고른다'가 아니라 '비디오를 의미 단위로 잘라낸다'에 가깝다. 사용되는 도구는 사실상 PySceneDetect 하나로 수렴했고, 두 가지 detector가 표준이다.</p>
+<p><strong>ContentDetector</strong> — frame 간 HSV-space content delta가 threshold(default 27.0)를 넘으면 cut으로 판정. 빠르고 hard cut에 강하다. 부드러운 fade·crossfade는 못 잡는다.</p>
+<p><strong>AdaptiveDetector</strong> — rolling window 위의 content delta 분포에 대해 적응형 threshold를 잡는다. 조명 변화가 잦은 자연 영상에서 false positive를 줄인다. window·threshold·min_scene_len이 주요 knob다.</p>
+<p>중요한 knob:
+- <code>threshold</code> (보통 27, 액션·MV는 20까지 낮춤, 슬라이드 강의는 35–40까지 올림)
+- <code>min_scene_len</code> (frame 단위, 보통 15 — 0.5초 미만 cut을 합쳐버린다)
+- <code>luma_only=True</code> — 색감 변화는 무시하고 밝기만; flash photography 환경에 유용
+- <code>weights</code> — content delta의 H/S/V/edge 가중치</p>
+<p>Shot boundary가 retrieval pipeline의 anchor로 쓰이는 이유는 명확하다.
+- <strong>재현 가능한 chunk</strong>: 같은 영상에서 같은 boundary를 다시 얻을 수 있어 index가 안정적이다.
+- <strong>semantic locality</strong>: 한 shot 내부의 frame들은 거의 항상 동일 scene·동일 화자·동일 setting이라, shot 대표 frame 하나의 embedding으로 그 구간을 retrieve해도 손실이 적다.
+- <strong>caption granularity</strong>: ASR transcript + shot boundary 정렬로 'shot + 그 안의 발화' 단위 multi-modal chunk가 자연스럽게 잡힌다.</p>
+<p>Mixpeek류 video retrieval platform이 uniform이 아닌 scene/shot 기반 chunking을 default로 쓰는 이유가 여기 있다. 그들은 <em>inference time</em>이 아니라 <em>index time</em>에 비용을 지불하므로 한 번 정확한 boundary를 뽑아두면 query 비용은 vector search 한 번으로 끝난다. 반면 video LLM의 inference path는 query마다 sample을 다시 뽑아야 하므로 uniform의 예측 가능 비용이 이긴다 — 이 분리가 chapter의 핵심 통찰이다.</p>
+<p>주의점: shot detection만으로는 'shot <em>내부</em>에서 결정적 순간'을 못 잡는다. 한 shot이 30초짜리 long take일 때 그 안의 0.5초 micro-event는 boundary detector가 보지 못한다. 이게 4절 failure taxonomy의 마지막 항목이다.</p></div><div class="sb-block"><h2>4. Failure mode taxonomy — 어디서, 왜 깨지는가</h2><p>세 baseline이 깨지는 양상을 네 카테고리로 정리한다. 각 항목은 후속 chapter (AKS, BOLT, Frame-Voyager, Q-Frame, FOCUS) 가 정조준하는 문제와 1:1 대응한다.</p>
+<p><strong>(a) Needle-in-haystack on long video</strong> — 1시간짜리 영상의 단 한 frame만이 정답을 담고 있는 query. Uniform N-frame의 hit probability ≈ N · L_needle / T. N=16, L_needle=1 sec, T=3600 sec이면 0.44%. VideoChat-Flash의 Multi-Hop NIAH가 10K-frame 영상에서 99.1%를 찍은 건 정확히 이 시나리오를 정조준해서다.</p>
+<p><strong>(b) Rare event detection</strong> — '이 6시간 보안 카메라 영상에서 누가 문을 부쉈나' 같은 query. Event가 시간축 위에서 sparse하므로 query-agnostic sampler는 거의 항상 놓친다. Shot detection이 도움이 되지만 boundary가 잡힌 <em>모든</em> shot을 LLM에 넘기면 비용이 폭발한다 — 그래서 SigLIP/CLIP score 기반 query-aware 필터 (AKS·BOLT의 핵심) 가 필요해진다.</p>
+<p><strong>(c) Multi-event reasoning</strong> — '주인공이 안경을 쓴 후 처음으로 누구를 만났는가' 같은 두 event의 <em>순서·연결</em>을 요구하는 query. Uniform은 두 event를 동시에 잡을 확률이 곱셈으로 떨어진다. 학습된 sampler가 두 event의 <em>공동 evidence</em> 를 잡도록 ranking을 학습하는 Frame-Voyager의 'combinational ranking' 동기가 여기다.</p>
+<p><strong>(d) Inter-shot reasoning, 즉 shot <em>사이</em> 정보가 필요한 query</strong> — Shot detection의 사각지대. 예: '카메라가 cut 없이 30초 동안 따라간 차량이 어느 골목으로 들어갔는가' — boundary detector에는 single shot, dense sampler에는 그 안의 trajectory가 필요하다. Pure shot-based는 그 30초를 frame 하나로 요약해버린다.</p>
+<p>실전에서 query 유형을 사전에 분류해 router로 baseline을 고르는 패턴이 흔하다 — short clip + descriptive query → uniform 16, 강의/인터뷰 → 1 fps, retrieval index 빌드 → shot detection, long-video QA → query-aware adaptive sampler. 이 router 자체가 9장의 plug-and-play architecture 동기다.</p></div><div class="sb-block"><h2>5. 왜 uniform이 사라지지 않는가 — 경제적·시스템적 다섯 가지 이유</h2><p>연구 SOTA (AKS, BOLT, GenS, Q-Frame, FOCUS) 가 매년 두 자릿수 %를 깬다. 그런데도 2026년 Gemini, Qwen2.5-VL, LLaVA-Video, InternVL의 default는 여전히 uniform/fixed-fps다. 다섯 가지 이유가 함께 작동한다.</p>
+<p><strong>(1) 예측 가능한 비용 함수</strong> — Uniform N-frame은 입력 영상 길이·콘텐츠·query와 무관하게 <em>정확히</em> N개의 vision token block을 소비한다. SaaS API 가격책정에서 결정적인 속성이다. Query-aware sampler는 frame 수가 가변이거나 추가 forward pass가 필요해 SLA·과금 모델이 어려워진다.</p>
+<p><strong>(2) Learned component 부재</strong> — Uniform은 학습 데이터·체크포인트·라이선스가 없다. Frame-Voyager나 M-LLM Frame Selection은 별도 모델을 동봉하고 관리해야 한다 (또 하나의 model card, 또 하나의 GPU pool).</p>
+<p><strong>(3) Query-conditioning latency</strong> — Adaptive sampler는 query를 받아서 frame을 다시 고른다. 즉 첫 token latency에 sampler forward가 그대로 더해진다. 인터랙티브 UI에서는 200–500ms가 곧장 보인다.</p>
+<p><strong>(4) Benchmark·debug 용이성</strong> — Uniform은 deterministic해서 회귀 테스트가 trivial하다. Adaptive sampler는 동일 영상·동일 query에서도 모델·temperature·seed에 따라 frame 집합이 흔들리고 그 변동이 LLM 출력 변동과 entangle되어 디버깅이 어렵다.</p>
+<p><strong>(5) 모델 학습 시점의 가정과 일치</strong> — LLaVA-Video / InternVL / Qwen2.5-VL 모두 학습 단계에서 uniform 혹은 fixed-fps로 frame을 받았다. Inference에서 adaptive sampler를 끼우면 train–inference distribution shift가 생긴다. Hour-LLaVA가 1 fps로 <em>학습부터</em> 한 이유와 같은 결의 압력이다.</p>
+<p>결론: uniform은 'optimal algorithm'이 아니라 'optimal product default'다. SOTA를 production에 넣으려면 이 다섯 항목 하나하나에 답해야 한다 — chapter 9에서 plug-and-play 인터페이스로 그 답들을 봉합한다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">알람 시계 vs 이벤트 기반 알림</div>
+      <div class="a-body"><p>Uniform sampling은 <em>알람 시계</em>다. 매 N분마다 무조건 울린다. 당신이 자고 있건, 회의 중이건, 우주가 폭발하건 관계없다. 단순하고 예측 가능하며, 배터리 소비가 정확히 계산된다. 출근 시간을 놓치지 않으려는 목적에는 완벽하다.</p>
+<p>Query-aware adaptive sampling은 <em>이벤트 기반 알림</em>이다. 'CEO가 내 이름을 언급할 때만' 울린다. 평소엔 조용하지만 결정적인 순간을 놓치지 않는다. 대가는 명확하다 — 누가 언급했는지 <em>판단할 모델</em>이 항상 돌고 있어야 하고, 그 판단이 틀리면 영원히 안 울린다.</p>
+<p>짧은 영상 (회의 5분 요약, 30초 클립 캡션) 에서는 시계 알람이면 충분하다. 어차피 N분 단위로 다 깨어 있다. 1시간 보안 카메라에서 '문 부순 사람을 찾아라'는 query에는 알람이 절대 못 잡는다 — 사건이 23분 17초에 0.4초 동안 일어났기 때문이다. Gemini의 1 fps가 발화 중심 영상에서 거의 손실 없는 이유, 그리고 sports/fight scene에서 무너지는 이유가 정확히 이 비유로 설명된다. 산업이 알람을 안 버리는 건 알람이 멍청해서가 아니라 <em>알람만 있어도 되는 작업이 압도적으로 많기 때문</em>이다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>같은 영상에 세 baseline — uniform N-frame, fixed-fps, PySceneDetect 기반 shot — 을 적용해 어떤 frame index가 뽑히는지 직접 비교한다. Decord로 디코딩하고 PySceneDetect의 ContentDetector를 쓴다. 환경: <code>pip install decord scenedetect[opencv] numpy</code>. 짧은 클립 (~30초) 에서는 셋이 비슷한 결과를, 1시간짜리에서는 완전히 다른 결과를 낸다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import numpy as np
+from decord import VideoReader, cpu
+from scenedetect import open_video, SceneManager
+from scenedetect.detectors import ContentDetector
+
+
+def uniform_sample(num_frames_total: int, n: int) -&gt; list[int]:
+    if num_frames_total &lt;= n:
+        return list(range(num_frames_total))
+    return [int(round(k * (num_frames_total - 1) / (n - 1))) for k in range(n)]
+
+
+def fixed_fps_sample(num_frames_total: int, src_fps: float, target_fps: float) -&gt; list[int]:
+    duration = num_frames_total / src_fps
+    n = max(1, int(duration * target_fps))
+    return [min(num_frames_total - 1, int(round(t * src_fps / target_fps))) for t in range(n)]
+
+
+def shot_sample(path: str, threshold: float = 27.0, min_scene_len: int = 15) -&gt; list[int]:
+    video = open_video(path)
+    sm = SceneManager()
+    sm.add_detector(ContentDetector(threshold=threshold, min_scene_len=min_scene_len))
+    sm.detect_scenes(video=video)
+    scenes = sm.get_scene_list()  # list of (start, end) FrameTimecodes
+    # pick the middle frame of each shot as its representative
+    return [int((s.get_frames() + e.get_frames()) // 2) for s, e in scenes]
+
+
+def compare_baselines(path: str, n_uniform: int = 16, target_fps: float = 1.0):
+    vr = VideoReader(path, ctx=cpu(0))
+    T, src_fps = len(vr), vr.get_avg_fps()
+    print(f&quot;video: {T} frames @ {src_fps:.2f} fps ({T/src_fps:.1f}s)&quot;)
+    u = uniform_sample(T, n_uniform)
+    f = fixed_fps_sample(T, src_fps, target_fps)
+    s = shot_sample(path)
+    print(f&quot;uniform-{n_uniform}: {len(u)} frames -&gt; {u[:8]}{&#x27;...&#x27; if len(u)&gt;8 else &#x27;&#x27;}&quot;)
+    print(f&quot;fps={target_fps}: {len(f)} frames -&gt; {f[:8]}{&#x27;...&#x27; if len(f)&gt;8 else &#x27;&#x27;}&quot;)
+    print(f&quot;shot:    {len(s)} frames -&gt; {s[:8]}{&#x27;...&#x27; if len(s)&gt;8 else &#x27;&#x27;}&quot;)
+    return {&quot;uniform&quot;: u, &quot;fps&quot;: f, &quot;shot&quot;: s}
+
+
+if __name__ == &quot;__main__&quot;:
+    compare_baselines(&quot;sample.mp4&quot;, n_uniform=16, target_fps=1.0)</code></pre>
+      <div class="c-walk"><p><code>uniform_sample</code>은 첫 frame과 마지막 frame을 포함해 N개를 등간격으로 뽑는다 — LLaVA-Video / InternVL이 쓰는 식. <code>fixed_fps_sample</code>은 target_fps에 맞춰 frame 수가 영상 길이에 비례해 늘어난다 — Gemini 2.5 Pro의 1 fps default가 이 형태다. <code>shot_sample</code>은 PySceneDetect로 shot boundary를 잡고 각 shot의 중앙 frame을 대표로 고른다. 같은 30초 광고 영상에 돌리면 셋이 12–18 frame 정도로 비슷하게 수렴하지만, 1시간 강의에 돌리면 uniform=16, fps=1→약 3,600, shot→슬라이드 전환 수만큼 (~40–80) 으로 완전히 갈라진다. <code>threshold</code>를 20으로 낮추면 빠른 cut이 많은 액션 영상에서 shot 수가 폭증하고, 35로 올리면 슬라이드 강의에서 fade를 무시해 안정적인 boundary를 얻는다. 실전 배포 시 이 세 함수를 동일한 <code>Sampler.select(video, query=None, budget=N)</code> 시그니처 뒤에 숨겨 plug-and-play로 묶는다 — 9장에서 다룬다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">Senior video-LLM 엔지니어 인터뷰에서 frame sampling은 &#x27;얼마나 SOTA를 아는가&#x27;가 아니라 &#x27;왜 SOTA가 production에 못 들어가는지 아는가&#x27;로 평가된다. 즉 baseline의 *한계*를 정량적으로 설명하면서 동시에 baseline의 *존재 이유*를 product 관점에서 변호할 수 있어야 한다. 그래서 면접관은 후보가 uniform을 무시하는지, 아니면 그 영구성을 이해하는지를 본다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>Qwen2.5-VL의 fps=2 / FPS_MAX_FRAMES=768 같은 구체적 default 값과 그 선택의 근거 (학습 데이터 distribution, token budget) 를 같이 설명할 수 있는가</li><li>Uniform이 무너지는 query 유형을 needle-in-haystack / rare event / multi-event / inter-shot 같은 카테고리로 분류해 말할 수 있는가</li><li>PySceneDetect의 ContentDetector vs AdaptiveDetector 차이, threshold·min_scene_len·luma_only knob의 효과를 콘텐츠 유형별로 설명할 수 있는가</li><li>Gemini 2.5 Pro의 1 fps가 발화 중심 영상에서 합리적인 Nyquist rate라는 점, 그리고 sports에서 깨지는 정확한 이유를 시간 단위로 말할 수 있는가</li><li>Mixpeek류 retrieval pipeline이 uniform이 아닌 shot 기반 chunking을 쓰는 이유 — 비용이 index time에 amortize된다 — 를 설명할 수 있는가</li><li>Adaptive sampler가 production에 못 들어가는 비기술적 이유 (예측 가능 비용, learned dependency, latency, debug 가능성, train–inference shift) 를 적어도 셋 이상 명시할 수 있는가</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>Uniform sampling을 &#x27;stupid&#x27; 또는 &#x27;just a baseline&#x27;으로 단정하고 산업이 왜 그것을 default로 유지하는지 답하지 못함</li><li>&#x27;그냥 fps=1로 뽑으면 됩니다&#x27;처럼 콘텐츠 유형 (강의 vs 스포츠) 을 구분 없이 답함</li><li>PySceneDetect를 모르거나, 안다고 해도 threshold knob 하나도 못 댐</li><li>Shot detection이 inter-shot reasoning에 무력하다는 점을 인지하지 못하고 &#x27;모든 long video에 shot이 답&#x27;이라고 주장</li><li>Query-aware sampler를 즉시 추천하면서 latency / 비용 변동성 / train–inference shift를 한 마디도 언급하지 않음</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>Q1. Qwen2.5-VL은 fps=2.0을 default로 쓰지만 `FPS_MAX_FRAMES=768` cap이 있습니다. 1시간짜리 영상을 넣었을 때 실제로 뽑히는 frame 수와 effective fps는 어떻게 됩니까? 그리고 그 결과가 &#x27;fps=2&#x27;라는 명목 설정과 어긋난다는 점이 사용자에게 어떻게 노출됩니까?</li><li>Q2. 2시간짜리 보안 카메라 footage에서 &#x27;누군가 문을 부순 순간&#x27;을 찾는 query가 들어왔습니다. (a) uniform 32-frame이 그 frame을 잡을 확률을 대략 계산하고, (b) PySceneDetect로 대체했을 때 이득이 있는지, 있다면 어떤 ContentDetector 설정을 쓰겠습니까? (c) 그래도 안 되면 어떤 다음 단계가 필요합니까?</li><li>Q3. Senior 한 명이 &#x27;AKS가 LLaVA-Video-72B를 7B로 이긴다는데 왜 우리 API default는 아직 uniform이냐&#x27;고 묻습니다. 비용·latency·debug 가능성·train-inference shift 관점에서 두 문장으로 답해 보세요. 그리고 어떤 조건에서 그 default를 바꾸자고 제안하겠습니까?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> **Familiar** 수준은 세 baseline 이름을 대고 PySceneDetect를 한 번 써본 정도다. uniform이 default라는 사실은 알지만 그 이유를 &#x27;단순해서&#x27;로만 설명한다. **Mastery** 수준은 (1) 각 baseline의 수학을 즉석에서 쓸 수 있고, (2) Qwen2.5-VL·LLaVA-Video·Gemini·Mixpeek 각각이 *왜 그 baseline*을 골랐는지 product/cost 관점에서 변호할 수 있으며, (3) 주어진 query–영상 조합에 대해 어느 baseline이 깨질지 사전에 예측하고, (4) PySceneDetect threshold를 콘텐츠 유형별 (강의·드라마·스포츠·CCTV) 로 다르게 권장할 수 있다. Mastery는 한마디로 — baseline을 &#x27;극복할 대상&#x27;이 아니라 &#x27;*default로 남겨둘 영역과 교체할 영역을 분리해 그릴 수 있는 지도*&#x27;로 본다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>Uniform은 알고리즘이 아니라 product default다</h3><p>예측 가능 비용, learned component 부재, query-conditioning latency 없음, deterministic debug, train–inference 일치 — 다섯 가지 product 속성이 합쳐져 uniform을 default로 만든다. SOTA를 못 이겨서가 아니라 이 다섯을 동시에 깨지 않기 때문에 살아남는다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>Qwen2.5-VL fps=2는 FPS_MAX_FRAMES=768 cap과 함께 읽어야 한다</h3><p>1시간 영상에서는 fps=2가 7,200 frame을 의미하지만 실제로는 cap에 걸려 effective fps ≈ 0.21이 된다. &#x27;fps=2 default&#x27;는 짧고 중간 길이 영상에서만 진짜 fps=2다. 사용자에게 이 비선형성이 노출되지 않으면 silent failure가 된다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>Gemini의 1 fps는 발화 paced 콘텐츠에 대한 합리적 Nyquist rate다</h3><p>분당 130–180 단어 화법은 약 1 sentence/sec, 1 frame/sec은 그 단위마다 시각 context를 한 번 갱신한다. 강의·인터뷰·뉴스·튜토리얼에서 거의 손실이 없다. Sports·격투·magic trick·사고 영상에서는 0.2–0.4초 결정 frame을 놓치므로 즉시 무너진다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>PySceneDetect는 anchor용이지 sampler가 아니다</h3><p>Shot boundary는 안정적이고 재현 가능한 chunk anchor라서 Mixpeek류 retrieval에 이상적이지만, 한 shot이 30초 long take라면 그 안의 micro-event는 못 잡는다. ContentDetector(threshold=27, min_scene_len=15) 가 일반 default이고 액션/슬라이드 콘텐츠마다 별도 튜닝이 필요하다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>Failure mode는 네 가지로 분류된다</h3><p>Needle-in-haystack, rare event, multi-event reasoning, inter-shot reasoning. 후속 chapter (AKS·BOLT·Frame-Voyager·Q-Frame·FOCUS) 는 이 네 카테고리에 1:1로 대응하는 해법을 제시한다. baseline 비판은 이 분류 없이는 흐릿하다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>Index time vs inference time이 비용 구조를 가른다</h3><p>Retrieval 시스템은 비용을 index 단계에서 한 번 지불하고 query는 vector search 한 번으로 끝낸다 — 그래서 shot detection 같은 정교한 chunking이 정당화된다. Video LLM의 inference path는 query마다 sample을 다시 뽑으므로 uniform의 예측 가능 비용이 이긴다. 같은 영상에 두 baseline이 공존하는 이유다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>Adaptive를 production에 넣으려면 다섯 항목에 답해야 한다</h3><p>비용 예측 가능성, learned model 운영 부담, query-conditioning latency, deterministic debug, train–inference distribution shift. 새 sampler를 도입할 때 이 다섯에 대한 답을 가지고 가지 않으면 정확도가 올라도 SRE 단계에서 거절된다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>Router는 baseline을 죽이지 않고 살린다</h3><p>실전 architecture는 &#x27;short clip → uniform 16, 발화 중심 → 1 fps, retrieval index → shot, long-video QA → adaptive&#x27;를 query 유형별로 라우팅한다. baseline은 폐기되는 게 아니라 적합 영역으로 *압축*된다 — 9장 plug-and-play 인터페이스의 동기다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-01.html">← Why Frame Sampling Is the Bottleneck</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-03.html">Query-Aware Adaptive Sampling — AKS &amp; BOLT →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+</body></html>
