@@ -1,0 +1,128 @@
+---
+import "../styles/global.css";
+import posts from "../data/posts.json";
+
+interface Props {
+  title: string;
+  description?: string;
+  ogImage?: string;
+  activeSlug?: string;       // "home" | category slug
+  crumbs?: { label: string; href?: string }[];
+}
+
+const {
+  title,
+  description = "AI 시대를 살아가며 공부한 것들과 가끔의 사적인 단상.",
+  ogImage,
+  activeSlug = "home",
+  crumbs = [],
+} = Astro.props;
+
+const counts: Record<string, number> = {};
+for (const p of posts.posts) counts[p.category] = (counts[p.category] || 0) + 1;
+
+const studySlugs = [
+  "computer-science",
+  "mathematics-for-ai",
+  "engineering-philosophy",
+  "machine-learning",
+  "computer-vision",
+  "multimodal-ai",
+  "ai-engineering",
+];
+const catBy = (slug: string) => posts.categories.find((c) => c.slug === slug)!;
+const fullTitle = title === "direcf" ? "direcf — direct fun, deep study" : `${title} — direcf`;
+const og = ogImage || "/og-default.png";
+---
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{fullTitle}</title>
+  <meta name="description" content={description} />
+  <meta property="og:title" content={fullTitle} />
+  <meta property="og:description" content={description} />
+  <meta property="og:image" content={og} />
+  <meta property="og:type" content="website" />
+  <meta name="twitter:card" content="summary_large_image" />
+</head>
+<body>
+  <div class="app" id="app">
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <a class="sidebar-brand" href="/">
+        <div class="logo">d</div>
+        <span class="brand-text">direcf</span>
+      </a>
+      <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="15 18 9 12 15 6"/>
+        </svg>
+      </button>
+      <nav class="nav">
+        <a class={`nav-item ${activeSlug === "home" ? "active" : ""}`} href="/">
+          <span class="icon">🏠</span>
+          <span class="label">Home</span>
+          <span class="count">{posts.posts.length}</span>
+        </a>
+        <div class="nav-section">Study</div>
+        {studySlugs.map((slug) => {
+          const c = catBy(slug);
+          return (
+            <a class={`nav-item ${slug === activeSlug ? "active" : ""}`} href={`/category/${slug}/`}>
+              <span class="icon">{c.icon}</span>
+              <span class="label">{c.name}</span>
+              <span class="count">{counts[slug] || 0}</span>
+            </a>
+          );
+        })}
+        <div class="nav-section">Personal</div>
+        <a class={`nav-item ${activeSlug === "diary" ? "active" : ""}`} href="/category/diary/">
+          <span class="icon">✍️</span>
+          <span class="label">Diary</span>
+          <span class="count">{counts["diary"] || 0}</span>
+        </a>
+      </nav>
+      <div class="sidebar-foot">
+        <span>© Seung Jun Lee</span>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <div class="main">
+      <header class="header">
+        <div class="crumbs">
+          <a href="/"><strong>direcf</strong></a>
+          {crumbs.map((c) => (
+            <>
+              <span class="sep"> / </span>
+              {c.href ? <a href={c.href}>{c.label}</a> : <span>{c.label}</span>}
+            </>
+          ))}
+        </div>
+        <div class="header-actions">
+          <a class="gh-link" href="https://github.com/direcf" target="_blank" aria-label="GitHub">GitHub ↗</a>
+        </div>
+      </header>
+      <slot />
+    </div>
+
+  </div>
+
+  <script is:inline>
+    (function () {
+      const app = document.getElementById("app");
+      const btn = document.getElementById("sidebarToggle");
+      const KEY = "direcf:sb-collapsed";
+      const apply = (c) => {
+        app.classList.toggle("collapsed", c);
+        localStorage.setItem(KEY, c ? "1" : "0");
+      };
+      apply(localStorage.getItem(KEY) === "1");
+      if (btn) btn.addEventListener("click", () => apply(!app.classList.contains("collapsed")));
+    })();
+  </script>
+</body>
+</html>

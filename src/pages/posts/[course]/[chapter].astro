@@ -1,0 +1,193 @@
+---
+import BaseLayout from "../../../layouts/BaseLayout.astro";
+import {
+  COURSES,
+  chapterSlug,
+  fmtChapterNo,
+  md,
+  paragraphs,
+  type Course,
+  type Chapter,
+} from "../../../lib/courses";
+
+export function getStaticPaths() {
+  const paths: any[] = [];
+  for (const [slug, course] of Object.entries(COURSES)) {
+    const c = course as Course;
+    for (const ch of c.chapters) {
+      paths.push({
+        params: { course: slug, chapter: chapterSlug(ch.number) },
+        props: { course: c, slug, chapter: ch },
+      });
+    }
+  }
+  return paths;
+}
+
+const { course, slug, chapter } = Astro.props as { course: Course; slug: string; chapter: Chapter };
+
+const total = course.chapters.length;
+const prev = course.chapters.find((c) => c.number === chapter.number - 1);
+const next = course.chapters.find((c) => c.number === chapter.number + 1);
+
+const cheatsheetPng = `/posts/${slug}/cheatsheets/chapter-${String(chapter.number).padStart(2, "0")}.png`;
+const cheatsheetSvg = `/posts/${slug}/cheatsheets/chapter-${String(chapter.number).padStart(2, "0")}.svg`;
+const cheatsheetSrc = cheatsheetPng; // .png is the canonical name; SVG fallback handled by <object>
+
+const codeLang = chapter.codeExample?.language || course.codeLanguage || "python";
+
+const docTitle = `${chapter.title} — ${course.topic}`;
+const docDesc  = chapter.tldr;
+---
+<BaseLayout
+  title={docTitle}
+  description={docDesc}
+  ogImage={cheatsheetPng}
+  activeSlug={course.categorySlug || "home"}
+  crumbs={[
+    { label: course.topicKr || course.topic, href: `/posts/${slug}/` },
+    { label: `Ch${String(chapter.number).padStart(2, "0")}` },
+  ]}
+>
+  <div class="chapter-wrap">
+
+    <!-- Hero -->
+    <span class="chapter-kicker">{fmtChapterNo(chapter.number, total)}</span>
+    <div class="chapter-emoji">{chapter.emoji}</div>
+    <h1 class="chapter-title">{chapter.title}</h1>
+    <p class="chapter-title-kr">{chapter.titleKr}</p>
+    {chapter.tldr && <p class="chapter-tldr">{chapter.tldr}</p>}
+
+    <!-- Cheatsheet -->
+    <div class="cs-wrap">
+      <object data={cheatsheetSrc} type="image/png">
+        <img src={cheatsheetSvg} alt={`${chapter.title} cheatsheet`} />
+      </object>
+      <div class="cs-label">🍌 NANO BANANA CHEATSHEET · CH {String(chapter.number).padStart(2, "0")}</div>
+    </div>
+
+    <!-- Overview -->
+    {chapter.overview && (
+      <>
+        <div class="section-div"><h2>Overview</h2><span class="meta">개관</span></div>
+        <div class="sb-block" set:html={paragraphs(chapter.overview)} />
+      </>
+    )}
+
+    <!-- Learning Goals -->
+    {chapter.learningGoals && chapter.learningGoals.length > 0 && (
+      <div class="goals-box">
+        <div class="box-title">🎯 Learning Goals</div>
+        <ul>
+          {chapter.learningGoals.map((g) => <li set:html={md(g)} />)}
+        </ul>
+      </div>
+    )}
+
+    <!-- Sections -->
+    {chapter.sections && chapter.sections.length > 0 && (
+      <>
+        <div class="section-div"><h2>Sections</h2><span class="meta">본문</span></div>
+        {chapter.sections.map((s) => (
+          <div class="sb-block">
+            <h2 set:html={md(s.title)} />
+            <div set:html={paragraphs(s.content)} />
+          </div>
+        ))}
+      </>
+    )}
+
+    <!-- Analogy -->
+    {chapter.analogy && (
+      <div class="analogy-card">
+        <div class="a-head">💡 Analogy · 비유</div>
+        <div class="a-title" set:html={md(chapter.analogy.title)} />
+        <div class="a-body" set:html={paragraphs(chapter.analogy.content)} />
+      </div>
+    )}
+
+    <!-- Code Example -->
+    {chapter.codeExample && (
+      <div class="code-card">
+        {chapter.codeExample.intro && (
+          <div class="c-intro" set:html={paragraphs(chapter.codeExample.intro)} />
+        )}
+        {chapter.codeExample.code && (
+          <>
+            <div class="code-bar">{codeLang}</div>
+            <pre><code>{chapter.codeExample.code}</code></pre>
+          </>
+        )}
+        {chapter.codeExample.walkthrough && (
+          <div class="c-walk" set:html={paragraphs(chapter.codeExample.walkthrough)} />
+        )}
+      </div>
+    )}
+
+    <!-- Industry Evaluation -->
+    {chapter.industryEvaluation && (
+      <div class="ie-card">
+        <div class="ie-head">🏭 현업에서의 평가</div>
+        <div class="ie-body">
+          {chapter.industryEvaluation.overview && (
+            <div class="ie-overview" set:html={md(chapter.industryEvaluation.overview)} />
+          )}
+          <div class="ie-grid">
+            {chapter.industryEvaluation.whatEngineersLookFor && (
+              <div class="ie-cell">
+                <h4>✅ 시니어가 보는 것</h4>
+                <ul>
+                  {chapter.industryEvaluation.whatEngineersLookFor.map((x) => <li set:html={md(x)} />)}
+                </ul>
+              </div>
+            )}
+            {chapter.industryEvaluation.redFlags && (
+              <div class="ie-cell danger">
+                <h4>⚠️ 레드 플래그</h4>
+                <ul>
+                  {chapter.industryEvaluation.redFlags.map((x) => <li set:html={md(x)} />)}
+                </ul>
+              </div>
+            )}
+          </div>
+          {chapter.industryEvaluation.interviewQuestions && (
+            <div class="ie-q">
+              <h4>🎤 예상 인터뷰 질문</h4>
+              <ol>
+                {chapter.industryEvaluation.interviewQuestions.map((q) => <li set:html={md(q)} />)}
+              </ol>
+            </div>
+          )}
+          {chapter.industryEvaluation.masteryVsFamiliar && (
+            <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> <span set:html={md(chapter.industryEvaluation.masteryVsFamiliar)} /></div>
+          )}
+        </div>
+      </div>
+    )}
+
+    <!-- Key Takeaways -->
+    {chapter.keyTakeaways && chapter.keyTakeaways.length > 0 && (
+      <>
+        <div class="section-div"><h2>Key Takeaways</h2><span class="meta">핵심 정리</span></div>
+        <div class="tw-grid">
+          {chapter.keyTakeaways.map((t) => (
+            <div class="tw-cell">
+              <h3 set:html={md(t.title)} />
+              <p set:html={md(t.content)} />
+            </div>
+          ))}
+        </div>
+      </>
+    )}
+
+    <!-- Chapter nav -->
+    <div class="chapter-nav">
+      {prev
+        ? <a class="ch-nav-btn" href={`/posts/${slug}/${chapterSlug(prev.number)}/`}>← Ch{String(prev.number).padStart(2, "0")} · {prev.title}</a>
+        : <a class="ch-nav-btn" href={`/posts/${slug}/`}>← 목차</a>}
+      {next
+        ? <a class="ch-nav-btn primary" href={`/posts/${slug}/${chapterSlug(next.number)}/`}>Ch{String(next.number).padStart(2, "0")} · {next.title} →</a>
+        : <a class="ch-nav-btn primary" href={`/posts/${slug}/`}>목차로 →</a>}
+    </div>
+  </div>
+</BaseLayout>
