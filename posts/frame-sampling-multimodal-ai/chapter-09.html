@@ -95,12 +95,25 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 .goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
 
 /* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
 .sb-block{margin:28px 0}
 .sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
-.sb-block p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
-.sb-block p:last-child{margin-bottom:0}
-.sb-block strong{color:var(--text)}
-.sb-block code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
 
 /* analogy */
 .analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
@@ -255,113 +268,142 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
         <ul><li>비디오 파이프라인을 6단계 stage로 분해하고 각 stage의 책임 경계를 정의할 수 있다</li><li>`Sampler.select(frames, query, budget, scenes) -&gt; List[int]` 계약이 왜 ABI 관점에서 옳은지 설명할 수 있다</li><li>vLLM-Omni 스타일 disaggregated graph를 설계하고 per-stage batching 이득을 추정할 수 있다</li><li>frame-feature cache의 key 설계와 invalidation 전략(`video_id:fps:model`)을 구현할 수 있다</li><li>6가지 anti-pattern을 production 코드에서 식별하고 리팩터링할 수 있다</li><li>encoder/LLM을 재학습하지 않고 sampler를 A/B 롤아웃하는 feature-flag 패턴을 설계할 수 있다</li></ul>
       </div>
 
-      <div class="sb-block"><p>8장까지 우리는 &#x27;어떤 sampler가 더 정확한가&#x27;를 다뤘다. 9장은 질문을 뒤집는다 — &#x27;*어떤 sampler든* 갈아끼울 수 있는 시스템을 어떻게 설계하는가&#x27;. SOTA는 6개월 주기로 바뀐다(AKS → BOLT → AdaRD-Key → FOCUS). encoder(CLIP/SigLIP)와 LLM(Qwen3-VL/LLaVA-Video)은 그보다 훨씬 느리게 바뀐다. 잘 설계된 파이프라인은 이 *시간 상수의 차이*를 인터페이스 경계로 흡수한다. 핵심은 단 하나의 계약이다 — sampler는 *프레임이 아니라 인덱스를 반환한다*. 이 한 줄짜리 ABI 결정이 disaggregated serving, frame-feature cache, feature-flag rollout, 그리고 6장에서 본 long-video 처리까지 전부 가능하게 만든다. 이 장은 vLLM-Omni(2025-11 reported 91.4% JCT 감소)와 Twelve Labs Embed API를 참조 구현으로 삼아, plug-and-play 아키텍처의 *불변 부분*과 *swappable 부분*을 분리하는 법을 다룬다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>1. The Canonical 6-Stage Video Pipeline</h2><p>모든 video-LLM 추론 경로는 다음 6단계로 환원된다.</p>
-<p><code>`</code>
-(1) Input        : URL / blob / 업로드된 파일 → bytes
+      <div class="sb-block"><p>8장까지 우리는 '어떤 sampler가 더 정확한가'를 다뤘다. 9장은 질문을 뒤집는다 — '<em>어떤 sampler든</em> 갈아끼울 수 있는 시스템을 어떻게 설계하는가'. SOTA는 6개월 주기로 바뀐다(AKS → BOLT → AdaRD-Key → FOCUS). encoder(CLIP/SigLIP)와 LLM(Qwen3-VL/LLaVA-Video)은 그보다 훨씬 느리게 바뀐다. 잘 설계된 파이프라인은 이 <em>시간 상수의 차이</em>를 인터페이스 경계로 흡수한다. 핵심은 단 하나의 계약이다 — sampler는 <em>프레임이 아니라 인덱스를 반환한다</em>. 이 한 줄짜리 ABI 결정이 disaggregated serving, frame-feature cache, feature-flag rollout, 그리고 6장에서 본 long-video 처리까지 전부 가능하게 만든다. 이 장은 vLLM-Omni(2025-11 reported 91.4% JCT 감소)와 Twelve Labs Embed API를 참조 구현으로 삼아, plug-and-play 아키텍처의 <em>불변 부분</em>과 <em>swappable 부분</em>을 분리하는 법을 다룬다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>1. The Canonical 6-Stage Video Pipeline</h2><p>모든 video-LLM 추론 경로는 다음 6단계로 환원된다.</p>
+<pre><code>(1) Input        : URL / blob / 업로드된 파일 → bytes
 (2) Decode       : Decord / PyAV / NVDEC → ndarray[T, H, W, 3]
 (3) Sample       : T 프레임 중 N개 인덱스 선택  ← SWAP POINT
 (4) Encode       : CLIP / SigLIP / Marengo → Tensor[N, D_v]
-(5) Token-Reduce : SlowFast / HiCo / TokenMerge → Tensor[N&#x27;, D_v]
+(5) Token-Reduce : SlowFast / HiCo / TokenMerge → Tensor[N', D_v]
 (6) LLM          : vLLM / TensorRT-LLM → text
-<code>`</code></p>
-<p>각 stage가 plug-and-play가 되려면 *interface가 stage 사이 경계에서만* 정의되어야 한다. 즉 (2)→(3) 경계는 &#x27;T 프레임의 numpy array와 (옵션) 메타데이터&#x27;로, (3)→(4) 경계는 &#x27;List[int] 인덱스&#x27;로 못박혀 있어야 한다. 다음 표는 각 경계의 *불변 contract*다.</p>
-<p>| 경계 | 입력 타입 | 출력 타입 | 불변 메타 |
-|---|---|---|---|
-| Input → Decode | <code>bytes</code> or <code>Path</code> | <code>VideoHandle(reader, fps, T, hw)</code> | <code>video_id</code>, <code>sha256</code> |
-| Decode → Sample | <code>VideoHandle</code> | <code>List[int]</code> (frame indices) | <code>query</code>, <code>budget</code>, <code>scenes?</code> |
-| Sample → Encode | <code>List[int]</code> + <code>VideoHandle</code> | <code>Tensor[N, D_v]</code> | <code>model_id</code>, <code>preprocess_id</code> |
-| Encode → Reduce | <code>Tensor[N, D_v]</code> | <code>Tensor[N&#x27;, D_v]</code> | <code>reduction_ratio</code> |
-| Reduce → LLM | <code>Tensor[N&#x27;, D_v]</code> | <code>str</code> (생성 결과) | <code>prompt</code>, <code>tokenizer_id</code> |</p>
-<p>실수 패턴: 많은 초기 코드베이스가 stage (3)와 (4)를 한 함수에 묶어 <code>sample_and_encode()</code>로 노출한다. 이러면 sampler를 바꿀 때마다 encoder caller도 손대야 한다. *boundary가 코드 경계*가 아니라 *함수 시그니처 경계*여야 plug-and-play가 가능하다.</p>
+</code></pre>
+<p>각 stage가 plug-and-play가 되려면 <em>interface가 stage 사이 경계에서만</em> 정의되어야 한다. 즉 (2)→(3) 경계는 'T 프레임의 numpy array와 (옵션) 메타데이터'로, (3)→(4) 경계는 'List[int] 인덱스'로 못박혀 있어야 한다. 다음 표는 각 경계의 <em>불변 contract</em>다.</p>
+<table>
+<thead>
+<tr>
+<th>경계</th>
+<th>입력 타입</th>
+<th>출력 타입</th>
+<th>불변 메타</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Input → Decode</td>
+<td><code>bytes</code> or <code>Path</code></td>
+<td><code>VideoHandle(reader, fps, T, hw)</code></td>
+<td><code>video_id</code>, <code>sha256</code></td>
+</tr>
+<tr>
+<td>Decode → Sample</td>
+<td><code>VideoHandle</code></td>
+<td><code>List[int]</code> (frame indices)</td>
+<td><code>query</code>, <code>budget</code>, <code>scenes?</code></td>
+</tr>
+<tr>
+<td>Sample → Encode</td>
+<td><code>List[int]</code> + <code>VideoHandle</code></td>
+<td><code>Tensor[N, D_v]</code></td>
+<td><code>model_id</code>, <code>preprocess_id</code></td>
+</tr>
+<tr>
+<td>Encode → Reduce</td>
+<td><code>Tensor[N, D_v]</code></td>
+<td><code>Tensor[N', D_v]</code></td>
+<td><code>reduction_ratio</code></td>
+</tr>
+<tr>
+<td>Reduce → LLM</td>
+<td><code>Tensor[N', D_v]</code></td>
+<td><code>str</code> (생성 결과)</td>
+<td><code>prompt</code>, <code>tokenizer_id</code></td>
+</tr>
+</tbody>
+</table>
+<p>실수 패턴: 많은 초기 코드베이스가 stage (3)와 (4)를 한 함수에 묶어 <code>sample_and_encode()</code>로 노출한다. 이러면 sampler를 바꿀 때마다 encoder caller도 손대야 한다. <em>boundary가 코드 경계</em>가 아니라 <em>함수 시그니처 경계</em>여야 plug-and-play가 가능하다.</p>
 <p>실제 production stack 매핑:
 - <strong>Decode</strong>: Decord는 numpy zero-copy로 빠르지만 H.265 일부 코덱에서 PyAV로 fallback. NVIDIA stack에서는 NVDEC + DALI.
 - <strong>Encode</strong>: open-weights는 SigLIP-SO400M / CLIP-ViT-L/14, managed는 Twelve Labs Marengo 3.0 multi-vector.
 - <strong>Token-Reduce</strong>: VideoChat-Flash HiCo (1/50 비율), NVILA scale-then-compress, FastVID dynamic density.
 - <strong>LLM</strong>: vLLM 0.x continuous batching, paged KV cache.</p></div><div class="sb-block"><h2>2. The Sampler.select() Contract — Why Return Indices, Not Frames</h2><p>단 하나의 ABI 결정이 이 장의 핵심이다.</p>
-<p><code>`</code>python
-def select(
+<pre><code class="language-python">def select(
     video: VideoHandle,           # 디코드 핸들 (lazy, frame 자체는 미반환)
     query: str | None,            # query-aware sampler용; uniform은 무시
     budget: int,                  # 반환할 프레임 수 (LLM context로 결정됨)
     scenes: list[Scene] | None,   # shot 경계 (PySceneDetect, 옵션)
 ) -&gt; list[int]:
     ...
-<code>`</code></p>
-<p><strong>왜 `List[int]`인가?</strong> 네 가지 이유.</p>
+</code></pre>
+<p><strong>왜 <code>List[int]</code>인가?</strong> 네 가지 이유.</p>
 <p>1) <strong>메모리 비용</strong>. 1시간 1080p @ 30fps = 108,000 프레임 × 6.2MB = 약 670GB raw. <code>List[PIL.Image]</code>를 반환하면 sampler가 RAM에 전부 적재해야 한다. 인덱스는 432KB. encoder는 자기가 필요한 시점에 lazy하게 가져간다.</p>
 <p>2) <strong>caching의 자연스러운 key</strong>. <code>(video_id, indices, encoder_id)</code>가 frame-feature cache의 자연스러운 hash key가 된다. 만약 frames를 반환했다면 byte-equality로 key를 잡아야 하고, JPEG re-encode가 한 번만 끼어도 cache miss.</p>
 <p>3) <strong>disaggregated serving 호환</strong>. vLLM-Omni처럼 sampler와 encoder가 다른 GPU pool에 있으면 frames를 RPC 경계로 보내는 비용은 indices의 ~10⁴배. indices는 gRPC payload가 KB 단위.</p>
-<p>4) <strong>debuggability와 재현성</strong>. 평가 시 &#x27;sampler X가 어떤 프레임을 골랐나&#x27;를 log에 남겨야 하는데, indices는 그대로 JSON-serializable. 8장에서 본 commercial gap 분석도 &#x27;index trace&#x27;가 있어야 가능하다.</p>
-<p><strong>`query`를 `str | None`으로 두는 이유</strong>: uniform, fps-based, shot-based sampler는 query를 무시한다. AKS·BOLT·Frame-Voyager는 사용한다. Optional로 두면 caller가 *어떤 sampler가 underneath든 상관없이* 같은 코드로 호출 가능 — Liskov substitution이 plug-and-play의 본질이다.</p>
-<p><strong>`scenes`를 옵션으로 두는 이유</strong>: PySceneDetect는 비싸다(1시간 비디오 약 30-90초). 이미 indexing 단계에서 계산해 둔 scene list가 있다면 sampler가 재사용. AKS·BOLT는 scene anchors를 hint로 쓸 때 정확도가 올라간다. 없으면 sampler 내부에서 fallback.</p>
-<p><strong>`budget: int` (token 아님 frame 수)</strong>: token budget은 encoder + token-reducer 조합에 따라 다르다. sampler가 그걸 알 필요 없다. &#x27;N개 인덱스만 골라라&#x27;가 layering violation을 막는다. caller가 <code>budget = llm_ctx_tokens // tokens_per_frame_after_reduction</code>을 계산해서 전달.</p></div><div class="sb-block"><h2>3. vLLM-Omni Disaggregated Serving</h2><p>monolithic video-LLM 서빙(<code>forward(video, prompt)</code> 한 호출)은 stage별 utilization 불균형을 낳는다. 1시간 비디오 처리 시:
+<p>4) <strong>debuggability와 재현성</strong>. 평가 시 'sampler X가 어떤 프레임을 골랐나'를 log에 남겨야 하는데, indices는 그대로 JSON-serializable. 8장에서 본 commercial gap 분석도 'index trace'가 있어야 가능하다.</p>
+<p><strong><code>query</code>를 <code>str | None</code>으로 두는 이유</strong>: uniform, fps-based, shot-based sampler는 query를 무시한다. AKS·BOLT·Frame-Voyager는 사용한다. Optional로 두면 caller가 <em>어떤 sampler가 underneath든 상관없이</em> 같은 코드로 호출 가능 — Liskov substitution이 plug-and-play의 본질이다.</p>
+<p><strong><code>scenes</code>를 옵션으로 두는 이유</strong>: PySceneDetect는 비싸다(1시간 비디오 약 30-90초). 이미 indexing 단계에서 계산해 둔 scene list가 있다면 sampler가 재사용. AKS·BOLT는 scene anchors를 hint로 쓸 때 정확도가 올라간다. 없으면 sampler 내부에서 fallback.</p>
+<p><strong><code>budget: int</code> (token 아님 frame 수)</strong>: token budget은 encoder + token-reducer 조합에 따라 다르다. sampler가 그걸 알 필요 없다. 'N개 인덱스만 골라라'가 layering violation을 막는다. caller가 <code>budget = llm_ctx_tokens // tokens_per_frame_after_reduction</code>을 계산해서 전달.</p></div><div class="sb-block"><h2>3. vLLM-Omni Disaggregated Serving</h2><p>monolithic video-LLM 서빙(<code>forward(video, prompt)</code> 한 호출)은 stage별 utilization 불균형을 낳는다. 1시간 비디오 처리 시:
 - Decode: CPU/NVDEC bound, ~3-8초
 - Sample(BOLT): SigLIP score 한 번, ~0.5초
 - Encode: GPU SigLIP-SO400M, 64 frames, ~0.2초
 - LLM prefill+decode: 64×729 vision tokens + text, ~6-15초</p>
-<p>같은 GPU에서 직렬화하면 stage들이 서로의 idle을 메꿔주지 못한다. <strong>vLLM-Omni</strong>(<code>vllm-project/vllm-omni</code>)는 2025년 11월 블로그(blog.vllm.ai/2025/11/30)에서 발표된 disaggregated graph로 이를 해결한다. encoder pool, sampler pool, LLM core를 *독립 stage*로 분리하고 각각 per-stage batching한다. 보고된 결과는 동기 baseline 대비 <strong>91.4% JCT(job completion time) reduction</strong>.</p>
+<p>같은 GPU에서 직렬화하면 stage들이 서로의 idle을 메꿔주지 못한다. <strong>vLLM-Omni</strong>(<code>vllm-project/vllm-omni</code>)는 2025년 11월 블로그(blog.vllm.ai/2025/11/30)에서 발표된 disaggregated graph로 이를 해결한다. encoder pool, sampler pool, LLM core를 <em>독립 stage</em>로 분리하고 각각 per-stage batching한다. 보고된 결과는 동기 baseline 대비 <strong>91.4% JCT(job completion time) reduction</strong>.</p>
 <p><strong>핵심 mechanism 세 가지:</strong></p>
 <p>1) <strong>Per-stage batching</strong>. encoder는 16 frames/batch로 GPU saturation, LLM은 paged KV cache로 8 requests/batch concurrent. stage마다 최적 batch size가 다르다는 사실을 받아들인다.</p>
 <p>2) <strong>Async handoff via shared object store</strong>. stage 사이에 frames/embeddings를 직접 전달하지 않고 in-cluster object store(예: Plasma/Ray, 혹은 자체 KV store)에 던진다. handle만 RPC. 우리의 <code>List[int]</code> contract가 이 구조에서 자연스럽게 맞물린다.</p>
 <p>3) <strong>Sampler를 graph node로 격리</strong>. sampler가 encoder와 같은 pool에 있을 수도 있고(AKS는 SigLIP을 sampling 단계에서 또 호출), LLM 쪽에 있을 수도 있다(GenS는 VideoLLM 자체가 retriever). 그래프 노드로 빼두면 어느 쪽으로 옮겨도 caller 코드 무수정.</p>
-<p><strong>우리의 reference graph:</strong>
-<code>`</code>
-[Ingest] ─► [DecodeWorker pool (NVDEC×4)] ─► FrameStore (Redis/S3)
+<p><strong>우리의 reference graph:</strong></p>
+<pre><code>[Ingest] ─► [DecodeWorker pool (NVDEC×4)] ─► FrameStore (Redis/S3)
                                                   │
                 ┌── [PySceneDetect lazy] ────────┤
                 ├── [Sampler Plugin pool]: AKS|BOLT|Voyager|M-LLM
                 ├── [Encoder pool (SigLIP×8)] ──► EmbedCache
                 ├── [TokenReducer (HiCo)]
                 └── [LLM serving (vLLM-Omni)]
-<code>`</code></p>
-<p><strong>실용 tip</strong>: stage 사이 queue depth를 모니터링하면 어느 stage가 bottleneck인지 즉시 드러난다. encoder queue가 자주 0이면 encoder pool을 줄이고 sampler pool을 키워라. lmms-eval로 offline 평가할 때는 직렬화로 충분하지만, production에서는 거의 항상 disaggregated가 이긴다.</p></div><div class="sb-block"><h2>4. Frame-Feature Cache — Compute Once, Re-Rank Many</h2><p>production에서 가장 비싼 작업은 *encode*다. SigLIP-SO400M으로 1시간 비디오 1fps(3600 프레임) 임베딩에 GPU 분 단위. 같은 비디오에 대해 query가 여러 번 들어오면(예: 강의 영상 + 사용자 100명) 매 query마다 re-encode하는 건 비합리적이다.</p>
-<p><strong>해결: per-frame embedding을 한 번 계산해 캐시</strong>. 그러면 query 시점에는 sampler가 *embedding만 보고* 인덱스를 고른다 — cheap re-rank.</p>
+</code></pre>
+<p><strong>실용 tip</strong>: stage 사이 queue depth를 모니터링하면 어느 stage가 bottleneck인지 즉시 드러난다. encoder queue가 자주 0이면 encoder pool을 줄이고 sampler pool을 키워라. lmms-eval로 offline 평가할 때는 직렬화로 충분하지만, production에서는 거의 항상 disaggregated가 이긴다.</p></div><div class="sb-block"><h2>4. Frame-Feature Cache — Compute Once, Re-Rank Many</h2><p>production에서 가장 비싼 작업은 <em>encode</em>다. SigLIP-SO400M으로 1시간 비디오 1fps(3600 프레임) 임베딩에 GPU 분 단위. 같은 비디오에 대해 query가 여러 번 들어오면(예: 강의 영상 + 사용자 100명) 매 query마다 re-encode하는 건 비합리적이다.</p>
+<p><strong>해결: per-frame embedding을 한 번 계산해 캐시</strong>. 그러면 query 시점에는 sampler가 <em>embedding만 보고</em> 인덱스를 고른다 — cheap re-rank.</p>
 <p>Twelve Labs Embed API가 정확히 이 패턴을 외부 API로 노출한다. video를 한 번 ingest하면 Marengo 3.0의 multi-vector embeddings(joint visual+audio+ASR+motion, ~6초 chunk)가 저장되고, 이후 query는 그 vector space에서 ANN 검색.</p>
-<p><strong>자체 구현 시 cache key 설계:</strong>
-<code>`</code>
-key   = f&quot;{video_id}:{fps}:{encoder_model_id}&quot;
+<p><strong>자체 구현 시 cache key 설계:</strong></p>
+<pre><code>key   = f&quot;{video_id}:{fps}:{encoder_model_id}&quot;
 value = Tensor[T_at_fps, D_v]  (per-frame embedding, fp16)
-<code>`</code></p>
+</code></pre>
 <p>세 차원 모두 invalidation 의미를 갖는다:
 - <code>video_id</code>: 명백.
-- <code>fps</code>: 다른 fps로 디코딩하면 다른 프레임 집합. 1fps와 2fps embedding은 *섞어 쓰면 안 된다*.
+- <code>fps</code>: 다른 fps로 디코딩하면 다른 프레임 집합. 1fps와 2fps embedding은 <em>섞어 쓰면 안 된다</em>.
 - <code>encoder_model_id</code>: SigLIP과 CLIP은 다른 vector space. embedding은 모델 교체 시 모두 무효.</p>
 <p><strong>invalidation 전략 세 가지:</strong></p>
 <p>1) <strong>Content-addressed</strong>. <code>sha256(video_bytes)</code>를 video_id로 쓰면 같은 컨텐츠 re-upload는 자동 cache hit. 비용 절감 큼.</p>
-<p>2) <strong>TTL + encoder version pinning</strong>. encoder를 SigLIP-v1 → SigLIP-v2로 올릴 때 *기존 cache는 그대로 두고* 새 key namespace 시작. dual-read 기간을 두고 점진 마이그레이션. 한 번에 무효화하면 GPU re-encode 폭주.</p>
-<p>3) <strong>Sampler는 cache를 *consume only</strong>*. sampler가 cache에 쓰면 안 된다. 쓰기는 encoder stage에서만. 이 단방향성이 race condition을 막는다.</p>
+<p>2) <strong>TTL + encoder version pinning</strong>. encoder를 SigLIP-v1 → SigLIP-v2로 올릴 때 <em>기존 cache는 그대로 두고</em> 새 key namespace 시작. dual-read 기간을 두고 점진 마이그레이션. 한 번에 무효화하면 GPU re-encode 폭주.</p>
+<p>3) <strong>Sampler는 cache를 <em>consume only</em></strong>. sampler가 cache에 쓰면 안 된다. 쓰기는 encoder stage에서만. 이 단방향성이 race condition을 막는다.</p>
 <p><strong>경계 case</strong>: shot list도 캐시하라. PySceneDetect는 video별 1회 계산. key는 <code>{video_id}:scenes:{detector_version}</code>. AKS와 BOLT가 둘 다 hint로 쓸 수 있다.</p>
-<p><strong>얼마나 절약되나?</strong> Twelve Labs의 가격 모델(~$0.07/1M input tokens on Bedrock)이 amortize되는 이유는 indexing이 1회, query가 N회이기 때문. 자체 구현 시에도 query 100회 가정하면 encoder GPU 비용을 두 자릿수 배수로 줄인다. 이게 8장에서 본 &#x27;production이 retrieval 시스템에서만 SOTA sampler를 쓰는&#x27; 이유의 경제적 근거다.</p></div><div class="sb-block"><h2>5. Six Anti-Patterns (그리고 각각 어떻게 망가지는가)</h2><p>production에서 반복적으로 발견되는 6가지 망가지는 패턴이다. 코드 리뷰 체크리스트로 써라.</p>
+<p><strong>얼마나 절약되나?</strong> Twelve Labs의 가격 모델(~$0.07/1M input tokens on Bedrock)이 amortize되는 이유는 indexing이 1회, query가 N회이기 때문. 자체 구현 시에도 query 100회 가정하면 encoder GPU 비용을 두 자릿수 배수로 줄인다. 이게 8장에서 본 'production이 retrieval 시스템에서만 SOTA sampler를 쓰는' 이유의 경제적 근거다.</p></div><div class="sb-block"><h2>5. Six Anti-Patterns (그리고 각각 어떻게 망가지는가)</h2><p>production에서 반복적으로 발견되는 6가지 망가지는 패턴이다. 코드 리뷰 체크리스트로 써라.</p>
 <p><strong>(a) Uniform 8-frame on 1-hour video</strong>
 증상: budget을 비디오 길이와 분리. 1시간 = 3600초를 8 프레임으로 → 450초당 1 프레임. 사건 단위가 다 사라진다. BOLT(arXiv:2503.21483) baseline에서 정확히 이 setup이 Video-MME long split 53.8 → 56.1 차이의 원인. 수정: <code>budget = clamp(min_b, video_seconds * frames_per_second_target, max_b)</code>.</p>
 <p><strong>(b) Sampling before shot detection</strong>
-증상: uniform sample 후 SceneDetect 돌림. 이미 frame을 떨어뜨린 뒤라 shot 경계와 어긋남. 한 shot 안에서 같은 시점 여러 프레임이 뽑히고, 다른 shot은 통째로 누락. 수정: scene detect를 *decode 직후*, sample 위에 둔다. AKS/BOLT는 scene anchors를 hint로 받는다.</p>
+증상: uniform sample 후 SceneDetect 돌림. 이미 frame을 떨어뜨린 뒤라 shot 경계와 어긋남. 한 shot 안에서 같은 시점 여러 프레임이 뽑히고, 다른 shot은 통째로 누락. 수정: scene detect를 <em>decode 직후</em>, sample 위에 둔다. AKS/BOLT는 scene anchors를 hint로 받는다.</p>
 <p><strong>(c) Selection inside LLM pooling when scene evidence was discarded upstream</strong>
-증상: upstream에서 uniform으로 8 프레임만 통과시키고, LLM의 attention pooling이 &#x27;token 중요도를 잘 학습할 거야&#x27;라고 기대. 이미 버려진 프레임의 정보는 attention이 복구하지 못한다. &#x27;LLM이 알아서 할 것&#x27;은 sampling 결정을 *upstream에 둔* 시스템에서 통하는 말이다. 수정: 7장 token compression과 sampling을 *두 개의 독립 축*으로 다룬다.</p>
+증상: upstream에서 uniform으로 8 프레임만 통과시키고, LLM의 attention pooling이 'token 중요도를 잘 학습할 거야'라고 기대. 이미 버려진 프레임의 정보는 attention이 복구하지 못한다. 'LLM이 알아서 할 것'은 sampling 결정을 <em>upstream에 둔</em> 시스템에서 통하는 말이다. 수정: 7장 token compression과 sampling을 <em>두 개의 독립 축</em>으로 다룬다.</p>
 <p><strong>(d) Fixed token budget independent of video length</strong>
-증상: 30초든 1시간이든 vision token이 4608개로 고정. 짧은 비디오는 token이 낭비되고, 긴 비디오는 정보가 잘린다. 수정: <code>vision_tokens = f(video_seconds)</code> 함수로. NVILA의 &#x27;scale-then-compress&#x27;가 이 사고를 내장.</p>
+증상: 30초든 1시간이든 vision token이 4608개로 고정. 짧은 비디오는 token이 낭비되고, 긴 비디오는 정보가 잘린다. 수정: <code>vision_tokens = f(video_seconds)</code> 함수로. NVILA의 'scale-then-compress'가 이 사고를 내장.</p>
 <p><strong>(e) Re-decoding per query instead of caching features</strong>
 증상: 같은 비디오에 query 100번 들어오면 NVDEC 100번 → SigLIP 100번. cost가 query당 분 단위로 누적. 수정: §4의 frame-feature cache. content-addressed key. Twelve Labs Embed API 패턴.</p>
 <p><strong>(f) Sampler coupled to specific MLLM tokenizer</strong>
-증상: sampler가 <code>qwen_vision_tokenizer.encode(frame)</code>를 직접 호출. Qwen3-VL → LLaVA-Video로 교체 시 sampler 코드 수정 불가피. 가장 흔한 plug-and-play 실패. 수정: §2의 <code>Sampler.select() -&gt; List[int]</code> 계약 엄수. sampler는 *어떤 MLLM이 downstream인지 모른다*. encoder/tokenizer 호출은 stage (4) 이후에서만.</p>
-<p>각 anti-pattern은 단독으로도 SOTA의 정확도 이득을 모두 잡아먹는다. (a)+(e)가 같이 발생하면 Gemini 2.5 Pro 같은 *commercial* API에 한 query당 수십 센트씩 줄줄 새는 시스템이 된다. 8장의 commercial gap은 일정 부분 이런 anti-pattern이 외부 API 비용으로 노출되지 않는 데서 비롯된다.</p></div><div class="sb-block"><h2>6. Feature-Flagged Sampler Swap in Production</h2><p>SOTA sampler를 A/B 테스트하는 production 절차다. encoder와 LLM은 *건드리지 않는다*. §2의 contract를 지켰다면 다음이 한 PR 안에 들어간다.</p>
-<p><strong>Step 1: registry로 sampler 식별자 노출</strong>
-<code>`</code>python
-SAMPLERS = {
+증상: sampler가 <code>qwen_vision_tokenizer.encode(frame)</code>를 직접 호출. Qwen3-VL → LLaVA-Video로 교체 시 sampler 코드 수정 불가피. 가장 흔한 plug-and-play 실패. 수정: §2의 <code>Sampler.select() -&gt; List[int]</code> 계약 엄수. sampler는 <em>어떤 MLLM이 downstream인지 모른다</em>. encoder/tokenizer 호출은 stage (4) 이후에서만.</p>
+<p>각 anti-pattern은 단독으로도 SOTA의 정확도 이득을 모두 잡아먹는다. (a)+(e)가 같이 발생하면 Gemini 2.5 Pro 같은 <em>commercial</em> API에 한 query당 수십 센트씩 줄줄 새는 시스템이 된다. 8장의 commercial gap은 일정 부분 이런 anti-pattern이 외부 API 비용으로 노출되지 않는 데서 비롯된다.</p></div><div class="sb-block"><h2>6. Feature-Flagged Sampler Swap in Production</h2><p>SOTA sampler를 A/B 테스트하는 production 절차다. encoder와 LLM은 <em>건드리지 않는다</em>. §2의 contract를 지켰다면 다음이 한 PR 안에 들어간다.</p>
+<p><strong>Step 1: registry로 sampler 식별자 노출</strong></p>
+<pre><code class="language-python">SAMPLERS = {
     &quot;uniform&quot;:      UniformSampler(),
     &quot;aks&quot;:          AKSampler(encoder=&quot;siglip-so400m&quot;),
     &quot;bolt&quot;:         BoltSampler(encoder=&quot;siglip-so400m&quot;),
     &quot;frame-voyager&quot;:FrameVoyagerSampler(ckpt=&quot;...&quot;),
     &quot;m-llm&quot;:        MLLMSampler(scorer=&quot;qwen-vl-2b&quot;),
 }
-<code>`</code></p>
-<p><strong>Step 2: feature-flag를 request-level로 inject</strong>
-<code>`</code>python
-sampler_id = flags.get(&quot;video.sampler&quot;, user_id=req.user_id, default=&quot;uniform&quot;)
+</code></pre>
+<p><strong>Step 2: feature-flag를 request-level로 inject</strong></p>
+<pre><code class="language-python">sampler_id = flags.get(&quot;video.sampler&quot;, user_id=req.user_id, default=&quot;uniform&quot;)
 sampler = SAMPLERS[sampler_id]
 indices = sampler.select(video, query=req.query, budget=req.budget, scenes=scenes)
-<code>`</code>
-LaunchDarkly/Statsig/자체 flag 시스템 어느 쪽이든. 핵심은 *결정 지점이 한 줄*이라는 것.</p>
+</code></pre>
+<p>LaunchDarkly/Statsig/자체 flag 시스템 어느 쪽이든. 핵심은 <em>결정 지점이 한 줄</em>이라는 것.</p>
 <p><strong>Step 3: 1% → 5% → 25% → 50% rollout</strong>
 각 단계에서 본 지표:
 - 정확도: lmms-eval Video-MME long, MLVU, LongVideoBench (offline 평가는 매일 cron)
@@ -369,25 +411,27 @@ LaunchDarkly/Statsig/자체 flag 시스템 어느 쪽이든. 핵심은 *결정 �
 - 지연: p50/p95/p99 e2e latency
 - 안정성: sampler가 raise하는 비율</p>
 <p><strong>Step 4: shadow mode</strong>
-새 sampler를 production traffic으로 돌리되 *응답은 control(uniform)으로 반환*. 두 결과를 비교 로깅. 정확도 회귀(regression) 없으면 rollout 진행. AKS·BOLT 같은 training-free sampler는 shadow 비용이 sampler GPU만큼만 들기 때문에 shadow가 현실적. learned sampler(Frame-Voyager, M-LLM)는 추가 모델 호스팅이라 비용 측정 필요.</p>
+새 sampler를 production traffic으로 돌리되 <em>응답은 control(uniform)으로 반환</em>. 두 결과를 비교 로깅. 정확도 회귀(regression) 없으면 rollout 진행. AKS·BOLT 같은 training-free sampler는 shadow 비용이 sampler GPU만큼만 들기 때문에 shadow가 현실적. learned sampler(Frame-Voyager, M-LLM)는 추가 모델 호스팅이라 비용 측정 필요.</p>
 <p><strong>Step 5: rollback contract</strong>
-flag를 <code>uniform</code>으로 되돌리면 즉시 baseline 복귀. encoder와 LLM은 변경 없음이므로 *0초 rollback*. 이게 우리가 <code>Sampler.select()</code>를 이 모양으로 정의한 진짜 보상이다.</p>
+flag를 <code>uniform</code>으로 되돌리면 즉시 baseline 복귀. encoder와 LLM은 변경 없음이므로 <em>0초 rollback</em>. 이게 우리가 <code>Sampler.select()</code>를 이 모양으로 정의한 진짜 보상이다.</p>
 <p><strong>참고 평가 셋업</strong>: lmms-eval(<code>video_decode_backend=decord</code>)에서 sampler를 config field로 둘 수 있다. CI에서 sampler 후보별 score를 cron으로 돌리고, dashboard에 시계열로. AKS가 LLaVA-Video-7B에서는 이기지만 Qwen3-VL에서는 회귀할 수 있다. 모델별 평가가 필수.</p></div>
       <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
     <div class="analogy-card">
       <div class="a-head">Analogy</div>
       <div class="a-title">USB-C — 하나의 안정된 인터페이스가 생태계를 만든다</div>
-      <div class="a-body"><p>노트북에 USB-C 포트가 있으면 모니터, 외장 SSD, 도크, 오디오 인터페이스, 충전기, 어떤 기기든 꽂힌다. 노트북 제조사는 *다음에 어떤 주변기기가 나올지 모른다*. 하지만 USB-C가 전압·데이터·alt-mode를 표준으로 못박아 뒀기 때문에 미래의 모니터도 *과거의 노트북*에 꽂힌다.</p>
+      <div class="a-body"><p>노트북에 USB-C 포트가 있으면 모니터, 외장 SSD, 도크, 오디오 인터페이스, 충전기, 어떤 기기든 꽂힌다. 노트북 제조사는 <em>다음에 어떤 주변기기가 나올지 모른다</em>. 하지만 USB-C가 전압·데이터·alt-mode를 표준으로 못박아 뒀기 때문에 미래의 모니터도 <em>과거의 노트북</em>에 꽂힌다.</p>
 <p><code>Sampler.select(video, query, budget, scenes) -&gt; List[int]</code>는 video pipeline의 USB-C다.</p>
-<p>- <strong>물리 핀 = 시그니처</strong>: 인덱스 list 반환, query는 optional, budget은 frame 수. 이 5개 핀.
-- <strong>alt-mode = 옵션 메타데이터</strong>: scenes를 받으면 쓰고, 안 받으면 자체 fallback. monitor에 DisplayPort alt-mode가 옵션인 것과 같다.
-- <strong>케이블 두께 = 호출 비용</strong>: indices만 다니므로 RPC 경계로 보내도 KB. USB-C에서 100W power도, 40Gbps Thunderbolt도 같은 모양 케이블로 흐르는 것과 같다.
-- <strong>chipset 호환성 = encoder/LLM 독립성</strong>: 새 sampler(2026 FOCUS)가 나와도 노트북 본체(encoder + LLM)를 바꿀 필요 없다. 그냥 꽂는다.</p>
-<p>USB-C 이전 세계를 기억하라 — Mini-USB, Micro-USB, Apple 30-pin, Lightning, 각각 다른 케이블. 그게 sampling 코드의 default 상태다: 매 sampler마다 caller가 자기 어댑터를 짠다. plug-and-play 아키텍처는 *그 어댑터를 한 번 더 들여다보지 않는 것*이 목표다.</p></div>
+<ul>
+<li><strong>물리 핀 = 시그니처</strong>: 인덱스 list 반환, query는 optional, budget은 frame 수. 이 5개 핀.</li>
+<li><strong>alt-mode = 옵션 메타데이터</strong>: scenes를 받으면 쓰고, 안 받으면 자체 fallback. monitor에 DisplayPort alt-mode가 옵션인 것과 같다.</li>
+<li><strong>케이블 두께 = 호출 비용</strong>: indices만 다니므로 RPC 경계로 보내도 KB. USB-C에서 100W power도, 40Gbps Thunderbolt도 같은 모양 케이블로 흐르는 것과 같다.</li>
+<li><strong>chipset 호환성 = encoder/LLM 독립성</strong>: 새 sampler(2026 FOCUS)가 나와도 노트북 본체(encoder + LLM)를 바꿀 필요 없다. 그냥 꽂는다.</li>
+</ul>
+<p>USB-C 이전 세계를 기억하라 — Mini-USB, Micro-USB, Apple 30-pin, Lightning, 각각 다른 케이블. 그게 sampling 코드의 default 상태다: 매 sampler마다 caller가 자기 어댑터를 짠다. plug-and-play 아키텍처는 <em>그 어댑터를 한 번 더 들여다보지 않는 것</em>이 목표다.</p></div>
     </div>
       <div class="section-div"><h2>💻 코드 예시</h2></div>
     <div class="code-card">
-      <div class="c-intro"><p><code>typing.Protocol</code>로 <code>Sampler</code> 계약을 정의하고, 세 구현(UniformSampler, AKSampler stub, BoltSampler stub)을 동일 caller가 호출하는 모습이다. 실제 AKS/BOLT 로직은 각 논문 레포(ncTimTang/AKS, sming256/BOLT)에 의존하지만, *interface boundary*는 이 한 파일에 다 담긴다. 이게 §2 contract의 코드 형태다.</p></div>
+      <div class="c-intro"><p><code>typing.Protocol</code>로 <code>Sampler</code> 계약을 정의하고, 세 구현(UniformSampler, AKSampler stub, BoltSampler stub)을 동일 caller가 호출하는 모습이다. 실제 AKS/BOLT 로직은 각 논문 레포(ncTimTang/AKS, sming256/BOLT)에 의존하지만, <em>interface boundary</em>는 이 한 파일에 다 담긴다. 이게 §2 contract의 코드 형태다.</p></div>
       <div class="code-bar">python</div>
       <pre><code class="language-python">from __future__ import annotations
 from dataclasses import dataclass
@@ -472,7 +516,7 @@ def run_pipeline(video: VideoHandle, query: str, sampler: Sampler,
     frames = np.stack([video.get_frame(i) for i in indices])
     vision = encoder.encode(frames)              # Tensor[N, D_v]
     return llm.generate(query, vision_tokens=vision)</code></pre>
-      <div class="c-walk"><p><code>Sampler</code>는 <code>Protocol</code>이므로 상속 없이 *시그니처만 맞으면* 통과한다 — duck typing이 ABI다. 세 구현 모두 <code>select(...) -&gt; list[int]</code>. <code>run_pipeline</code>은 어느 sampler가 들어와도 동일한 4줄로 처리하고, encoder/LLM은 *sampler를 모른다*. AKS와 BOLT는 query를 강제하지만 caller는 같은 호출. <code>_adaptive_topk</code>는 실제 AKS의 단순화 버전 — anchors(scene 경계)에 먼저 자리를 잡고 점수로 채워넣는다. 실전에서는 SigLIP/CLIP 점수 계산이 frame-feature cache에서 즉시 lookup된다는 점이 §4와 맞물린다. <code>assert isinstance(sampler, Sampler)</code>는 <code>@runtime_checkable</code> 덕분에 동작 — sigshape mismatch가 production에 새지 않게 막는 가벼운 contract 검사다.</p></div>
+      <div class="c-walk"><p><code>Sampler</code>는 <code>Protocol</code>이므로 상속 없이 <em>시그니처만 맞으면</em> 통과한다 — duck typing이 ABI다. 세 구현 모두 <code>select(...) -&gt; list[int]</code>. <code>run_pipeline</code>은 어느 sampler가 들어와도 동일한 4줄로 처리하고, encoder/LLM은 <em>sampler를 모른다</em>. AKS와 BOLT는 query를 강제하지만 caller는 같은 호출. <code>_adaptive_topk</code>는 실제 AKS의 단순화 버전 — anchors(scene 경계)에 먼저 자리를 잡고 점수로 채워넣는다. 실전에서는 SigLIP/CLIP 점수 계산이 frame-feature cache에서 즉시 lookup된다는 점이 §4와 맞물린다. <code>assert isinstance(sampler, Sampler)</code>는 <code>@runtime_checkable</code> 덕분에 동작 — sigshape mismatch가 production에 새지 않게 막는 가벼운 contract 검사다.</p></div>
     </div>
       <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
     <div class="ie-card">
