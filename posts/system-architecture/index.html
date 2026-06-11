@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>시스템 아키텍처와 네트워크 프로토콜 — direcf</title>
+  <meta name="description" content="FastAPI, REST, WebSocket, RTSP, WiFi, Bluetooth까지 — AI 비디오 분석 시스템 다이어그램을 한 줄도 빠짐없이 이해하게 해주는 10챕터 입문 코스입니다. 비유와 데모 코드로 처음 공부하는 분도 쉽게 따라올 수 있습니다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child{margin-bottom:0}
+.sb-block strong{color:var(--text)}
+.sb-block code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item active" href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a>
+        <span class="sep">›</span>
+        <strong>시스템 아키텍처와 네트워크 프로토콜</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="../../index.html#/category/computer-science">← 목록으로</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="syl-hero">
+        <div class="kicker">📚 Coursework</div>
+        <h1>시스템 아키텍처와 네트워크 프로토콜</h1>
+        <p class="sub">FastAPI, REST, WebSocket, RTSP, WiFi, Bluetooth까지 — AI 비디오 분석 시스템 다이어그램을 한 줄도 빠짐없이 이해하게 해주는 10챕터 입문 코스입니다. 비유와 데모 코드로 처음 공부하는 분도 쉽게 따라올 수 있습니다.</p>
+        <div class="badges">
+          <span class="badge">입문</span>
+          <span class="badge">10 chapters</span>
+          <span class="badge">Python</span>
+        </div>
+      </div>
+      <div class="section-div"><h2>커리큘럼</h2><span class="meta">10 chapters</span></div>
+      <div class="ch-list"><a href="chapter-01.html" class="ch-row">
+      <div class="ch-num">CH<br>01</div>
+      <div class="ch-body">
+        <div class="ch-title"><span class="emoji">🌐</span>How the Internet Works</div>
+        <div class="ch-kr">인터넷은 어떻게 작동하는가</div>
+        <div class="ch-tldr">인터넷은 수십억 대의 컴퓨터가 &#x27;패킷&#x27;이라는 데이터 조각을 주고받는 거대한 편지 교환 시스템입니다.</div>
+        <div class="ch-tags"><span class="ch-tag">패킷 교환 방식</span><span class="ch-tag">IP 주소와 포트 번호</span><span class="ch-tag">클라이언트-서버 모델</span></div>
+      </div>
+    </a><a href="chapter-02.html" class="ch-row">
+      <div class="ch-num">CH<br>02</div>
+      <div class="ch-body">
+        <div class="ch-title"><span class="emoji">🏗️</span>OSI 7-Layer Model</div>
+        <div class="ch-kr">네트워크를 쌓아올린 7개의 층</div>
+        <div class="ch-tldr">OSI 7계층은 복잡한 네트워크 통신을 역할별로 나눈 설계도로, 각 계층이 독립적으로 작동하여 전체 시스템을 유연하게 만듭니다.</div>
+        <div class="ch-tags"><span class="ch-tag">왜 계층으로 나누는가</span><span class="ch-tag">각 계층의 역할</span><span class="ch-tag">프로토콜과 계층의 관계</span></div>
+      </div>
+    </a><a href="chapter-03.html" class="ch-row">
+      <div class="ch-num">CH<br>03</div>
+      <div class="ch-body">
+        <div class="ch-title"><span class="emoji">⚖️</span>TCP vs UDP</div>
+        <div class="ch-kr">신뢰성 vs 속도, 어느 길을 선택할 것인가</div>
+        <div class="ch-tldr">TCP는 모든 데이터의 도착을 보장하는 &#x27;등기 우편&#x27;이고, UDP는 빠르게 쏟아붓는 &#x27;전단지 배포&#x27;입니다. 용도에 따라 선택합니다.</div>
+        <div class="ch-tags"><span class="ch-tag">TCP의 3-way handshake</span><span class="ch-tag">UDP의 비연결성</span><span class="ch-tag">어떤 상황에 무엇을 선택할 것인가</span></div>
+      </div>
+    </a><a href="chapter-04.html" class="ch-row">
+      <div class="ch-num">CH<br>04</div>
+      <div class="ch-body">
+        <div class="ch-title"><span class="emoji">📡</span>HTTP and REST API</div>
+        <div class="ch-kr">웹의 공통 언어: HTTP와 REST</div>
+        <div class="ch-tldr">HTTP는 웹의 공통 언어이고, REST는 그 언어를 일관성 있게 쓰기 위한 설계 원칙입니다.</div>
+        <div class="ch-tags"><span class="ch-tag">HTTP 메서드와 상태 코드</span><span class="ch-tag">REST의 6가지 원칙</span><span class="ch-tag">JSON 데이터 포맷</span></div>
+      </div>
+    </a><a href="chapter-05.html" class="ch-row">
+      <div class="ch-num">CH<br>05</div>
+      <div class="ch-body">
+        <div class="ch-title"><span class="emoji">⚡</span>FastAPI – Building Your First API</div>
+        <div class="ch-kr">FastAPI로 나만의 API 서버 만들기</div>
+        <div class="ch-tldr">FastAPI는 Python으로 REST API를 빠르게 만드는 현대적 프레임워크로, 자동 문서화와 타입 검증을 기본 제공합니다.</div>
+        <div class="ch-tags"><span class="ch-tag">FastAPI 기본 구조</span><span class="ch-tag">경로 파라미터와 Pydantic 검증</span><span class="ch-tag">비동기(async) 처리</span></div>
+      </div>
+    </a><a href="chapter-06.html" class="ch-row">
+      <div class="ch-num">CH<br>06</div>
+      <div class="ch-body">
+        <div class="ch-title"><span class="emoji">🔌</span>WebSocket – Real-time Bidirectional Communication</div>
+        <div class="ch-kr">WebSocket — 끊어지지 않는 실시간 전화 통화</div>
+        <div class="ch-tldr">WebSocket은 한 번 연결되면 서버와 클라이언트 양쪽에서 언제든 메시지를 보낼 수 있는 지속 연결 방식입니다.</div>
+        <div class="ch-tags"><span class="ch-tag">HTTP의 한계와 WebSocket의 등장</span><span class="ch-tag">WebSocket 연결 수립 과정</span><span class="ch-tag">FastAPI WebSocket 구현</span></div>
+      </div>
+    </a><a href="chapter-07.html" class="ch-row">
+      <div class="ch-num">CH<br>07</div>
+      <div class="ch-body">
+        <div class="ch-title"><span class="emoji">📹</span>RTSP and RTP – The Backbone of Video Streaming</div>
+        <div class="ch-kr">RTSP와 RTP — 실시간 영상 스트리밍의 뼈대</div>
+        <div class="ch-tldr">RTSP는 영상 재생/중지를 제어하는 리모컨이고, RTP는 실제 영상 데이터를 UDP로 빠르게 쏟아붓는 배달부입니다.</div>
+        <div class="ch-tags"><span class="ch-tag">RTSP의 역할 (제어)</span><span class="ch-tag">RTP의 역할 (전송)</span><span class="ch-tag">WebSocket vs RTSP 심층 비교</span></div>
+      </div>
+    </a><a href="chapter-08.html" class="ch-row">
+      <div class="ch-num">CH<br>08</div>
+      <div class="ch-body">
+        <div class="ch-title"><span class="emoji">📶</span>Wireless Communication – WiFi, Bluetooth, 5G</div>
+        <div class="ch-kr">무선 통신 — 데이터가 지나가는 물리적 고속도로</div>
+        <div class="ch-tldr">Wi-Fi는 넓은 고속도로, Bluetooth는 좁은 골목길, 5G/LTE는 어디서나 쓸 수 있는 국도입니다. 실시간 영상엔 넓은 도로가 필요합니다.</div>
+        <div class="ch-tags"><span class="ch-tag">Wi-Fi 대역폭과 실시간 스트리밍</span><span class="ch-tag">Bluetooth의 적합한 사용 사례</span><span class="ch-tag">5G/LTE와 엣지 컴퓨팅</span></div>
+      </div>
+    </a><a href="chapter-09.html" class="ch-row">
+      <div class="ch-num">CH<br>09</div>
+      <div class="ch-body">
+        <div class="ch-title"><span class="emoji">🎥</span>WebRTC – Modern Browser-to-Browser Streaming</div>
+        <div class="ch-kr">WebRTC — 브라우저끼리 직접 통화하는 방법</div>
+        <div class="ch-tldr">WebRTC는 서버를 거치지 않고 브라우저끼리 직접 실시간 영상·음성을 주고받는 P2P 기술로, Zoom과 Google Meet의 기반입니다.</div>
+        <div class="ch-tags"><span class="ch-tag">P2P vs 서버 중계</span><span class="ch-tag">ICE/STUN/TURN 연결 수립</span><span class="ch-tag">SDP 협상 과정</span></div>
+      </div>
+    </a><a href="chapter-10.html" class="ch-row">
+      <div class="ch-num">CH<br>10</div>
+      <div class="ch-body">
+        <div class="ch-title"><span class="emoji">🏗️</span>Putting It All Together – AI Video Analysis System</div>
+        <div class="ch-kr">모든 것을 합치다 — AI 비디오 분석 시스템 완전 해부</div>
+        <div class="ch-tldr">챕터 1~9의 모든 개념이 하나의 시스템 다이어그램으로 합쳐집니다. 각 프로토콜이 왜 그 자리에 있는지 이제 완전히 설명할 수 있습니다.</div>
+        <div class="ch-tags"><span class="ch-tag">시스템 아키텍처 전체 흐름</span><span class="ch-tag">각 프로토콜 선택 이유</span><span class="ch-tag">스케일링과 최적화</span></div>
+      </div>
+    </a></div>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+</body></html>

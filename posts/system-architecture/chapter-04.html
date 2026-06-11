@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch4: HTTP and REST API — 시스템 아키텍처와 네트워크 프로토콜 — direcf</title>
+  <meta name="description" content="HTTP는 웹의 공통 언어이고, REST는 그 언어를 일관성 있게 쓰기 위한 설계 원칙입니다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child{margin-bottom:0}
+.sb-block strong{color:var(--text)}
+.sb-block code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item active" href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/computer-science">시스템 아키텍처와 네트워크 프로토콜</a><span class="sep">›</span>
+        <strong>Ch04 HTTP and REST API</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 04 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">📡</div>
+      <h1 class="chapter-title">HTTP and REST API</h1>
+      <div class="chapter-title-kr">웹의 공통 언어: HTTP와 REST</div>
+      <div class="chapter-tldr">HTTP는 웹의 공통 언어이고, REST는 그 언어를 일관성 있게 쓰기 위한 설계 원칙입니다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-04.png" alt="Chapter 4 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 4 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">4 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>GET, POST, PUT, DELETE 메서드의 차이와 사용 시기를 설명할 수 있다</li><li>200, 201, 400, 404, 500 상태 코드의 의미를 즉시 답할 수 있다</li><li>REST API 설계 원칙에 따라 URL을 올바르게 설계할 수 있다</li><li>Python requests 라이브러리로 API를 호출할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>HTTP(HyperText Transfer Protocol)는 웹의 기본 통신 규약입니다. 브라우저와 서버, 서버와 서버 사이의 모든 데이터 교환에 사용됩니다. REST API는 HTTP를 이용해 데이터를 주고받는 방식을 표준화한 설계 원칙입니다.</p>
+<p>현대 소프트웨어는 대부분 REST API로 통신합니다. 카카오맵 API로 지도 데이터를 가져오고, 공공 데이터 포털에서 코로나 통계를 받아오고, 우리가 만들 AI 분석 서비스에서 결과를 전달하는 것, 모두 REST API입니다.</p>
+<p>다음 챕터에서 FastAPI로 REST API를 직접 만들기 전에, 이 챕터에서는 HTTP의 기본 언어(메서드, 상태 코드)와 REST 설계 원칙을 먼저 탄탄하게 이해합니다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>HTTP 메서드: 요청의 목적을 동사로 표현하기</h2><p>HTTP 메서드는 서버에게 &#x27;무엇을 하고 싶은지&#x27;를 알려주는 동사입니다. GET은 &#x27;데이터를 조회해줘&#x27;, POST는 &#x27;새 데이터를 만들어줘&#x27;, PUT/PATCH는 &#x27;기존 데이터를 수정해줘&#x27;, DELETE는 &#x27;데이터를 삭제해줘&#x27;입니다.</p>
+<p>GET은 URL에 파라미터를 붙여 보냅니다(예: /users?age=20). Body가 없습니다. 브라우저 주소창에 URL을 입력하는 것이 GET 요청입니다. POST는 Body에 데이터를 담아 보냅니다. 회원가입, 로그인, 파일 업로드가 대표적입니다.</p>
+<p>REST 설계에서 메서드를 올바르게 쓰는 것이 중요합니다. 데이터 삭제를 GET /deleteUser?id=5 처럼 설계하는 것은 잘못된 방식입니다. DELETE /users/5 가 올바른 REST 설계입니다.</p></div><div class="sb-block"><h2>HTTP 상태 코드: 서버의 대답</h2><p>서버는 항상 숫자 코드로 결과를 알려줍니다. 2xx는 성공입니다: 200 OK(일반 성공), 201 Created(새 리소스 생성 성공), 204 No Content(성공했지만 응답 내용 없음). 4xx는 클라이언트 오류입니다: 400 Bad Request(잘못된 요청), 401 Unauthorized(인증 필요), 403 Forbidden(권한 없음), 404 Not Found(리소스 없음).</p>
+<p>5xx는 서버 오류입니다: 500 Internal Server Error(서버 내부 오류), 502 Bad Gateway(중간 서버 오류), 503 Service Unavailable(서비스 다운). &#x27;502 Bad Gateway&#x27;를 보면 FastAPI 서버가 아직 안 뜬 것입니다.</p>
+<p>좋은 API는 상태 코드를 정확하게 사용합니다. 삭제 성공에 200 대신 204를, 생성 성공에 200 대신 201을 쓰는 것이 올바른 REST 설계입니다.</p></div><div class="sb-block"><h2>REST 설계 원칙: 일관성 있는 API 만들기</h2><p>REST의 핵심 원칙 중 가장 중요한 것은 &#x27;자원(Resource) 중심 URL 설계&#x27;입니다. URL은 명사로 표현하고(users, videos, analysis), 동사는 HTTP 메서드로 표현합니다. /getUser 대신 GET /users/{id}, /createUser 대신 POST /users 처럼 씁니다.</p>
+<p>무상태(Stateless) 원칙: 각 요청은 독립적이어야 합니다. 서버는 이전 요청을 기억하지 않습니다. 인증 정보(토큰)는 매 요청마다 헤더에 포함해야 합니다. 이 덕분에 서버를 쉽게 여러 대로 늘릴 수 있습니다(수평 확장).</p>
+<p>계층적 시스템: 클라이언트는 중간에 로드 밸런서, 캐시 서버, CDN이 있어도 신경 쓰지 않습니다. 단순히 URL로 요청하면 됩니다. 이 계층화 덕분에 대규모 시스템이 유연하게 확장됩니다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">레스토랑 주문 시스템</div>
+      <div class="a-body"><p>HTTP 통신은 레스토랑 주문과 완벽히 비유됩니다. URL은 메뉴판의 항목 번호입니다(/users/5는 &#x27;5번 테이블 고객 정보&#x27;). HTTP 메서드는 주문의 종류입니다: GET은 &#x27;메뉴 보여줘&#x27;, POST는 &#x27;새 주문 추가&#x27;, PUT은 &#x27;기존 주문 변경&#x27;, DELETE는 &#x27;주문 취소&#x27;.</p>
+<p>상태 코드는 웨이터의 응답입니다. 200은 &#x27;네, 준비됐습니다&#x27;, 404는 &#x27;죄송합니다, 그 메뉴는 없어요&#x27;, 503은 &#x27;지금 주방이 너무 바빠서요, 잠시 후 다시 주문해 주세요&#x27;.</p>
+<p>무상태 원칙은 새 웨이터에게 매번 다시 설명하는 것과 같습니다. 이전 주문을 기억하는 웨이터가 없으므로 매 요청마다 필요한 정보(고객 ID, 인증 토큰)를 포함해야 합니다. 불편해 보이지만 덕분에 웨이터(서버)를 얼마든지 교체·추가할 수 있습니다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>requests 라이브러리로 공개 REST API를 호출해봅니다. 그리고 HTTP 요청/응답 구조를 상세하게 출력해 실제로 어떤 데이터가 오가는지 확인합니다. (pip install requests)</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import requests
+import json
+
+BASE_URL = &quot;https://jsonplaceholder.typicode.com&quot;  # 무료 테스트 API
+
+# ── 1. GET: 데이터 조회 ─────────────────────────────────────
+print(&quot;=== GET /posts/1 ===&quot;)
+response = requests.get(f&quot;{BASE_URL}/posts/1&quot;)
+print(f&quot;상태 코드: {response.status_code}&quot;)        # 200 OK
+print(f&quot;헤더 (Content-Type): {response.headers.get(&#x27;Content-Type&#x27;)}&quot;)
+print(f&quot;응답 Body: {response.json()}&quot;)
+
+# ── 2. POST: 새 리소스 생성 ─────────────────────────────────
+print(&quot;\n=== POST /posts ===&quot;)
+new_post = {&quot;title&quot;: &quot;FastAPI 학습 노트&quot;, &quot;body&quot;: &quot;오늘 TCP/UDP를 배웠다&quot;, &quot;userId&quot;: 1}
+response = requests.post(f&quot;{BASE_URL}/posts&quot;, json=new_post)
+print(f&quot;상태 코드: {response.status_code}&quot;)        # 201 Created
+print(f&quot;생성된 리소스: {response.json()}&quot;)
+
+# ── 3. PUT: 전체 수정 ──────────────────────────────────────
+print(&quot;\n=== PUT /posts/1 ===&quot;)
+updated_post = {&quot;title&quot;: &quot;수정된 제목&quot;, &quot;body&quot;: &quot;수정된 내용&quot;, &quot;userId&quot;: 1}
+response = requests.put(f&quot;{BASE_URL}/posts/1&quot;, json=updated_post)
+print(f&quot;상태 코드: {response.status_code}&quot;)        # 200 OK
+
+# ── 4. DELETE: 삭제 ────────────────────────────────────────
+print(&quot;\n=== DELETE /posts/1 ===&quot;)
+response = requests.delete(f&quot;{BASE_URL}/posts/1&quot;)
+print(f&quot;상태 코드: {response.status_code}&quot;)        # 200 OK (또는 204 No Content)
+
+# ── 5. 에러 처리 ───────────────────────────────────────────
+print(&quot;\n=== GET /posts/9999 (존재하지 않는 리소스) ===&quot;)
+response = requests.get(f&quot;{BASE_URL}/posts/9999&quot;)
+print(f&quot;상태 코드: {response.status_code}&quot;)        # 404 Not Found
+response.raise_for_status()  # 4xx/5xx면 예외 발생</code></pre>
+      <div class="c-walk"><p>requests.get/post/put/delete는 각각 HTTP 메서드에 대응합니다. json=new_post는 딕셔너리를 자동으로 JSON 직렬화하고 Content-Type 헤더를 application/json으로 설정합니다. response.json()은 응답 Body의 JSON 문자열을 Python 딕셔너리로 변환합니다. raise_for_status()는 4xx/5xx 상태 코드일 때 예외를 발생시켜 에러 처리를 강제하는 좋은 습관입니다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">REST API 설계는 백엔드 면접의 핵심입니다. 단순히 API를 &#x27;쓸 줄 아는가&#x27;보다 &#x27;올바르게 설계할 수 있는가&#x27;를 봅니다. 잘못 설계된 API는 유지보수 악몽이 됩니다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>HTTP 메서드를 목적에 맞게 사용 (GET으로 삭제하는 설계 X)</li><li>상태 코드를 정확하게 사용 (201 vs 200, 204 vs 200 구분)</li><li>멱등성(Idempotency) 개념: GET/PUT/DELETE는 여러 번 호출해도 결과가 같아야 함</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>모든 API를 POST /doSomething 형태로 설계 (REST 원칙 무시)</li><li>에러 상황에서 항상 200을 반환하고 body에 error 필드를 넣는 잘못된 패턴</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>POST와 PUT의 차이는 무엇인가요? 각각 언제 사용해야 하나요?</li><li>&#x27;무상태(Stateless)&#x27;가 REST의 장점인 이유는 무엇인가요? 어떻게 서버 확장에 유리한가요?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 숙달: 멱등성, HATEOAS, API 버저닝(/v1/users), 적절한 상태 코드 선택을 설명하고 실제 API를 설계 가능. 익숙함: GET/POST 차이는 알지만 REST 설계 원칙을 따른 URL 구조를 스스로 설계하지 못함.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>HTTP = 웹의 공통 언어</h3><p>브라우저-서버, 서버-서버 통신의 표준 프로토콜</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>4대 메서드</h3><p>GET(조회), POST(생성), PUT/PATCH(수정), DELETE(삭제) — 명사 URL + 동사 메서드</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>상태 코드 핵심</h3><p>2xx(성공), 4xx(클라이언트 오류), 5xx(서버 오류)</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>REST = URL은 명사</h3><p>/getUser 대신 GET /users/{id}, /deleteUser 대신 DELETE /users/{id}</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>무상태 원칙</h3><p>서버는 이전 요청을 기억하지 않음 → 인증 토큰을 매 요청 헤더에 포함</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>JSON</h3><p>REST API의 표준 데이터 포맷. Python 딕셔너리 ↔ JSON 직렬화/역직렬화</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>멱등성</h3><p>GET/PUT/DELETE는 여러 번 호출해도 결과 동일. POST는 비멱등 (매번 새 리소스 생성)</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-03.html">← TCP vs UDP</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-05.html">FastAPI – Building Your First API →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+</body></html>

@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch7: What We Learned from a Year of Building with LLMs — Engineering Philosophy in the AI Agent Era — direcf</title>
+  <meta name="description" content="여섯 명의 LLM 실무자가 1년간 현장에서 배운 전술·운영·전략. 데모는 쉽고 프로덕션은 어렵다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child{margin-bottom:0}
+.sb-block strong{color:var(--text)}
+.sb-block code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/engineering-philosophy">Engineering Philosophy in the AI Agent Era</a><span class="sep">›</span>
+        <strong>Ch07 What We Learned from a Year of Building with LLMs</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 07 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🛠️</div>
+      <h1 class="chapter-title">What We Learned from a Year of Building with LLMs</h1>
+      <div class="chapter-title-kr">LLM으로 1년간 빌드하며 배운 것 — Eugene Yan et al. (2024)</div>
+      <div class="chapter-tldr">여섯 명의 LLM 실무자가 1년간 현장에서 배운 전술·운영·전략. 데모는 쉽고 프로덕션은 어렵다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-07.png" alt="Chapter 7 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 7 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>프롬프트 엔지니어링의 진짜 모범 사례를 안다</li><li>Evaluation이 왜 LLM 프로덕트의 심장인지 이해한다</li><li>RAG 실무의 함정과 회피법을 안다</li><li>LLM 시스템 운영에서 무엇을 모니터링하는지</li><li>&#x27;데모는 쉽다, 프로덕션은 어렵다&#x27;의 의미를 구체적으로 안다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>Eugene Yan, Bryan Bischof, Charles Frye, Hamel Husain, Jason Liu, Shreya Shankar 여섯 명이 2024년 6월에 O&#x27;Reilly에 공동 발표한 시리즈. 각자 1년간 LLM으로 프로덕트를 만들고 운영하며 배운 교훈을 전술·운영·전략 세 부분으로 나눠 정리했다.</p>
+<p>이 글이 특별한 이유: 학계가 아니라 현장이다. 데모 영상은 쉽다. 평일 새벽 3시에 모델이 이상한 답을 내고 SLA가 깨졌을 때 무엇을 하는가가 진짜 문제다. 이 글은 그 진짜 문제들에 대한 매뉴얼에 가깝다. AI 시대 엔지니어가 가장 빨리 읽어야 할 단일 문서다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>7.1 전술 — 프롬프트 엔지니어링의 실전</h2><p>Few-shot이 거의 항상 zero-shot보다 낫다. 좋은 예시 3-5개가 긴 설명보다 모델 동작을 더 강하게 정렬한다.</p>
+<p>구조화된 출력: free-form 텍스트 받지 마라. JSON schema, XML 태그, 명시적 키-값으로 제약하라. 파싱 안정성 + 모델 정확도 동시에 올라간다.</p>
+<p>Chain-of-thought를 강요: &#x27;think step by step&#x27; 한 줄이 정확도 두 자릿수 끌어올리는 케이스가 많다. 더 좋은 건 &#x27;먼저 reasoning을, 그다음 답을&#x27; 같은 명시적 단계 분리.</p>
+<p>RAG &gt; fine-tuning, 거의 항상: 새 지식 주입은 fine-tuning이 아니라 RAG로 해라. 빠르고, 디버그 가능하고, 갱신 쉽다. fine-tuning은 동작 양식을 바꿀 때만.</p>
+<p>작은 모델 + 좋은 프롬프트 &gt; 큰 모델 + 게으른 프롬프트: 비용·지연·통제 모두 압승.</p></div><div class="sb-block"><h2>7.2 Evaluation — 가장 중요한 것</h2><p>이 글의 가장 강한 메시지: Evaluation 셋이 LLM 프로덕트의 심장이다. 평가가 없으면 개선도 없다.</p>
+<p>LLM-as-a-judge: 출력을 또 다른 LLM이 채점. 빠르고 싸지만, 그 judge LLM의 편향과 일관성을 따로 검증해야 한다.</p>
+<p>Reference-free evals: 사람이 라벨링한 정답이 없어도 평가 가능 — &#x27;is this answer grounded in the retrieved context?&#x27; 같은 질문.</p>
+<p>프로덕션 트래픽 샘플링: 실제 사용자 쿼리를 매주 N개 샘플링해서 회귀 셋에 추가. 정적 벤치마크는 곧 의미를 잃는다.</p>
+<p>A/B 테스트가 답이지만 어렵다: LLM 출력은 비결정적이라 A/B 분석이 까다롭다. 따로 통계 디자인 필요.</p></div><div class="sb-block"><h2>7.3 RAG의 함정과 실전</h2><p>Chunking이 가장 어렵다: 문서를 어떻게 자르느냐가 RAG 성능의 60%를 결정한다. 너무 짧으면 맥락 손실, 너무 길면 관련 없는 정보 섞임. 도메인별로 다른 chunking 전략이 필요하다. 매뉴얼은 섹션 단위, 코드는 함수 단위, 채팅 로그는 turn 단위.</p>
+<p>Hybrid retrieval: 벡터 검색만으로는 약하다. BM25(키워드) + 벡터 + reranker의 조합이 거의 항상 압도적이다.</p>
+<p>Reranking이 마법: top-100을 retrieval하고 cross-encoder reranker로 top-5만 추리는 게 LLM context 효율을 끌어올린다.</p>
+<p>Negative examples: &#x27;retrieved되면 안 되는&#x27; 케이스들도 평가 셋에 넣어라. 그래야 false positive 잡힌다.</p>
+<p>Metadata filtering: 사용자·시점·권한 필터를 retrieval 단에 강제. 이걸 LLM 후처리에 맡기면 보안 사고로 이어진다.</p></div><div class="sb-block"><h2>7.4 운영 — Hallucination·Guardrails·관측</h2><p>Silent failure가 최악: 모델이 자신 있게 틀린 답을 낸다. 출력 신뢰도 표시 + &#x27;don&#x27;t know&#x27; 응답 허용이 필수.</p>
+<p>Guardrails 계층화: 입력 단(프롬프트 인젝션 차단) + 출력 단(PII·toxic 콘텐츠 필터) + 의미 단(LLM이 정책 위반인지 판정). 한 단으로는 부족.</p>
+<p>관측의 새 어휘: 기존 APM은 부족하다. token usage, latency p99, eval pass rate, retrieval recall, guardrail trigger rate — 모두 별도 메트릭으로 추적.</p>
+<p>Trace 우선: 매 요청의 전체 trace(retrieval → context assembly → model call → guardrail)를 저장. 디버깅의 99%가 trace를 보는 일이다.</p>
+<p>Cost monitoring: 토큰 비용은 빠르게 폭발한다. per-endpoint·per-user 비용 추적이 첫날부터 필요.</p></div><div class="sb-block"><h2>7.5 전략 — 무엇을 만들 것인가</h2><p>No model before PMF: 모델 선택을 너무 일찍 하지 마라. 핵심 가치 가설을 검증할 수 있는 가장 단순한 모델로 시작.</p>
+<p>Build vs Buy: 코어 차별화 영역 = build. 그 외 = buy (managed API). 자체 fine-tuning은 거의 항상 처음 6개월엔 ROI 안 나옴.</p>
+<p>팀 구성: ML 엔지니어 + 백엔드 엔지니어 + 도메인 전문가 + 데이터 라벨러 4축이 필요. 한 명이 다 못 한다.</p>
+<p>Data flywheel: 사용자 피드백을 평가 셋·학습 셋으로 자동 환류시키는 파이프라인이 진짜 moat다. 모델이 아니라 데이터·평가가 차별화.</p>
+<p>Demo와 프로덕션의 거리: 데모는 100건 중 80건이 좋으면 된다. 프로덕션은 100건 중 99.9건이 좋아야 하고 나머지 0.1건이 폭탄이면 안 된다. 같은 시스템이 아니다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">모터쇼와 24시간 르망 레이스</div>
+      <div class="a-body"><p>모터쇼는 화려하다. 컨셉카가 빛나고, 미래가 다가오는 것 같다. 0-100km 가속, 최고 속도, 스타일. 디테일은 가렸다.</p>
+<p>르망 24시간 레이스는 다르다. 같은 차로 24시간을 달려야 한다. 연비, 신뢰성, 정비 시간, 타이어 마모, 비 오는 트랙에서의 그립, 운전자 피로. 모터쇼의 우승작이 르망에서 1바퀴 만에 퍼져버린다. 르망의 우승작은 모터쇼에선 평범해 보인다.</p>
+<p>LLM 시연 = 모터쇼. 프로덕션 운영 = 르망. 이 글의 저자들이 1년간 배운 것은 르망의 기술이다. 화려하지 않지만, 르망을 못 달리면 비즈니스가 안 된다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>이 글이 강조하는 &#x27;구조화된 출력 + few-shot + 평가 셋&#x27; 워크플로의 미니어처. 프로덕션 LLM 호출이 어떻게 생겼는지의 표준 형태.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import anthropic, json
+from pydantic import BaseModel, ValidationError
+
+# 1) 출력 스키마 강제
+class Triage(BaseModel):
+    intent: str    # &quot;refund&quot; | &quot;shipping&quot; | &quot;defect&quot; | &quot;other&quot;
+    urgency: int   # 1-5
+    rationale: str
+
+# 2) few-shot 예시 — 평가셋과 공유
+FEWSHOT = [
+    {&quot;text&quot;: &quot;내 카드 환불 아직?&quot;, &quot;out&quot;: {&quot;intent&quot;: &quot;refund&quot;, &quot;urgency&quot;: 4,
+       &quot;rationale&quot;: &quot;환불 지연 불만&quot;}},
+    {&quot;text&quot;: &quot;이거 켜자마자 깨졌어요&quot;, &quot;out&quot;: {&quot;intent&quot;: &quot;defect&quot;, &quot;urgency&quot;: 5,
+       &quot;rationale&quot;: &quot;수령 직후 불량&quot;}},
+]
+
+def triage(text: str) -&gt; Triage:
+    client = anthropic.Anthropic()
+    examples = &quot;\n&quot;.join(
+        f&quot;User: {x[&#x27;text&#x27;]}\nJSON: {json.dumps(x[&#x27;out&#x27;], ensure_ascii=False)}&quot;
+        for x in FEWSHOT
+    )
+    msg = client.messages.create(
+        model=&quot;claude-opus-4-7&quot;,
+        max_tokens=300,
+        messages=[{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;:
+            f&quot;{examples}\nUser: {text}\nJSON:&quot;}],
+    )
+    raw = msg.content[0].text.strip()
+    try:
+        return Triage(**json.loads(raw))
+    except (json.JSONDecodeError, ValidationError) as e:
+        # 3) 실패는 평가셋으로 환류
+        log_for_eval(text, raw, error=str(e))
+        raise
+
+# 4) 평가셋은 매주 프로덕션 샘플로 자동 보강
+</code></pre>
+      <div class="c-walk"><p>구조화된 출력(Pydantic 스키마) + few-shot 예시(평가셋과 공유) + 실패 로깅(평가셋 환류). 이 세 요소가 LLM 프로덕트의 &#x27;심장 박동&#x27;이다. 이 패턴 없이 free-form 텍스트로 받으면 파싱 오류·정확도 저하·디버그 불가 삼중고에 빠진다. 글의 핵심 권고가 이 한 함수에 응축돼 있다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">AI 엔지니어 면접에서 &#x27;평가 셋과 운영 모니터링을 어떻게 설계하시나요&#x27;가 모델 선택보다 비중이 커지고 있다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>Evaluation 셋을 코드처럼 버전 관리하는지</li><li>Hallucination 대응 layer를 구체적으로 설명할 수 있는지</li><li>Token 비용·지연·정확도의 트레이드오프를 양적으로 다루는지</li><li>Trace 중심의 디버깅 워크플로를 갖고 있는지</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>&#x27;프롬프트 잘 짜면 된다&#x27;에서 멈추는 인식</li><li>프로덕션에 LLM-as-a-judge를 사람 검증 없이 전적으로 의존</li><li>Eval 셋이 정적이고 6개월간 갱신 안 됨</li><li>모델만 바꾸면 다 해결될 거라는 기대</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>당신 시스템의 evaluation set을 어떻게 구성·갱신하시나요?</li><li>Hallucination을 줄이기 위해 input·output·meaning layer 각각에서 무엇을?</li><li>RAG에서 retrieval recall이 떨어졌을 때 진단 절차를 설명해 주세요</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> Familiar는 &#x27;RAG·평가 안다&#x27;고 한다. Mastery는 자기 시스템의 evaluation 셋 크기·구성·갱신 주기를 숫자로 댈 수 있고, 지난 한 달간 평가셋에서 발견한 회귀와 그 대응을 설명할 수 있다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>Eval이 심장</h3><p>평가 없으면 개선 없다. 모델 선택보다 먼저 평가셋.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>Few-shot + 구조화 출력</h3><p>정확도·파싱·디버그 모두 개선.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>RAG &gt; Fine-tuning, 거의 항상</h3><p>지식 주입은 RAG, 양식 변경은 fine-tuning.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>Hybrid retrieval + reranker</h3><p>벡터 단독은 약하다. BM25 + 벡터 + reranker.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>Guardrails 계층화</h3><p>입력·출력·의미 세 단. 한 단으로는 부족.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>Silent failure 인지</h3><p>틀린 답을 자신 있게 — 가장 무서운 실패 양식.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>Trace 우선 관측</h3><p>디버깅의 99%가 trace에서 끝난다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>Demo와 프로덕션은 다른 종목</h3><p>80% vs 99.9%. 같은 시스템 아님.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-06.html">← Tidy First?</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-08.html">Building Effective Agents →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+</body></html>

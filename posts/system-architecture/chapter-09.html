@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch9: WebRTC – Modern Browser-to-Browser Streaming — 시스템 아키텍처와 네트워크 프로토콜 — direcf</title>
+  <meta name="description" content="WebRTC는 서버를 거치지 않고 브라우저끼리 직접 실시간 영상·음성을 주고받는 P2P 기술로, Zoom과 Google Meet의 기반입니다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child{margin-bottom:0}
+.sb-block strong{color:var(--text)}
+.sb-block code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item active" href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/computer-science">시스템 아키텍처와 네트워크 프로토콜</a><span class="sep">›</span>
+        <strong>Ch09 WebRTC – Modern Browser-to-Browser Streaming</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 09 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🎥</div>
+      <h1 class="chapter-title">WebRTC – Modern Browser-to-Browser Streaming</h1>
+      <div class="chapter-title-kr">WebRTC — 브라우저끼리 직접 통화하는 방법</div>
+      <div class="chapter-tldr">WebRTC는 서버를 거치지 않고 브라우저끼리 직접 실시간 영상·음성을 주고받는 P2P 기술로, Zoom과 Google Meet의 기반입니다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-09.png" alt="Chapter 9 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 9 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">4 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>WebRTC가 RTSP와 다른 점 — P2P vs 서버 스트리밍 차이를 설명할 수 있다</li><li>ICE, STUN, TURN이 각각 무슨 역할인지 설명할 수 있다</li><li>Offer/Answer SDP 협상 과정을 이해한다</li><li>WebRTC가 Zoom·Google Meet 같은 화상회의에 쓰이는 이유를 알 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>RTSP는 서버가 영상을 클라이언트에게 스트리밍합니다(서버→클라이언트). WebRTC는 클라이언트끼리 직접 연결됩니다(P2P: Peer-to-Peer). Zoom에서 화상통화를 할 때 여러분의 영상이 Zoom 서버를 거쳐 상대방에게 가는 게 아닙니다. 대부분의 경우 여러분 컴퓨터에서 상대 컴퓨터로 직접 전달됩니다.</p>
+<p>이 P2P 방식이 가능한 이유는 WebRTC가 해결하는 핵심 문제 때문입니다. 인터넷에 직접 연결된 공인 IP 없이 NAT(공유기) 뒤에 있는 두 컴퓨터가 어떻게 서로 직접 연결될 수 있을까요? ICE, STUN, TURN이 이 문제를 해결합니다.</p>
+<p>WebRTC는 UDP 기반으로 지연 시간이 100ms 미만입니다. 화상회의의 자연스러운 대화를 위한 최소 요건입니다. RTSP보다 훨씬 낮은 지연 시간을 자랑합니다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>P2P 연결의 문제: NAT 뒤에 숨어있는 컴퓨터</h2><p>대부분의 컴퓨터는 공인 IP가 없습니다. 공유기(NAT) 뒤에 사설 IP(192.168.1.x)를 가집니다. 외부에서 이 컴퓨터에 직접 연결하려면 공유기가 어떤 내부 기기로 연결을 전달해야 할지 모릅니다.</p>
+<p>STUN(Session Traversal Utilities for NAT) 서버가 이 문제를 해결합니다. 외부 STUN 서버에 접속하면 서버가 &#x27;당신의 공인 IP는 X.X.X.X이고, 포트는 YYYY입니다&#x27;라고 알려줍니다. 이 정보를 상대방과 교환하면 직접 연결이 가능해집니다.</p>
+<p>방화벽이 엄격해 STUN으로도 P2P가 불가능한 경우, TURN(Traversal Using Relays around NAT) 서버가 중계합니다. 이 경우 P2P가 아닌 서버 중계이므로 지연이 증가하고 서버 비용이 발생합니다. WebRTC는 P2P를 먼저 시도하고 실패하면 TURN으로 폴백합니다.</p></div><div class="sb-block"><h2>SDP 협상: 어떤 코덱과 설정으로 통신할 것인가</h2><p>두 피어가 연결되기 전에 &#x27;어떤 방식으로 통신할 것인지&#x27; 협상이 필요합니다. SDP(Session Description Protocol)는 이 협상에 쓰이는 데이터 형식입니다. 지원 코덱, 해상도, 비트레이트, 네트워크 주소 등이 포함됩니다.</p>
+<p>Offer/Answer 패턴으로 협상합니다. A가 &#x27;H.264, VP8을 지원하고 최대 720p까지 가능해. 내 주소는 이거야&#x27; (Offer SDP 생성). B가 &#x27;H.264로 하자, 나도 720p 가능해. 내 주소는 이거야&#x27; (Answer SDP 생성). 이 SDP 교환은 시그널링 서버(WebSocket 등)를 통해 이루어집니다.</p>
+<p>ICE Candidate 교환도 이 과정에서 함께 일어납니다. 각 피어가 가능한 연결 경로(로컬 IP, 공인 IP, TURN 서버 주소)를 여러 개 제시하고, 가장 좋은 경로를 선택합니다. 이 과정이 완료되면 직접 UDP 스트림이 시작됩니다.</p></div><div class="sb-block"><h2>WebRTC vs RTSP: 어떤 상황에 무엇을 선택하는가</h2><p>WebRTC는 브라우저 내장 지원이 있습니다. Chrome, Safari, Firefox에서 JavaScript만으로 화상통화를 구현할 수 있습니다. 플러그인이나 별도 앱 설치가 불필요합니다.</p>
+<p>RTSP는 IP 카메라·CCTV 표준입니다. 서버에서 여러 클라이언트에게 동시 스트리밍에 유리합니다(1:다 방송). RTSP를 브라우저에서 직접 재생하려면 변환(HLS/DASH로 트랜스코딩)이 필요합니다.</p>
+<p>실제 시스템에서의 조합: CCTV(RTSP) → 분석 서버(FFmpeg+FastAPI) → 브라우저(WebSocket으로 결과 전달). 또는 모바일 카메라(WebRTC) → WebRTC 서버(SFU) → AI 분석 서버. 각 프로토콜이 자신에게 최적화된 구간을 맡습니다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">두 사람이 직접 만나는 약속 잡기</div>
+      <div class="a-body"><p>WebRTC 연결 수립은 두 사람이 낯선 도시에서 처음 만나는 약속과 비슷합니다. 각자 &#x27;나는 강남역 2번 출구 앞에 있어&#x27;(공인 IP+포트)라는 정보를 카카오톡(시그널링 서버/WebSocket)으로 교환합니다. 그 후 직접 만납니다(P2P 연결).</p>
+<p>STUN은 내 위치를 외부에서 확인해주는 친구입니다. &#x27;내가 보기에 너는 강남역 2번 출구 앞에 있어 보여&#x27;라고 알려줍니다(공인 IP 확인). TURN은 두 사람이 어떻게 해도 직접 만날 수 없을 때 중간에서 소포를 대신 전달해주는 택배 회사입니다.</p>
+<p>SDP 협상은 만나기 전 &#x27;어떤 언어로 대화할까? 한국어로 하자(코덱 협상)&#x27; &#x27;얼마나 크게 말해야 할까?(비트레이트)&#x27;를 미리 약속하는 과정입니다. 직접 만났을 때 바로 대화할 수 있도록 준비합니다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>WebRTC 시그널링 서버를 FastAPI WebSocket으로 구현합니다. 실제 P2P 연결(aiortc)은 복잡하므로, 여기서는 두 클라이언트가 SDP Offer/Answer를 교환하는 시그널링 서버 핵심 로직에 집중합니다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from typing import dict
+import json
+
+app = FastAPI()
+
+# 룸 단위로 피어 관리: {&quot;room_id&quot;: [websocket1, websocket2]}
+rooms: dict[str, list[WebSocket]] = {}
+
+@app.websocket(&quot;/signal/{room_id}&quot;)
+async def signaling(websocket: WebSocket, room_id: str):
+    &quot;&quot;&quot;WebRTC 시그널링 서버 — SDP와 ICE 후보를 피어 간 중계합니다.&quot;&quot;&quot;
+    await websocket.accept()
+
+    # 룸에 참여
+    if room_id not in rooms:
+        rooms[room_id] = []
+    rooms[room_id].append(websocket)
+    peers = rooms[room_id]
+    print(f&quot;[{room_id}] 새 피어 참여. 현재 {len(peers)}명&quot;)
+
+    try:
+        async for raw in websocket.iter_text():
+            msg = json.loads(raw)
+            msg_type = msg.get(&quot;type&quot;)
+
+            # SDP Offer/Answer, ICE Candidate를 같은 룸의 다른 피어에게 중계
+            if msg_type in (&quot;offer&quot;, &quot;answer&quot;, &quot;ice-candidate&quot;):
+                for peer in peers:
+                    if peer != websocket:       # 자신 제외
+                        await peer.send_text(raw)
+                        print(f&quot;[{room_id}] {msg_type} 중계 완료&quot;)
+
+    except WebSocketDisconnect:
+        peers.remove(websocket)
+        print(f&quot;[{room_id}] 피어 퇴장. 남은 인원: {len(peers)}&quot;)
+        # 상대방에게 연결 종료 알림
+        for peer in peers:
+            await peer.send_json({&quot;type&quot;: &quot;peer-left&quot;})
+
+# 클라이언트 측 JavaScript (참고):
+# const pc = new RTCPeerConnection({iceServers: [{urls: &#x27;stun:stun.l.google.com:19302&#x27;}]});
+# const ws = new WebSocket(&#x27;ws://localhost:8000/signal/room1&#x27;);
+# // Offer 생성 후 시그널링 서버로 전송
+# const offer = await pc.createOffer();
+# await pc.setLocalDescription(offer);
+# ws.send(JSON.stringify({type: &#x27;offer&#x27;, sdp: offer.sdp}));</code></pre>
+      <div class="c-walk"><p>시그널링 서버의 역할은 SDP Offer/Answer와 ICE Candidate를 두 피어 사이에서 중계하는 것뿐입니다. 실제 영상 데이터는 시그널링 서버를 거치지 않고 피어 간 직접(P2P) 전송됩니다. rooms 딕셔너리로 같은 룸의 피어들을 묶어 관리합니다. 메시지 타입이 offer/answer/ice-candidate일 때 상대 피어에게 그대로 전달합니다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">WebRTC는 화상회의, 라이브 방송, 게임 스트리밍, AI 실시간 분석의 핵심 기술입니다. 면접에서 &#x27;실시간 1:1 영상통화 서비스를 설계하라&#x27;에 WebRTC 아키텍처를 그릴 수 있어야 합니다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>P2P, SFU(Selective Forwarding Unit), MCU(Multipoint Control Unit) 아키텍처 차이</li><li>STUN vs TURN의 역할과 TURN이 필요한 상황</li><li>SDP Offer/Answer 시그널링 플로우 설명</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>WebRTC 영상이 항상 서버를 거친다고 생각 (P2P 개념 부재)</li><li>STUN과 TURN을 같은 것으로 혼동</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>WebRTC P2P 연결 수립 과정을 STUN/TURN/ICE/SDP 키워드를 사용해 설명해보세요.</li><li>10명이 참여하는 그룹 화상회의를 WebRTC로 구현할 때 P2P Mesh vs SFU 중 어느 것을 선택하겠습니까?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 숙달: SFU(Janus, Mediasoup) 아키텍처, DTLS/SRTP 보안, Adaptive Bitrate 조절, Trickle ICE 최적화까지 설명 가능. 익숙함: WebRTC가 화상회의에 쓰인다는 것은 알지만 내부 연결 과정을 설명 못 함.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>P2P = 직접 연결</h3><p>영상 데이터가 서버를 거치지 않고 브라우저끼리 직접 전달 → 최저 지연</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>STUN = 위치 확인</h3><p>내 공인 IP:포트를 외부 서버에서 확인. NAT 통과의 첫 번째 시도</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>TURN = 중계 서버</h3><p>P2P가 불가능할 때 서버가 영상을 중계. 지연 증가, 비용 발생</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>SDP = 통신 협상서</h3><p>코덱, 해상도, 비트레이트, 네트워크 주소를 담은 협상 문서</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>시그널링 서버</h3><p>SDP와 ICE Candidate 교환을 중계하는 서버(WebSocket). 영상 데이터는 통과 안 함</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>ICE = 최적 경로 탐색</h3><p>로컬 IP, STUN으로 얻은 공인 IP, TURN 주소 중 가장 빠른 경로 선택</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>100ms 미만 지연</h3><p>UDP 기반 WebRTC의 지연 → 자연스러운 대화가 가능한 이유</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-08.html">← Wireless Communication – WiFi, Bluetooth, 5G</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-10.html">Putting It All Together – AI Video Analysis System →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+</body></html>

@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch2: OSI 7-Layer Model — 시스템 아키텍처와 네트워크 프로토콜 — direcf</title>
+  <meta name="description" content="OSI 7계층은 복잡한 네트워크 통신을 역할별로 나눈 설계도로, 각 계층이 독립적으로 작동하여 전체 시스템을 유연하게 만듭니다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child{margin-bottom:0}
+.sb-block strong{color:var(--text)}
+.sb-block code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item active" href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/computer-science">시스템 아키텍처와 네트워크 프로토콜</a><span class="sep">›</span>
+        <strong>Ch02 OSI 7-Layer Model</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 02 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🏗️</div>
+      <h1 class="chapter-title">OSI 7-Layer Model</h1>
+      <div class="chapter-title-kr">네트워크를 쌓아올린 7개의 층</div>
+      <div class="chapter-tldr">OSI 7계층은 복잡한 네트워크 통신을 역할별로 나눈 설계도로, 각 계층이 독립적으로 작동하여 전체 시스템을 유연하게 만듭니다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-02.png" alt="Chapter 2 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 2 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">4 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>OSI 7계층을 순서대로 나열하고 각 역할을 설명할 수 있다</li><li>HTTP, TCP, IP, 이더넷이 각각 어느 계층에 속하는지 알 수 있다</li><li>데이터가 계층을 내려가며 헤더가 추가되는 캡슐화 과정을 이해한다</li><li>왜 계층 구조가 소프트웨어 개발에 유리한지 설명할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>복잡한 건물을 기초 공사, 골조, 배관, 전기, 인테리어 순서로 나눠 짓듯이, 네트워크 통신도 역할별 계층으로 나뉩니다. OSI(Open Systems Interconnection) 모델은 이 계층 구조를 7단계로 정의한 국제 표준입니다.</p>
+<p>계층 구조의 핵심 장점은 &#x27;독립성&#x27;입니다. Wi-Fi를 LTE로 바꿔도 HTTP 코드는 수정할 필요가 없습니다. 물리 계층(Wi-Fi↔LTE)만 바뀌고 상위 계층(HTTP)은 그대로 동작합니다. 레고 블록처럼 각 층을 독립적으로 교체할 수 있습니다.</p>
+<p>실무에서 OSI 7계층을 항상 완벽히 외울 필요는 없지만, 문제가 생겼을 때 &#x27;어느 계층의 문제인가&#x27;를 파악하면 디버깅 속도가 극적으로 빨라집니다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>7계층을 한눈에: 물리층부터 응용층까지</h2><p>1층(물리): 전기 신호, 빛, 전파로 0과 1을 전달합니다. 이더넷 케이블, Wi-Fi 안테나, 광섬유가 여기에 속합니다.</p>
+<p>2층(데이터 링크): 같은 네트워크 내 기기 간 통신을 담당합니다. MAC 주소로 기기를 구분합니다. 이더넷, Wi-Fi 프로토콜이 여기 있습니다.</p>
+<p>3층(네트워크): 서로 다른 네트워크 간 경로를 찾습니다. IP 주소와 라우터가 이 층의 주인공입니다. 4층(전송): 종단 간 신뢰성 있는 데이터 전달을 담당합니다. TCP와 UDP가 여기 있습니다. 5~6층(세션·표현): 암호화, 데이터 형식 변환을 담당합니다. 7층(응용): 사용자와 직접 맞닿는 계층. HTTP, WebSocket, RTSP, FTP가 모두 여기 있습니다.</p></div><div class="sb-block"><h2>캡슐화: 계층을 내려가며 봉투를 겹겹이 싸는 과정</h2><p>데이터를 보낼 때 7층(응용)에서 1층(물리)으로 내려가면서 각 계층이 자신의 헤더를 추가합니다. 이를 캡슐화(Encapsulation)라고 합니다.</p>
+<p>예를 들어 HTTP GET 요청을 보낼 때, 7층에서 HTTP 헤더 추가 → 4층에서 TCP 헤더 추가 → 3층에서 IP 헤더 추가 → 2층에서 이더넷 헤더 추가 → 1층에서 전기 신호로 전송됩니다.</p>
+<p>수신 측에서는 반대 순서로 헤더를 하나씩 벗겨내는 역캡슐화(Decapsulation)가 일어납니다. 택배 상자를 열면 내부 포장지, 그 안에 또 포장지, 최종적으로 상품이 나오는 것과 같습니다.</p></div><div class="sb-block"><h2>실무에서 OSI 계층이 중요한 이유</h2><p>문제가 생겼을 때 계층별로 진단할 수 있습니다. 핑(ping)이 안 된다면 3층(IP) 이하 문제입니다. 핑은 되지만 HTTP가 안 된다면 7층(응용) 문제입니다. 이 구분만 알아도 디버깅 시간이 절반으로 줄어듭니다.</p>
+<p>이 코스에서 배우는 기술들의 위치입니다: REST/HTTP/WebSocket/RTSP/WebRTC = 7층(응용), TCP/UDP = 4층(전송), IP = 3층(네트워크), Wi-Fi/이더넷 = 2층(데이터 링크), 물리 신호 = 1층(물리).</p>
+<p>실무에서는 OSI보다 TCP/IP 4계층 모델(응용/전송/인터넷/네트워크 접근)을 더 자주 씁니다. OSI는 교육용 개념 모델, TCP/IP는 실제 인터넷의 구현 모델이라고 이해하면 됩니다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">국제 택배 회사의 처리 과정</div>
+      <div class="a-body"><p>국제 택배를 보낼 때를 생각해보세요. 상품(데이터)을 내부 포장재로 감싸고(응용 계층), 송장을 붙이고(전송/네트워크 계층), 외부 박스에 담고(데이터 링크 계층), 트럭에 실어 물리적으로 이동합니다(물리 계층).</p>
+<p>각 단계는 독립적입니다. 물류 회사가 트럭에서 비행기로 운송 수단을 바꾸더라도(물리 계층 변경), 박스 안 송장이나 상품은 그대로입니다(상위 계층 불변). 이것이 계층 구조의 힘입니다.</p>
+<p>수신 측에서는 역순으로 포장을 풉니다. 외부 박스 제거 → 송장 확인 → 내부 포장재 제거 → 상품 수령. 네트워크의 역캡슐화와 완전히 같은 구조입니다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>캡슐화·역캡슐화 과정을 Python 딕셔너리로 시뮬레이션합니다. 실제 소켓 라이브러리는 이 과정을 자동으로 처리하지만, 안에서 무슨 일이 일어나는지 직접 눈으로 확인해봅니다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import json
+
+def encapsulate(app_data: str, src_ip: str, dst_ip: str,
+                src_port: int, dst_port: int) -&gt; dict:
+    &quot;&quot;&quot;응용 계층 데이터를 캡슐화하는 과정 시뮬레이션.&quot;&quot;&quot;
+
+    # 7층: 응용 계층 (HTTP)
+    layer7 = {&quot;method&quot;: &quot;GET&quot;, &quot;path&quot;: &quot;/&quot;, &quot;body&quot;: app_data}
+
+    # 4층: 전송 계층 (TCP 헤더 추가)
+    layer4 = {
+        &quot;tcp_header&quot;: {&quot;src_port&quot;: src_port, &quot;dst_port&quot;: dst_port,
+                       &quot;seq&quot;: 1000, &quot;ack&quot;: 0, &quot;flags&quot;: &quot;SYN&quot;},
+        &quot;data&quot;: layer7
+    }
+
+    # 3층: 네트워크 계층 (IP 헤더 추가)
+    layer3 = {
+        &quot;ip_header&quot;: {&quot;src_ip&quot;: src_ip, &quot;dst_ip&quot;: dst_ip, &quot;ttl&quot;: 64},
+        &quot;data&quot;: layer4
+    }
+
+    # 2층: 데이터 링크 계층 (이더넷 헤더 추가)
+    layer2 = {
+        &quot;eth_header&quot;: {&quot;src_mac&quot;: &quot;AA:BB:CC:DD:EE:FF&quot;,
+                       &quot;dst_mac&quot;: &quot;11:22:33:44:55:66&quot;},
+        &quot;data&quot;: layer3
+    }
+    return layer2  # 1층(물리)으로 전기 신호 전송
+
+def decapsulate(frame: dict) -&gt; str:
+    &quot;&quot;&quot;수신 측에서 헤더를 벗겨내는 과정.&quot;&quot;&quot;
+    layer3 = frame[&quot;data&quot;]           # 이더넷 헤더 제거
+    layer4 = layer3[&quot;data&quot;]          # IP 헤더 제거
+    layer7 = layer4[&quot;data&quot;]          # TCP 헤더 제거
+    return layer7[&quot;body&quot;]            # 최종 응용 데이터 반환
+
+# ── 실행 ──────────────────────────────────────────────────
+frame = encapsulate(
+    app_data=&quot;Hello, World!&quot;,
+    src_ip=&quot;192.168.1.5&quot;, dst_ip=&quot;93.184.216.34&quot;,
+    src_port=54321,        dst_port=80
+)
+print(&quot;캡슐화 결과 (전송 직전 프레임):&quot;)
+print(json.dumps(frame, indent=2, ensure_ascii=False))
+
+received = decapsulate(frame)
+print(f&quot;\n역캡슐화 후 수신 데이터: {received}&quot;)</code></pre>
+      <div class="c-walk"><p>encapsulate 함수는 7→4→3→2층 순서로 각 계층의 헤더를 추가합니다. decapsulate는 반대 순서로 헤더를 벗겨냅니다. 실제 운영체제의 TCP/IP 스택이 정확히 이 과정을 수행하며, 우리가 쓰는 requests, socket 라이브러리가 이 복잡한 과정을 한 줄 코드로 추상화해줍니다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">OSI 모델은 네트워크 엔지니어링·백엔드 면접의 기본 소양 확인 질문에 자주 등장합니다. &#x27;어느 계층에서 문제가 발생했는가&#x27;를 빠르게 판단하는 능력이 실무에서 매우 중요합니다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>TCP/UDP가 4계층, HTTP/WebSocket이 7계층에 있다는 것을 즉시 대답</li><li>계층화의 이점: 독립성, 교체 용이성을 구체적 예시로 설명</li><li>캡슐화/역캡슐화 개념 이해</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>OSI를 외우기만 하고 &#x27;왜 계층으로 나누는가&#x27;를 설명하지 못함</li><li>TCP와 HTTP가 같은 계층이라고 생각하는 경우</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>HTTP는 OSI 몇 계층인가요? TCP는요? 그 차이가 무엇을 의미하나요?</li><li>Wi-Fi를 LTE로 바꿔도 HTTP 코드가 동작하는 이유를 OSI 계층으로 설명해보세요.</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 숙달: 특정 문제를 보고 즉시 &#x27;이건 3층 문제, 이건 7층 문제&#x27;라고 진단 가능. 익숙함: 계층을 나열할 수 있지만 실제 트러블슈팅에 활용하지 못함.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>계층화의 이유</h3><p>복잡한 통신을 역할별로 나눠 각 계층이 독립적으로 작동 → 유지보수 용이</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>7계층 위치</h3><p>HTTP/WebSocket/RTSP = 7층(응용), TCP/UDP = 4층(전송), IP = 3층(네트워크)</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>캡슐화</h3><p>데이터가 7층→1층으로 내려가며 각 계층이 헤더를 추가하는 과정</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>역캡슐화</h3><p>수신 측에서 1층→7층으로 올라가며 헤더를 하나씩 제거하는 과정</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>독립성의 힘</h3><p>Wi-Fi→LTE 변경해도 HTTP 코드 수정 불필요 (물리층만 변경, 응용층 불변)</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>TCP/IP 4계층</h3><p>실무에서는 OSI 7층보다 TCP/IP 4층 모델(응용/전송/인터넷/네트워크 접근)을 더 자주 사용</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-01.html">← How the Internet Works</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-03.html">TCP vs UDP →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+</body></html>

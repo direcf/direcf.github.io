@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch8: Building Effective Agents — Engineering Philosophy in the AI Agent Era — direcf</title>
+  <meta name="description" content="워크플로(workflow)와 에이전트(agent)는 다르다. 대부분의 문제는 단순한 워크플로로 풀린다. 진짜 에이전트는 마지막에 신중하게.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child{margin-bottom:0}
+.sb-block strong{color:var(--text)}
+.sb-block code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/engineering-philosophy">Engineering Philosophy in the AI Agent Era</a><span class="sep">›</span>
+        <strong>Ch08 Building Effective Agents</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 08 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🤖</div>
+      <h1 class="chapter-title">Building Effective Agents</h1>
+      <div class="chapter-title-kr">효과적인 에이전트 만들기 — Anthropic (2024)</div>
+      <div class="chapter-tldr">워크플로(workflow)와 에이전트(agent)는 다르다. 대부분의 문제는 단순한 워크플로로 풀린다. 진짜 에이전트는 마지막에 신중하게.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-08.png" alt="Chapter 8 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 8 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>Augmented LLM이 모든 에이전트의 기본 블록임을 안다</li><li>5가지 워크플로 패턴(Chain·Routing·Parallel·Orchestrator·Eval)을 구분한다</li><li>워크플로와 자율 에이전트의 결정 기준을 안다</li><li>복잡도를 최소화하면서도 효과적인 시스템을 설계할 수 있다</li><li>Anthropic이 권하는 &#x27;단순함부터&#x27;의 정신을 적용한다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>Anthropic이 2024년 12월에 발표한 가이드. AI 에이전트 광풍 속에서 &#x27;agent&#x27;라는 용어가 너무 마케팅화돼 의미가 흐려진 시점에, Anthropic은 정의를 다잡고 실용적 패턴을 정리했다. 단순함을 강조한다 — Sutton의 Bitter Lesson과 McKinley의 Boring Tech 정신이 모두 녹아 있다.</p>
+<p>이 글의 핵심 메시지: 에이전트를 만들기 전에, 그게 정말 에이전트여야 하는지 묻자. 대부분의 문제는 &#x27;워크플로&#x27; — 미리 정의된 단계 — 로 충분하다. 진짜 자율 에이전트(LLM이 도구·다음 단계를 스스로 결정)는 강력하지만 디버깅·예측 가능성·비용 면에서 비싸다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>8.1 Augmented LLM — 모든 것의 시작</h2><p>기본 빌딩 블록: LLM + retrieval + tools + memory. 이 네 가지를 갖춘 단일 LLM 호출이 거의 모든 에이전트 시스템의 원자 단위다.</p>
+<p>- Retrieval: 외부 지식을 끌어다 context에 넣음.
+- Tools: LLM이 외부 함수를 호출 가능 (API, DB, 코드 실행).
+- Memory: 이전 turn·세션의 정보 유지.</p>
+<p>중요한 인사이트: 많은 &#x27;AI 시스템&#x27;이 이 단일 augmented LLM 호출 하나로 충분하다. 워크플로나 에이전트로 가기 전에, 단일 호출로 해결되는지 먼저 확인하라.</p></div><div class="sb-block"><h2>8.2 워크플로 패턴 — 미리 정의된 단계</h2><p>Anthropic이 정리한 5가지 워크플로 패턴:</p>
+<p>(1) Prompt chaining: A → B → C 순서로 LLM 호출. 각 단계 출력이 다음 입력. 예: 마케팅 카피 작성 → 번역 → 톤 검증.</p>
+<p>(2) Routing: 분류 LLM이 입력을 적절한 전문 LLM/도구로 라우팅. 예: 고객 문의를 환불·기술·일반으로 분기.</p>
+<p>(3) Parallelization: 같은 입력을 여러 LLM에 병렬 호출하고 집계. (a) Sectioning — 하위 작업 분할 (b) Voting — 같은 작업 N번 → 합의.</p>
+<p>(4) Orchestrator-workers: 메인 LLM이 동적으로 하위 작업을 만들고 worker LLM에게 위임 후 종합. 사전 정의된 단계가 없을 때.</p>
+<p>(5) Evaluator-optimizer: 한 LLM이 출력을 만들고, 다른 LLM이 평가·피드백을 주면, 첫 LLM이 다시 시도. 반복 개선.</p>
+<p>이 5개 패턴은 워크플로 — &#x27;단계가 미리 정의됐다&#x27;. 디버그·예측 쉽고 비용 추정 가능.</p></div><div class="sb-block"><h2>8.3 진짜 에이전트는 언제?</h2><p>Anthropic의 정의: &#x27;에이전트&#x27;는 LLM이 스스로 자기 행동·도구 사용을 결정하고 환경 피드백 기반으로 동작을 조정하는 시스템.</p>
+<p>워크플로와 차이: 워크플로는 다음 단계가 코드에 정의돼 있다. 에이전트는 다음 단계가 LLM의 추론으로 결정된다.</p>
+<p>에이전트가 적합한 경우: (a) 작업 단계가 미리 정의 불가 (b) 환경이 동적 (c) 여러 시도와 적응이 필요. 예: 컴퓨터 사용 에이전트, 코드 디버깅 에이전트, 연구 에이전트.</p>
+<p>에이전트의 비용: (a) 비결정적 — 같은 입력에 다른 출력 (b) 무한 루프 위험 (c) 비용·지연 폭발 가능 (d) 디버깅 어려움.</p>
+<p>Anthropic의 권고: 가능한 한 워크플로로 풀어라. 워크플로로 안 되는 영역에서만 에이전트로.</p></div><div class="sb-block"><h2>8.4 좋은 에이전트 설계 원칙</h2><p>에이전트로 가야 한다면 다음 원칙을 지켜라.</p>
+<p>Simplicity: 가능한 가장 단순한 디자인부터. 복잡한 프레임워크가 아닌 직접 작성한 루프부터.</p>
+<p>Transparency: 에이전트의 추론과 도구 호출이 로그·trace로 보여야 한다. &#x27;why did it do that?&#x27;에 답할 수 있게.</p>
+<p>Sufficient context: 에이전트가 결정에 필요한 정보를 충분히 받아야 한다. context engineering — 어떤 정보를 어느 시점에 줄지가 핵심.</p>
+<p>Test in sandbox: 프로덕션 전에 격리된 환경에서 충분히 테스트. 무한 루프·예상 못한 도구 호출 패턴이 흔하다.</p>
+<p>Stopping criteria: 명확한 종료 조건. max_steps, time_budget, confidence threshold. 무한 루프 방지의 마지막 보루.</p>
+<p>Human-in-the-loop for high-stakes: 비가역 행동(돈 송금, 파일 삭제, 외부 통신) 전엔 사람 승인.</p></div><div class="sb-block"><h2>8.5 프레임워크보다 직접 작성</h2><p>Anthropic의 강한 권고: LangChain·LangGraph·AutoGen 같은 거대 프레임워크 쓰지 마라. 적어도 처음엔.</p>
+<p>이유: (a) 프레임워크는 추상화 비용이 크다. 디버깅 시 그 추상화를 통과해야 한다. (b) 프레임워크의 breaking change에 끌려다닌다. (c) 자기 시스템의 동작을 깊이 이해할 기회를 박탈한다.</p>
+<p>권고 워크플로: (1) Anthropic SDK + 단순 while 루프로 직접 작성. (2) 시스템이 무엇이 필요한지 정확히 파악. (3) 그 후 필요하면 프레임워크 도입.</p>
+<p>McKinley의 &#x27;Choose Boring Technology&#x27;(5장)와 같은 정신: 새 프레임워크는 토큰을 소비한다. 진짜 차별화 영역이 아니면 직접 짜는 게 낫다.</p>
+<p>이 글이 &#x27;workflow first, agent later&#x27;와 &#x27;framework last&#x27;를 동시에 권하는 이유: 둘 다 &#x27;단순함이 자산&#x27;이라는 같은 원칙에서 나온다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">주문서와 셰프</div>
+      <div class="a-body"><p>체인 레스토랑은 메뉴와 조리법이 정해져 있다 — 워크플로. 주문이 들어오면 정해진 단계로 요리한다. 빠르고 일관되고 비용 예측 가능.</p>
+<p>오마카세 스시집의 셰프는 다르다 — 에이전트. 손님 반응, 그날 입고된 재료, 분위기를 보고 다음 코스를 즉석에서 결정한다. 강력하지만 일관성이 떨어지고 비싸다.</p>
+<p>맥도날드를 오마카세 셰프로 운영할 이유 없다. 핵심 차별화가 셰프의 판단력에 있는 영역에서만 에이전트로. 그 외엔 워크플로로. Anthropic의 글은 이 결정을 명확히 하라고 한다. 모든 곳을 셰프로 만들면 빠르게 망한다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>에이전트의 가장 기본 형태 — Anthropic이 권하는 &#x27;직접 짠 작은 루프&#x27;. 프레임워크 없이 100줄 미만으로 동작하는 도구 사용 에이전트.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import anthropic
+
+TOOLS = [
+    {&quot;name&quot;: &quot;search_docs&quot;,
+     &quot;description&quot;: &quot;내부 문서 검색&quot;,
+     &quot;input_schema&quot;: {&quot;type&quot;: &quot;object&quot;,
+                      &quot;properties&quot;: {&quot;q&quot;: {&quot;type&quot;: &quot;string&quot;}},
+                      &quot;required&quot;: [&quot;q&quot;]}},
+    {&quot;name&quot;: &quot;submit_answer&quot;,
+     &quot;description&quot;: &quot;최종 답변 제출&quot;,
+     &quot;input_schema&quot;: {&quot;type&quot;: &quot;object&quot;,
+                      &quot;properties&quot;: {&quot;answer&quot;: {&quot;type&quot;: &quot;string&quot;}},
+                      &quot;required&quot;: [&quot;answer&quot;]}},
+]
+
+def run_tool(name, args):
+    if name == &quot;search_docs&quot;:
+        return search_internal(args[&quot;q&quot;])  # 자체 검색 함수
+    if name == &quot;submit_answer&quot;:
+        return {&quot;final&quot;: args[&quot;answer&quot;]}
+
+def run_agent(user_question: str, max_steps: int = 10) -&gt; str:
+    client = anthropic.Anthropic()
+    messages = [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: user_question}]
+
+    for step in range(max_steps):                # ← stopping criteria
+        resp = client.messages.create(
+            model=&quot;claude-opus-4-7&quot;,
+            max_tokens=1024,
+            tools=TOOLS,
+            messages=messages,
+        )
+        # 도구 호출 없으면 종료
+        tool_uses = [b for b in resp.content if b.type == &quot;tool_use&quot;]
+        if not tool_uses:
+            return &quot;&quot;.join(b.text for b in resp.content if b.type == &quot;text&quot;)
+
+        messages.append({&quot;role&quot;: &quot;assistant&quot;, &quot;content&quot;: resp.content})
+        # 각 도구 실행 후 결과 반영
+        results = []
+        for t in tool_uses:
+            result = run_tool(t.name, t.input)
+            if t.name == &quot;submit_answer&quot;:
+                return result[&quot;final&quot;]            # ← 명시적 종료
+            results.append({&quot;type&quot;: &quot;tool_result&quot;,
+                            &quot;tool_use_id&quot;: t.id,
+                            &quot;content&quot;: str(result)})
+        messages.append({&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: results})
+
+    raise TimeoutError(&quot;max_steps reached&quot;)       # ← 안전망
+</code></pre>
+      <div class="c-walk"><p>프레임워크 없이 50줄 안에 정상 동작하는 도구 사용 에이전트가 만들어진다. while 루프, max_steps, 명시적 종료 도구, 도구 결과를 messages에 누적. Anthropic이 강조한 모든 원칙(simplicity, stopping criteria, transparency)이 이 작은 코드에 들어 있다. 더 복잡한 에이전트도 이 핵심 패턴 위에 얹는다 — 프레임워크가 필요해지는 건 그다음이다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">AI 엔지니어 시니어 면접의 핵심 질문 — &#x27;이건 워크플로인가 에이전트인가?&#x27; 분류 능력이 설계 품질을 갈라놓는다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>워크플로/에이전트 결정 기준이 명확</li><li>5가지 워크플로 패턴을 식별하고 적재적소에 사용</li><li>에이전트에 stopping criteria와 human-in-the-loop를 설계</li><li>프레임워크 의존도를 의식적으로 통제</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>모든 문제를 &#x27;agent&#x27; 하나로 풀려는 마케팅적 사고</li><li>LangChain·LangGraph 같은 프레임워크가 &#x27;필수&#x27;라는 인식</li><li>에이전트에 max_steps·timeout·비용 상한이 없음</li><li>비가역 도구 호출에 human approval이 없음</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>당신 시스템의 어느 부분이 워크플로이고 어느 부분이 에이전트인가요? 분기 기준은?</li><li>에이전트가 무한 루프에 빠지지 않도록 어떻게 설계하시나요?</li><li>Anthropic이 &#x27;프레임워크 쓰지 말라&#x27;고 권하는 이유에 동의하시나요? 반론은?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> Familiar는 &#x27;ReAct·tool use 안다&#x27;고 한다. Mastery는 자기 시스템의 각 부분이 5가지 워크플로 패턴 중 무엇인지, 어느 부분만 진짜 에이전트인지 정확히 설명할 수 있고, 그 결정의 ROI를 말할 수 있다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>Augmented LLM이 원자</h3><p>LLM + retrieval + tools + memory. 모든 시작점.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>워크플로 vs 에이전트</h3><p>단계가 정의됐나(워크플로) 아니면 LLM이 결정하나(에이전트).</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>5가지 워크플로 패턴</h3><p>Chain·Routing·Parallel·Orchestrator·Evaluator.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>대부분은 워크플로로 충분</h3><p>에이전트는 마지막 수단.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>단순함부터</h3><p>프레임워크 없이 직접 짠 루프부터.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>Stopping criteria 필수</h3><p>max_steps·timeout·비용 상한. 안전망.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>Transparency</h3><p>왜 그렇게 행동했는지 trace로 답할 수 있어야.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>Context engineering</h3><p>어떤 정보를 어느 시점에 줄지가 에이전트 품질을 결정.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-07.html">← What We Learned from a Year of Building with LLMs</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-09.html">Welcome to the Era of Experience →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+</body></html>
