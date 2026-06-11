@@ -31,6 +31,8 @@ export interface Course {
   codeLanguage?: string;
   description?: string;
   categorySlug?: string;
+  heroImage?: string;        // optional banner shown above the syllabus
+  heroImageAlt?: string;
   chapters: Chapter[];
 }
 
