@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch9: Producer-Consumer Pipeline Architecture — Real-time Video LLM — direcf</title>
+  <meta name="description" content="6-stage를 무엇으로 묶을지(async/sync, GPU/CPU 분리), stage 사이 queue를 어떻게 운영할지(backpressure, drop policy), failure mode(queue saturation, GPU starvation, head-of-line blocking)를 어떻게 다룰지가 streaming pipeline 아키텍처의 본질이다. Ray, asyncio, multiprocessing의 선택은 이 결정에서 파생된다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/multimodal-ai">Real-time Video LLM</a><span class="sep">›</span>
+        <strong>Ch09 Producer-Consumer Pipeline Architecture</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 09 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🏗️</div>
+      <h1 class="chapter-title">Producer-Consumer Pipeline Architecture</h1>
+      <div class="chapter-title-kr">프로듀서-컨슈머 파이프라인 아키텍처</div>
+      <div class="chapter-tldr">6-stage를 무엇으로 묶을지(async/sync, GPU/CPU 분리), stage 사이 queue를 어떻게 운영할지(backpressure, drop policy), failure mode(queue saturation, GPU starvation, head-of-line blocking)를 어떻게 다룰지가 streaming pipeline 아키텍처의 본질이다. Ray, asyncio, multiprocessing의 선택은 이 결정에서 파생된다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-09.png" alt="Chapter 9 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 9 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>Real-time video LLM의 6-stage를 producer-consumer 그래프로 그려 stage 사이의 queue / backpressure를 명시할 수 있다</li><li>async stage, sync stage, GPU stage, CPU stage를 4-quadrant로 분류하고 각 quadrant에 적합한 concurrency 모델을 선택할 수 있다</li><li>Ray actor, asyncio task, multiprocessing process 3개 선택지의 trade(memory share, IPC cost, GIL)을 비교할 수 있다</li><li>Queue saturation, GPU starvation, head-of-line blocking 3대 failure mode를 detection signal과 함께 설명할 수 있다</li><li>6-stage invariant contract를 정의해 stage 구현을 plug-and-play로 만들 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>Chapter 6-8까지가 각 stage 내부의 최적화였다면 이 챕터는 <em>stage 사이를 잇는 system</em>을 다룬다. Real-time pipeline의 가장 어려운 결정은 stage 알고리즘이 아니라 <strong>stage들을 어떻게 묶고 어떻게 통신시키느냐</strong>다. 6개 stage가 각각 자기 budget을 지킨다고 해서 전체가 work하지 않는다. Stage 사이 queue가 잘못 운영되면 한 stage의 spike가 전체 pipeline을 파괴한다.</p>
+<p>핵심 멘탈 모델 시프트: General video LLM은 'sampler.select()'가 unit이었다. Hour-scale은 'memory.write() / memory.retrieve()'가 unit이었다. <strong>Real-time은 'stage.process(frame) → queue.put(token)'의 producer-consumer 그래프 전체가 unit이다</strong>. 한 stage만 들어내서 swap할 수 있게 <em>invariant contract</em>를 정의하는 게 plug-and-play 아키텍처의 핵심이다.</p>
+<p>이 챕터는 Ray actor, asyncio, multiprocessing의 3-way 비교를 하고, queue 운영의 backpressure / drop policy를 production 결정 관점에서 다룬다. Failure mode를 detection signal과 함께 정리해 incident playbook에 가까운 형태로 마무리한다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>1. 6-stage를 producer-consumer 그래프로 그리기</h2><p>Producer-consumer 패턴은 한 stage가 결과를 queue에 push하고 다음 stage가 pull해 처리하는 구조다. Real-time video LLM의 6-stage를 그래프로 표현하면:</p>
+<pre><code>[Capture] →q1→ [Decode] →q2→ [Sample] →q3→ [Encode] →q4→ [Reduce] →q5→ [LLM] →q6→ [Response]
+</code></pre>
+<p>Queue가 5개. 각 queue가 운영 결정을 요구한다. (a) <strong>Bounded or unbounded?</strong> Unbounded면 producer가 빠르고 consumer가 느릴 때 메모리 폭발. Real-time에서는 거의 항상 bounded. (b) <strong>Capacity?</strong> 1이면 strict pipeline(producer가 consumer 한 칸만 앞서 감), N이면 burst absorber. Real-time video는 보통 2-8 capacity. (c) <strong>Full일 때 정책?</strong> Block, drop oldest, drop newest, sample down. 이게 backpressure / drop policy의 핵심.</p>
+<p>Graph 구조를 보면 결정 포인트가 보인다. Capture와 Decode는 frame-independent해서 parallel. Sample은 sequential dependency가 있어 single-worker. Encode는 batchable해서 multi-frame batch worker. LLM은 KV cache state를 들고 있어 session-affinity. Stage마다 worker 모델이 다르다.</p>
+<p>핵심 결정: <strong>'어디서 frame을 drop할 것인가'를 architecture 단에서 정해야 한다</strong>. 모든 queue에서 drop 가능하게 두면 frame이 어디서 사라졌는지 debug 불가. 시니어 결정은 'capture 직후 (q1) 또는 reduce 직후 (q5)' 둘 중 하나로 <em>drop point를 고정</em>하는 것이다. q1 drop은 'too fast input' 처리, q5 drop은 'too slow LLM' 처리에 대응한다.</p></div><div class="sb-block"><h2>2. Async vs sync, GPU vs CPU — 4-quadrant 분류</h2><p>Stage를 어떤 concurrency 모델로 실행할지 결정하려면 4-quadrant 분류가 유용하다.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Sync (blocking)</th>
+<th>Async (non-blocking)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>CPU stage</strong></td>
+<td>thread pool / multiprocessing</td>
+<td>asyncio</td>
+</tr>
+<tr>
+<td><strong>GPU stage</strong></td>
+<td>dedicated worker thread + CUDA stream</td>
+<td>CUDA graph + async kernel launch</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Capture (CPU sync)</strong>: 네트워크 socket read나 camera handle은 blocking system call이 많다. Asyncio도 가능하지만 lib 지원 따라 다름. 가장 단순한 건 dedicated thread.</p>
+<p><strong>Decode (GPU+CPU hybrid)</strong>: NVDEC는 GPU async이고 PyCairo/OpenCV는 CPU sync. 둘 다 비-Python time 영역에 머무르므로 GIL 영향 적음. Decode worker를 dedicated thread로 두는 게 표준.</p>
+<p><strong>Sample (CPU async)</strong>: 결정 로직만이라 매우 가볍다 (&lt;1ms). asyncio coroutine으로 충분.</p>
+<p><strong>Encode (GPU sync)</strong>: PyTorch encoder forward. GIL holding이 길어서 asyncio와 충돌. Dedicated worker + CUDA stream으로 isolate. Batching을 위해 micro-batcher 패턴 (Dynamic batch size를 100ms window 내에서 결정).</p>
+<p><strong>Reduce (GPU sync)</strong>: TokenMerge / clustering. Encode와 같은 worker에 넣거나 별 worker에 별 GPU에 split. Multi-GPU면 NVLink로 token 옮기는 cost vs 분리 이득 비교.</p>
+<p><strong>LLM (GPU sync, session-affine)</strong>: vLLM/SGLang process로 분리. KV cache state 때문에 session이 같은 process에 stick. Async API는 vLLM이 제공하지만 backend는 sync.</p>
+<p>시니어 직관: GPU 작업끼리도 <em>같은 GPU에서 같은 stream</em>이면 직렬, <em>다른 stream</em>이면 parallel. 다른 GPU면 IPC cost(NVLink). 한 frame이 encoder GPU에서 LLM GPU로 옮겨가는 데 ~1-2ms (256 token × 4096 dim × fp16 = 2MB / 50GB/s NVLink). 이 IPC cost를 무시하면 multi-GPU 분리가 net loss.</p></div><div class="sb-block"><h2>3. Ray vs asyncio vs multiprocessing — 어느 도구를 언제</h2><p>Concurrency 도구 선택은 stage 분류와 product 요구로부터 역산한다. 3가지 주류 선택지.</p>
+<p><strong>asyncio</strong>. Python coroutine. CPU async에 강함. Multi-GPU나 multi-process로 못 확장. Single-machine + I/O bound stage(capture, response API 송수신) 묶기에 좋음. GIL을 그대로 떠안음 — GPU stage는 별 thread로 release해야 함. 단순 prototype에 가장 빠르다.</p>
+<p><strong>multiprocessing</strong>. Process 단위 isolation. Stage마다 별 process로 두면 GIL 우회. IPC는 pickle + queue로 비용 큼 (256 token × fp16 = 0.5KB per frame이면 OK, 그러나 raw frame은 MB 단위라 IPC 부담). GPU stage 사이에는 CUDA IPC handle 사용 가능. Stage별 reliability isolation에 강함 (한 process 죽어도 다른 stage 살아남음). Production에서 stage 격리 정책으로 자주 채택.</p>
+<p><strong>Ray</strong>. Actor 모델 + distributed. Stage 하나하나를 actor로 두면 cluster-scale로 확장 가능. Object store(Plasma)로 zero-copy shared memory. Multi-node로 LLM serving과 encoder serving을 분리 가능. 단점: framework overhead (cold start, actor scheduler). Single-node에서는 multiprocessing이 더 가볍다.</p>
+<p><strong>선택 가이드</strong>:</p>
+<ul>
+<li>Single-GPU prototype → asyncio + dedicated threads</li>
+<li>Single-node production → multiprocessing or Ray local</li>
+<li>Multi-node production → Ray + KubeRay or hand-rolled gRPC</li>
+</ul>
+<p>실전에서 자주 보이는 패턴: 'asyncio main loop + thread pool for GPU stages + Ray for LLM serving cluster'. Hybrid다. 'Ray만 쓴다' 또는 'asyncio만 쓴다'는 보통 잘못된 단순화. 각 도구가 잘하는 영역이 다르므로 stage 분류 결과에서 선택.</p>
+<p>주의: Triton Inference Server, NVIDIA Riva 같은 <em>비-Python</em> serving 도구를 LLM/encoder stage에 두면 GIL을 완전히 우회. Stage 사이 통신은 gRPC. Production 시스템 (Gemini Live 추정)에서 자주 보이는 architecture.</p></div><div class="sb-block"><h2>4. Failure mode 3대장 — queue saturation, GPU starvation, HOL blocking</h2><p>Pipeline의 알고리즘은 happy path에서 잘 돌아도 production에서는 failure mode가 가치를 결정한다. 3대장.</p>
+<p><strong>(1) Queue saturation.</strong> Producer가 consumer보다 빠를 때 queue가 가득 찬다. Bounded queue면 backpressure 발생. 신호: queue.size() 메트릭이 capacity에 수렴. Upstream stage 처리 시간이 점점 늘어남 (block 때문). 해결: (a) drop policy 활성화, (b) consumer worker 추가, (c) producer rate 제한. 좋은 production은 saturation이 발생하기 전에 <em>drop policy</em>가 trigger되도록 명시 설계 — 'drop이 graceful degradation'.</p>
+<p><strong>(2) GPU starvation.</strong> GPU worker가 input을 기다리며 idle. 신호: GPU utilization이 30% 이하로 떨어짐. Upstream queue size = 0. CPU stage가 bottleneck. 해결: (a) CPU stage prefetch buffer 늘리기, (b) CPU stage parallel worker 추가, (c) input pipeline에 prefetch_factor 추가. PyTorch DataLoader의 num_workers 패턴을 streaming pipeline에 가져온다.</p>
+<p><strong>(3) Head-of-line blocking.</strong> 한 frame의 처리가 길어져 뒤 frame이 다 막힘. 신호: latency p99이 평균보다 10배 이상 튐. 해결: (a) per-frame timeout, (b) priority queue로 짧은 작업 우선, (c) stage timeout 후 skip. 단순한 방법은 'stage timeout 시 frame drop' — incident에서 reproducibility를 위해 timeout이 deterministic해야 함.</p>
+<p>시니어 평가 포인트: 후보가 'pipeline이 잘 도는가'를 묻기 전에 'failure mode가 무엇이고 detection signal이 무엇인가'를 묻는다. 그리고 detection이 가능한 메트릭(queue depth, GPU util, per-stage latency)을 architecture 단에서 1급 객체로 둔다. <em>Pipeline은 failure mode 정의 위에 서 있다</em>가 시니어 멘탈 모델.</p></div><div class="sb-block"><h2>5. Plug-and-play 6-stage — invariant contract</h2><p>Plug-and-play 아키텍처의 핵심은 <em>stage 구현을 swap 가능</em>하게 만드는 invariant contract다. 'Encoder를 SigLIP에서 InternVideo2로 바꾼다', 'Sampler를 AKS에서 BOLT로 바꾼다' 같은 변경이 <em>pipeline 코드를 안 건드리고</em> 가능해야 한다. 그러려면 각 stage의 interface가 정의되어야 한다.</p>
+<p>6-stage invariant contract sketch:</p>
+<pre><code class="language-python">class Stage(Protocol):
+    name: str
+    def process(self, frame_id: int, payload: Any) -&gt; Any: ...
+    def health(self) -&gt; dict: ...  # latency, queue depth, errors
+    def drop_signal(self) -&gt; bool: ...  # tell upstream to drop
+</code></pre>
+<p>각 stage가 (a) <code>frame_id</code>를 invariant로 통과시키고, (b) 자기 health를 노출하고, (c) 'drop이 필요한지' signal을 위로 보낸다. 이 3가지가 plug-and-play의 minimal contract다.</p>
+<p><strong>왜 frame_id 통과가 invariant인가</strong>: 6-stage 끝에서 'response가 어느 frame에 대응하나'를 추적할 수 있어야 한다. Debugging에서도 'p99 spike가 발생한 frame이 어느 stage에서 늘어졌나'를 join하려면 frame_id가 같이 흘러야 한다. 새 stage를 추가할 때 frame_id를 떨어뜨리면 trace가 깨진다.</p>
+<p><strong>왜 drop_signal이 invariant인가</strong>: Downstream이 saturate되면 upstream이 알아야 자기 decisions(sampling rate)을 조정. 'Capture가 30 FPS인데 LLM이 saturate되면 capture가 15 FPS로 떨어진다' 같은 adaptive behavior가 가능해진다. Contract 없이 push만 하면 가운데 queue에서 drop이 일어나고 reproducibility가 사라진다.</p>
+<p><strong>Stage swap 예</strong>:</p>
+<ul>
+<li>Encoder swap: SigLIP → InternVideo2 (Wang et al., arXiv:2403.15377). 같은 contract 따르면 1줄 변경.</li>
+<li>Sampler swap: AKS → BOLT → Q-Frame. 모두 <code>process(frame_id, frame) -&gt; selected_frame_id</code> contract.</li>
+<li>LLM swap: vLLM → SGLang → TensorRT-LLM. KV cache 운영 차이는 stage 내부로 캡슐화.</li>
+</ul>
+<p>이 plug-and-play 사고는 Chapter 10의 A/B testing과 직접 연결된다. 두 stage 구현을 같은 contract 위에서 traffic split해야 신뢰할 만한 비교가 가능. Contract가 없는 시스템에서는 A/B 비교 자체가 의미를 잃는다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">공항 보안 검색대의 컨베이어 시스템</div>
+      <div class="a-body"><p>국제공항 보안 검색대에서 일어나는 일을 떠올려보자. (1) 승객이 짐을 트레이에 담는다(capture). (2) 컨베이어가 X-ray 기계 안으로 짐을 보낸다(decode). (3) X-ray 영상에서 의심 짐을 분류하는 결정(sample). (4) 일반 짐은 통과시키고 의심 짐은 second screening으로 보낸다(encode). (5) Second screening 결과를 통합한다(reduce). (6) 보안 요원이 최종 결정한다(LLM). (7) 승객에게 짐 반환(response).</p>
+<p>공항은 모든 producer-consumer 시스템의 교과서다. 각 단계 사이에 trays이 <em>queue</em>로 쌓인다. 각 queue가 가득 차면 <em>backpressure</em>가 위로 전파된다. X-ray가 느리면 트레이 적재대가 가득 차고 승객은 새 짐을 못 올린다. 이때 공항이 하는 일: 두 번째 X-ray를 켠다(consumer 추가), 또는 'liquids check를 빠르게 skip'한다(drop policy)/'low-risk lane'으로 분리(priority queue).</p>
+<p>Failure mode 3대장도 그대로 매핑된다. (a) Queue saturation: 검색대 입구에 줄이 100명. (b) GPU starvation: X-ray 한 대가 5분 동안 짐을 못 받음 (앞에 사람이 짐을 안 올림). (c) Head-of-line blocking: 한 승객이 의심 짐 때문에 5분 걸려서 뒤 50명이 다 막힘.</p>
+<p>그리고 plug-and-play는 공항이 X-ray 기계를 새 모델로 바꿀 때 <em>컨베이어 시스템 전체를 안 건드리는</em> 것이다. 새 X-ray가 같은 트레이 사이즈, 같은 출력 포트, 같은 throughput 명세를 만족하면 swap이 가능. Invariant contract 그대로다. Streaming video LLM의 producer-consumer 아키텍처는 공항 보안 검색대를 GPU pipeline에 옮긴 것이다 — 모든 운영 결정이 비유의 직관 그대로 성립한다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>Multi-worker streaming pipeline의 sketch. CPU stage는 asyncio, GPU stage는 dedicated thread with CUDA stream. Stage 사이 bounded queue + drop policy. Health metric을 1급 객체로 노출.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import asyncio
+import torch
+from dataclasses import dataclass
+from typing import Any, Optional, Callable
+from collections import deque
+
+@dataclass
+class FramePacket:
+    frame_id: int
+    payload: Any
+    enqueue_ts: float
+
+class BoundedQueue:
+    def __init__(self, cap: int, name: str, drop_policy: str = &quot;oldest&quot;):
+        self.cap = cap; self.name = name; self.drop_policy = drop_policy
+        self.q: deque = deque()
+        self.event = asyncio.Event()
+        self.dropped = 0
+
+    async def put(self, pkt: FramePacket) -&gt; bool:
+        if len(self.q) &gt;= self.cap:
+            if self.drop_policy == &quot;oldest&quot;:
+                self.q.popleft(); self.dropped += 1
+            elif self.drop_policy == &quot;newest&quot;:
+                self.dropped += 1; return False
+            else:  # block
+                while len(self.q) &gt;= self.cap:
+                    await asyncio.sleep(0.001)
+        self.q.append(pkt); self.event.set()
+        return True
+
+    async def get(self) -&gt; FramePacket:
+        while not self.q:
+            self.event.clear()
+            await self.event.wait()
+        return self.q.popleft()
+
+    def health(self) -&gt; dict:
+        return {&quot;name&quot;: self.name, &quot;depth&quot;: len(self.q),
+                &quot;cap&quot;: self.cap, &quot;dropped&quot;: self.dropped,
+                &quot;saturated&quot;: len(self.q) &gt;= self.cap * 0.9}
+
+class GPUStage:
+    def __init__(self, name: str, fn: Callable, stream: torch.cuda.Stream):
+        self.name = name; self.fn = fn; self.stream = stream
+        self.latency_ms = deque(maxlen=1000)
+
+    async def run(self, in_q: BoundedQueue, out_q: BoundedQueue):
+        loop = asyncio.get_event_loop()
+        while True:
+            pkt = await in_q.get()
+            t0 = torch.cuda.Event(enable_timing=True)
+            t1 = torch.cuda.Event(enable_timing=True)
+            # Offload GPU work to a thread holding its CUDA stream.
+            def _work():
+                with torch.cuda.stream(self.stream):
+                    t0.record()
+                    out = self.fn(pkt.payload)
+                    t1.record()
+                t1.synchronize()
+                return out, t0.elapsed_time(t1)
+            out, dt = await loop.run_in_executor(None, _work)
+            self.latency_ms.append(dt)
+            await out_q.put(FramePacket(pkt.frame_id, out, pkt.enqueue_ts))
+
+async def pipeline(stages: list[GPUStage], queues: list[BoundedQueue],
+                   source: Callable):
+    # Source pushes into queues[0]; stage i reads queues[i] and writes queues[i+1].
+    workers = [asyncio.create_task(s.run(queues[i], queues[i+1]))
+               for i, s in enumerate(stages)]
+    async for pkt in source():
+        ok = await queues[0].put(pkt)
+        if not ok:
+            # Backpressure signal: source can lower FPS or skip.
+            await asyncio.sleep(0.005)
+    await asyncio.gather(*workers)</code></pre>
+      <div class="c-walk"><p>네 가지 production-grade 결정이 코드에 보인다. (1) <code>BoundedQueue</code>에 <code>drop_policy</code>를 명시 — 'oldest', 'newest', 'block' 중 <em>architecture 단계에서 선택</em>. Queue가 saturated 됐을 때 어떻게 동작할지를 코드 단에서 단언하는 게 시니어 디자인. (2) <code>GPUStage.run</code>이 <code>loop.run_in_executor</code>로 GPU 작업을 thread pool에 offload — asyncio main loop을 GPU op이 block하지 않게. CUDA stream을 명시적으로 잡아서 stage 간 stream 분리 가능 (parallel execution). (3) <code>health()</code>가 모든 queue/stage에서 1급 객체로 노출 — Prometheus exporter나 dashboard에 그대로 join. <em>Saturated signal이 metric으로 노출</em>되므로 alert을 architecture로 정당화 가능. (4) <code>pipeline</code> 함수의 source가 <code>put()</code> 결과로 <code>ok=False</code>를 받으면 sleep — backpressure가 source로 전파되는 path. Capture rate를 자동으로 줄이는 adaptive FPS의 토대. 30 FPS → 15 FPS automatic downshift가 이 한 줄로 구현된다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">Producer-consumer pipeline architecture는 streaming video LLM의 system engineering 영역이다. 시니어 평가에서는 후보가 (a) stage들을 producer-consumer graph로 그릴 수 있는지, (b) failure mode 3대장을 detection signal과 함께 짚는지, (c) Ray/asyncio/multiprocessing의 선택을 stage 분류로부터 역산하는지, (d) invariant contract로 plug-and-play를 설계하는지를 본다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>6-stage를 producer-consumer graph로 그리고 각 queue의 운영 정책(bound, drop) 명시</li><li>async/sync × CPU/GPU 4-quadrant 분류와 각 quadrant의 concurrency 모델 매칭</li><li>Ray/asyncio/multiprocessing을 &#x27;single-node prototype vs multi-node production&#x27;으로 자연스럽게 분리</li><li>Failure mode 3대장(saturation, starvation, HOL)을 detection metric과 함께 정의</li><li>Plug-and-play를 위해 frame_id, health, drop_signal 같은 invariant contract를 stage 단에서 강제</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>6-stage를 모두 하나의 asyncio coroutine으로 묶음 (GPU stage가 main loop을 block)</li><li>Queue를 unbounded로 두고 &#x27;OS가 알아서 다룬다&#x27;고 답함</li><li>Drop policy를 모든 queue에서 가능하게 두고 *drop point를 fix하지 않음*</li><li>Ray를 &#x27;distributed니까 production에 좋다&#x27;고 단순 추천 — single-node overhead 무시</li><li>Stage swap을 위한 contract를 정의 안 하고 &#x27;code refactoring으로 매번 바꾸면 된다&#x27;고 답함</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>**Q1. Drop point 고정.** 30 FPS streaming pipeline에서 LLM이 가끔 spike를 일으켜 q5가 saturate된다. Drop을 q1(capture 직후) 또는 q5(reduce 직후) 어디서 일어나게 architecture를 잡을지, 두 선택의 trade를 explain하라.</li><li>**Q2. Concurrency 도구 선택.** Single-GPU prototype을 production multi-node 시스템으로 확장한다. 어떤 stage를 Ray actor로, 어떤 stage를 asyncio task로, 어떤 stage를 별 process로 둘 것인가? 각 결정의 근거를 4-quadrant 분류로 정당화하라.</li><li>**Q3. Failure mode detection.** GPU utilization이 30%로 떨어지고 latency p99이 평소의 5배가 됐다는 alert이 왔다. 3대장 중 어떤 failure mode일 가능성이 높은가? 어떤 추가 metric을 보고 진단을 확정할 것인가? 해결 액션은?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> **Familiar**: producer-consumer 패턴을 안다. Ray/asyncio/multiprocessing 이름을 들어봤다. **Mastery**: 6-stage를 producer-consumer graph로 그려 각 queue의 bound/drop policy를 architecture 단에서 단언한다. CPU/GPU × async/sync 4-quadrant로 stage를 분류해 concurrency 도구를 stage별로 매칭하고, drop point를 architecture로 *고정*해 debug-friendly한 시스템을 만든다. Failure mode 3대장을 detection signal과 함께 incident playbook으로 정리하고, plug-and-play를 위한 invariant contract(frame_id, health, drop_signal)로 stage swap을 *코드 변경 없이* 가능하게 한다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>6-stage를 producer-consumer graph로 그려야 운영 결정이 보인다</h3><p>각 queue의 bound, capacity, drop policy가 *architecture 단계에서* 명시되어야 한다. &#x27;OS가 알아서&#x27;는 production에서 실패한다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>Drop point는 architecture로 고정해야 한다</h3><p>모든 queue에서 drop 가능하면 어디서 frame이 사라졌는지 debug 불가. q1(input too fast) 또는 q5(LLM too slow) 한 곳으로 고정.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>Async/sync × CPU/GPU 4-quadrant로 stage를 분류한다</h3><p>각 quadrant에 적합한 concurrency 모델이 다르다. GPU stage는 dedicated worker + CUDA stream, CPU async stage는 asyncio coroutine.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>Ray / asyncio / multiprocessing은 stage 분류에서 역산</h3><p>asyncio = single-node prototype, multiprocessing = stage 격리 + GIL 우회, Ray = multi-node distributed. Production은 거의 항상 hybrid.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>Failure mode 3대장: queue saturation, GPU starvation, HOL blocking</h3><p>각각 detection signal이 다르다 (queue depth, GPU util, latency tail). Pipeline은 happy path가 아니라 failure mode 정의 위에 서 있다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>Plug-and-play는 invariant contract로 가능해진다</h3><p>frame_id 통과, health 노출, drop_signal 전파 3가지가 minimal contract. Encoder/sampler/LLM swap이 코드 변경 없이 가능.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>Backpressure를 source로 전파해야 adaptive FPS가 된다</h3><p>Downstream saturated 시 capture rate를 자동 하향. 30 → 15 FPS automatic downshift가 graceful degradation의 기반.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>Stage 격리가 reliability를 만든다</h3><p>Multiprocessing/Ray로 stage를 격리하면 한 stage crash가 전체 pipeline을 죽이지 않음. &#x27;Encoder process가 죽으면 capture/decode는 살아 있고 새 encoder process가 spawn된다&#x27;가 production 표준.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-08.html">← End-to-End Latency Profiling</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-10.html">Production Deployment &amp; Monitoring →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+</body></html>

@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch2: Streaming Input Pipeline — Real-time Video LLM — direcf</title>
+  <meta name="description" content="들어오는 video stream을 모델까지 전달하는 input pipeline은 backpressure, frame ordering, drop policy를 명시적으로 설계해야 하는 시스템 문제다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/multimodal-ai">Real-time Video LLM</a><span class="sep">›</span>
+        <strong>Ch02 Streaming Input Pipeline</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 02 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">📡</div>
+      <h1 class="chapter-title">Streaming Input Pipeline</h1>
+      <div class="chapter-title-kr">스트리밍 입력 파이프라인</div>
+      <div class="chapter-tldr">들어오는 video stream을 모델까지 전달하는 input pipeline은 backpressure, frame ordering, drop policy를 명시적으로 설계해야 하는 시스템 문제다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-02.png" alt="Chapter 2 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 2 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>RTSP, WebRTC, 카메라 SDK의 latency 특성을 비교하고 시나리오별 선택 기준을 제시할 수 있다</li><li>Producer-consumer queue에서 backpressure를 처리하는 세 가지 정책 (block/drop-oldest/drop-newest)의 trade-off를 설명할 수 있다</li><li>Frame timestamp 기반 ordering이 multi-source 환경에서 왜 필수인지 설명할 수 있다</li><li>asyncio queue.Queue와 multiprocessing.Queue 중 언제 어느 것을 선택할지 결정할 수 있다</li><li>Pipeline의 &#x27;first byte to first frame&#x27; latency를 측정하고 최적화 방향을 제시할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>Chapter 1에서 우리는 real-time이 'sampler'나 'memory' 문제가 아니라 streaming pipeline + adaptive processing 문제임을 봤다. 이 챕터에서는 그 streaming pipeline의 <strong>첫 단계, 입력</strong>을 다룬다. 카메라/네트워크로부터 들어오는 raw byte를 모델이 처리할 수 있는 tensor 형태로 안정적이고 timely하게 전달하는 일.</p>
+<p>이건 ML 엔지니어들이 가장 흔히 underestimate하는 영역이다. '그냥 OpenCV로 VideoCapture 하면 되지 않나'라고 생각한다면, 실제 production에서 30 FPS 카메라가 갑자기 25 FPS로 떨어지고, 네트워크 카메라가 jitter로 frame을 뭉쳐 보내고, 모델이 한 프레임에 200ms 걸리는 동안 queue가 폭주하는 모습을 본 적이 없는 것이다. <strong>Input pipeline 자체가 latency budget의 30-50%를 좌우</strong>한다.</p>
+<p>기존 video LLM과 hour-scale video LLM에서는 input은 거의 자명한 문제였다 — <code>decord</code> 같은 라이브러리로 비디오 파일을 한 번에 읽고 끝이었다. Real-time에서는 input이 <strong>첫 번째 시스템 디자인 결정</strong>이 된다. 어떤 transport (RTSP/WebRTC)? 어떤 buffer 정책 (circular/growing/bounded)? 어떤 drop 정책? 어떤 concurrency 모델 (asyncio/threading/multiprocessing)? 각 결정이 p99 latency를 ms 단위로 좌우한다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>Capture Layer: RTSP / WebRTC / 카메라 SDK의 특성</h2><p>Capture는 'video source가 무엇이냐'에 따라 latency 특성이 완전히 다르다. Senior engineer는 이걸 즉시 구분할 줄 알아야 한다.</p>
+<p><strong>RTSP (Real-Time Streaming Protocol)</strong>: IP 카메라의 표준. TCP/UDP 위에 RTP packet을 실어 보낸다. 일반적으로 latency는 <strong>300ms-2s</strong> 수준 (인코더 → 네트워크 → 디코더). GOP (Group of Pictures) 구조 때문에 첫 frame을 받으려면 keyframe (I-frame)을 기다려야 한다. <code>ffmpeg</code>/<code>gstreamer</code>/<code>OpenCV VideoCapture</code>로 받지만, OpenCV의 RTSP 구현은 internally H.264 디코딩이 blocking이라서 backpressure가 생기면 GOP 전체가 밀린다.</p>
+<p><strong>WebRTC</strong>: 브라우저/모바일에서 가장 흔한 transport. <strong>저지연 (50-200ms)</strong>이 핵심 강점 — UDP 위에 SRTP, jitter buffer가 작게 설계됨. 단점은 NAT traversal, STUN/TURN 설정, 그리고 모든 frame이 동등하게 'real-time'으로 처리되어 backpressure가 client 측에서 처리됨. Real-time video LLM의 conversational 시나리오는 거의 WebRTC가 답이다.</p>
+<p><strong>카메라 SDK 직접 (USB, CSI, GenICam)</strong>: USB 카메라는 <code>cv2.VideoCapture(0)</code>, 산업용은 GenICam 표준 (Pylon, Spinnaker), 임베디드는 V4L2 / NVIDIA Argus. 가장 <strong>저지연 (10-50ms)</strong> — 하지만 모든 게 local. 카메라 → kernel buffer → user space로 한 hop.</p>
+<p>시니어 시그널: 'WebRTC가 RTSP보다 빠르니까 무조건 WebRTC'가 아니다. CCTV 100대를 한 서버로 모으는 시나리오는 RTSP가 표준이고, WebRTC를 100 connection으로 받으면 SFU (Selective Forwarding Unit) 비용이 폭증한다. <strong>트래픽 패턴과 매칭하는 것이 답</strong>이다.</p></div><div class="sb-block"><h2>Producer-Consumer Queue와 Backpressure</h2><p>Capture가 끝나면 frame을 어딘가에 담아 consumer (모델)가 꺼내가야 한다. 이건 고전적인 producer-consumer 패턴이지만, <strong>real-time에서는 backpressure 정책이 결정적</strong>이다.</p>
+<p>Producer (카메라)는 일정한 rate로 frame을 만든다. Consumer (모델 inference)는 frame마다 가변 시간을 소비한다. Producer rate &gt; consumer rate가 잠시라도 일어나면 queue가 차오른다. 세 가지 대응 정책이 있다.</p>
+<p><strong>Block (back-pressure to producer)</strong>: Queue가 차면 producer를 멈춤. <code>queue.put(block=True)</code> 패턴. 문제: 카메라는 멈출 수 없다. 멈추면 그 시간 동안의 현실이 사라진다. 게다가 RTSP는 buffer가 더 위에 쌓여 cascade가 발생한다. <strong>Real-time에서는 거의 안 쓴다</strong>.</p>
+<p><strong>Drop-oldest (sliding window 사상)</strong>: Queue가 차면 가장 오래된 frame을 버리고 새 frame을 넣음. <code>deque(maxlen=N)</code>. 'real-time이니까 새 정보가 더 중요하다'는 가정. <strong>대부분의 real-time 시스템 기본값</strong>이다. 단점: monitoring 시나리오에서 사건이 일어난 순간의 frame이 drop될 위험.</p>
+<p><strong>Drop-newest</strong>: Queue가 차면 새로 들어온 frame을 버림. Consumer가 따라잡을 시간을 보장. 거의 안 쓰지만, 'recovery mode'에서 일시적으로 유용 — 시스템이 회복 중일 때 새 frame을 무시하고 밀린 처리를 끝낸다.</p>
+<p>Production 패턴: <strong>bounded queue + drop-oldest + metric</strong>. Queue size N (보통 5-10), drop 횟수를 카운트해 Prometheus로 export, drop rate가 임계치를 넘으면 alarm. <strong>'얼마나 떨어졌는가'가 SLA metric이 된다</strong>.</p>
+<p>주의할 함정: Python의 <code>queue.Queue</code>는 thread-safe하지만 maxlen에 도달했을 때 drop-oldest를 지원하지 않는다. <code>collections.deque(maxlen=N)</code>은 drop-oldest를 지원하지만 단일 thread/asyncio 환경에서만 안전하다. 두 thread에서 동시 접근 시 <code>threading.Lock</code> + <code>deque</code> 조합이 필요하다.</p></div><div class="sb-block"><h2>Circular Buffer vs Growing Queue: Memory 모델</h2><p>Queue 자체의 구현도 latency에 영향을 준다. 두 가지 주요 패턴.</p>
+<p><strong>Circular buffer (ring buffer)</strong>: 고정 크기 N개의 슬롯, 읽기/쓰기 포인터를 순환. C/C++ embedded에서 표준. Python에서는 <code>numpy</code> array를 raw로 다루거나, shared memory (<code>multiprocessing.shared_memory</code>)로 zero-copy를 구현한다. <strong>장점</strong>: allocation 없음 → GC pause 없음, cache-friendly. <strong>단점</strong>: 크기 고정.</p>
+<p>Real-time video에서 circular buffer가 빛나는 경우: 모델이 sliding window N개 프레임을 보는 경우, 같은 buffer에 N개를 유지하면 됨. <strong>Encoder가 buffer pointer만 받고 별도 복사 없이 작업</strong>할 수 있다.</p>
+<p><strong>Growing queue (linked list 기반)</strong>: Python <code>queue.Queue</code>의 내부 구현. Node 단위로 동적 할당. 장점: 크기 무제한. 단점: allocation pressure, 메모리 단편화, 그리고 결정적으로 <strong>'얼마나 많이 들어와도 일단 받는' 행동이 real-time에서 위험</strong>하다. Latency가 무한정 커질 수 있다.</p>
+<p>시니어가 보는 시그널: 후보자가 <code>queue.Queue(maxsize=10)</code> vs <code>deque(maxlen=10)</code>의 차이를 즉시 설명할 수 있는가. 전자는 maxsize 도달 시 put이 block (또는 exception), 후자는 자동 drop. <strong>이 차이가 backpressure 정책의 구현</strong>이다.</p>
+<p>또 하나의 디테일: frame 데이터를 어떻게 표현할 것인가. 한 frame 1920x1080x3 (HD) = ~6MB. 1000개 buffer = 6GB. 따라서 frame을 raw bytes로 들고 다니지 말고, <strong>GPU에 이미 올라간 tensor pointer를 들고 다니는 게 표준</strong>이다. NVIDIA의 경우 <code>torch.cuda.Stream</code>과 함께 zero-copy로 처리한다. CPU buffer → GPU upload 시간 자체가 (HD 기준) 5-10ms로 latency budget의 큰 부분이라 미리 GPU에 올려두는 것이 패턴이다.</p></div><div class="sb-block"><h2>Frame Ordering과 Timestamp</h2><p>Single-source에서는 frame이 들어온 순서가 곧 시간 순서다. 하지만 multi-source (예: 여러 카메라, 또는 video + audio multi-modal)에서는 <strong>timestamp 기반 ordering이 필수</strong>다.</p>
+<p>각 frame에는 <strong>capture timestamp</strong> (소스에서 찍힌 시점)와 <strong>arrival timestamp</strong> (시스템에 도달한 시점)를 둘 다 기록해야 한다. RTSP의 경우 RTP packet에 PTS (Presentation Timestamp)가 들어 있고, WebRTC의 경우 NTP-synced timestamp가 들어온다. USB 카메라는 hardware timestamp가 없으면 <code>time.time()</code>을 driver에서 찍는다.</p>
+<p>왜 둘 다 필요한가? <strong>Capture timestamp는 'inference에서 시간 reasoning'에 쓰이고, arrival timestamp는 'pipeline latency 측정과 stale frame drop'에 쓰인다</strong>. Chapter 1 코드 예시의 <code>age = time.time() - capture_ts</code>가 바로 arrival 기반 stale 판단이다.</p>
+<p>Multi-source ordering 패턴: <strong>priority queue</strong> (heap) 기반 정렬. 각 source에서 frame이 들어오면 timestamp를 key로 heap에 push, consumer는 가장 작은 timestamp부터 pop. 단, 한 source가 잠시 끊기면 다른 source의 frame이 영원히 기다리는 문제가 있다 (head-of-line blocking). 해결: <strong>bounded reordering window</strong> — 'timestamp T 이전 frame은 더 이상 받지 않는다'고 cutoff 정함.</p>
+<p>실전 함정: 시스템 clock과 카메라 clock이 drift한다. 1시간에 수 초씩 어긋난다. NTP나 PTP (Precision Time Protocol) sync가 필수다. 또 dropped frame이 발생하면 timestamp가 jump한다 — 모델이 '이 사이에 무슨 일이 있었지?'를 알 수 있도록 metadata로 전달해야 한다.</p></div><div class="sb-block"><h2>Concurrency 모델: asyncio vs threading vs multiprocessing</h2><p>Python에서 streaming pipeline을 어떤 concurrency 모델로 구현할지는 첫 design decision이다.</p>
+<p><strong>asyncio</strong>: I/O-bound (네트워크, 디스크) work를 single-thread cooperative로 처리. 장점: context switch 비용이 1μs 수준, deterministic. 단점: CPU-bound work (디코딩, encoder forward)를 직접 못 함. 패턴: I/O는 asyncio, CPU는 <code>loop.run_in_executor(ThreadPoolExecutor, ...)</code>로 떠넘김.</p>
+<p><strong>threading</strong>: I/O와 일부 CPU work를 동시 수행. Python GIL 때문에 CPU bound는 진정한 병렬이 안 됨. 하지만 <code>torch</code> 같은 라이브러리는 내부에서 GIL을 release하므로 GPU inference는 thread 1개에 맡기고 나머지는 다른 thread에서 동작 가능. 장점: 학습 곡선 낮음. 단점: shared state debugging이 어렵다.</p>
+<p><strong>multiprocessing</strong>: Process 분리, 진정한 병렬. 장점: GIL 회피, crash isolation. 단점: IPC 비용 — frame을 process 간 전달하려면 serialize/deserialize. <code>multiprocessing.shared_memory</code> (Python 3.8+)로 zero-copy 가능하지만 까다롭다.</p>
+<p>Real-time video LLM의 표준 architecture (현재 production 패턴):
+- <strong>Capture process</strong>: 카메라/RTSP 수신, 디코딩, GPU 업로드. Multiprocessing의 별도 process로 격리. crash 시 main이 살아남음.
+- <strong>Inference process</strong> (또는 main): GPU에 올라온 tensor를 받아 모델 inference. asyncio 또는 threading.
+- <strong>IPC</strong>: <code>multiprocessing.shared_memory</code> + circular buffer로 frame pointer만 전달.
+- <strong>Logging/metric</strong>: 또 다른 background thread, queue로 비동기 dispatch.</p>
+<p>시니어 시그널: 후보자가 '왜 multiprocessing을 쓰는가?'에 대해 'crash isolation + GIL bypass' 두 가지 모두 답할 수 있는가. 'GIL 때문'만 답하면 multiprocessing의 진짜 가치 (capture가 죽어도 inference가 살아남음)를 놓치고 있는 것.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">공항 수하물 컨베이어 벨트</div>
+      <div class="a-body"><p>Streaming input pipeline은 공항 수하물 시스템과 닮았다. 비행기 (카메라)에서 수하물 (frame)이 일정한 rate로 내려온다. 컨베이어 벨트 (queue)는 일정 폭으로 정해져 있고, 수하물 처리장 (모델)은 가변 속도로 가방을 들어 분류한다.</p>
+<p>처리장이 잠시 느려지면 컨베이어가 차오른다. 모든 공항에는 이 시점의 정책이 있다. (1) 비행기에 '내려놓지 마세요'라고 사인을 보낸다 — 하지만 비행기는 멈출 수 없다 (block-producer가 real-time에서 불가능한 이유). (2) 컨베이어가 가득 차면 가방을 옆 컨베이어로 자동 분기한다 (overflow queue). (3) 가장 오래된 가방을 옆 트랙으로 빼서 나중에 처리한다 (drop-oldest, deferred). 그리고 결정적인 정책: <strong>가방에 도착시간 태그가 붙어 있다</strong>. 30분 이상 기다린 가방은 lost &amp; found로 보낸다 (stale frame drop).</p>
+<p>공항 시스템이 잘 돌아가려면 컨베이어 폭, 처리장 처리율, 비행기 도착 패턴이 매칭되어야 한다. Real-time pipeline도 마찬가지다. Queue size, model throughput, capture FPS를 따로 설계하면 어디선가 폭주한다. <strong>세 가지를 함께 dimension</strong>해야 한다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>Production-grade에 가까운 streaming input pipeline 골격. multiprocessing으로 capture를 격리하고, shared memory ring buffer로 frame을 전달, asyncio consumer가 모델 inference를 호출한다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import asyncio
+import multiprocessing as mp
+import time
+import numpy as np
+from multiprocessing.shared_memory import SharedMemory
+
+FRAME_SHAPE = (720, 1280, 3)
+BUFFER_SIZE = 8  # circular slots
+FRAME_BYTES = np.prod(FRAME_SHAPE)
+
+class FrameRing:
+    def __init__(self, name, create=False):
+        size = BUFFER_SIZE * FRAME_BYTES + BUFFER_SIZE * 16  # +ts
+        self.shm = SharedMemory(name=name, create=create, size=size)
+        self.head = mp.Value(&#x27;i&#x27;, 0)  # write idx
+        self.tail = mp.Value(&#x27;i&#x27;, 0)  # read idx
+        self.drops = mp.Value(&#x27;i&#x27;, 0)
+
+    def write(self, frame, ts):
+        with self.head.get_lock():
+            idx = self.head.value % BUFFER_SIZE
+            # check overrun (drop-oldest)
+            if (self.head.value - self.tail.value) &gt;= BUFFER_SIZE:
+                self.tail.value += 1
+                self.drops.value += 1
+            buf = np.ndarray(FRAME_SHAPE, dtype=np.uint8,
+                             buffer=self.shm.buf, offset=idx*FRAME_BYTES)
+            buf[:] = frame
+            self.head.value += 1
+
+    def read(self):
+        with self.tail.get_lock():
+            if self.tail.value &gt;= self.head.value:
+                return None
+            idx = self.tail.value % BUFFER_SIZE
+            buf = np.ndarray(FRAME_SHAPE, dtype=np.uint8,
+                             buffer=self.shm.buf, offset=idx*FRAME_BYTES)
+            self.tail.value += 1
+            return buf.copy()  # detach from ring</code></pre>
+      <div class="c-walk"><p>핵심은 <code>FrameRing</code>이라는 fixed-size circular buffer를 shared memory 위에 올린 점이다. Capture process가 <code>write</code>를 호출하면, head/tail 차이로 overrun을 감지하고 자동으로 tail을 한 칸 밀어 drop-oldest를 구현한다. <code>drops</code> counter가 backpressure metric으로 export 가능. <code>read</code>는 detached copy를 반환 — consumer가 frame을 들고 있는 동안 ring이 덮어쓰는 race를 막는다. Production에서는 더 정교하게 (lock-free, GPU memory) 구현하지만 이 코드의 mental model이 핵심이다. 'frame을 들고 다니지 않고 buffer 안에서 surface'한다는 발상이 streaming의 정신이다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">Streaming input pipeline은 ML engineer가 &#x27;system designer&#x27;로 평가받는 첫 영역이다. 모델 지식만으로는 풀 수 없고, OS/네트워크/concurrency 이해가 필수다. Robotics, autonomous driving, AR/VR, surveillance, telco 산업에서 가장 중시된다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>Transport (RTSP/WebRTC/SDK)별 latency 특성을 즉시 비교 가능</li><li>Bounded queue + drop-oldest를 default로 채택하고 그 이유를 설명</li><li>Capture timestamp와 arrival timestamp를 분리해 다루는 감각</li><li>GIL/multiprocessing/asyncio 중 시나리오별 선택 근거 명확</li><li>Drop rate, queue depth, p99 latency를 SLA metric으로 export하는 습관</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>`cv2.VideoCapture`로 그냥 받아 list에 append하는 답변</li><li>Backpressure 정책에 대한 의식이 없음 — &#x27;큐는 그냥 큐&#x27;로 다룸</li><li>Single timestamp만 다룸 (capture vs arrival 구분 못 함)</li><li>Crash isolation을 고려하지 않은 single-process 아키텍처</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>30 FPS RTSP 카메라 50대로부터 받아 하나의 모델로 inference하는 시스템을 설계하라. Queue, backpressure, ordering을 어떻게 다룰 것인가?</li><li>`queue.Queue(maxsize=10)`과 `collections.deque(maxlen=10)`의 차이를 backpressure 관점에서 설명하라. 어떤 시나리오에 어느 것을 쓸 것인가?</li><li>Capture process가 죽었을 때 inference process가 살아남도록 하려면 무엇을 다르게 설계해야 하나? IPC, monitoring, recovery를 모두 포함해 답하라.</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> **Familiar**: producer-consumer를 알고 `queue.Queue`를 쓸 수 있다. **Mastery**: backpressure 정책을 명시적으로 선택하고, capture/arrival timestamp를 분리하며, shared memory 기반 zero-copy ring buffer를 그릴 수 있다. 그리고 production metric (drop rate, queue depth, age distribution)을 SLA의 일부로 본다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>Input은 latency budget의 30-50%</h3><p>Capture, transport, queue 단계에서 이미 수백 ms가 소비된다 — 모델만 빠르게 한다고 real-time이 되지 않는다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>Transport 선택은 시나리오 매칭</h3><p>WebRTC (대화형), RTSP (CCTV 다채널), USB/CSI (저지연 로컬) — 각각의 latency 프로필이 다르다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>Bounded queue + drop-oldest가 default</h3><p>Real-time에서 producer를 block하는 건 거의 불가능하다. 새 frame이 더 중요하다는 가정이 합리적이다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>Drop은 metric으로 export</h3><p>Drop rate가 SLA metric이 된다 — &#x27;frame을 다 처리한다&#x27;가 아니라 &#x27;얼마나 떨어졌는가&#x27;가 평가 기준.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>Timestamp는 capture + arrival 두 개</h3><p>Capture timestamp는 모델 reasoning, arrival timestamp는 stale drop 판단에 쓰인다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>Frame을 들고 다니지 마라</h3><p>Circular buffer에 한 번 올린 다음 pointer만 전달 — 6MB frame을 copy하는 순간 latency가 폭증.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>Multiprocessing은 crash isolation도 위해</h3><p>Capture가 죽어도 inference가 살아남게 — GIL bypass는 부차적 이점.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>Capture/Inference/Logging은 분리</h3><p>각 단계가 서로의 timing에 영향을 안 주도록 process/queue로 격리하는 게 production 패턴.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-01.html">← The Real-time Video LLM Problem</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-03.html">Adaptive Frame Sampling under Latency Budget →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+</body></html>

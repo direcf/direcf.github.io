@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch10: Production Deployment &amp; Monitoring — Real-time Video LLM — direcf</title>
+  <meta name="description" content="Real-time video LLM의 production은 latency histogram, drop rate, GPU utilization 3대 metric으로 운영된다. A/B 비교는 same-frame replay나 shadow traffic으로 신뢰성을 확보하고, canary rollout으로 배포 위험을 격리한다. Overload 시 &#x27;drop frame vs drop quality&#x27;의 graceful degradation 정책, cost-aware autoscaling, Gemini Live / GPT-4o Realtime / Twelve Labs Marengo 같은 실제 시스템의 운영 패턴을 정리한다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/multimodal-ai">Real-time Video LLM</a><span class="sep">›</span>
+        <strong>Ch10 Production Deployment &amp; Monitoring</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 10 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🌐</div>
+      <h1 class="chapter-title">Production Deployment &amp; Monitoring</h1>
+      <div class="chapter-title-kr">프로덕션 배포와 모니터링</div>
+      <div class="chapter-tldr">Real-time video LLM의 production은 latency histogram, drop rate, GPU utilization 3대 metric으로 운영된다. A/B 비교는 same-frame replay나 shadow traffic으로 신뢰성을 확보하고, canary rollout으로 배포 위험을 격리한다. Overload 시 &#x27;drop frame vs drop quality&#x27;의 graceful degradation 정책, cost-aware autoscaling, Gemini Live / GPT-4o Realtime / Twelve Labs Marengo 같은 실제 시스템의 운영 패턴을 정리한다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-10.png" alt="Chapter 10 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 10 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>Real-time video LLM의 3대 observability metric을 정의하고 Prometheus/Datadog dashboard로 design할 수 있다</li><li>Same-frame replay와 shadow traffic 두 A/B testing 패턴의 신뢰성 차이를 product 결정으로 매핑할 수 있다</li><li>Canary rollout을 traffic split + early-warning metric으로 sketch할 수 있다</li><li>Graceful degradation의 3축(drop frame / drop quality / drop response)을 product 요구로부터 정렬할 수 있다</li><li>Cost-per-stream metric을 정의하고 GPU autoscaling을 SLA × cost로 정당화할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>Chapter 1-9까지가 real-time video LLM을 <em>어떻게 만들 것인가</em>였다면 이 챕터는 <em>어떻게 운영할 것인가</em>다. Production은 'algorithm이 좋다'로는 부족하다. 매일 24시간 reliable하게 돌고, 새 모델을 안전하게 배포하고, overload 시 graceful하게 degrade하고, 비용을 통제하는 운영 전체를 다뤄야 한다.</p>
+<p>핵심 멘탈 모델 시프트: General/hour-scale video LLM은 benchmark 점수가 성공 기준이었다. Real-time production은 <strong>'1년간 99.9% uptime으로 SLA를 지키면서 cost-per-stream을 control한다'</strong>가 성공 기준이다. Benchmark accuracy 1% 개선이 production p99 latency 30% 증가를 정당화하지 못한다. 평가축이 완전히 달라진다.</p>
+<p>이 챕터는 Gemini Live, GPT-4o Realtime API, Twelve Labs Marengo 같은 실제 production 시스템의 운영 패턴을 references로 사용한다. Observability, A/B testing, canary rollout, graceful degradation, autoscaling을 정리하고 incident playbook의 형태로 마무리한다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>1. 3대 observability metric — latency histogram, drop rate, GPU utilization</h2><p>Real-time video LLM production의 dashboard는 3개 핵심 metric 위에 서 있다. 다른 100개 metric은 이 3개에서 파생되거나 troubleshooting 도구에 가깝다.</p>
+<p><strong>(1) Latency histogram (per stage, per percentile).</strong> Chapter 8에서 정의한 6-stage breakdown × p50/p95/p99. Single number가 아니라 <em>분포 자체</em>를 dashboard에 표시. Prometheus에서는 <code>histogram_quantile()</code> 함수로 quantile 계산, Grafana로 stage별 heatmap. 시계열 위에서 분포의 <em>shape change</em>를 본다. 평균이 같아도 multimodal로 변하면 latent 문제. 'p99이 p95의 1.5배를 넘어가면 alert' 같은 정책으로 운영.</p>
+<p><strong>(2) Drop rate (per drop point, per reason).</strong> Chapter 9에서 <em>drop point를 architecture로 고정</em>했으므로 정확한 measurement가 가능. Drop reason은 (a) queue saturation, (b) stage timeout, (c) explicit policy (overload mode). 각 reason별 rate를 분리해서 표시해야 'queue가 차서 drop'인지 'LLM이 느려서 timeout'인지 즉시 식별 가능. Drop rate가 0%인 것이 항상 좋은 게 아니라 product 정책이 'soft drop으로 quality 보호'면 일정 drop을 허용. 정책과 metric이 align되어야 한다.</p>
+<p><strong>(3) GPU utilization (per GPU, per stage).</strong> GPU가 놀고 있으면 cost 낭비, 가득 차 있으면 queue saturation. <em>Saturated point</em>는 보통 80-85%. NVIDIA DCGM exporter로 SM utilization, memory utilization, NVLink throughput을 모두 수집. Stream concurrency를 측정하려면 NVML보다 Nsight system trace의 sample이 더 정확. Multi-tenant serving에서는 GPU utilization × concurrent streams로 <em>per-stream cost</em>를 환산.</p>
+<p>그 외 메트릭은 이 3개의 함수: queue depth는 latency histogram의 leading indicator, error rate는 drop rate의 한 reason, throughput은 GPU utilization의 derivative. 3대를 명확히 잡으면 dashboard가 100개 metric을 다 보지 않아도 운영 가능.</p>
+<p>시니어 결정 포인트: <strong>alert을 무엇으로 걸 것인가</strong>. 너무 민감하면 alert fatigue, 너무 둔하면 incident 놓침. 보통 'p99 latency &gt; SLA × 1.5', 'drop rate &gt; 1%', 'GPU utilization &lt; 20% for 5 min'을 page-trigger로 설정. Lower severity는 ticket으로.</p></div><div class="sb-block"><h2>2. A/B testing for video LLM — same-frame replay와 shadow traffic</h2><p>두 pipeline 변종을 비교할 때 <em>어느 쪽이 더 나은가</em>를 production traffic으로 측정하는 게 A/B testing이다. Video LLM은 일반 web A/B와 다른 신뢰성 문제가 있다.</p>
+<p><strong>문제</strong>: 같은 video stream에 대한 두 pipeline의 응답을 비교하려면 두 pipeline이 <em>같은 input</em>을 받아야 하는데, traffic split (user 50% A, 50% B)으로 하면 사용자가 보는 stream이 다르고 <em>상황</em>도 다르다. 'Pipeline A의 latency가 낮다'가 algorithm 차이인지 stream 차이인지 모른다.</p>
+<p><strong>Same-frame replay</strong>. Production에서 잘 동작한 stream을 녹화해두고 두 pipeline에 동일 input을 흘려 비교. Ground-truth control이 가능. 단점: production load와 traffic distribution을 모방 못 함. 실험실 결과가 production에서 재현 안 되는 경우 많음. 새 alg을 평가할 때 <em>initial gate</em>로 적합.</p>
+<p><strong>Shadow traffic</strong>. Production user의 stream을 <em>mirror</em>해서 두 pipeline에 동시에 보냄. Pipeline A의 응답만 user에게 전달, B는 evaluation만. Cost 증가하지만 (~2x) 동일 input + production distribution. Latency, drop rate, output quality를 fair comparison. 단점: B의 응답을 user에게 안 줘서 <em>interactive metric</em> (user follow-up question 비율 등) 측정 불가.</p>
+<p><strong>Traffic split</strong>. 일반 web A/B의 video version. User-level split 또는 stream-level split. 동일 input 보장은 안 되지만 <em>interactive metric</em> 측정 가능. Power 부족하기 쉬워서 sample size가 큼.</p>
+<p>실전 결합 패턴: (1) same-frame replay로 algorithm correctness 1차 gate, (2) shadow traffic으로 production-load latency/quality 2차 gate, (3) traffic split (1% canary)으로 interactive metric 측정. 단계적 escalation.</p>
+<p>주의: <strong>latency metric은 shadow traffic에서 가장 신뢰</strong>. Algorithm metric (accuracy proxy)은 <em>same-frame이 필요</em>. User satisfaction은 <em>traffic split이 유일한 방법</em>. 어느 metric을 비교하느냐에 따라 적합한 testing 패턴이 다르다.</p></div><div class="sb-block"><h2>3. Canary rollout — 새 모델을 안전하게 배포하기</h2><p>Canary rollout은 새 버전을 적은 traffic부터 시작해 점진적으로 늘리며 problem을 일찍 detect하는 패턴이다. Real-time video LLM에 적용 시 특수성.</p>
+<p><strong>단계 sketch</strong>:</p>
+<pre><code>1%   for 1 hour  → 자동 게이트 (early metric)
+5%   for 1 hour  → 자동 게이트
+25%  for 1 hour  → 자동 게이트 (large enough for power)
+50%  for 4 hours → 자동 게이트 (off-peak ↔ peak 둘 다 보기)
+100% → full rollout
+</code></pre>
+<p>각 단계에서 <em>early-warning metric</em>을 봐서 자동 abort. 보통 (a) p99 latency가 baseline의 1.3배 초과, (b) drop rate &gt; 2%, (c) GPU utilization &gt; 90% sustained, (d) error rate &gt; baseline × 2. 자동 게이트가 잡지 못하는 <em>quality regression</em>은 manual review.</p>
+<p><strong>Stream-level affinity</strong>. 한 user의 stream은 <em>한 버전에 stick</em>해야 한다. Canary와 baseline을 frame-by-frame 섞으면 (a) 같은 KV cache를 못 쓰고, (b) user가 'sometimes 잘 답함, sometimes 못 답함'으로 incoherent하게 느낌. Routing layer에서 session_id hashing으로 affinity 보장.</p>
+<p><strong>Rollback 메커니즘</strong>. Canary 도중 문제를 발견하면 <em>즉시</em> baseline으로 traffic을 돌려야 한다. Traffic split을 routing layer에서 control하면 1초 안에 rollback 가능. Code/binary 배포는 더 느려서 emergency에서 부족. 시니어 결정: 'canary 도중 rollback button을 한 손에 둔다'.</p>
+<p><strong>Multi-region</strong>. Production 시스템은 region 단위로 rollout. 'US-East 1% canary 성공' → 'US-East 100% rollout' → 'EU-West 1% canary' → ... 식. Region별 timezone/usage pattern 차이로 catch되는 bug가 다르다. Gemini Live가 region별 staged rollout으로 운영되는 것으로 평가됨.</p>
+<p>실전 함정: canary 1%가 너무 작아서 <em>quiet hours에 metric이 stable로 보임</em>. Off-peak 시간에 1%만 보면 noise에 묻힘. Peak hours 포함된 윈도우로 stage gating을 잡거나, <em>sample size 기반</em> gating(예: '최소 10K frame 후에 평가') 으로 보강.</p></div><div class="sb-block"><h2>4. Graceful degradation — overload 시 무엇을 잃을 것인가</h2><p>Production에서 overload는 <em>언제든</em> 일어난다. Trending event로 traffic 2x, 새 region launch 시 underprovision, GPU vendor incident. 'Graceful하게 degrade한다'는 시스템이 죽지 않고 <em>서비스 quality를 의도적으로 낮춰</em> 살아남는다는 뜻. 3가지 dial.</p>
+<p><strong>(a) Drop frame</strong>. FPS를 30 → 15 → 10으로 자동 하향. Capture stage에서 drop. Latency budget이 살아남는다. User는 'frame이 약간 끊기는 느낌'으로 인지하지만 응답 자체는 받는다. Sports / interactive visualization product에서는 강한 degradation으로 느껴짐.</p>
+<p><strong>(b) Drop quality</strong>. Encoder를 SigLIP-Large에서 SigLIP-Small로 swap, token 수를 256에서 64로, LLM을 70B에서 7B로 fallback. 알고리즘 quality는 떨어지지만 throughput과 latency가 늘어남. User는 '응답이 약간 덜 정확해진 느낌'으로 인지. Meeting summarization / chat product에서 graceful.</p>
+<p><strong>(c) Drop response</strong>. Proactive response trigger를 off, user explicit query에만 응답. Decode 횟수를 줄여 prefill에 budget을 몰아준다. Video understanding 기반 추천 같은 product가 사라지지만 core video chat은 유지.</p>
+<p>시니어 결정: <strong>product가 어떤 degradation을 견딜 수 있는가</strong>를 사전 협의. Sports live 해설은 'frame drop = product death'. Meeting summarization은 'frame drop OK, quality drop은 받아들임'. 둘이 다른 fallback 순서로 운영. 'overload 시 알아서 잘 한다'는 답은 시스템이 deterministic하지 않아서 incident response를 망친다.</p>
+<p><strong>자동화 vs 수동.</strong> Drop frame은 보통 자동 (capture stage backpressure). Drop quality는 <em>traffic 임계값 기반 자동</em>이거나 <em>수동 toggle</em>. Drop response는 거의 항상 수동 (product impact 크므로). Toggle을 LaunchDarkly / 자체 feature flag로 두면 incident 중 빠르게 active 가능.</p>
+<p>Gemini Live의 production rollout 초기 보고: low-resource 디바이스에서 'frame을 자동으로 줄여 latency를 유지하는' behavior가 명시적. (a)+(b) hybrid로 운영된 것으로 평가.</p></div><div class="sb-block"><h2>5. Cost-aware autoscaling과 incident playbook</h2><p>Real-time video LLM의 cost 단위는 <em>per-stream-hour</em>다. 한 stream을 1시간 처리하는 데 GPU $X. 이 metric을 정의 안 하면 cost optimization을 못 한다.</p>
+<p><strong>Cost-per-stream 계산</strong>:</p>
+<pre><code>cost_per_stream_hour = (gpu_hour_price × gpu_count) / concurrent_streams
+</code></pre>
+<p>H100 spot $2/hr, 4 GPU node $8/hr, 동시 20 stream → $0.4/stream-hour. SLA p99 30ms에서 동시 30 stream으로 올리면 $0.27. 그러나 30 stream이면 p99이 50ms로 튀어 SLA 위반. <em>Cost-SLA frontier</em> 위에서 운영 점을 product와 협상.</p>
+<p><strong>Autoscaling 정책</strong>. 두 signal로 결정.</p>
+<ul>
+<li><strong>GPU utilization 기반</strong>: 80% 이상 5분 sustained → scale up, 30% 이하 10분 sustained → scale down.</li>
+<li><strong>Queue depth 기반</strong>: 모든 stage의 queue depth가 60% 이상 → scale up. Leading indicator로 utilization보다 빠르게 반응.</li>
+</ul>
+<p>Real-time은 <em>scale-up latency</em>가 critical. K8s에서 새 GPU node를 띄우는 데 cold start 3-5분 걸린다. 그동안 overload가 지속되면 graceful degradation으로 보호. 'autoscaling이 도착하기 전에 degradation으로 살아남는다'가 시니어 운영 직관.</p>
+<p><strong>Warm pool 패턴</strong>. 미리 N개 node를 'warm standby'로 띄워두면 cold start 없이 즉시 traffic 분배. Cost는 + 10-20%지만 SLA 안정. Gemini Live 같은 high-SLA 서비스에서 표준.</p>
+<p><strong>Incident playbook</strong>. 'p99 latency가 SLA × 1.5 초과 alert이 page됐을 때 무엇을 할 것인가'를 미리 결정.</p>
+<pre><code>Step 1 (1분 내): dashboard에서 어느 stage가 늘었는지 확인. queue depth와 GPU util 함께 보기.
+Step 2 (5분 내): bottleneck이 GPU면 graceful degradation toggle (drop frame to 15 FPS).
+Step 3 (10분 내): bottleneck이 disappear되면 monitor 모드. 지속되면 emergency scale-up.
+Step 4 (30분 내): root cause가 식별되면 rollback 또는 hotfix.
+Step 5 (사후): post-mortem, dashboard에 새 metric 추가, runbook 업데이트.
+</code></pre>
+<p>이 playbook이 chapter 8의 6-stage breakdown, chapter 9의 producer-consumer architecture, chapter 10의 graceful degradation을 다 사용한다. Production engineering은 이전 챕터의 모든 의사결정이 결합되는 곳이다.</p>
+<p><strong>Production references</strong>. Gemini Live (Google I/O 2024): mobile 디바이스 ~500ms response, region별 staged rollout. GPT-4o Realtime API (OpenAI 2024): voice-to-voice ~232ms, streaming voice in WebSocket. Twelve Labs Marengo / Pegasus: streaming video search/QA, 1 FPS sampling으로 1시간 영상을 quasi-real-time embedding으로 indexing. 세 시스템 모두 (a) 3대 metric 위에 운영, (b) graceful degradation 명시적, (c) regional staged rollout 표준의 패턴을 공유한다.</p>
+<p>시니어 평가: production engineering은 '한 chapter의 trick'이 아니라 <em>모든 chapter의 의사결정이 incident response 5분에 동원되는 능력</em>이다. 그게 real-time video LLM senior의 정의에 가깝다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">24시간 발전소 운영실</div>
+      <div class="a-body"><p>전력 발전소 control room을 떠올려보자. Operator가 보는 dashboard는 정확히 3개 metric에 집중한다. (1) 출력 전압의 <em>분포</em>: 평균만 보지 않는다. p99 spike가 일어나면 transmission grid가 깨진다. (2) 송전 <em>drop rate</em>: 일부 라인이 trip돼서 부하가 다른 곳으로 옮겨갔나. (3) 설비 <em>utilization</em>: 터빈이 idle하면 fuel 낭비, full capacity면 spike 시 fallback 없음.</p>
+<p>새 turbine을 도입할 때 발전소는 즉시 100% 전환하지 않는다. 1%부터 시작해서 1%→5%→25%→100%로 단계적으로 부하를 옮기며 <em>진동, 발열, 효율</em>을 측정한다. 어느 단계에서든 metric이 기준 이탈하면 emergency switch로 baseline turbine으로 즉시 복귀. Canary rollout 그대로다.</p>
+<p>Overload 상황 — heat wave로 전력 수요 폭증 — 에서 발전소는 <em>blackout을 막기 위해</em> (a) 일부 industrial customer의 공급을 줄이고(drop quality), (b) 일부 region의 전압을 95%로 낮추고(drop frame), (c) non-essential service 차단(drop response). 무엇을 잃을지 사전에 협의된 정책으로 운영. '알아서 잘 한다'는 답이 없다.</p>
+<p>Cost-per-stream은 발전 단가($/kWh)다. Spot price × turbine 수 / 공급 가구. 이 단가를 모르고 발전소를 운영하지 않는다. Real-time video LLM의 production engineering은 24시간 발전소 운영을 GPU pipeline에 옮긴 것이다 — 모든 dashboard, 모든 playbook, 모든 economic decision이 그대로 매핑된다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>Production observability + graceful degradation의 통합 sketch. 3대 metric을 Prometheus exporter로 노출, queue depth + latency tail 기반 자동 degradation, canary traffic split을 routing layer로 control.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">from prometheus_client import Histogram, Counter, Gauge
+from dataclasses import dataclass
+from enum import Enum
+from typing import Callable
+import time
+
+# === 1) 3대 metric exporters ===
+LATENCY = Histogram(&quot;video_llm_stage_latency_ms&quot;, &quot;per-stage latency&quot;,
+                    [&quot;stage&quot;], buckets=(5, 10, 20, 33, 50, 100, 200, 500))
+DROPS = Counter(&quot;video_llm_drops_total&quot;, &quot;frame drops by reason&quot;,
+                [&quot;reason&quot;])  # saturation/timeout/policy
+GPU_UTIL = Gauge(&quot;video_llm_gpu_utilization&quot;, &quot;per-gpu SM utilization&quot;,
+                 [&quot;gpu_id&quot;])
+
+# === 2) Degradation state machine ===
+class Mode(Enum):
+    NORMAL = &quot;normal&quot;
+    REDUCE_FPS = &quot;reduce_fps&quot;        # capture 30 -&gt; 15
+    REDUCE_QUALITY = &quot;reduce_quality&quot;  # encoder small + token 64
+    REDUCE_BOTH = &quot;reduce_both&quot;
+
+@dataclass
+class DegradationPolicy:
+    p99_target_ms: float = 50.0
+    queue_high_water: float = 0.7   # 70% capacity triggers escalation
+    queue_low_water: float = 0.3
+    cooldown_s: float = 30.0
+    last_change_ts: float = 0.0
+    mode: Mode = Mode.NORMAL
+
+    def step(self, p99_ms: float, max_queue_ratio: float) -&gt; Mode:
+        now = time.time()
+        if now - self.last_change_ts &lt; self.cooldown_s:
+            return self.mode
+        # Escalate on p99 breach OR queue high-water.
+        if p99_ms &gt; self.p99_target_ms or max_queue_ratio &gt; self.queue_high_water:
+            new = {Mode.NORMAL: Mode.REDUCE_FPS,
+                   Mode.REDUCE_FPS: Mode.REDUCE_BOTH,
+                   Mode.REDUCE_QUALITY: Mode.REDUCE_BOTH,
+                   Mode.REDUCE_BOTH: Mode.REDUCE_BOTH}[self.mode]
+        # De-escalate on stability.
+        elif max_queue_ratio &lt; self.queue_low_water and p99_ms &lt; self.p99_target_ms * 0.8:
+            new = {Mode.NORMAL: Mode.NORMAL,
+                   Mode.REDUCE_FPS: Mode.NORMAL,
+                   Mode.REDUCE_QUALITY: Mode.NORMAL,
+                   Mode.REDUCE_BOTH: Mode.REDUCE_FPS}[self.mode]
+        else:
+            new = self.mode
+        if new != self.mode:
+            self.mode = new; self.last_change_ts = now
+        return new
+
+# === 3) Canary routing with session affinity ===
+def route_stream(session_id: str, canary_fraction: float,
+                 baseline: Callable, canary: Callable) -&gt; Callable:
+    # Deterministic hash so a session sticks to one version.
+    h = (hash(session_id) &amp; 0xFFFFFFFF) / 2**32
+    return canary if h &lt; canary_fraction else baseline
+
+# === 4) Per-frame instrumentation ===
+class InstrumentedStage:
+    def __init__(self, name: str, fn: Callable):
+        self.name = name; self.fn = fn
+        self.timer = LATENCY.labels(stage=name)
+
+    def __call__(self, payload):
+        t0 = time.perf_counter()
+        out = self.fn(payload)
+        dt_ms = (time.perf_counter() - t0) * 1000.0
+        self.timer.observe(dt_ms)
+        return out
+
+def record_drop(reason: str):
+    DROPS.labels(reason=reason).inc()</code></pre>
+      <div class="c-walk"><p>네 가지 production-grade pattern이 코드에 담겨 있다. (1) <code>LATENCY</code> Histogram의 bucket이 frame budget 단위(5, 10, 20, 33, 50, ...) — Prometheus histogram quantile이 이 bucket 경계에 맞춰 정확. SLA p99 = 50ms를 정확히 측정하려면 bucket이 50ms 경계를 포함해야 함. (2) <code>DegradationPolicy.step</code>의 <em>cooldown_s</em>: state oscillation을 막는 핵심. p99이 한 spike만으로 quality drop 발동 후 30초 안에 normal 복귀 시 시스템이 불안정해짐. Hysteresis(high-water + low-water 분리)와 cooldown 둘 다 필요. (3) <code>route_stream</code>의 <code>hash(session_id)</code> 기반 routing — Chapter 9의 stream-level affinity 그대로. 같은 user는 항상 같은 버전. Canary rollout 시 'sometimes A sometimes B'로 incoherent UX 방지. (4) <code>InstrumentedStage</code>가 어떤 fn도 wrapping해 latency 측정 — Chapter 8의 6-stage profiling이 production observability로 자연스럽게 연결. <em>Wrapping pattern이라 instrumentation을 stage 구현에 강제하지 않음</em> — plug-and-play contract와 일치.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">Production deployment &amp; monitoring은 모든 이전 챕터의 의사결정이 incident response 5분에 동원되는 영역이다. 시니어 평가에서는 후보가 (a) 3대 metric 위에 운영 사고를 정렬하는지, (b) A/B testing의 신뢰성 trade를 product 결정으로 매핑하는지, (c) graceful degradation을 product 요구로부터 정렬하는지, (d) cost-per-stream과 SLA frontier를 정량적으로 협상하는지를 본다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>3대 metric (latency histogram, drop rate, GPU utilization)을 dashboard 설계의 axis로 정렬</li><li>same-frame replay / shadow traffic / traffic split을 비교 metric별로 적합한 testing 패턴으로 매칭</li><li>Canary rollout에서 stream-level affinity와 자동 abort gate를 architecture로 강제</li><li>Graceful degradation의 3축(frame/quality/response)을 product impact 순서로 사전 협의</li><li>Cost-per-stream을 SLA × concurrent_streams의 frontier 위에서 협상</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>Latency를 single number(평균 또는 p50)로 dashboard에 표시</li><li>A/B testing을 traffic split만 알고 same-frame/shadow를 모름</li><li>Canary를 1% → 100% 한 번에 (점진적 단계와 자동 abort 없음)</li><li>Graceful degradation 정책 없이 &#x27;overload 시 알아서 한다&#x27;고 답</li><li>Cost-per-stream metric 정의 없이 GPU 추가만 답</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>**Q1. A/B testing 패턴 선택.** 새 encoder를 production에 도입한다. (a) algorithm correctness, (b) production latency, (c) user satisfaction 3가지 metric을 각각 어떤 A/B 패턴(same-frame replay / shadow traffic / traffic split)으로 측정할 것인지 정당화하라.</li><li>**Q2. Graceful degradation 정책.** Sports live 해설 product와 meeting summarization product가 같은 video LLM 시스템을 공유한다. 둘이 다른 degradation 정책을 가져야 한다. drop frame / drop quality / drop response의 우선 순위를 각 product마다 다르게 설계하고 정당화하라.</li><li>**Q3. Cost vs SLA frontier.** Concurrent stream 20 → 30으로 늘리면 비용은 33% 줄지만 p99이 30ms → 50ms로 증가한다. Product가 &#x27;p99 &lt; 40ms를 약속했다&#x27;면 어떤 협상으로 frontier 위 다른 점을 제안할 것인가? Warm pool, autoscaling threshold, region별 차등 운영 등 가용한 dial을 들어 답하라.</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> **Familiar**: Prometheus, canary rollout, A/B testing 이름을 알고 &#x27;production 운영이 중요하다&#x27;고 답할 수 있다. **Mastery**: 3대 metric 위에 dashboard와 alert을 design하고, A/B testing 패턴을 비교 metric별로 분리한다. Canary를 stream-level affinity + 자동 abort gate로 단계적 escalation하고, graceful degradation 3축을 product 요구로부터 정렬한다. Cost-per-stream metric을 SLA frontier로 협상하고, incident playbook을 이전 챕터의 모든 의사결정과 join해 5분 내 진단을 가능하게 한다. Gemini Live / GPT-4o Realtime / Twelve Labs Marengo 운영 패턴을 references로 자기 시스템 설계 결정을 정당화한다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>Production은 3대 metric 위에 서 있다</h3><p>Latency histogram (per stage, per percentile), drop rate (per reason), GPU utilization (per GPU). 다른 metric은 이 3개의 함수. Dashboard와 alert 모두 3대 axis로 정렬.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>A/B testing은 비교 metric에 따라 패턴이 다르다</h3><p>Algorithm correctness = same-frame replay, production latency = shadow traffic, user satisfaction = traffic split. 단일 도구로 다 측정 안 됨.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>Canary rollout은 stream-level affinity 위에서 escalation</h3><p>1% → 5% → 25% → 50% → 100% 자동 게이트, session_id hashing으로 user-stick. p99/drop rate/GPU 초과 시 자동 abort, rollback 1초 내.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>Graceful degradation 3축: drop frame / drop quality / drop response</h3><p>Product 별로 사전 협의된 순서로 자동 발동. Sports = frame이 절대 줄면 안 됨, meeting = quality 줄여도 OK. 알아서 잘 한다는 답은 없다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>Cost-per-stream-hour가 cost optimization의 단위</h3><p>(gpu_hour × count) / concurrent_streams. SLA frontier 위에서 product와 운영 점 협상. 이 metric 없이 GPU 추가만 답하면 cost 통제 불가.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>Autoscaling은 queue depth가 leading indicator</h3><p>GPU utilization 80%는 lagging, queue depth 60%는 leading. Cold start 3-5분 동안 graceful degradation으로 보호. Warm pool로 high-SLA service 안정화.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>Incident playbook이 이전 챕터 의사결정을 통합한다</h3><p>5분 내 6-stage breakdown으로 bottleneck 식별 → degradation toggle → emergency scale-up → root cause. Chapter 8/9/10이 동시에 동원되는 능력이 시니어의 정의.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>Production references — Gemini Live / GPT-4o Realtime / Twelve Labs</h3><p>세 시스템 모두 (a) 3대 metric, (b) 명시적 graceful degradation, (c) regional staged rollout 공통 패턴. 자기 시스템 설계를 이 references와 join해 정당화하는 게 시니어 communication.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-09.html">← Producer-Consumer Pipeline Architecture</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <span></span>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+</body></html>

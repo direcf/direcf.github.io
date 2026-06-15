@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch6: Token Compression for Streaming — Real-time Video LLM — direcf</title>
+  <meta name="description" content="오프라인 압축(HiCo, offline TokenMerge)은 시퀀스 전체를 한 번에 본다는 가정 위에 서 있다. 스트리밍에서는 &#x27;compression이 시간을 따라 incremental하게 일어나야 하고, 새로운 frame이 도착할 때마다 budget을 다시 분배해야 한다&#x27;는 제약이 추가된다. Flash-VStream의 STAR memory hierarchy, online TokenMerge variant, cluster-based summarization을 streaming 관점에서 다시 읽는다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/multimodal-ai">Real-time Video LLM</a><span class="sep">›</span>
+        <strong>Ch06 Token Compression for Streaming</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 06 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🗜️</div>
+      <h1 class="chapter-title">Token Compression for Streaming</h1>
+      <div class="chapter-title-kr">스트리밍을 위한 토큰 압축</div>
+      <div class="chapter-tldr">오프라인 압축(HiCo, offline TokenMerge)은 시퀀스 전체를 한 번에 본다는 가정 위에 서 있다. 스트리밍에서는 &#x27;compression이 시간을 따라 incremental하게 일어나야 하고, 새로운 frame이 도착할 때마다 budget을 다시 분배해야 한다&#x27;는 제약이 추가된다. Flash-VStream의 STAR memory hierarchy, online TokenMerge variant, cluster-based summarization을 streaming 관점에서 다시 읽는다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-06.png" alt="Chapter 6 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 6 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>오프라인 HiCo 압축이 왜 스트리밍에 직접 적용되지 않는지 latency / commitment 관점에서 설명할 수 있다</li><li>Flash-VStream의 STAR 4-tier memory가 왜 &#x27;hierarchical&#x27;이어야 하는지 각 tier의 역할로 정당화할 수 있다</li><li>Online TokenMerge / incremental clustering이 offline 버전과 어떤 invariant를 깨고 그 대가로 무엇을 얻는지 말할 수 있다</li><li>compression ratio vs fidelity vs per-frame latency 3축 트레이드오프를 표로 그릴 수 있다</li><li>streaming token budget을 &#x27;fixed cap + eviction&#x27;으로 운영하는 두 가지 정책(LRU vs salience)을 sketch할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>Chapter 4-5에서 streaming context와 visual encoder를 다뤘다면, 이 챕터는 그 사이에 끼는 <em>token compression layer</em>를 다룬다. General Video LLM에서는 압축이 'offline 후처리'였다. HiCo(VideoChat-Flash)나 offline TokenMerge처럼 전체 frame을 다 본 뒤 redundancy 분석을 한 번 돌려서 token budget에 맞춘다. Hour-scale에서는 episodic memory의 일부로 '이미 본 chunk를 압축해 저장'하는 게 핵심이었다 — 시간이 흘러도 <em>과거</em>는 변하지 않으므로 한 번 압축하면 끝이다.</p>
+<p>Real-time은 둘 다 깨진다. 첫째, <strong>미래를 모른다</strong>. 지금 도착한 frame이 30초 뒤 query에 결정적일지 노이즈일지 알 수 없다. 둘째, <strong>commitment이 즉시 일어난다</strong>. Offline은 전체를 본 뒤 무엇을 버릴지 결정하지만, streaming은 frame이 들어올 때마다 'memory에 넣을지, 어떤 압축 수준으로 넣을지, 누구를 evict할지'를 그 자리에서 결정해야 한다. 셋째, <strong>압축 자체도 latency budget을 먹는다</strong>. Offline은 압축에 1분이 걸려도 quality만 좋으면 된다. 스트리밍은 per-frame budget의 일부를 압축에 써야 하므로 <em>compression cost</em>가 1급 metric이 된다.</p>
+<p>그래서 이 챕터의 멘탈 모델은 'token을 더 잘 줄이는 알고리즘'이 아니라 <strong>'시간을 따라 token budget을 어떻게 분배할 것인가'</strong>다. STAR hierarchy, online TokenMerge, cluster-center memory는 모두 이 질문에 대한 서로 다른 답이다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>1. 왜 offline 압축이 streaming에 직접 적용되지 않는가</h2><p>먼저 offline 압축이 무엇을 가정하는지 정리하자. HiCo(VideoChat-Flash, arXiv:2501.00574)는 frame sequence 전체에 hierarchical clustering을 돌려서 1/50까지 token을 줄인다. TokenMerge offline은 모든 token pair의 similarity를 한 번에 계산해서 bipartite matching으로 merge한다. 두 알고리즘 모두 <em>전체 sequence가 주어졌다</em>는 batch assumption 위에 서 있다.</p>
+<p>이 가정이 깨지면 세 가지 문제가 생긴다. (1) <strong>Future 정보 부재</strong>: HiCo가 'A frame이 cluster centroid가 되는 게 좋다'고 판단하려면 전체 distribution을 봐야 한다. 스트리밍에서는 t=10초 시점에 t=60초의 frame을 모른다. 그래서 centroid 선택이 <em>online estimation</em>이 된다. (2) <strong>재배치 불가</strong>: offline TokenMerge는 시퀀스를 여러 번 패스하며 merge를 refine할 수 있다. 스트리밍에서는 한 번 merge한 token을 <em>되돌릴 수 없다</em> — pipeline 다음 stage로 흘러갔기 때문. 결정이 final이라는 commitment 비용이 크다. (3) <strong>Latency budget 분배</strong>: offline 압축이 5분 영상에 30초를 써도 무방하지만, 실시간 33ms budget(30fps)에서 압축이 10ms 먹으면 encoder/LLM의 budget이 사라진다.</p>
+<p>결론: offline 압축의 'quality at any cost' 가정을 'quality under streaming constraint'로 다시 써야 한다. 그래서 streaming-friendly 압축은 (a) per-frame O(1)/O(log N) cost, (b) irreversible commit 가능, (c) future-blind decision 하에서도 합리적 — 이 세 invariant를 만족해야 한다.</p></div><div class="sb-block"><h2>2. Flash-VStream STAR memory hierarchy</h2><p>Flash-VStream(Zhang et al., arXiv:2406.08085)이 이 문제에 대한 가장 깔끔한 답을 줬다. 핵심은 <strong>STAR</strong>: Spatial / Temporal / Abstract / Retrieval 4-tier memory다. 단일 buffer가 아니라 <em>시간 스케일이 다른</em> 4개 layer가 협력한다.</p>
+<table>
+<thead>
+<tr>
+<th>Tier</th>
+<th>보관 단위</th>
+<th>시간 스케일</th>
+<th>압축 비율</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Spatial</strong></td>
+<td>최근 1-2초 raw token</td>
+<td>단기 (현재 frame 주변)</td>
+<td>1x (raw)</td>
+</tr>
+<tr>
+<td><strong>Temporal</strong></td>
+<td>5-10초 windowed token</td>
+<td>중기</td>
+<td>4-8x</td>
+</tr>
+<tr>
+<td><strong>Abstract</strong></td>
+<td>분 단위 cluster center</td>
+<td>장기</td>
+<td>50-100x</td>
+</tr>
+<tr>
+<td><strong>Retrieval</strong></td>
+<td>전체 history index</td>
+<td>영구</td>
+<td>1000x+</td>
+</tr>
+</tbody>
+</table>
+<p>Spatial tier는 '지금 무엇이 일어나고 있는가' 질문에 fidelity를 보장한다. Temporal tier는 '몇 초 전 무슨 일이 있었는가'에 대응하고 sliding window로 운영된다. Abstract tier는 분 단위의 <em>semantic gist</em>를 cluster centroid로 보관한다. Retrieval tier는 전체 history를 retrieval-friendly한 embedding index로 보관하고, query가 들어오면 abstract tier로는 부족할 때만 활성화된다.</p>
+<p>핵심 micro-design decision: 각 tier로 token이 <em>자동으로 강등(demotion)</em>된다. Spatial buffer가 가득 차면 oldest token이 temporal로 내려가면서 4-8개씩 묶여 평균된다. Temporal이 가득 차면 abstract로 내려가면서 K-means cluster center 하나로 줄어든다. 이건 Atkinson-Shiffrin의 sensory→working→long-term memory와 정확히 같은 패턴이지만, <em>시간이 흘러 자동으로 강등된다</em>는 게 streaming의 핵심 차별점이다. Hour-scale 시스템은 chunk 단위로 한 번에 처리해서 memory bank에 적재하지만, Flash-VStream은 frame이 도착할 때마다 STAR pipeline을 한 칸씩 shift시킨다.</p>
+<p>또 하나의 결정: tier 간 transition이 <em>deterministic schedule</em>이다. 'salience score가 높으면 spatial에 더 오래 둔다'가 아니다. 시간만 보고 결정한다. 왜? Salience 기반 retention은 <em>evaluation</em>이 필요해서 per-frame cost가 늘어난다. Streaming budget 안에서는 'simple but wrong sometimes'가 'optimal but slow'를 이긴다.</p></div><div class="sb-block"><h2>3. Online TokenMerge — incremental clustering의 invariant</h2><p>TokenMerge offline(Bolya et al., ICLR 2023, arXiv:2210.09461)은 ViT의 매 layer에서 token pair를 bipartite matching으로 merge한다. 시퀀스 전체를 보고 가장 비슷한 pair부터 줄인다. Streaming에서는 이 알고리즘이 그대로는 안 굴러간다 — 미래 token이 없기 때문이다.</p>
+<p>Online variant의 핵심 아이디어는 <strong>incremental cluster maintenance</strong>다. 도착한 token을 기존 cluster 중 가장 비슷한 곳에 흡수(absorb)시키거나, 충분히 다르면 새 cluster를 만든다. 알고리즘 sketch:</p>
+<pre><code>for t in stream:
+  emb = encoder(frame_t)
+  for token in emb:
+    sim, k = nearest_cluster(token, clusters)
+    if sim &gt; merge_threshold:
+      clusters[k] = ema_update(clusters[k], token, alpha=0.1)
+    elif len(clusters) &lt; CAP:
+      clusters.append(token)
+    else:
+      evict(least_recently_used)
+      clusters.append(token)
+</code></pre>
+<p>여기서 깨지는 offline invariant 세 개. (1) <strong>Optimal merge order</strong>: offline은 global similarity ranking으로 가장 비슷한 pair부터 처리한다. Online은 도착 순서대로 처리해서 <em>suboptimal</em>. 대신 per-token cost가 O(K) (cluster 수)로 고정. (2) <strong>Reversibility</strong>: offline은 'A와 B를 merge했는데 나중에 C가 들어왔으니 A-C가 더 어울린다'를 다시 할 수 있다. Online은 EMA update로 <em>부드러운 보정</em>만 가능. (3) <strong>Cluster count</strong>: offline은 target token 수를 정확히 맞춘다. Online은 CAP을 두고 <em>eviction policy</em>로 운영. K-means streaming 변종(BIRCH, online K-means)의 정신과 같다.</p>
+<p>실전에서는 <em>threshold + CAP + eviction</em> 세 hyperparameter가 streaming 압축의 dial이 된다. Threshold가 너무 낮으면 cluster가 폭발하고, 너무 높으면 모든 token이 하나로 뭉뜬다. CAP은 LLM context budget으로 결정. Eviction은 LRU(시간 기반) vs salience(query-aware)의 선택이 있다.</p></div><div class="sb-block"><h2>4. Cluster center as memory — fidelity / ratio / latency 3축</h2><p>Cluster-based summarization은 streaming 압축의 <em>주류 패턴</em>이 됐다. Flash-VStream의 Abstract tier, MovieChat의 short-term memory, 심지어 Gemini Live의 video token consolidation도 모두 cluster center 운영의 변종이다. 그러나 cluster 운영을 어떻게 tune하느냐에 따라 세 축이 trade-off된다.</p>
+<table>
+<thead>
+<tr>
+<th>Knob</th>
+<th>Compression ratio</th>
+<th>Fidelity</th>
+<th>Per-frame latency</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Cluster CAP 작게</td>
+<td>높아짐</td>
+<td>떨어짐</td>
+<td>낮아짐</td>
+</tr>
+<tr>
+<td>Merge threshold 낮게</td>
+<td>낮아짐</td>
+<td>높아짐</td>
+<td>높아짐 (cluster 폭발)</td>
+</tr>
+<tr>
+<td>EMA alpha 크게</td>
+<td>-</td>
+<td>최근 weight</td>
+<td>낮아짐</td>
+</tr>
+<tr>
+<td>Salience-aware eviction</td>
+<td>-</td>
+<td>높아짐 (query 관련 유지)</td>
+<td>높아짐 (salience 평가 cost)</td>
+</tr>
+</tbody>
+</table>
+<p>실전 숫자 감각: VideoLLM-online은 frame당 SigLIP 256 token을 <em>그대로</em> LLM에 넣지만 frame rate를 2 FPS로 제한한다. Flash-VStream은 Spatial 32 + Temporal 32 + Abstract 16 ≈ 80 token만 LLM context에 둔다 — 압축 비율 ~10x. 같은 budget으로 30 FPS를 받을 수 있다. 대신 정밀한 visual fact-checking('이 사람 셔츠에 작은 로고가 보이나')은 spatial tier가 잠깐 갖고 있다가 잃는다.</p>
+<p>여기서 시니어 결정 포인트: <strong>'무엇을 잃을 것인가'를 product 요구로부터 역산하는가</strong>. Sports 실시간 해설은 short-term fidelity가 결정적(Spatial tier 키워야 함). Long meeting summarization은 abstract gist가 결정적(Abstract tier 키워야 함). 같은 STAR architecture라도 tier capacity 배분이 product에 따라 다르다. 'STAR을 썼다'는 framework choice일 뿐 답이 아니다.</p></div><div class="sb-block"><h2>5. Token budget을 시간을 따라 분배하기 — eviction policy의 정치학</h2><p>Streaming 압축의 가장 까다로운 부분은 <strong>eviction policy</strong>다. Cluster CAP, STAR tier 모두 고정 budget이므로 새 token이 들어올 때 누구를 내보낼지 결정해야 한다. 두 주류 정책.</p>
+<p><strong>LRU (Least Recently Used).</strong> 가장 오래된 token부터 demote/evict. 단순하고 빠르다 (O(1) with deque). 모든 token을 동등한 시간 가치로 본다는 가정 위에 있다. Sliding window의 자연스러운 일반화다. 단점: query가 '20분 전에 무슨 일이 있었나'면 이미 evict됐다.</p>
+<p><strong>Salience-aware.</strong> 각 token에 'salience score'를 매기고 낮은 점수부터 evict. Score는 (a) encoder의 attention magnitude, (b) 이전 query에 의해 attend된 정도, (c) cluster centroid로서의 representative power 등으로 계산. 단점: 평가 자체가 cost. 또 'salience를 정확히 매길 수 있다'는 가정은 <em>future-blind</em> 환경에서 깨진다.</p>
+<p>중간 지점이 있다. <strong>Tiered demotion</strong>: LRU로 빠르게 강등하되, demotion 시점에 cluster center로 압축. 이게 STAR의 실제 동작이다. 'evict'를 binary로 보지 않고 'compress harder'로 다룬다. LRU의 O(1) 비용으로 운영하면서, fidelity는 compression schedule로 점진적 손실시킨다.</p>
+<p>Production 관점에서 하나 더: <strong>eviction 결정이 reproducible해야 한다</strong>. Debugging이나 incident replay에서 'p99 latency가 튄 frame이 왜 evict됐는가'를 추적하려면 결정 함수가 deterministic이어야 한다. Salience-aware 정책이 stochastic하거나 model state에 의존하면 production에서 다루기 힘들다. 이게 industry에서 STAR 같은 'simple-but-deterministic' 압축이 'salience-aware optimal' 변종보다 많이 채택되는 이유다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">라이브 방송 PD의 다중 모니터 운영</div>
+      <div class="a-body"><p>라이브 방송 PD실의 콘솔을 떠올려보자. PD 앞에는 모니터가 4개 있다. (1) 지금 방송에 나가는 메인 모니터(Spatial tier). 1초 단위로 모든 디테일을 본다. (2) 직전 30초의 4개 카메라 분할 프리뷰(Temporal tier). 어느 카메라 컷이 좋았는지 비교할 수 있게 들고 있는다. (3) 큐시트 보드(Abstract tier). 5분 단위로 'A 게스트 인터뷰, B 코너, C 광고' 같은 요약만 적혀 있다. (4) 아카이브 검색기(Retrieval tier). '3주 전 같은 게스트가 무슨 말 했지?'를 PD가 입력하면 그제서야 켜진다.</p>
+<p>Offline 압축은 방송이 끝난 다음 영상 편집자가 6시간 영상을 5분 하이라이트로 정리하는 것이다. 전체를 보고 결정한다. 충분한 시간이 있다. 결정을 되돌릴 수도 있다.</p>
+<p>Streaming 압축의 PD는 그 사치가 없다. 카메라에서 화면이 1초마다 새로 들어오고, 콘솔의 메인 모니터 buffer는 무한하지 않다. 1초마다 <em>오래된 화면을 어디로 옮길지</em>를 결정해야 한다. 큐시트 보드에 메모로 남기든, 4분할 프리뷰로 demote하든, 아카이브 검색기에 인덱싱하고 잊든. 결정을 잘못해서 30분 뒤 PD가 '아까 그 카메라 컷 다시!'라고 외쳐도, 이미 evict된 raw frame은 못 돌아온다 — 압축본만 남아 있다.</p>
+<p>그래서 PD실의 콘솔 설계가 STAR 그 자체다. 'tier가 여러 개여야 하는 이유'와 'tier 간 자동 강등이 있어야 하는 이유'가 라이브 방송 운영에서 자연스럽게 도출된다. Streaming token compression은 라이브 방송 콘솔을 LLM context에 옮긴 것이다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>Flash-VStream STAR memory hierarchy의 streaming-friendly sketch. 매 frame이 도착할 때 Spatial → Temporal → Abstract 자동 demotion이 일어나고, LLM context는 매번 4-tier에서 join해서 만들어진다. Cluster center 갱신은 EMA로 incremental.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import torch
+import torch.nn.functional as F
+from collections import deque
+from dataclasses import dataclass, field
+from typing import Deque, List
+
+@dataclass
+class STARMemory:
+    spatial_cap: int = 32      # ~1s @ 30fps, raw recent tokens
+    temporal_cap: int = 32     # 4-8s window, pooled groups
+    abstract_cap: int = 16     # minute-scale cluster centers
+    pool_group: int = 4        # spatial-&gt;temporal mean-pool size
+    merge_thresh: float = 0.85 # cosine threshold for cluster absorb
+    ema_alpha: float = 0.1
+
+    spatial: Deque[torch.Tensor] = field(default_factory=deque)
+    temporal: Deque[torch.Tensor] = field(default_factory=deque)
+    abstract: List[torch.Tensor] = field(default_factory=list)
+    ab_counts: List[int] = field(default_factory=list)  # samples per cluster
+
+    def _demote_spatial_to_temporal(self):
+        # When spatial overflows, pool oldest group into one temporal slot.
+        if len(self.spatial) &lt;= self.spatial_cap:
+            return
+        group = [self.spatial.popleft() for _ in range(self.pool_group)]
+        pooled = torch.stack(group).mean(0)
+        self.temporal.append(pooled)
+
+    def _demote_temporal_to_abstract(self):
+        if len(self.temporal) &lt;= self.temporal_cap:
+            return
+        evicted = self.temporal.popleft()
+        # Try to absorb into nearest cluster; else create new (with eviction).
+        if self.abstract:
+            sims = torch.stack([F.cosine_similarity(evicted, c, dim=0)
+                                for c in self.abstract])
+            best, k = sims.max(0)
+            if best.item() &gt; self.merge_thresh:
+                self.abstract[k] = ((1 - self.ema_alpha) * self.abstract[k]
+                                    + self.ema_alpha * evicted)
+                self.ab_counts[k] += 1
+                return
+        if len(self.abstract) &gt;= self.abstract_cap:
+            # LRU-style eviction: drop least-updated cluster.
+            idx = min(range(len(self.abstract)), key=lambda i: self.ab_counts[i])
+            self.abstract.pop(idx); self.ab_counts.pop(idx)
+        self.abstract.append(evicted.clone()); self.ab_counts.append(1)
+
+    def ingest(self, frame_token: torch.Tensor):
+        self.spatial.append(frame_token)
+        self._demote_spatial_to_temporal()
+        self._demote_temporal_to_abstract()
+
+    def as_context(self) -&gt; torch.Tensor:
+        parts = [list(self.spatial), list(self.temporal), self.abstract]
+        flat = [t for tier in parts for t in tier]
+        return torch.stack(flat) if flat else torch.empty(0)</code></pre>
+      <div class="c-walk"><p>세 가지 streaming-friendly 디자인 결정이 보인다. (1) <code>_demote_spatial_to_temporal</code>은 deque의 popleft로 O(1). Spatial buffer가 가득 차면 <em>시간 순서대로</em> 4개씩 묶어 temporal로 강등하면서 평균 풀링한다 — salience 평가 없음, deterministic. (2) <code>_demote_temporal_to_abstract</code>은 cluster absorb 시도 → 실패 시 신규 cluster 생성 → cap 초과 시 'least-updated cluster를 evict'하는 streaming K-means 패턴. EMA update로 cluster center가 새 token 방향으로 <em>부드럽게</em> 이동. (3) <code>as_context</code>는 매 호출에서 4-tier를 join해 LLM context를 만든다. 호출 시점의 spatial은 최신 raw token, abstract는 분 단위 gist를 동시에 제공. 압축 비율 계산: spatial 32 + temporal 32 + abstract 16 = 80 token으로 운영하면 30 FPS 1분 = 1,800 frame × 256 token = 460K raw token이 80 token으로 들어간다. 5,750x 압축이지만 <em>recency-weighted</em> 압축이라서 최근 정보의 fidelity는 보존된다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">Token compression for streaming은 streaming pipeline의 &#x27;token budget controller&#x27;다. 시니어 평가에서는 후보가 (a) offline 압축과 streaming 압축의 차이를 invariant 단위로 짚는지, (b) STAR 같은 hierarchical memory가 왜 단일 buffer보다 합리적인지 시간 스케일로 정당화하는지, (c) compression ratio / fidelity / per-frame latency 3축을 product 요구로부터 역산하는지를 본다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>&#x27;미래를 모른다 + commitment이 즉시 + 압축도 budget을 먹는다&#x27; 세 invariant를 streaming 압축의 정의로 가져옴</li><li>STAR 4-tier를 단순히 외우는 게 아니라 *시간 스케일이 다른 4개*라는 구조로 정당화</li><li>cluster-based summary 운영에서 threshold / CAP / eviction 세 dial을 따로 분리</li><li>compression schedule (즉 누구를 언제 더 압축할지)을 product 요구(sports vs meeting)에서 역산</li><li>eviction 결정의 reproducibility를 production 관점에서 평가축에 둠</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>HiCo나 offline TokenMerge를 streaming에 그대로 가져와도 된다고 답함</li><li>STAR의 4-tier를 &#x27;그냥 buffer를 4개 두면 좋다&#x27;로 환원하고 시간 스케일 차이를 설명 못함</li><li>cluster-based 압축에서 &#x27;K-means를 매 frame 다시 돌리면 된다&#x27;고 답함 (per-frame budget 무시)</li><li>salience-aware eviction을 production에 무조건 추천 (reproducibility / debug 어려움 무시)</li><li>압축 cost를 0으로 가정하고 LLM latency만 최적화</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>**Q1. STAR tier capacity 배분.** 30 FPS live sports 해설 시스템과 60분 회의 요약 시스템 두 product가 같은 STAR memory를 쓴다. 두 product에서 Spatial / Temporal / Abstract tier capacity를 어떻게 다르게 배분할 것인지, 실패 시나리오를 들어 정당화하라.</li><li>**Q2. Online TokenMerge가 깨는 invariant.** Offline TokenMerge가 보장하는 어떤 invariant를 online 변종이 깨는가? 그 trade를 받을 수 있는 product와 받을 수 없는 product를 각각 하나씩 들어라.</li><li>**Q3. LRU vs salience-aware eviction.** Streaming token pool의 eviction policy로 LRU와 salience-aware 중 LRU를 선택해 production에 배포한 결정을 옹호하라. &#x27;optimal이 아닌데 왜 골랐는가&#x27;를 reproducibility, per-frame latency, debugging 세 축에서 정당화하라.</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> **Familiar**: Flash-VStream의 STAR, TokenMerge, HiCo 이름을 알고 &#x27;token을 줄이는 기법&#x27;으로 한 줄로 묶을 수 있다. **Mastery**: offline / hour-scale / streaming 압축이 깨는 invariant가 다름을 commitment·future-blindness·per-frame cost로 분리하고, STAR의 4-tier가 시간 스케일이 다른 memory의 자동 강등 schedule임을 도출한다. Online TokenMerge가 깨는 ordering·reversibility·count 세 invariant를 짚고 EMA / threshold / CAP를 production dial로 설명한다. Eviction policy 선택에서 LRU의 reproducibility가 production에 미치는 영향까지 평가축으로 가져온다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>Offline 압축의 3가지 가정이 streaming에서 깨진다</h3><p>미래 정보 부재, 즉시 commitment, 압축 자체의 latency cost — HiCo/TokenMerge offline은 이 셋 다 가정 가능하지만 streaming은 셋 다 가정 불가.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>Flash-VStream STAR은 시간 스케일이 다른 4-tier memory다</h3><p>Spatial(초)/Temporal(수 초)/Abstract(분)/Retrieval(영구). 단일 buffer가 아닌 hierarchical이어야 *압축률과 fidelity를 시간 함수로* 분리 가능.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>Tier 간 강등은 deterministic schedule이어야 한다</h3><p>Salience 기반 retention은 per-frame budget을 침범. Streaming에서는 &#x27;simple but wrong sometimes&#x27;가 &#x27;optimal but slow&#x27;를 이긴다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>Online TokenMerge는 3개 invariant를 깨고 O(K) cost를 얻는다</h3><p>Optimal merge order, reversibility, exact target count — 셋 다 포기. 대신 per-frame O(K) cluster-수 비용으로 streaming에 들어갈 수 있다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>Compression은 ratio·fidelity·latency 3축 trade다</h3><p>Cluster CAP, merge threshold, EMA alpha, eviction policy가 모두 세 축 사이의 dial. Product 요구로부터 어느 축이 critical인지 역산해야 한다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>Cluster center as memory가 streaming 압축의 주류 패턴이다</h3><p>Flash-VStream Abstract tier, MovieChat short-term, Gemini Live token consolidation 모두 동일 패턴의 변종. Streaming K-means / BIRCH의 정신과 직접 연결.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>Eviction policy의 reproducibility가 production을 결정한다</h3><p>Salience-aware가 &#x27;optimal&#x27;이라도 stochastic이면 incident replay에서 &#x27;p99 튄 frame을 왜 evict했나&#x27;를 못 따진다. LRU + tiered demotion이 production에서 자주 이긴다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>STAR을 썼다는 framework choice일 뿐 답이 아니다</h3><p>Sports 해설 vs meeting 요약은 같은 STAR라도 tier capacity가 달라야 한다. Streaming 압축의 시니어 결정은 *capacity allocation을 product에서 역산하는 능력*이다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-05.html">← Visual Encoder Optimization</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-07.html">KV Cache &amp; Continuous Batching for Real-time →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+</body></html>

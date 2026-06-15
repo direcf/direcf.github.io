@@ -1,0 +1,1132 @@
+{
+  "topic": "Real-time Video LLM",
+  "topicKr": "실시간 Video LLM",
+  "topicSlug": "real-time-video-llm",
+  "categorySlug": "multimodal-ai",
+  "level": "advanced",
+  "codeLanguage": "Python",
+  "description": "Real-time Video LLM은 sampler/memory 설계를 넘어 'Streaming Pipeline + Adaptive Processing'으로 멘탈 모델이 바뀐다. VideoLLM-online의 EOS-based stream alignment, Flash-VStream의 STAR memory hierarchy, vLLM의 continuous batching까지 — latency budget 안에서 들어오는 데이터를 처리하는 실시간 비디오 추론 시스템의 설계와 운영.",
+  "chapters": [
+    {
+      "number": 1,
+      "emoji": "🎯",
+      "title": "The Real-time Video LLM Problem",
+      "titleKr": "실시간 Video LLM이라는 새로운 문제",
+      "tldr": "Real-time Video LLM은 '어떤 프레임을 고를까'도 '어떻게 기억할까'도 아닌, 'latency budget 안에서 끊임없이 들어오는 스트림을 어떻게 처리할까'라는 시스템 문제다.",
+      "topics": [
+        "Mental model shift: sampler → memory → streaming pipeline",
+        "Real-time benchmarks (VStream-Bench, OVO-Bench, StreamingBench, ETBench)",
+        "VideoLLM-online과 EOS-based stream alignment",
+        "Industry systems: Gemini Live, GPT-4o realtime",
+        "Latency targets: conversational vs monitoring vs alerting"
+      ],
+      "learningGoals": [
+        "General/Hour-scale/Real-time Video LLM의 본질적 차이를 한 문장으로 설명할 수 있다",
+        "VStream-Bench, OVO-Bench, StreamingBench가 각각 측정하는 능력이 무엇인지 구분할 수 있다",
+        "VideoLLM-online의 EOS-based alignment가 왜 streaming의 핵심 idea인지 설명할 수 있다",
+        "대화형/모니터링형/이벤트형 시나리오별 latency budget (p50/p99)을 수치로 제시할 수 있다",
+        "왜 단순히 좋은 sampler + 좋은 memory를 붙여도 real-time이 안 되는지 설명할 수 있다"
+      ],
+      "overview": "이전 두 코스에서 우리는 video understanding의 두 가지 큰 패러다임을 봤다. **General Video LLM** (1-3분 짜리 짧은 비디오)에서는 '주어진 N개 프레임 중 가장 informative한 K개를 어떻게 고를까'가 핵심이었다 — AKS, BOLT, Frame-Voyager, Q-Frame, AdaRD-Key, FOCUS 같은 sampler 설계가 전부였다. **Hour-scale Video LLM** (수 시간짜리 비디오)에서는 '컨텍스트 윈도우는 유한한데 비디오는 무한할 때 어떻게 기억할까'가 핵심이었다 — LongVU, MovieChat, Flash-VStream, MA-LMM, MovieNet의 memory hierarchy 설계가 답이었다.\n\n**Real-time Video LLM은 이 둘 모두와 본질적으로 다른 문제다.** 비디오가 '주어져 있는' 게 아니다. 비디오는 **끊임없이 들어온다**. 카메라가 매초 30 프레임을 토해내는 동안 LLM은 '아직 다음 프레임이 와도 되는지' 결정해야 하고, 사용자는 '지금 화면에 보이는 것에 대해' 즉각적 응답을 기대한다. 이건 더 이상 'frame selection' 문제도, 'memory compression' 문제도 아니다. **시스템 문제(systems problem)**다. Producer-consumer queue, backpressure, sliding context, encoder latency, KV cache 관리가 모델 아키텍처만큼 중요해진다.\n\n이 챕터에서는 그 mental model shift를 명시적으로 정립한다. VideoLLM-online (CVPR 2024)의 EOS-based stream alignment가 왜 단순한 트릭이 아니라 'streaming-native' 사고의 결정체인지, VStream-Bench와 OVO-Bench가 정확히 무엇을 측정하려는지, 그리고 Gemini Live나 GPT-4o realtime이 production에서 어떤 latency budget으로 동작하는지를 살펴본다.",
+      "sections": [
+        {
+          "title": "왜 'Sampler 잘 짜기'와 'Memory 설계'만으로는 부족한가",
+          "content": "General Video LLM에서 frame sampling은 **offline** 문제였다. AKS는 비디오 전체를 본 다음 keyframe을 고르고, Frame-Voyager는 query를 받아 어떤 프레임이 답에 기여할지 학습한다. 이 모든 알고리즘의 공통 가정은 **모든 프레임을 미리 볼 수 있다**는 점이다. Causal 제약이 없다. '나중에 등장할 더 좋은 프레임'을 기다릴 수 있다.\n\nReal-time에서는 이 가정이 무너진다. 프레임 t를 받았을 때, 우리는 프레임 t+1, t+2가 무엇일지 모른다. 동시에 사용자는 'now, 지금 무엇이 보여요?'라고 묻는다. AKS를 그대로 가져와 쓰면? 모든 프레임이 들어올 때까지 기다려야 하니 latency가 비디오 길이와 같아진다. 즉 **offline sampler를 그대로 streaming에 붙이면 latency가 ∞로 발산한다.**\n\nHour-scale memory system도 비슷한 함정이 있다. MovieChat의 short-term/long-term memory는 비디오를 chunk 단위로 끊어 미리 encoding한 다음 압축한다. 이건 비디오 길이가 정해져 있을 때만 의미가 있다. 24시간 스트리밍 카메라에 MovieChat 메모리를 그대로 적용하면 long-term memory가 단조 증가하면서 결국 컨텍스트가 터진다. **Memory hierarchy를 streaming에 적용하려면 forgetting 정책이 필수**고, 이건 hour-scale 논문들이 잘 다루지 않은 부분이다.\n\n그래서 Real-time Video LLM의 mental model은 **Streaming Pipeline + Adaptive Processing**으로 시프트해야 한다. '어떤 프레임을 고를까'가 아니라 '들어오는 스트림을 어떤 paced rate로 consume하고, 어떤 budget 안에 답을 내놓을까'다."
+        },
+        {
+          "title": "Real-time Benchmarks: 각각이 정확히 무엇을 측정하는가",
+          "content": "Senior engineer로서 가장 먼저 점검할 것은 **벤치마크가 정확히 무엇을 측정하는지**다. Real-time을 표방한 벤치마크가 여럿 있지만 측정 능력이 미묘하게 다르다.\n\n**VStream-Bench** (Flash-VStream 논문, NeurIPS 2024): streaming video QA를 측정한다. 비디오의 각 시점 t_i에서 질문이 들어오고, 모델은 t_i까지 본 정보만으로 답해야 한다. 즉 **memory persistence** (과거 정보를 얼마나 잘 유지하는가)와 **causal reasoning**을 평가한다. 정확도뿐만 아니라 frame-by-frame inference time도 측정한다.\n\n**OVO-Bench** (Online Video Understanding, 2024): 'online' 시나리오를 더 명시적으로 다룬다. Backward (과거 회상), Realtime (현재 인식), Forward (proactive prediction) 세 가지 능력을 분리해 측정한다. 핵심 통찰: **real-time 능력은 단일 스코어가 아니라 다축 스코어**다.\n\n**StreamingBench** (2024): proactive response 능력을 측정한다. '뭔가 일어났을 때 모델이 먼저 말할 수 있는가?' 사용자가 묻기 전에 시스템이 알람을 띄울 수 있는지. 이건 monitoring/safety 시나리오의 핵심이다.\n\n**ETBench** (Event-level Temporal Understanding): 이벤트 boundary를 얼마나 정확히 잡는지 측정한다. 'when did X happen?'에 답할 수 있는 능력.\n\n시니어가 흔히 하는 실수: 'Flash-VStream이 VStream-Bench에서 SOTA니까 우리 시스템에 좋을 거야'라고 결론짓는 것. 실제 production이 monitoring 시나리오라면 StreamingBench 점수가 더 중요할 수 있다. **벤치마크와 시나리오를 매칭하는 능력**이 평가의 시작이다."
+        },
+        {
+          "title": "VideoLLM-online과 EOS-based Stream Alignment",
+          "content": "Real-time Video LLM의 흐름을 바꾼 논문 하나만 꼽으라면 단연 **VideoLLM-online** (Joya Chen et al., CVPR 2024)다. 이 논문의 핵심 기여는 모델 아키텍처가 아니라 **학습 objective의 재정의**다.\n\n기존 video LLM은 'video → response'를 학습한다. 즉 비디오 전체를 입력으로 받고 한 번의 response를 생성한다. VideoLLM-online은 이걸 streaming에 맞게 재정의한다: 매 프레임이 들어올 때마다 모델은 **'지금 답할까 (response token), 아니면 더 기다릴까 (EOS-like silence token)'**를 결정한다. 이게 바로 **EOS-based stream alignment**다.\n\n구체적으로, 학습 데이터에서 narration이 등장하는 시점은 'speak' 라벨이 붙고, 그 외 시점은 'silence' (EOS와 유사한 토큰) 라벨이 붙는다. 추론 시 모델은 매 프레임마다 다음 토큰을 sampling한다 — silence가 나오면 다음 프레임을 기다리고, 일반 토큰이 나오면 그때부터 응답을 시작한다.\n\n왜 이게 중요한가? 기존 video LLM은 '언제 응답해야 하는지'에 대한 모델링이 없다. 사용자가 명시적으로 물어야 답한다. 그래서 proactive response (시스템이 먼저 말함)가 불가능했다. VideoLLM-online은 이걸 **next-token prediction 안에 자연스럽게 녹여낸다**. EOS 토큰이 'I have nothing to say yet'을 의미하도록 재해석한 것이다.\n\nMicro-design decision으로 읽어야 할 부분은 **왜 별도 trigger network를 두지 않고 LM head 안에 통합했는가**다. 별도 trigger를 두면 두 모듈 사이 동기화 문제가 생기고 backprop이 갈라진다. 같은 헤드 안에 통합하면 모델이 'context'와 'timing'을 jointly 학습한다. 이건 streaming-native 모델 설계의 표준이 됐다."
+        },
+        {
+          "title": "Industry: Gemini Live, GPT-4o realtime, Streaming Vision Transformer",
+          "content": "학계 논문만으로는 real-time의 실제 모습을 알기 어렵다. **Gemini Live**와 **GPT-4o realtime**은 production-grade real-time video LLM의 현주소다.\n\n**Gemini Live** (2024)는 카메라 입력을 받아 실시간 대화한다. 공개된 아키텍처 디테일은 제한적이지만, 알려진 사실은 (1) 비디오를 1-2 FPS로 downsample, (2) 음성 stream과 video stream을 별도 채널로 multiplex, (3) end-to-end latency target은 700ms 수준 (사람과의 자연스러운 turn-taking을 위한 임계점). 학계 SOTA인 VideoLLM-online이 ~300ms throughput을 목표한다면, production은 user-perceived latency를 최우선한다는 점이 다르다.\n\n**GPT-4o realtime** (2024): WebSocket API로 노출된다. 이건 음성+비전 multi-modal streaming의 production blueprint다. 핵심 디자인: (1) **partial response streaming** (모델이 첫 토큰부터 즉시 흘려보냄), (2) **interruption handling** (사용자가 끼어들면 generation을 중단), (3) **VAD (Voice Activity Detection) integration**으로 사용자 말이 끝났음을 빠르게 감지. 비디오 측에서는 client-side encoder를 두어 raw frame이 아닌 embedding을 전송하는 패턴도 보인다.\n\n**Streaming Vision Transformer** (Liang et al., 2023): cross-frame attention을 streaming-friendly하게 재설계한 archi. 핵심은 매 프레임을 독립 encoding하지 않고 **state-carrying transformer**처럼 동작시킨다는 점이다. 즉 frame t의 attention이 frame t-1의 KV를 reuse한다. 이건 KV cache 패턴을 vision encoder에 적용한 좋은 예시다.\n\n이 시스템들에서 공통적으로 보이는 패턴: **모델 아키텍처보다 데이터 흐름이 더 중요하다**. Frame을 어떻게 enqueue/dequeue하는가, encoder와 LLM을 어떻게 pipeline parallel로 돌리는가, 첫 토큰이 나오기까지 (TTFT) 무엇이 critical path인가 — 이것들이 production real-time의 진짜 문제다."
+        },
+        {
+          "title": "Latency Targets: 시나리오별 budget",
+          "content": "Real-time이라는 단어를 마치 한 가지 의미인 것처럼 쓰는 건 시니어가 가장 자주 잡아내는 사고의 헐거움이다. 시나리오별로 latency budget이 크게 다르다.\n\n**대화형 (Conversational)**: 사용자가 화면을 보면서 모델과 대화. End-to-end latency target은 **<500ms (p50), <1000ms (p99)**. 700ms를 넘으면 자연스러운 turn-taking이 깨진다 (인간 대화의 conversational gap은 평균 200ms 정도). TTFT (Time To First Token)가 특히 중요 — 첫 토큰이 200ms 안에 나오면 사용자는 '빠르다'고 느낀다.\n\n**모니터링 (Monitoring)**: CCTV, 보안, 산업 모니터링. **<100ms p99 latency**가 일반적이다. 사고 발생 시 1초 안에 알람이 떠야 하는데, 시스템 알람 → 사람 인지 → 행동까지 고려하면 모델 추론은 100ms 안에 끝나야 한다. FPS 요구사항도 더 엄격하다 (보통 10-30 FPS).\n\n**이벤트형 (Event-driven / Alerting)**: 특정 이벤트가 일어날 때만 응답. Latency보다 **precision/recall**과 **throughput**이 중요. 24시간 운영 시 false positive가 분당 0.1개를 넘으면 operator가 무시하기 시작한다. 모델 latency는 1-5초까지 허용되는 경우가 많다.\n\n시니어 평가 시그널: 후보자에게 'real-time video LLM 시스템을 설계하라'고 했을 때 **'어떤 시나리오인가?'를 먼저 묻는지** 보면 된다. Latency budget 없이 아키텍처를 그리기 시작하면 그건 어디서 본 그림을 옮기는 것뿐이다."
+        }
+      ],
+      "analogy": {
+        "title": "방송국 PD vs 라이브 카메라맨",
+        "content": "**General Video LLM**은 영화 편집실의 편집자에 가깝다. 촬영본 전체를 받아놓고 '어떤 컷을 살릴까'를 고민한다. 모든 footage가 손에 있고, 되감을 수 있고, 다시 볼 수 있다. **Hour-scale Video LLM**은 다큐멘터리 작가다. 100시간 분량의 raw footage를 어떻게 압축해 카드에 정리할지, 어떤 노트는 즉시 버리고 어떤 노트는 평생 보관할지를 설계한다.\n\n**Real-time Video LLM**은 라이브 방송의 PD다. 카메라가 지금 이 순간을 찍고 있고, 1초 후 무슨 장면이 들어올지 모른다. 시청자는 지연 없는 화면을 기대하고, 광고 들어갈 타이밍은 정해져 있고, MC가 말실수하면 즉시 자막으로 정정해야 한다. PD는 '편집자처럼 다 보고 결정'할 수 없다. '작가처럼 모두 정리'할 시간도 없다. 들어오는 데이터를 정해진 budget 안에 처리하고, 못 따라가는 정보는 과감히 버린다.\n\n이 비유에서 흥미로운 건 **'버리는 결정'이 PD의 최고 스킬**이라는 점이다. Real-time 시스템도 마찬가지다. 'frame을 dropping하면 안 된다'는 강박을 가진 엔지니어는 real-time 시스템을 못 만든다. **드롭은 design의 일부**다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "Real-time Video LLM의 가장 단순한 형태 — frame stream을 받아 latency budget 안에 process하고, 못 따라가면 drop하는 패턴. 실제 production에서는 더 복잡하지만 이 구조가 모든 streaming pipeline의 뼈대다.",
+        "code": "import asyncio\nimport time\nfrom collections import deque\n\nclass RealTimeVideoLLM:\n    def __init__(self, latency_budget_ms=500, max_queue_size=10):\n        self.budget = latency_budget_ms / 1000.0\n        self.queue = deque(maxlen=max_queue_size)  # 자동 drop\n        self.dropped = 0\n        self.processed = 0\n\n    async def producer(self, camera_stream):\n        async for frame, ts in camera_stream:  # 30 FPS 카메라\n            if len(self.queue) == self.queue.maxlen:\n                self.dropped += 1  # backpressure: oldest frame drop\n            self.queue.append((frame, ts))\n            await asyncio.sleep(0)  # cooperate\n\n    async def consumer(self, model):\n        while True:\n            if not self.queue:\n                await asyncio.sleep(0.001)\n                continue\n            frame, capture_ts = self.queue.popleft()\n            age = time.time() - capture_ts\n            if age > self.budget:\n                self.dropped += 1  # stale frame drop\n                continue\n            start = time.time()\n            response = await model.infer(frame)  # encoder + LLM\n            elapsed = time.time() - start\n            self.processed += 1\n            if elapsed > self.budget:\n                # SLO violation: log and continue\n                print(f'p99 budget violated: {elapsed*1000:.0f}ms')\n            yield response, capture_ts",
+        "walkthrough": "핵심은 세 가지 drop 메커니즘이다. (1) `deque(maxlen=...)`로 queue overflow 시 oldest를 자동 drop — backpressure의 가장 단순한 형태. (2) `age > budget` 체크로 stale frame을 process하지 않음 — 이미 늦었으면 답해도 의미 없다. (3) `elapsed > budget`은 inference 자체가 SLO를 깬 경우 — 알람과 메트릭으로 잡아낸다. 시니어가 이 코드에서 즉시 지적할 부분: `model.infer`가 single-frame이지만 실제로는 sliding window context를 함께 전달해야 한다 (다음 챕터들의 주제)."
+      },
+      "industryEvaluation": {
+        "overview": "Real-time video LLM 시스템 설계는 ML 인터뷰에서 **system design + ML knowledge**의 교차점으로 출제된다. ML platform 팀, robotics, autonomous vehicle, AR/VR, surveillance 도메인의 senior+ 포지션에서 자주 등장한다. 평가의 핵심은 후보자가 'real-time'을 정량적으로 사고하는가다.",
+        "whatEngineersLookFor": [
+          "Latency budget을 시나리오별로 정량화 — '500ms 정도?'가 아니라 'TTFT p50 200ms, end-to-end p99 800ms'처럼 명시",
+          "Offline frame sampling 알고리즘을 streaming에 그대로 못 붙이는 이유를 즉시 설명 (causal 제약)",
+          "벤치마크별 측정 능력 구분 — VStream-Bench의 memory persistence vs StreamingBench의 proactive response",
+          "VideoLLM-online의 EOS alignment 같은 micro-design을 'why this matters' 관점에서 해석",
+          "'drop'을 design의 일부로 받아들이는 태도 — 모든 프레임을 처리해야 한다는 강박이 없음"
+        ],
+        "redFlags": [
+          "'real-time'을 단일 정의로 사용 — 시나리오 구분 없음",
+          "AKS, BOLT 같은 offline sampler를 real-time에 그대로 쓰겠다고 답함",
+          "Latency target을 묻지 않고 바로 모델 아키텍처부터 그림",
+          "Frame drop을 'bug'로 인식 — 모든 프레임을 처리해야 한다고 고집"
+        ],
+        "interviewQuestions": [
+          "VideoLLM-online이 EOS token으로 streaming을 해결한 방식을 설명하라. 왜 별도 trigger module을 두지 않았는가?",
+          "VStream-Bench와 OVO-Bench 둘 다 SOTA인 모델 A와, OVO-Bench만 SOTA인 모델 B가 있다. 보안 모니터링 시스템에 어떤 걸 선택할 것이며, 그 결정에 추가로 어떤 측정이 필요한가?",
+          "30 FPS 카메라에서 들어오는 비디오에 대해 GPT-4o realtime 수준의 응답성을 내고 싶다. 어떤 latency를 측정할 것이며, p50/p99 target은 얼마로 잡을 것인가?"
+        ],
+        "masteryVsFamiliar": "**Familiar**: VideoLLM-online, Flash-VStream 같은 논문 이름을 알고 'streaming video LLM'이라는 용어를 쓸 수 있다. **Mastery**: 어떤 벤치마크가 어떤 능력을 측정하는지 분리해 설명하고, latency budget을 시나리오별로 정량화하며, 'frame drop은 bug가 아니라 design'이라는 mental model이 체화되어 있다. 그리고 EOS-based alignment 같은 micro-decision의 동기를 '왜 다른 방식이 아닌가'까지 설명할 수 있다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "Mental Model Shift",
+          "content": "Real-time은 'sampler 잘 짜기'도 'memory 설계'도 아닌 '**Streaming Pipeline + Adaptive Processing**' 문제다."
+        },
+        {
+          "title": "Causal 제약이 모든 것을 바꾼다",
+          "content": "Offline sampler를 그대로 streaming에 못 붙인다 — 미래 프레임을 기다릴 수 없다."
+        },
+        {
+          "title": "벤치마크는 능력별로 분리됨",
+          "content": "VStream-Bench (memory persistence), OVO-Bench (backward/realtime/forward), StreamingBench (proactive)는 서로 다른 능력을 잰다."
+        },
+        {
+          "title": "EOS Alignment의 의미",
+          "content": "VideoLLM-online의 핵심은 next-token prediction 안에 '언제 말할지'를 자연스럽게 통합한 것이다."
+        },
+        {
+          "title": "Latency는 시나리오별 정량화",
+          "content": "대화형 <500ms p50, 모니터링 <100ms p99, 이벤트형은 throughput과 precision이 우선."
+        },
+        {
+          "title": "Production은 TTFT가 핵심",
+          "content": "Gemini Live, GPT-4o realtime 모두 first-token latency를 user-perceived latency의 proxy로 본다."
+        },
+        {
+          "title": "Drop은 design의 일부",
+          "content": "Frame을 버리지 않으려는 강박은 real-time 시스템 설계의 가장 큰 적이다."
+        },
+        {
+          "title": "시스템 문제로의 전환",
+          "content": "모델 아키텍처보다 데이터 흐름 (queue, backpressure, pipeline parallelism)이 latency를 결정한다."
+        }
+      ]
+    },
+    {
+      "number": 2,
+      "emoji": "📡",
+      "title": "Streaming Input Pipeline",
+      "titleKr": "스트리밍 입력 파이프라인",
+      "tldr": "들어오는 video stream을 모델까지 전달하는 input pipeline은 backpressure, frame ordering, drop policy를 명시적으로 설계해야 하는 시스템 문제다.",
+      "topics": [
+        "RTSP/WebRTC/카메라 캡처 패턴",
+        "Producer-consumer queue와 backpressure",
+        "Circular buffer vs growing queue",
+        "Frame timestamp와 ordering",
+        "asyncio / multiprocessing 패턴"
+      ],
+      "learningGoals": [
+        "RTSP, WebRTC, 카메라 SDK의 latency 특성을 비교하고 시나리오별 선택 기준을 제시할 수 있다",
+        "Producer-consumer queue에서 backpressure를 처리하는 세 가지 정책 (block/drop-oldest/drop-newest)의 trade-off를 설명할 수 있다",
+        "Frame timestamp 기반 ordering이 multi-source 환경에서 왜 필수인지 설명할 수 있다",
+        "asyncio queue.Queue와 multiprocessing.Queue 중 언제 어느 것을 선택할지 결정할 수 있다",
+        "Pipeline의 'first byte to first frame' latency를 측정하고 최적화 방향을 제시할 수 있다"
+      ],
+      "overview": "Chapter 1에서 우리는 real-time이 'sampler'나 'memory' 문제가 아니라 streaming pipeline + adaptive processing 문제임을 봤다. 이 챕터에서는 그 streaming pipeline의 **첫 단계, 입력**을 다룬다. 카메라/네트워크로부터 들어오는 raw byte를 모델이 처리할 수 있는 tensor 형태로 안정적이고 timely하게 전달하는 일.\n\n이건 ML 엔지니어들이 가장 흔히 underestimate하는 영역이다. '그냥 OpenCV로 VideoCapture 하면 되지 않나'라고 생각한다면, 실제 production에서 30 FPS 카메라가 갑자기 25 FPS로 떨어지고, 네트워크 카메라가 jitter로 frame을 뭉쳐 보내고, 모델이 한 프레임에 200ms 걸리는 동안 queue가 폭주하는 모습을 본 적이 없는 것이다. **Input pipeline 자체가 latency budget의 30-50%를 좌우**한다.\n\n기존 video LLM과 hour-scale video LLM에서는 input은 거의 자명한 문제였다 — `decord` 같은 라이브러리로 비디오 파일을 한 번에 읽고 끝이었다. Real-time에서는 input이 **첫 번째 시스템 디자인 결정**이 된다. 어떤 transport (RTSP/WebRTC)? 어떤 buffer 정책 (circular/growing/bounded)? 어떤 drop 정책? 어떤 concurrency 모델 (asyncio/threading/multiprocessing)? 각 결정이 p99 latency를 ms 단위로 좌우한다.",
+      "sections": [
+        {
+          "title": "Capture Layer: RTSP / WebRTC / 카메라 SDK의 특성",
+          "content": "Capture는 'video source가 무엇이냐'에 따라 latency 특성이 완전히 다르다. Senior engineer는 이걸 즉시 구분할 줄 알아야 한다.\n\n**RTSP (Real-Time Streaming Protocol)**: IP 카메라의 표준. TCP/UDP 위에 RTP packet을 실어 보낸다. 일반적으로 latency는 **300ms-2s** 수준 (인코더 → 네트워크 → 디코더). GOP (Group of Pictures) 구조 때문에 첫 frame을 받으려면 keyframe (I-frame)을 기다려야 한다. `ffmpeg`/`gstreamer`/`OpenCV VideoCapture`로 받지만, OpenCV의 RTSP 구현은 internally H.264 디코딩이 blocking이라서 backpressure가 생기면 GOP 전체가 밀린다.\n\n**WebRTC**: 브라우저/모바일에서 가장 흔한 transport. **저지연 (50-200ms)**이 핵심 강점 — UDP 위에 SRTP, jitter buffer가 작게 설계됨. 단점은 NAT traversal, STUN/TURN 설정, 그리고 모든 frame이 동등하게 'real-time'으로 처리되어 backpressure가 client 측에서 처리됨. Real-time video LLM의 conversational 시나리오는 거의 WebRTC가 답이다.\n\n**카메라 SDK 직접 (USB, CSI, GenICam)**: USB 카메라는 `cv2.VideoCapture(0)`, 산업용은 GenICam 표준 (Pylon, Spinnaker), 임베디드는 V4L2 / NVIDIA Argus. 가장 **저지연 (10-50ms)** — 하지만 모든 게 local. 카메라 → kernel buffer → user space로 한 hop.\n\n시니어 시그널: 'WebRTC가 RTSP보다 빠르니까 무조건 WebRTC'가 아니다. CCTV 100대를 한 서버로 모으는 시나리오는 RTSP가 표준이고, WebRTC를 100 connection으로 받으면 SFU (Selective Forwarding Unit) 비용이 폭증한다. **트래픽 패턴과 매칭하는 것이 답**이다."
+        },
+        {
+          "title": "Producer-Consumer Queue와 Backpressure",
+          "content": "Capture가 끝나면 frame을 어딘가에 담아 consumer (모델)가 꺼내가야 한다. 이건 고전적인 producer-consumer 패턴이지만, **real-time에서는 backpressure 정책이 결정적**이다.\n\nProducer (카메라)는 일정한 rate로 frame을 만든다. Consumer (모델 inference)는 frame마다 가변 시간을 소비한다. Producer rate > consumer rate가 잠시라도 일어나면 queue가 차오른다. 세 가지 대응 정책이 있다.\n\n**Block (back-pressure to producer)**: Queue가 차면 producer를 멈춤. `queue.put(block=True)` 패턴. 문제: 카메라는 멈출 수 없다. 멈추면 그 시간 동안의 현실이 사라진다. 게다가 RTSP는 buffer가 더 위에 쌓여 cascade가 발생한다. **Real-time에서는 거의 안 쓴다**.\n\n**Drop-oldest (sliding window 사상)**: Queue가 차면 가장 오래된 frame을 버리고 새 frame을 넣음. `deque(maxlen=N)`. 'real-time이니까 새 정보가 더 중요하다'는 가정. **대부분의 real-time 시스템 기본값**이다. 단점: monitoring 시나리오에서 사건이 일어난 순간의 frame이 drop될 위험.\n\n**Drop-newest**: Queue가 차면 새로 들어온 frame을 버림. Consumer가 따라잡을 시간을 보장. 거의 안 쓰지만, 'recovery mode'에서 일시적으로 유용 — 시스템이 회복 중일 때 새 frame을 무시하고 밀린 처리를 끝낸다.\n\nProduction 패턴: **bounded queue + drop-oldest + metric**. Queue size N (보통 5-10), drop 횟수를 카운트해 Prometheus로 export, drop rate가 임계치를 넘으면 alarm. **'얼마나 떨어졌는가'가 SLA metric이 된다**.\n\n주의할 함정: Python의 `queue.Queue`는 thread-safe하지만 maxlen에 도달했을 때 drop-oldest를 지원하지 않는다. `collections.deque(maxlen=N)`은 drop-oldest를 지원하지만 단일 thread/asyncio 환경에서만 안전하다. 두 thread에서 동시 접근 시 `threading.Lock` + `deque` 조합이 필요하다."
+        },
+        {
+          "title": "Circular Buffer vs Growing Queue: Memory 모델",
+          "content": "Queue 자체의 구현도 latency에 영향을 준다. 두 가지 주요 패턴.\n\n**Circular buffer (ring buffer)**: 고정 크기 N개의 슬롯, 읽기/쓰기 포인터를 순환. C/C++ embedded에서 표준. Python에서는 `numpy` array를 raw로 다루거나, shared memory (`multiprocessing.shared_memory`)로 zero-copy를 구현한다. **장점**: allocation 없음 → GC pause 없음, cache-friendly. **단점**: 크기 고정.\n\nReal-time video에서 circular buffer가 빛나는 경우: 모델이 sliding window N개 프레임을 보는 경우, 같은 buffer에 N개를 유지하면 됨. **Encoder가 buffer pointer만 받고 별도 복사 없이 작업**할 수 있다.\n\n**Growing queue (linked list 기반)**: Python `queue.Queue`의 내부 구현. Node 단위로 동적 할당. 장점: 크기 무제한. 단점: allocation pressure, 메모리 단편화, 그리고 결정적으로 **'얼마나 많이 들어와도 일단 받는' 행동이 real-time에서 위험**하다. Latency가 무한정 커질 수 있다.\n\n시니어가 보는 시그널: 후보자가 `queue.Queue(maxsize=10)` vs `deque(maxlen=10)`의 차이를 즉시 설명할 수 있는가. 전자는 maxsize 도달 시 put이 block (또는 exception), 후자는 자동 drop. **이 차이가 backpressure 정책의 구현**이다.\n\n또 하나의 디테일: frame 데이터를 어떻게 표현할 것인가. 한 frame 1920x1080x3 (HD) = ~6MB. 1000개 buffer = 6GB. 따라서 frame을 raw bytes로 들고 다니지 말고, **GPU에 이미 올라간 tensor pointer를 들고 다니는 게 표준**이다. NVIDIA의 경우 `torch.cuda.Stream`과 함께 zero-copy로 처리한다. CPU buffer → GPU upload 시간 자체가 (HD 기준) 5-10ms로 latency budget의 큰 부분이라 미리 GPU에 올려두는 것이 패턴이다."
+        },
+        {
+          "title": "Frame Ordering과 Timestamp",
+          "content": "Single-source에서는 frame이 들어온 순서가 곧 시간 순서다. 하지만 multi-source (예: 여러 카메라, 또는 video + audio multi-modal)에서는 **timestamp 기반 ordering이 필수**다.\n\n각 frame에는 **capture timestamp** (소스에서 찍힌 시점)와 **arrival timestamp** (시스템에 도달한 시점)를 둘 다 기록해야 한다. RTSP의 경우 RTP packet에 PTS (Presentation Timestamp)가 들어 있고, WebRTC의 경우 NTP-synced timestamp가 들어온다. USB 카메라는 hardware timestamp가 없으면 `time.time()`을 driver에서 찍는다.\n\n왜 둘 다 필요한가? **Capture timestamp는 'inference에서 시간 reasoning'에 쓰이고, arrival timestamp는 'pipeline latency 측정과 stale frame drop'에 쓰인다**. Chapter 1 코드 예시의 `age = time.time() - capture_ts`가 바로 arrival 기반 stale 판단이다.\n\nMulti-source ordering 패턴: **priority queue** (heap) 기반 정렬. 각 source에서 frame이 들어오면 timestamp를 key로 heap에 push, consumer는 가장 작은 timestamp부터 pop. 단, 한 source가 잠시 끊기면 다른 source의 frame이 영원히 기다리는 문제가 있다 (head-of-line blocking). 해결: **bounded reordering window** — 'timestamp T 이전 frame은 더 이상 받지 않는다'고 cutoff 정함.\n\n실전 함정: 시스템 clock과 카메라 clock이 drift한다. 1시간에 수 초씩 어긋난다. NTP나 PTP (Precision Time Protocol) sync가 필수다. 또 dropped frame이 발생하면 timestamp가 jump한다 — 모델이 '이 사이에 무슨 일이 있었지?'를 알 수 있도록 metadata로 전달해야 한다."
+        },
+        {
+          "title": "Concurrency 모델: asyncio vs threading vs multiprocessing",
+          "content": "Python에서 streaming pipeline을 어떤 concurrency 모델로 구현할지는 첫 design decision이다.\n\n**asyncio**: I/O-bound (네트워크, 디스크) work를 single-thread cooperative로 처리. 장점: context switch 비용이 1μs 수준, deterministic. 단점: CPU-bound work (디코딩, encoder forward)를 직접 못 함. 패턴: I/O는 asyncio, CPU는 `loop.run_in_executor(ThreadPoolExecutor, ...)`로 떠넘김.\n\n**threading**: I/O와 일부 CPU work를 동시 수행. Python GIL 때문에 CPU bound는 진정한 병렬이 안 됨. 하지만 `torch` 같은 라이브러리는 내부에서 GIL을 release하므로 GPU inference는 thread 1개에 맡기고 나머지는 다른 thread에서 동작 가능. 장점: 학습 곡선 낮음. 단점: shared state debugging이 어렵다.\n\n**multiprocessing**: Process 분리, 진정한 병렬. 장점: GIL 회피, crash isolation. 단점: IPC 비용 — frame을 process 간 전달하려면 serialize/deserialize. `multiprocessing.shared_memory` (Python 3.8+)로 zero-copy 가능하지만 까다롭다.\n\nReal-time video LLM의 표준 architecture (현재 production 패턴):\n- **Capture process**: 카메라/RTSP 수신, 디코딩, GPU 업로드. Multiprocessing의 별도 process로 격리. crash 시 main이 살아남음.\n- **Inference process** (또는 main): GPU에 올라온 tensor를 받아 모델 inference. asyncio 또는 threading.\n- **IPC**: `multiprocessing.shared_memory` + circular buffer로 frame pointer만 전달.\n- **Logging/metric**: 또 다른 background thread, queue로 비동기 dispatch.\n\n시니어 시그널: 후보자가 '왜 multiprocessing을 쓰는가?'에 대해 'crash isolation + GIL bypass' 두 가지 모두 답할 수 있는가. 'GIL 때문'만 답하면 multiprocessing의 진짜 가치 (capture가 죽어도 inference가 살아남음)를 놓치고 있는 것."
+        }
+      ],
+      "analogy": {
+        "title": "공항 수하물 컨베이어 벨트",
+        "content": "Streaming input pipeline은 공항 수하물 시스템과 닮았다. 비행기 (카메라)에서 수하물 (frame)이 일정한 rate로 내려온다. 컨베이어 벨트 (queue)는 일정 폭으로 정해져 있고, 수하물 처리장 (모델)은 가변 속도로 가방을 들어 분류한다.\n\n처리장이 잠시 느려지면 컨베이어가 차오른다. 모든 공항에는 이 시점의 정책이 있다. (1) 비행기에 '내려놓지 마세요'라고 사인을 보낸다 — 하지만 비행기는 멈출 수 없다 (block-producer가 real-time에서 불가능한 이유). (2) 컨베이어가 가득 차면 가방을 옆 컨베이어로 자동 분기한다 (overflow queue). (3) 가장 오래된 가방을 옆 트랙으로 빼서 나중에 처리한다 (drop-oldest, deferred). 그리고 결정적인 정책: **가방에 도착시간 태그가 붙어 있다**. 30분 이상 기다린 가방은 lost & found로 보낸다 (stale frame drop).\n\n공항 시스템이 잘 돌아가려면 컨베이어 폭, 처리장 처리율, 비행기 도착 패턴이 매칭되어야 한다. Real-time pipeline도 마찬가지다. Queue size, model throughput, capture FPS를 따로 설계하면 어디선가 폭주한다. **세 가지를 함께 dimension**해야 한다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "Production-grade에 가까운 streaming input pipeline 골격. multiprocessing으로 capture를 격리하고, shared memory ring buffer로 frame을 전달, asyncio consumer가 모델 inference를 호출한다.",
+        "code": "import asyncio\nimport multiprocessing as mp\nimport time\nimport numpy as np\nfrom multiprocessing.shared_memory import SharedMemory\n\nFRAME_SHAPE = (720, 1280, 3)\nBUFFER_SIZE = 8  # circular slots\nFRAME_BYTES = np.prod(FRAME_SHAPE)\n\nclass FrameRing:\n    def __init__(self, name, create=False):\n        size = BUFFER_SIZE * FRAME_BYTES + BUFFER_SIZE * 16  # +ts\n        self.shm = SharedMemory(name=name, create=create, size=size)\n        self.head = mp.Value('i', 0)  # write idx\n        self.tail = mp.Value('i', 0)  # read idx\n        self.drops = mp.Value('i', 0)\n\n    def write(self, frame, ts):\n        with self.head.get_lock():\n            idx = self.head.value % BUFFER_SIZE\n            # check overrun (drop-oldest)\n            if (self.head.value - self.tail.value) >= BUFFER_SIZE:\n                self.tail.value += 1\n                self.drops.value += 1\n            buf = np.ndarray(FRAME_SHAPE, dtype=np.uint8,\n                             buffer=self.shm.buf, offset=idx*FRAME_BYTES)\n            buf[:] = frame\n            self.head.value += 1\n\n    def read(self):\n        with self.tail.get_lock():\n            if self.tail.value >= self.head.value:\n                return None\n            idx = self.tail.value % BUFFER_SIZE\n            buf = np.ndarray(FRAME_SHAPE, dtype=np.uint8,\n                             buffer=self.shm.buf, offset=idx*FRAME_BYTES)\n            self.tail.value += 1\n            return buf.copy()  # detach from ring",
+        "walkthrough": "핵심은 `FrameRing`이라는 fixed-size circular buffer를 shared memory 위에 올린 점이다. Capture process가 `write`를 호출하면, head/tail 차이로 overrun을 감지하고 자동으로 tail을 한 칸 밀어 drop-oldest를 구현한다. `drops` counter가 backpressure metric으로 export 가능. `read`는 detached copy를 반환 — consumer가 frame을 들고 있는 동안 ring이 덮어쓰는 race를 막는다. Production에서는 더 정교하게 (lock-free, GPU memory) 구현하지만 이 코드의 mental model이 핵심이다. 'frame을 들고 다니지 않고 buffer 안에서 surface'한다는 발상이 streaming의 정신이다."
+      },
+      "industryEvaluation": {
+        "overview": "Streaming input pipeline은 ML engineer가 'system designer'로 평가받는 첫 영역이다. 모델 지식만으로는 풀 수 없고, OS/네트워크/concurrency 이해가 필수다. Robotics, autonomous driving, AR/VR, surveillance, telco 산업에서 가장 중시된다.",
+        "whatEngineersLookFor": [
+          "Transport (RTSP/WebRTC/SDK)별 latency 특성을 즉시 비교 가능",
+          "Bounded queue + drop-oldest를 default로 채택하고 그 이유를 설명",
+          "Capture timestamp와 arrival timestamp를 분리해 다루는 감각",
+          "GIL/multiprocessing/asyncio 중 시나리오별 선택 근거 명확",
+          "Drop rate, queue depth, p99 latency를 SLA metric으로 export하는 습관"
+        ],
+        "redFlags": [
+          "`cv2.VideoCapture`로 그냥 받아 list에 append하는 답변",
+          "Backpressure 정책에 대한 의식이 없음 — '큐는 그냥 큐'로 다룸",
+          "Single timestamp만 다룸 (capture vs arrival 구분 못 함)",
+          "Crash isolation을 고려하지 않은 single-process 아키텍처"
+        ],
+        "interviewQuestions": [
+          "30 FPS RTSP 카메라 50대로부터 받아 하나의 모델로 inference하는 시스템을 설계하라. Queue, backpressure, ordering을 어떻게 다룰 것인가?",
+          "`queue.Queue(maxsize=10)`과 `collections.deque(maxlen=10)`의 차이를 backpressure 관점에서 설명하라. 어떤 시나리오에 어느 것을 쓸 것인가?",
+          "Capture process가 죽었을 때 inference process가 살아남도록 하려면 무엇을 다르게 설계해야 하나? IPC, monitoring, recovery를 모두 포함해 답하라."
+        ],
+        "masteryVsFamiliar": "**Familiar**: producer-consumer를 알고 `queue.Queue`를 쓸 수 있다. **Mastery**: backpressure 정책을 명시적으로 선택하고, capture/arrival timestamp를 분리하며, shared memory 기반 zero-copy ring buffer를 그릴 수 있다. 그리고 production metric (drop rate, queue depth, age distribution)을 SLA의 일부로 본다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "Input은 latency budget의 30-50%",
+          "content": "Capture, transport, queue 단계에서 이미 수백 ms가 소비된다 — 모델만 빠르게 한다고 real-time이 되지 않는다."
+        },
+        {
+          "title": "Transport 선택은 시나리오 매칭",
+          "content": "WebRTC (대화형), RTSP (CCTV 다채널), USB/CSI (저지연 로컬) — 각각의 latency 프로필이 다르다."
+        },
+        {
+          "title": "Bounded queue + drop-oldest가 default",
+          "content": "Real-time에서 producer를 block하는 건 거의 불가능하다. 새 frame이 더 중요하다는 가정이 합리적이다."
+        },
+        {
+          "title": "Drop은 metric으로 export",
+          "content": "Drop rate가 SLA metric이 된다 — 'frame을 다 처리한다'가 아니라 '얼마나 떨어졌는가'가 평가 기준."
+        },
+        {
+          "title": "Timestamp는 capture + arrival 두 개",
+          "content": "Capture timestamp는 모델 reasoning, arrival timestamp는 stale drop 판단에 쓰인다."
+        },
+        {
+          "title": "Frame을 들고 다니지 마라",
+          "content": "Circular buffer에 한 번 올린 다음 pointer만 전달 — 6MB frame을 copy하는 순간 latency가 폭증."
+        },
+        {
+          "title": "Multiprocessing은 crash isolation도 위해",
+          "content": "Capture가 죽어도 inference가 살아남게 — GIL bypass는 부차적 이점."
+        },
+        {
+          "title": "Capture/Inference/Logging은 분리",
+          "content": "각 단계가 서로의 timing에 영향을 안 주도록 process/queue로 격리하는 게 production 패턴."
+        }
+      ]
+    },
+    {
+      "number": 3,
+      "emoji": "🎬",
+      "title": "Adaptive Frame Sampling under Latency Budget",
+      "titleKr": "Latency Budget 하의 적응적 프레임 샘플링",
+      "tldr": "Real-time에서 frame sampling은 'informative함'을 고르는 문제가 아니라 'budget이 허락하는 만큼만 처리'하는 causal, online 결정 문제다.",
+      "topics": [
+        "Offline vs causal vs online sampling의 차이",
+        "Fixed interval, event-driven, query-aware sampling",
+        "VideoLLM-online의 EOS-based sampling",
+        "Latency 압력 하의 frame skip 결정",
+        "Drop vs process trade-off"
+      ],
+      "learningGoals": [
+        "Offline frame selection (AKS, Frame-Voyager)을 streaming에 그대로 못 쓰는 이유를 설명할 수 있다",
+        "Fixed interval, event-driven, query-aware sampling 각각의 latency/quality 특성을 비교할 수 있다",
+        "VideoLLM-online의 EOS sampling이 'budget-aware' 결정을 어떻게 모델 안에 내재화하는지 설명할 수 있다",
+        "Latency 압력이 높을 때 frame skip을 결정하는 policy를 설계할 수 있다",
+        "Adaptive sampling의 quality 손실을 정량적으로 평가하는 metric을 제시할 수 있다"
+      ],
+      "overview": "이전 코스에서 우리는 frame sampling을 '유한한 K개를 N개 중에서 informative하게 고르는' 문제로 봤다. AKS는 key-frame을 entropy로, BOLT는 budget-aware로, Frame-Voyager는 query-aware로 골랐다. 이 모든 SOTA의 공통점: **전체 비디오가 손에 있다**. K/N ratio를 임의로 정할 수 있고, 어떤 프레임이 답에 기여할지 미리 본 다음 결정한다.\n\nReal-time에서 이 가정이 무너지면 sampling 문제가 완전히 다른 모습이 된다. 첫째, **causal 제약**: frame t를 처리할지 결정할 때 t+1을 못 본다. 둘째, **budget 제약**: 'best frame'을 고를 시간이 없다. 셋째, **rate 제약**: 카메라가 30 FPS인데 모델이 5 FPS 처리하면 6프레임 중 5개는 '버릴지 미룰지'를 즉시 결정해야 한다.\n\n이 챕터에서는 이 새로운 문제를 다룬다. Offline에서 streaming으로 mental model이 어떻게 시프트하는지, VideoLLM-online의 EOS 기반 sampling이 왜 단순한 keyframe 선택이 아니라 'response generation과 sampling을 통합한' 한 단계 진화인지, 그리고 production에서 latency 압력이 높을 때 어떻게 graceful degradation할지를 본다.\n\nMental model: Offline = '최고의 K를 고른다'. Streaming = **'now, 이 frame을 처리할 만한가? 아니면 미루거나 버릴까?'를 매 frame마다 결정**한다.",
+      "sections": [
+        {
+          "title": "Offline에서 Online으로: 무엇이 바뀌는가",
+          "content": "AKS (NeurIPS 2024)는 비디오 전체에서 entropy 높은 K개 프레임을 고른다. 가장 informative하다고 판단되는 순간들이 답에 기여한다. 이건 **batched optimization** 문제다 — N개 점수를 매기고 top-K를 선택.\n\nStreaming에서 이걸 그대로 적용하면? 각 frame이 들어올 때마다 'entropy를 계산해 buffer에 쌓고, 1초마다 top-K를 골라 process'한다는 패턴이 가능하다. 하지만 두 가지 문제가 즉시 발생한다.\n\n**문제 1: temporal locality 손실**. Offline AKS는 비디오 끝까지 봐서 'a frame at minute 3 is one of the best 8'을 결정한다. Streaming에서는 '지난 1초 안에서 top-K'만 가능하다. 1초 단위 local maxima와 global maxima가 다르면 답 품질이 떨어진다. **Local greedy = global suboptimal**이라는 고전적 함정.\n\n**문제 2: latency vs quality 동적 trade-off**. Offline에서는 K가 정해진 hyperparameter. Streaming에서는 **K가 실시간 가용 budget의 함수**다. CPU 부하가 높아져서 frame당 200ms 걸리면 K를 줄여야 한다. 부하가 가라앉으면 K를 늘려 quality 회복. 이건 controller 문제 — sampler 자체가 system load의 feedback을 받아야 한다.\n\nBOLT (NeurIPS 2024)의 budget-aware sampling이 그나마 streaming friendly에 가깝다. 'budget이 K개일 때 어떤 K개가 informative한가'를 미리 학습. Streaming version: '이번 second의 budget이 K개일 때 지금까지 본 frame 중 어떤 K개를 LLM에 넣을까'를 매초 결정. 하지만 BOLT도 결국 chunk 끝까지 봐야 결정 가능하므로 약간의 lookback 지연이 필요하다.\n\n**Streaming sampler의 본질**: '미래를 못 보는 한계' + '시스템 부하에 적응' + '답 품질의 graceful degradation'. 이 세 가지가 동시 성립해야 한다."
+        },
+        {
+          "title": "Sampling 전략들: Fixed Interval, Event-Driven, Query-Aware Online",
+          "content": "Streaming sampling의 대표적 4가지 전략을 latency/quality trade-off 관점에서 비교한다.\n\n**Fixed Interval Sampling**: 매 N frame마다 1개를 process. 가장 단순. 30 FPS → N=6이면 5 FPS 처리. **장점**: 결정적, latency 예측 가능. **단점**: 정보 밀도와 무관하게 균등 sampling → 중요한 순간을 놓침. Baseline으로 항상 비교 대상이 된다.\n\n**Event-Driven Sampling**: 'frame difference', 'motion', 'audio onset' 같은 cheap signal로 '뭔가 일어났을 때만' process. CCTV 시나리오의 표준. 99%의 frame이 같으면 1% 만 LLM에 보냄. **장점**: 평균 처리량 극적 감소. **단점**: detector quality에 의존, false negative가 사건을 놓침. **시그널 detector → trigger → LLM** 패턴 — detector가 latency budget의 첫 단계.\n\n**Query-Aware Online**: 사용자 query가 있을 때 '이 frame이 답에 기여하는가'를 cheap classifier로 판단. Frame-Voyager의 streaming 버전에 해당. **장점**: 사용자 의도 반영. **단점**: query 없을 때 default 정책 필요 (event-driven으로 fallback).\n\n**EOS-Based Sampling (VideoLLM-online)**: 모델 자체가 '지금 process할까, 다음 frame을 기다릴까'를 next-token으로 결정. EOS-like token이 'no response yet'을 의미. **장점**: sampling과 response generation이 jointly 학습됨 — 외부 sampler가 없어도 자체 budget을 인지. **단점**: 학습에 narration-aligned data가 필요, response가 늦어질 위험.\n\nProduction blueprint: **multi-tier sampling**. (1) 모든 frame은 cheap detector (motion + audio)로 trigger 판단. (2) Trigger된 frame만 vision encoder로. (3) 일정 frame batch가 쌓이면 LLM에 sliding window context로 전달. 각 tier가 다음 tier의 latency budget을 조절한다. 'sampling은 한 곳에서 결정'이 아니라 **여러 단계에 분산**된다."
+        },
+        {
+          "title": "VideoLLM-online의 EOS-based Sampling, 깊이 보기",
+          "content": "Chapter 1에서 EOS alignment의 개념을 봤다. 여기서는 sampling 관점에서 다시 본다.\n\n전통적 video LLM은 'video → response' 매핑이다. 모델이 sampling 결정에 관여하지 않는다 — 외부 sampler가 골라준 frame을 받아 답한다. VideoLLM-online은 다르다. 매 frame이 들어올 때 모델은 prefix `[v_1, v_2, ..., v_t]`를 보고 next token을 sampling한다. Token vocabulary에 **silence token** (또는 EOS-like)이 있다. Silence가 sampling되면? '아직 답할 만한 게 없다' → 다음 frame을 기다린다. Word token이 sampling되면 그 시점부터 response 시작.\n\n이게 sampling 문제로 매우 흥미로운 점: **'어떤 frame을 LLM에 넣을지'와 '언제 응답할지'가 같은 메커니즘으로 결정**된다. 모델 입장에서 frame은 매번 들어오지만, 'response'라는 외부 행동은 silence 토큰이 끊길 때만 발생한다. 즉 silence가 자연스러운 'frame skipping (응답 측 skipping)'이다.\n\n학습 데이터 구조: narration-aligned video (Ego4D, narrated cooking video 같은). 시간 축에 narration이 있는 구간은 word token, 그 외는 silence token으로 라벨링. 모델은 'narration timing'을 학습한다 — '이런 visual pattern이 나오면 narration이 시작될 만하다'.\n\nMicro-design 통찰: **왜 silence token을 LM vocabulary에 통합했는가, 별도 trigger network가 아니라**. 별도 trigger를 두면 (1) 두 모듈 사이의 동기화 (frame이 들어올 때마다 trigger를 평가) 비용, (2) trigger와 response 사이의 latency, (3) backprop의 분리 (joint 학습 안 됨). LM head 안에 통합하면 모든 게 next-token prediction 하나로 끝난다.\n\nProduction에서의 한계: silence 결정이 'no response'이지 'no processing'이 아니다. 즉 vision encoder forward는 어쨌든 매 frame 돌아간다. 진정한 frame-level skip을 하려면 별도 gating이 필요 — VideoLLM-online + cheap event detector 조합이 production blueprint."
+        },
+        {
+          "title": "Latency 압력 하의 Frame Skip Decision",
+          "content": "Real-time 시스템은 부하가 일정하지 않다. 어떤 순간 모델이 frame당 100ms로 처리하다가, 갑자기 GPU 다른 process가 끼어들어 200ms로 늘어나기도 한다. 이때 시스템은 'graceful degradation'을 해야 한다 — quality는 떨어지더라도 latency는 유지.\n\n**Skip policy**의 구현: queue depth와 frame age를 보고 결정한다.\n\n```\nif age(frame) > budget * 0.8:\n    # 거의 stale → skip\nelif queue_depth > threshold and frame_is_low_motion:\n    # 부하 + 정보 적음 → skip\nelse:\n    process(frame)\n```\n\n이런 단순한 rule이 의외로 강력하다. 'low motion frame을 skip'은 frame difference (이전 frame과의 L2 norm 등)로 cheap 판단. Information-theoretic으로는 redundant frame이라 skip해도 quality 손실이 적다.\n\n**Adaptive K**: VideoLLM-online 스타일에서, response 빈도를 system load에 따라 조절. 부하가 높으면 silence를 더 길게 — 즉 'response를 덜 자주' 생성. 이건 inference-time hyperparameter (temperature, silence bias)로 control 가능. **모델 retraining 없이 budget 조절**이 가능하다는 점이 production에서 중요.\n\n**Tail latency 관리**: p99 latency가 budget을 초과하는 frame이 1%만 있어도 사용자 경험은 크게 나빠진다. Production에서는 'budget 초과가 예상되는 frame은 미리 skip' 패턴을 쓴다. Encoder forward 직전에 'expected latency'를 예측 (recent moving average) — budget 초과 예상 시 skip. 이건 control theory의 PID controller와 유사한 feedback loop.\n\n**Quality 측정**: skip이 quality에 미치는 영향을 정량화하지 않으면 policy를 tune할 수 없다. Production metric: 'response quality (LLM-as-judge로 평가) vs skip rate'. Skip rate 0%에서의 quality를 baseline 100, 20% skip 시 95, 50% skip 시 80 같은 식. 이 curve가 system의 **degradation profile**이다."
+        },
+        {
+          "title": "Drop vs Process: 결정 모델",
+          "content": "Drop과 process의 결정을 수학적으로 모델링하면 흥미로운 그림이 나온다. 각 frame에 대해 **utility (process해서 얻는 quality 이득)**와 **cost (latency 소비)**를 매기고, budget 제약 하에 utility maximization.\n\nUtility 추정: cheap predictor (motion magnitude, scene change detector, query relevance score) 기반. Frame과 이전 N개 frame의 차이가 크면 utility 높음. Query가 'is there a person'이면 person detector score가 utility의 proxy.\n\nCost 추정: 모델의 recent latency moving average. 동적으로 변함.\n\n결정 rule: `process if utility / cost > threshold`. Threshold는 system load에 따라 동적 조정 — 부하 높으면 threshold 높임 (process를 덜 함), 부하 낮으면 낮춤.\n\n이 모델의 학문적 배경은 **online resource allocation** 문제. Streaming setting에서 미래의 utility/cost를 모르므로 한 가지 simple policy로 다 풀 수 없고, **threshold를 system load에 따라 adapt**하는 게 실용적 답.\n\nFlash-VStream (2024)이 비슷한 아이디어를 memory tier 사이에서 구현했다. STAR (Spatial-Temporal-Abstract-Retrieved) hierarchy에서 frame을 어느 tier로 보낼지를 utility 기반으로 결정. 이건 다음 챕터의 주제이지만, sampling과 memory 관리가 streaming에서 deeply intertwined되어 있음을 시사한다.\n\n실전 시그널: 후보자가 'skip이 quality에 얼마나 영향을 주는지 어떻게 측정할 것인가?'에 대해 LLM-as-judge나 downstream task accuracy 같은 구체적 metric을 제시할 수 있는가. '대충 봐서 괜찮으면 OK' 식의 답은 production에서 작동하지 않는다."
+        }
+      ],
+      "analogy": {
+        "title": "응급실 트리아지 간호사",
+        "content": "Offline frame sampling은 의대 교수가 '이 100명 환자 차트 중 가장 흥미로운 사례 10개를 골라달라'는 과제와 같다. 모든 차트를 살펴보고, 차분히 비교하고, 최고의 10개를 선정한다. 시간이 얼마나 걸리든 문제 없다.\n\n**Streaming sampling은 응급실 트리아지 간호사**의 일이다. 환자가 끊임없이 들어온다. 한 명을 자세히 보면 다음 환자가 기다리고, 그 사이 위급한 환자가 나타날 수 있다. 간호사는 매 환자에 대해 즉시 결정한다 — '이 환자는 지금 의사에게 (process), 이 환자는 대기실에서 잠시 (queue), 이 환자는 가벼우니 나중에 (skip)'. 그리고 결정적으로, **응급실에 한 번에 들어갈 수 있는 의사의 수가 정해져 있다 (budget)**. 의사가 모두 바쁘면 트리아지 기준이 더 까다로워진다 (load-adaptive threshold).\n\nVideoLLM-online의 EOS sampling은 '환자가 들어올 때마다 의사가 직접 보고 한 줄 평을 적되, 별 거 아니면 그냥 silence를 적는' 시스템과 같다. 트리아지와 진단이 한 사람에게 통합되어 있다. 효율적이지만 의사가 늘 거기 있어야 한다.\n\n이 비유에서 핵심: **'모든 환자를 다 본다'는 강박은 시스템을 무너뜨린다**. Real-time sampling도 마찬가지다. Quality는 '몇 명을 보았는가'가 아니라 '본 환자에 대해 얼마나 빨리 정확한 결정을 했는가'로 측정된다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "Adaptive sampling controller — system load와 frame utility를 동시 고려해 process/skip을 결정한다. Production code의 단순화 버전.",
+        "code": "import time\nimport numpy as np\nfrom collections import deque\n\nclass AdaptiveSampler:\n    def __init__(self, budget_ms=100, ema_alpha=0.2):\n        self.budget = budget_ms / 1000.0\n        self.latency_ema = budget_ms / 1000.0  # init at budget\n        self.alpha = ema_alpha\n        self.prev_frame = None\n        self.threshold = 1.0  # adapts to load\n        self.skip_count = 0\n        self.process_count = 0\n\n    def utility(self, frame):\n        # cheap motion-based utility\n        if self.prev_frame is None:\n            return 1.0\n        diff = np.mean(np.abs(\n            frame.astype(np.float32) - self.prev_frame.astype(np.float32)\n        )) / 255.0\n        return float(diff * 10)  # scaled motion magnitude\n\n    def should_process(self, frame, age):\n        # stale frame: always skip\n        if age > self.budget:\n            self.skip_count += 1\n            return False\n        # adaptive threshold based on recent load\n        load_factor = self.latency_ema / self.budget\n        threshold = self.threshold * (1.0 + load_factor)\n        u = self.utility(frame)\n        if u < threshold:\n            self.skip_count += 1\n            return False\n        self.prev_frame = frame\n        return True\n\n    def report_latency(self, latency_s):\n        self.process_count += 1\n        self.latency_ema = (1 - self.alpha) * self.latency_ema \\\n                           + self.alpha * latency_s",
+        "walkthrough": "Core idea는 **threshold가 load_factor에 따라 동적으로 움직인다**는 점이다. `latency_ema`가 budget의 80%면 load_factor 0.8, threshold가 1.8배로 올라간다 — 더 informative한 frame만 process. 부하가 가라앉으면 threshold가 낮아져 더 많은 frame을 process. `utility`는 cheap motion-based metric — production에서는 학습된 score head를 쓸 수 있다. `report_latency`로 EMA를 업데이트하는 feedback loop가 controller의 핵심. 시니어가 즉시 지적할 부분: utility의 1차원 metric만으로는 부족하다 — query-aware utility가 추가되어야 conversational 시나리오에 통한다."
+      },
+      "industryEvaluation": {
+        "overview": "Adaptive sampling은 ML과 systems의 교차점 — '모델 inference cost를 어떻게 동적으로 관리할 것인가'라는 production-critical 질문이다. ML platform, edge inference, model serving 팀에서 가장 중시된다.",
+        "whatEngineersLookFor": [
+          "Offline sampler를 streaming에 그대로 쓸 수 없는 이유 (causal)를 즉시 설명",
+          "Load-adaptive threshold 같은 controller 사고를 자연스럽게 함",
+          "Frame skip을 'quality degradation'이 아니라 'graceful degradation'으로 받아들임",
+          "VideoLLM-online의 EOS 통합이 sampling 문제의 답이 된다는 통찰",
+          "Skip rate vs quality curve를 SLA의 일부로 다룸"
+        ],
+        "redFlags": [
+          "Offline sampler (AKS, BOLT)를 그대로 streaming에 쓰겠다는 답변",
+          "Fixed K (frame 수)를 모든 부하 상황에서 동일하게 유지",
+          "Skip을 'frame loss'로 인식 — 모든 frame을 처리해야 한다고 고집",
+          "Load feedback loop 없이 static policy만 제시"
+        ],
+        "interviewQuestions": [
+          "VideoLLM-online의 silence token이 sampling 문제를 어떻게 해결하는지 설명하라. 별도 sampler를 두는 것과 비교해 장단점은?",
+          "GPU 부하가 갑자기 2배로 증가했을 때 frame skip rate를 어떻게 동적으로 조정할 것인가? Quality와의 trade-off를 정량화하라.",
+          "Event-driven sampling과 query-aware sampling을 동시에 사용하는 hybrid system을 설계하라. Detector가 false negative를 낼 때 어떻게 fallback하는가?"
+        ],
+        "masteryVsFamiliar": "**Familiar**: frame sampling을 안다, 'top-K' 개념을 쓸 수 있다. **Mastery**: causal/online 제약을 즉시 짚고, load-adaptive threshold controller를 설계할 수 있으며, EOS 통합 같은 micro-design의 의도를 읽고, skip rate vs quality를 SLA metric으로 본다. Skip을 '버린 frame'이 아니라 '시스템 design의 일부'로 본다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "Causal 제약이 sampling 문제를 바꾼다",
+          "content": "미래 frame을 못 보므로 offline의 'top-K' 사고가 적용 안 된다."
+        },
+        {
+          "title": "K는 system load의 함수",
+          "content": "Static K가 아니라 budget이 허락하는 K. 부하가 높으면 K 줄여 quality 희생."
+        },
+        {
+          "title": "EOS Sampling = response + sampling 통합",
+          "content": "VideoLLM-online의 silence token은 '언제 응답할지'와 '어떤 frame이 중요한지'를 하나의 메커니즘으로 결정."
+        },
+        {
+          "title": "Multi-tier sampling이 production 표준",
+          "content": "Cheap detector → encoder → LLM 순으로 점점 비싼 단계, 각 단계에서 filtering."
+        },
+        {
+          "title": "Skip은 graceful degradation의 도구",
+          "content": "Quality와 latency trade-off의 dial. SLA metric으로 export."
+        },
+        {
+          "title": "Load-adaptive threshold가 핵심",
+          "content": "Controller 사고 — recent latency EMA를 보고 threshold를 동적 조정."
+        },
+        {
+          "title": "Stale frame은 항상 drop",
+          "content": "Budget을 이미 넘긴 frame은 process해도 의미 없다 — 가장 단순한 win."
+        },
+        {
+          "title": "Sampling은 한 곳에서 결정하지 않는다",
+          "content": "Pipeline의 여러 단계에 분산 — capture, detector, encoder, LLM 각각이 자기 단계의 sampling 결정을 함."
+        }
+      ]
+    },
+    {
+      "number": 4,
+      "emoji": "🪟",
+      "title": "Sliding Window & Streaming Context",
+      "titleKr": "슬라이딩 윈도우와 스트리밍 컨텍스트",
+      "tldr": "Streaming context 관리는 hour-scale memory의 그것과 닮았지만 'pre-process 불가, 진행 중 expire'라는 두 가지 제약이 결정적으로 다르다 — STAR 같은 tiered memory가 정답에 가까운 이유다.",
+      "topics": [
+        "Sliding window의 token budget 관리",
+        "Fixed N vs adaptive window",
+        "Memory tier: turbulent / dynamic / abstract / long-term (Flash-VStream STAR)",
+        "Forgetting 전략: FIFO, attention-based eviction, summary distillation",
+        "Hour-scale memory와의 결정적 차이"
+      ],
+      "learningGoals": [
+        "Streaming context를 sliding window로 관리할 때의 token budget 계산을 할 수 있다",
+        "Fixed window vs adaptive window의 quality/latency trade-off를 설명할 수 있다",
+        "Flash-VStream의 STAR memory hierarchy 각 tier의 역할을 구분해 설명할 수 있다",
+        "FIFO, attention-based, summary distillation 같은 forgetting 전략을 비교 선택할 수 있다",
+        "MovieChat 같은 hour-scale memory를 real-time에 그대로 못 쓰는 이유 (pre-processing 가정)를 설명할 수 있다"
+      ],
+      "overview": "Sampling 결정이 끝났으면 다음 문제는 '얼마나 멀리 과거를 기억할 것인가'다. 일반 video LLM에서는 비디오 길이가 짧으니 모든 sampled frame을 context에 넣었다. Hour-scale에서는 MovieChat, MA-LMM 같은 hierarchical memory가 답이었다. **Real-time에서는 이 둘 다와 다른 새로운 문제**가 된다.\n\n결정적 차이: Hour-scale의 memory hierarchy는 **비디오 전체를 미리 본 다음** chunk 단위로 압축한다. 1시간 영화를 받으면 5분씩 잘라 short-term, long-term memory를 만든다. 비디오가 정해진 길이가 있다. **Real-time에서는 비디오 끝이 없다**. 24시간 카메라는 24시간 동안 메모리가 단조 증가해선 안 된다. 그리고 미래에 어느 시점이 중요할지 알 수 없으므로 'pre-process하고 끝'이 불가능하다.\n\n이 챕터에서는 streaming-native context 관리를 다룬다. Sliding window의 기본 골격, Flash-VStream (CVPR 2024)의 STAR memory hierarchy가 hour-scale의 memory를 어떻게 streaming-friendly하게 재설계했는지, 그리고 forgetting을 design choice로 다루는 방법을 본다.\n\nMental model shift: Offline (general) = '모든 frame을 context에'. Hour-scale = 'hierarchical memory로 압축'. **Real-time = 'tier 사이를 frame이 시간에 따라 이동하며, oldest tier에서 forget'**. 시간이 메모리의 dimension이 되는 게 핵심이다.",
+      "sections": [
+        {
+          "title": "Token Budget의 시간적 관리",
+          "content": "Streaming의 가장 단순한 context는 **sliding window** — 최근 N개 frame만 LLM context에 넣고, 새 frame이 들어오면 오래된 것을 밀어냄. 단순하지만 token budget 계산은 비단순하다.\n\nVision encoder가 frame당 얼마의 token을 만드는가? CLIP ViT-L/14가 frame당 256 patch token (518×518 input, 14×14 patch). Q-Former가 32 query token으로 압축. LLaVA-style은 보통 frame당 144-256 token. **Frame 32개 = 8000-16000 token**. 이게 sliding window의 기본 비용이다.\n\nLLM의 context는 보통 8K-32K. 32K context에서 시스템 prompt + 사용자 turn + response를 빼면 video를 위한 budget이 20K 정도. Frame당 256 token이면 **80 frame이 한계**. 30 FPS에서 80 frame = 2.7초. 즉 sliding window가 'recent 2-3초'만 본다는 뜻이다.\n\nReal-time conversational에서 이 budget이 충분한가? 'what just happened' 류 질문은 OK. 'what was the third object you saw' 류 질문은 fail. **Window 크기 = 'how far back the model can reason'의 명시적 limit**.\n\n해결책 1: **token compression** — frame당 token 수를 줄임. Pixel Shuffle (LLaVA-NeXT), Q-Former resampler, TokenLearner. Frame당 64 token으로 줄이면 4배 더 긴 window 가능. 다음 챕터에서 자세히.\n\n해결책 2: **adaptive window** — 모든 시점에서 같은 N이 아니라, 정보 밀도에 따라 동적 조정. 'low motion' 구간은 1 frame/sec로 sample, 'high motion'은 5 frame/sec. 같은 token budget으로 더 의미 있는 frame들.\n\n해결책 3: **multi-tier memory** — sliding window 밖의 frame을 압축된 형태로 보존. Flash-VStream의 STAR가 그것."
+        },
+        {
+          "title": "Flash-VStream의 STAR Memory Hierarchy",
+          "content": "Flash-VStream (CVPR 2024, Zhang et al.)은 streaming long video QA의 leading 작업 중 하나. 핵심 기여는 **STAR memory hierarchy** — Spatial-Temporal-Abstract-Retrieved의 4단 메모리 구조.\n\n**Spatial memory (turbulent)**: 가장 최근 frame들의 fine-grained spatial token. 'now에 무엇이 보이는가'를 답할 수 있는 detail 보존. 크기 작음 (수십 frame), 빠르게 회전.\n\n**Temporal memory (dynamic)**: 중간 시간대의 frame들. Spatial detail은 일부 소실되었지만 시간적 흐름은 보존. 'recent minutes에 무슨 변화가 있었나'를 답함.\n\n**Abstract memory**: 장기간 압축된 high-level representation. 'morning에 누가 들어왔다' 수준의 abstraction. Cross-frame attention으로 만든 summary token. \n\n**Retrieved memory (long-term)**: query-dependent retrieval. 사용자 query가 들어오면 abstract memory의 어떤 부분을 spatial-level까지 unzip할지 결정.\n\n핵심 통찰: **frame이 이 4 tier 사이를 시간에 따라 이동**한다. 새 frame → spatial → (시간 지나면) → temporal → abstract → (필요 시) retrieved. 각 transition에서 정보가 압축되고, 일부는 forget된다. **Hour-scale memory와의 차이**: STAR는 모든 transition이 'online'에서 일어난다. MovieChat은 chunk 단위 batched processing — STAR는 frame-by-frame transition.\n\n왜 이게 streaming-native인가? Hour-scale memory (MovieChat, MA-LMM)는 '비디오 끝까지 처리한 후 query'를 가정한다. STAR는 '매 시점에 query 가능'을 가정 — 사용자가 timestep 5분에 질문할 수도, 5시간에 질문할 수도 있다. 그래서 모든 tier가 항상 query-ready 상태여야 한다.\n\nMicro-design 통찰: **왜 4 tier인가, 3 또는 5가 아니라**. 3 tier는 'detail-summary' 두 극단 사이의 중간을 한 개만 가짐 — 1분~10분 범위의 query에 부족. 5 tier 이상은 transition overhead가 quality 이득을 상쇄. **4 tier가 logarithmic spacing (sec/min/hour/longterm)에 맞는 sweet spot**이라는 게 paper의 디자인 직관이다."
+        },
+        {
+          "title": "Forgetting 전략: FIFO, Attention-based Eviction, Summary Distillation",
+          "content": "Sliding window가 가득 차면 무엇을 버릴 것인가? 'forgetting policy'가 streaming context의 가장 본질적 design choice다.\n\n**FIFO (First-In-First-Out)**: 가장 오래된 frame부터 제거. 단순하고 직관적이다. 'recent N seconds matter most' 가정. 대부분의 baseline이 이것. 단점: 정말 중요한 사건이 N seconds 이전이면 그냥 잊는다.\n\n**Attention-based eviction**: KV cache의 token 중 attention score가 낮은 것을 제거. StreamingLLM (Xiao et al., ICLR 2024)이 LLM 측에서 사용. Attention sink (첫 몇 token은 모든 query가 보게 되는 패턴) + recent window를 보존, 중간은 evict. Video에 적용 시: 'recent frame과 earliest 몇 frame은 유지, 중간 frame은 attention low면 drop'. **장점**: 학습된 importance 반영. **단점**: attention 계산 자체가 overhead.\n\n**Summary distillation**: 오래된 frame들을 직접 버리지 않고 '요약 token'으로 압축. N개 frame을 K개 token으로 (K << N) 줄이는 cross-frame attention. Q-Former 또는 token pooling. **장점**: 정보 손실 minimal. **단점**: distillation 계산이 main path에 들어가면 latency 증가. **해결**: background process로 비동기 distillation.\n\n**Hybrid**: Flash-VStream STAR가 사실상 hybrid다. Tier 내에서는 FIFO 비슷하게 회전, tier 간 transition은 summary distillation. 이게 production에 가장 가까운 패턴.\n\n결정 기준: **시나리오의 query distribution**. 'recent 중심 query'면 FIFO 충분. 'long-range query' 가능성이 있으면 distillation 또는 STAR. **Forgetting policy = 사용자가 무엇을 물을 것 같은가에 대한 사전 가정**.\n\n시니어 시그널: 후보자가 forgetting을 'bug처럼 막아야 할 것'으로 보는가, 'design choice'로 보는가. 'frame을 버리지 않는 방법'을 찾으려는 답변은 hour-scale 사고에서 못 벗어난 것."
+        },
+        {
+          "title": "Real-time과 Hour-scale Memory의 결정적 차이",
+          "content": "MovieChat (CVPR 2024)은 hour-scale memory의 대표 작업이다. Short-term memory (recent chunk의 detail) + long-term memory (압축된 과거)의 2 tier. STAR와 비슷한 spirit이지만 처리 모드가 다르다.\n\n**MovieChat의 처리**: 비디오를 받으면 chunk (예: 16 frame)씩 끊어 sequential하게 처리. 각 chunk는 short-term에 들어왔다가, chunk가 끝나면 token consolidation을 통해 long-term으로 압축. **모든 chunk를 본 후 query에 답함**. 비디오 길이가 정해져 있고, query는 끝에 한 번 들어온다는 가정.\n\nReal-time에서는? 비디오 끝이 없다. Chunk 단위 batched consolidation이 부자연. 그리고 query는 **언제든** 들어올 수 있다 — chunk 중간에도, consolidation 중에도.\n\n**제약 1: pre-process 불가**. Hour-scale memory가 가능한 이유는 '비디오를 한 번 미리 본다'는 가정. Real-time은 매 frame이 들어올 때 'context에 이미 통합되어 있어야' 한다. 즉 **online state machine**으로 memory가 동작해야 한다.\n\n**제약 2: query가 진행 중 발생**. 'consolidation 중 query가 오면?' Hour-scale memory는 transactional하지 않다. Real-time memory는 매 timestep query-ready여야 하며, consolidation이 query를 block해선 안 된다 — async pattern이 필수.\n\n**제약 3: memory budget의 시간적 단조 증가 금지**. Hour-scale은 1시간 비디오에 대한 memory가 1MB든 100MB든 OK. Real-time은 24시간 운영하는데 memory가 단조 증가하면 OOM. **반드시 어딘가에서 forgetting**이 일어나야 한다.\n\nSTAR가 이 세 가지를 모두 만족시킨다. Online state machine으로 동작, query-ready 상태 유지, oldest tier에서 forgetting. **Hour-scale memory의 사상을 streaming 제약 하에 재구현한 작업**으로 STAR를 봐야 한다."
+        },
+        {
+          "title": "Adaptive Window Size: 정보 밀도와 부하의 함수",
+          "content": "Fixed window N은 baseline일 뿐 production에서는 거의 안 쓴다. **Adaptive window**가 두 가지 축으로 동적 조정된다.\n\n**Information density 기반**: 'low motion' 구간에서는 frame 간 유사도가 높음 → fewer frame으로 sample, 같은 N seconds를 cover. 'high motion'에서는 더 dense하게 sample. 결과: **시간 축 sliding window 크기 (몇 초)는 늘어나고, frame 수는 같음**. Token budget을 더 의미 있게 사용.\n\nMotion magnitude를 cheap하게 계산 — frame difference의 L2 norm, optical flow magnitude. 이 signal로 sampling rate를 조정 (chapter 3의 adaptive sampling과 통합).\n\n**부하 기반**: 모델 처리 capacity가 감당 가능한 만큼만 window 크기 유지. 부하 높으면 window 축소 (덜 본다) → latency 유지. 부하 낮으면 확대 → quality 회복. 이건 controller 문제.\n\n**Query-aware**: 사용자 query에 따라 'recent 5초'만 보고 답할지, '5분 전'까지 거슬러 갈지 결정. STAR-style multi-tier에서 retrieved memory가 이 역할.\n\nProduction 패턴: **3차원 adaptation** (정보 밀도 × 부하 × query). 한 차원만 보고 결정하면 시스템이 oscillate한다. 예: 부하만 보고 window 줄였는데 마침 high-information 구간이라 quality drop이 user-visible → 정보 밀도도 함께 봐야 함.\n\nMetric: **'window utilization'** — context의 frame token 중 attention이 실제로 들어간 비율. 50% 이하면 window가 너무 큼 (token waste). 95% 이상이면 너무 작음 (정보 부족). 모니터링 metric으로 export.\n\n시니어 시그널: '왜 fixed window가 아니라 adaptive?'에 대해 '정보 밀도, 부하, query' 세 가지 축을 즉시 답할 수 있는가. 한 가지 (부하 또는 정보 밀도)만 답하면 mental model이 incomplete."
+        }
+      ],
+      "analogy": {
+        "title": "기자의 취재 노트",
+        "content": "**General video LLM의 메모리**는 학생의 한 학기 수업 노트와 같다. 모든 수업이 끝난 후 노트를 펴고, 시험 문제에 답한다. 모든 내용이 손에 있다. 길이가 한정되어 있다.\n\n**Hour-scale의 메모리**는 다큐멘터리 작가의 자료 정리실과 같다. 100시간 footage를 봤다. 처음에는 전체 메모를 했고, 그 다음 챕터별로 요약하고, 마지막엔 핵심 키워드와 references만 남겼다. 자료실에 가서 검색 가능. 다만 '내일 새 footage가 100시간 더 들어온다'는 시나리오는 가정 안 함.\n\n**Real-time의 메모리**는 **24시간 운영하는 신문 기자의 노트북**이다. 사건이 끊임없이 들어온다. 가장 최근 인터뷰는 한 글자도 빼지 않고 적힌다 (turbulent). 어제 사건은 요약 paragraph로 (dynamic). 한 달 전 사건은 키워드와 함께 reference (abstract). 1년 전 사건은 검색 가능한 archive로 보내고 노트북에서 삭제 (forgotten, retrievable on demand). 기자는 어떤 시점에든 '5분 전 인터뷰에 대해 한 마디' 또는 '6개월 전 그 사건' 양쪽 다 답할 수 있어야 한다.\n\n결정적 차이: **노트북의 크기는 늘어나지 않는다**. 가장 오래된 detail은 잊혀야 한다. 그리고 '나는 모든 걸 기억해야 한다'는 기자는 한 달도 못 버틴다. **잊는 능력이 곧 일할 수 있는 능력**이다. Real-time memory도 그렇다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "STAR-style tiered memory의 골격. Frame이 시간에 따라 tier 사이를 이동하며, oldest tier에서 forget. Tier 간 transition은 background에서 async로 일어난다.",
+        "code": "import torch\nfrom collections import deque\nfrom dataclasses import dataclass\nfrom typing import List\n\n@dataclass\nclass FrameToken:\n    tokens: torch.Tensor  # (num_tokens, hidden_dim)\n    timestamp: float\n\nclass StreamingMemory:\n    def __init__(self, spatial_cap=32, temporal_cap=64,\n                 abstract_cap=32):\n        self.spatial = deque(maxlen=spatial_cap)   # recent, detail\n        self.temporal = deque(maxlen=temporal_cap) # dynamic, mid\n        self.abstract = deque(maxlen=abstract_cap) # long, summary\n\n    def add(self, frame_tokens, ts):\n        # transition oldest spatial → temporal (compressed)\n        if len(self.spatial) == self.spatial.maxlen:\n            old = self.spatial[0]\n            compressed = self._compress(old, ratio=4)\n            self.temporal.append(compressed)\n        self.spatial.append(FrameToken(frame_tokens, ts))\n\n    def consolidate_to_abstract(self):\n        # batch-distill recent temporal into abstract summary\n        if len(self.temporal) >= 16:\n            batch = list(self.temporal)[:16]\n            summary = self._distill(batch, output_tokens=8)\n            self.abstract.append(summary)\n            # remove distilled from temporal\n            for _ in range(16):\n                self.temporal.popleft()\n\n    def get_context(self, query=None):\n        # query-aware retrieval (skipped for brevity)\n        ctx = []\n        for f in self.abstract:\n            ctx.append(f.tokens)\n        for f in self.temporal:\n            ctx.append(f.tokens)\n        for f in self.spatial:\n            ctx.append(f.tokens)\n        return torch.cat(ctx, dim=0)\n\n    def _compress(self, frame, ratio):\n        # mean pooling - production uses learned Q-Former\n        t = frame.tokens\n        n = t.shape[0] // ratio\n        return FrameToken(t[:n*ratio].view(n, ratio, -1).mean(1),\n                          frame.timestamp)\n\n    def _distill(self, frames, output_tokens):\n        all_tokens = torch.cat([f.tokens for f in frames], dim=0)\n        idx = torch.linspace(0, all_tokens.shape[0]-1,\n                             output_tokens).long()\n        return FrameToken(all_tokens[idx], frames[-1].timestamp)",
+        "walkthrough": "**deque(maxlen=...)**가 자동으로 oldest를 forget해주는 게 첫 디자인 결정. `add`에서 spatial이 가득 차면 oldest를 temporal로 'demote' — token 수를 1/4로 압축. `consolidate_to_abstract`는 batch로 temporal을 abstract로 distill — main path가 아닌 background timer로 호출하는 것이 production 패턴 (latency budget을 안 갉아먹기 위해). `get_context`는 abstract → temporal → spatial 순으로 정렬해 LLM에 전달 — 시간순으로 오래된 것부터 최근 순. 실제 production은 `_compress`/`_distill`이 학습된 Q-Former이고, `get_context`가 query-aware retrieval. 핵심 mental model: **'frame은 머무는 게 아니라 시간에 따라 tier를 흐른다'**."
+      },
+      "industryEvaluation": {
+        "overview": "Streaming context management는 ML model 측 (어떤 tokenizer/encoder?) 과 systems 측 (얼마나 KV cache를 유지?) 의 교차점. AI infra, model serving, AR/VR 도메인에서 senior+ 면접의 단골 주제.",
+        "whatEngineersLookFor": [
+          "Token budget을 frame 수 × token/frame으로 즉시 계산",
+          "Sliding window의 한계 (recent only)를 인지하고 multi-tier로 확장 사고",
+          "Hour-scale memory의 pre-process 가정이 real-time에 안 맞다는 점 명확히 짚음",
+          "Forgetting을 design choice로 받아들이는 태도",
+          "Window utilization 같은 metric으로 dynamic adaptation 평가"
+        ],
+        "redFlags": [
+          "'모든 frame을 다 기억해야 한다'는 가정으로 시스템 설계",
+          "Fixed window를 모든 시나리오에 그대로 사용",
+          "Hour-scale memory (MovieChat)를 그대로 real-time에 붙이려 함",
+          "Forgetting을 'bug' 또는 'quality loss'로만 인식, design choice로 못 봄"
+        ],
+        "interviewQuestions": [
+          "Flash-VStream의 STAR memory hierarchy 4 tier의 각 역할을 설명하고, 왜 3 또는 5 tier가 아닌가에 대한 설계 직관을 답하라.",
+          "MovieChat의 short-term/long-term memory와 STAR의 spatial-temporal-abstract-retrieved의 가장 본질적 차이는 무엇인가? 'pre-process 가능성' 관점에서.",
+          "32K LLM context, frame당 256 token, 30 FPS 카메라로 'recent 5분'까지 reasoning 가능한 streaming context를 설계하라. Token compression 비율과 sliding window 크기를 정량적으로 계산하라."
+        ],
+        "masteryVsFamiliar": "**Familiar**: sliding window, KV cache 개념을 안다. **Mastery**: token budget을 정량 계산하고, multi-tier memory의 transition policy를 설계하며, hour-scale의 batched processing이 real-time에 안 맞는 이유 (online state, query-ready, monotonic memory)를 즉시 짚는다. Forgetting을 design choice로 보고, 정보 밀도/부하/query 3축으로 window를 adapt한다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "Token budget = frame 수 × token/frame",
+          "content": "32K context, frame당 256 token이면 80 frame이 한계 — sliding window가 '몇 초'를 보는지 정량 계산해야 한다."
+        },
+        {
+          "title": "Sliding window는 'recent only'",
+          "content": "Window 밖의 정보를 어떻게 보존할지 — multi-tier memory가 답."
+        },
+        {
+          "title": "STAR가 streaming-native memory의 답",
+          "content": "Spatial-Temporal-Abstract-Retrieved 4 tier가 logarithmic time spacing에 맞는 sweet spot."
+        },
+        {
+          "title": "Frame은 tier를 흐른다",
+          "content": "새 frame이 spatial → temporal → abstract로 시간에 따라 demote, 결국 oldest에서 forget."
+        },
+        {
+          "title": "Hour-scale memory의 가정 무너짐",
+          "content": "Pre-process, batched consolidation, 끝점 query — 세 가정 모두 real-time에서 무효."
+        },
+        {
+          "title": "Forgetting policy는 query 분포의 사전",
+          "content": "FIFO, attention-based, distillation의 선택은 '사용자가 무엇을 물을 것 같은가'에 대한 가정."
+        },
+        {
+          "title": "Adaptive window는 3축 동적 조정",
+          "content": "정보 밀도, 부하, query 셋 다 보고 동적 조정 — 한 축만 보면 oscillate."
+        },
+        {
+          "title": "Consolidation은 background",
+          "content": "Main inference path를 block하지 않도록 async timer로 tier 간 transition을 수행."
+        }
+      ]
+    },
+    {
+      "number": 5,
+      "emoji": "⚡",
+      "title": "Visual Encoder Optimization",
+      "titleKr": "비주얼 인코더 최적화",
+      "tldr": "Real-time video LLM에서 vision encoder는 latency budget의 30-60%를 잡아먹는 hotspot — token reduction, quantization, micro-batching 같은 최적화가 'encoder의 force-fit' 문제를 '체계적 budget allocation' 문제로 바꾼다.",
+      "topics": [
+        "CLIP/SigLIP encoder latency 분석",
+        "Token reduction: TokenLearner, patch dropout",
+        "Distillation: TinyCLIP",
+        "Hardware: TensorRT, ONNX Runtime, INT8/FP8 quantization",
+        "Batching: micro-batch vs streaming-batch"
+      ],
+      "learningGoals": [
+        "CLIP ViT-L vs SigLIP, vs TinyCLIP의 latency/quality trade-off를 비교할 수 있다",
+        "TokenLearner, patch dropout 같은 token reduction 기법의 동작 원리를 설명할 수 있다",
+        "TensorRT INT8 quantization이 ViT encoder에 미치는 latency 이득과 quality 손실을 예측할 수 있다",
+        "Micro-batch vs streaming-batch의 latency vs throughput trade-off를 정량적으로 분석할 수 있다",
+        "'stronger encoder vs higher FPS' 결정에서 시나리오별 권장 선택을 제시할 수 있다"
+      ],
+      "overview": "지금까지 input pipeline, sampling, sliding context를 봤다. 모두 'budget 안에 어떻게 처리할까'의 다른 면이었다. 이 챕터에서 보는 vision encoder는 budget을 가장 많이 소비하는 **단일 hotspot**이다. CLIP ViT-L/14 한 frame이 A100에서 ~10ms, 30 FPS면 300ms/sec — 부하의 일부지만 동시 5개 stream이면 GPU 한 장이 포화된다. **Encoder 최적화 = real-time scalability의 leverage point**.\n\n기존 video LLM에서는 encoder를 '주어진 것'으로 보고 최선의 frame을 골랐다. Hour-scale에서는 encoder를 한 번 돌려 memory에 저장했다. Real-time에서는 encoder가 **매 frame 매번 돈다**. Encoder가 100ms 걸리면 latency budget이 거의 끝난다. 그래서 encoder를 어떻게 **빠르게**, 그리고 **GPU 자원을 효율적으로 쓰면서** 돌릴지가 real-time의 핵심 시스템 결정이 된다.\n\nMental model shift: General에서는 'good encoder를 선택'. Hour-scale에서는 'offline batch로 한 번 돌림'. **Real-time에서는 'encoder가 budget의 % 단위로 평가되는 component'**다. 1ms 줄이는 게 의미 있고, INT8로 quality 1% 손실해도 latency 30% 줄이면 win인 경우가 많다.\n\n이 챕터에서는 encoder의 latency를 layer-by-layer로 해부하고, token reduction, distillation, quantization, batching이라는 4 가지 최적화 축을 다룬다. 그리고 '강한 encoder + 낮은 FPS vs 가벼운 encoder + 높은 FPS'라는 결정적 trade-off에 대한 시나리오별 답을 본다.",
+      "sections": [
+        {
+          "title": "CLIP/SigLIP Encoder Latency 해부",
+          "content": "Real-time 최적화의 시작은 'encoder가 정확히 어디서 시간을 쓰는가'를 측정하는 것이다.\n\n**CLIP ViT-L/14** (224×224 input, 16×16 patch grid = 256 patch): A100에서 단일 frame ~8ms (FP16). 내부 breakdown: patch embedding ~0.5ms, transformer 24 layers × ~0.3ms = 7.2ms, projection head 0.3ms. **24 layer attention이 95% 비중**.\n\n**SigLIP** (Sigmoid loss CLIP, Zhai et al., ICCV 2023): 아키텍처는 CLIP과 거의 동일하지만 loss 함수가 다름. Latency 동일. Quality는 zero-shot benchmark에서 CLIP 대비 3-5% 향상. **Real-time에서 같은 budget에 quality up — 기본 선택**.\n\n**SigLIP-2** (2024): patch grid를 224→384로 키운 variant도 있음. Quality 더 좋지만 latency ~2배. Real-time에서는 224가 default.\n\n**TinyCLIP** (Wu et al., ICCV 2023): CLIP을 distillation으로 압축. ViT-Tiny/40M params 버전이 ~2ms (A100 FP16). Quality는 zero-shot ImageNet top-1 기준 ~10% drop (75% → 65%). 'quality - 10% / latency / 4' 같은 trade-off.\n\n**LLaVA-NeXT의 patch grouping**: 224 input에 224 native + 4 sub-grid (448 input divided into 2x2). Frame당 token이 5x로 증가하지만 quality 큰 향상. Real-time에는 부적합 — token budget이 폭발.\n\nProfiling의 함의: encoder 자체 forward만이 아니라 **전후 단계 (CPU → GPU upload, 출력 token reshape)**도 측정. 224×224 RGB 한 frame = 150KB, PCIe 16x로 ~10μs지만 batching 안 하고 single frame씩 보내면 launch overhead가 ms 단위로 누적된다. **single frame inference vs batched의 throughput 차이가 5-10배**.\n\n시니어 시그널: 'CLIP encoder latency를 어떻게 측정할 것인가?'에 대해 forward만이 아니라 upload/download/launch overhead까지 답하는가."
+        },
+        {
+          "title": "Token Reduction: TokenLearner, Patch Dropout",
+          "content": "Encoder가 만든 token 수를 줄이면 두 가지 이득: (1) downstream LLM context 절약, (2) encoder 자체의 attention 비용 감소 (token^2 비례).\n\n**TokenLearner** (Ryoo et al., NeurIPS 2021): N개 token을 K개 (K << N) 'learned token'으로 압축. Spatial attention map을 학습 — 'frame의 어느 영역이 token K_i에 contribute'하는지. 256 → 8 token까지 줄일 수 있고, 일반 video classification에서 quality 손실 minimal.\n\nReal-time 적용: 이미 학습된 video LLM에 retrofit하기는 어렵다. From-scratch 또는 fine-tuning이 필요. 하지만 8 token/frame이면 sliding window가 32배 더 길어진다 — trade-off worth it.\n\n**Patch Dropout** (Akbari et al., 2021; Liu et al., 2023): 학습 시 patch의 50-70%를 random drop. Inference 시 dropout 비율을 조정해 latency-quality trade-off. MAE의 학습 trick을 inference에 끌어온 것.\n\n장점: zero overhead — 그냥 patch를 안 보내면 됨. 단점: random drop이 informative patch를 떨굴 위험. 해결: **importance-based selection** — saliency 또는 cls token attention을 기준으로 top-K patch만 유지.\n\n**Q-Former resampler** (BLIP-2): encoder 출력 N token을 cross-attention으로 K learned query에 압축. 사실상 TokenLearner의 한 형태. LLaVA, MiniGPT-4 같은 video LLM의 표준. K=32가 일반적.\n\n**Pixel Shuffle / Spatial pooling**: 단순히 spatial dimension에서 2x2 → 1로 묶음. 256 token → 64 token. Quality 영향이 의외로 작음 (sub-patch detail이 video QA에서 critical하지 않음). **가장 단순하고 효과적인 baseline**.\n\nReal-time blueprint: Q-Former 32 token + adaptive spatial pooling (low-motion 구간은 더 aggressive pool). 한 frame을 16-32 token으로 압축 — sliding window가 5초가 아닌 30초까지 cover."
+        },
+        {
+          "title": "Distillation과 Smaller Encoder",
+          "content": "Token reduction이 encoder 출력을 줄이는 거라면, **distillation은 encoder 자체를 작게** 만드는 것.\n\n**TinyCLIP**: CLIP을 teacher로 두고 더 작은 ViT를 student로 학습. Multi-stage pruning. 결과: ViT-L (300M params, ~8ms) → ViT-Tiny (40M, ~2ms). Quality 손실은 10% 정도지만 video understanding의 downstream task에서는 더 작은 손실 (텍스트와 매칭만 잘하면 OK).\n\n**MobileCLIP** (Apple, 2024): 모바일 inference 최적화 CLIP. ViT 대신 hybrid CNN+Transformer. iPhone에서 ~3ms. Server-side에서도 batched throughput 매우 높음. **on-device real-time video LLM의 기본 encoder 후보**.\n\n**SigLIP-Tiny**: SigLIP의 small variant. Encoder 자체보다는 학습 data의 효율로 강점.\n\n**Custom distillation**: 자체 도메인에 맞게 CLIP을 distill. 일반 ImageNet zero-shot 성능을 buy하지 않고 domain-specific quality를 keep. 예: surveillance에서 'person/vehicle/bag' detection만 잘하면 됨 — 5x 작은 encoder로 충분.\n\nDistillation의 trade-off: **teacher가 가진 'general capability'를 잃을 위험**. 일반 video QA에는 약함. 도메인 좁힐수록 distillation의 이득이 큼.\n\n**일반 video LLM에서의 패턴**: 'CLIP for general + domain-tuned head' 조합. CLIP은 frozen, downstream head만 학습. Real-time에서는 이 패턴이 너무 비싸다. **End-to-end smaller model**이 답에 가깝다.\n\n주목할 trend: vision encoder를 **task-conditional**로 만드는 작업. Query/instruction을 받아 encoder가 그에 맞게 token을 만들어냄. 같은 frame이라도 'find a person'과 'count cars'에서 다른 token 분포. 학계 초기 단계지만 real-time과 잘 맞는다 — 매 frame을 'general purpose'로 encoding할 필요 없음."
+        },
+        {
+          "title": "Hardware Optimization: TensorRT, ONNX, Quantization",
+          "content": "PyTorch eager 모드의 inference는 production-grade 속도가 안 난다. Hardware-specific 최적화가 필수.\n\n**TensorRT**: NVIDIA GPU 전용. PyTorch model → ONNX → TensorRT engine 변환. Kernel fusion, memory planning, precision optimization. ViT-L/14 기준 PyTorch FP16 8ms → TensorRT FP16 4ms (50% 감소). TensorRT의 가장 큰 win은 **launch overhead 제거** — small batch에서 큰 차이.\n\n**ONNX Runtime**: cross-platform (CPU, GPU, mobile NPU). TensorRT만큼 빠르지는 않지만 portability가 강점. Edge device에서 표준.\n\n**Quantization**: weight/activation을 lower precision으로. ViT에서는:\n- **FP32 → FP16**: 거의 손실 없이 ~2x speedup. 기본.\n- **FP16 → INT8**: 추가 ~2x speedup, quality 1-2% 손실. Production worth it.\n- **INT8 → FP8** (H100): 더 빠르고 INT8보다 quality 좋음. H100/H200 GPU에서 가능.\n- **INT4**: 5-10% quality 손실. ViT에서는 아직 risky.\n\n**Post-training quantization (PTQ)**: 학습된 모델을 calibration data만으로 quantize. 빠르고 간단. CLIP에 대해 INT8 PTQ는 zero-shot ImageNet ~1% 손실로 잘 작동.\n\n**Quantization-aware training (QAT)**: 학습 중 quantization을 simulate. 더 적은 quality 손실. CLIP을 처음부터 QAT로 학습한 variant가 INT8에서 손실 0.5%.\n\n**Flash Attention** (Dao et al., 2022): attention 자체의 memory access 패턴 최적화. ViT-L에서 ~30% latency 감소. PyTorch 2.x에서 `F.scaled_dot_product_attention`이 자동 사용.\n\nProduction stack: PyTorch (학습) → ONNX export → TensorRT INT8 (calibration 후) → FlashAttention 활성화. ViT-L/14 한 frame 8ms → 2ms로 4배. **Real-time의 leverage가 가장 큰 부분**.\n\n주의: quantization은 quality 손실이 dataset-dependent. Calibration data가 production traffic을 대표하지 않으면 'lab에선 잘 되는데 production에선 망함' 패턴이 발생. **Calibration data 선택이 quantization 성공의 핵심**."
+        },
+        {
+          "title": "Batching: Micro-batch vs Streaming-batch",
+          "content": "Encoder는 batch에 매우 민감하다. Batch=1과 batch=8의 throughput 차이는 5-10배. 그런데 real-time에서는 batch를 모으는 자체가 latency를 야기한다. 이 tension의 해결이 batching 전략의 핵심.\n\n**Single-frame inference**: batch=1로 매 frame 즉시 process. 단순. Latency 최소 (queue 대기 없음). Throughput 낮음 (GPU 자원 활용도 ~20%).\n\n**Static batching**: 일정 시간 (예: 50ms) frame을 모은 다음 한 번에. Latency 추가 50ms — conversational 시나리오엔 가능, monitoring엔 부담.\n\n**Micro-batching**: 매우 짧은 시간 (5-10ms) 동안만 모음. Latency 추가 작고 throughput 회복. Hybrid 패턴.\n\n**Streaming batch (cross-stream batching)**: 여러 video stream에서 들어온 frame을 함께 batch. 같은 시점의 frame이 여러 stream에서 들어오면 자연스럽게 batch가 형성됨. **이게 multi-tenant real-time의 핵심**.\n\nExample: CCTV 50대로부터 30 FPS씩 들어옴. 50 frames every 33ms. 이걸 batch=50으로 한 번에 처리하면 GPU 1대로 모두 cover. 각 stream의 latency는 33ms + encoder time. **Multi-tenant는 batching의 천국**.\n\n**Continuous batching** (vLLM pattern): batch가 동적으로 변함 — 한 stream의 frame이 끝나면 즉시 새 stream의 frame으로 swap. 이건 LLM serving 측에서 더 잘 알려져 있지만 (다음 챕터들의 주제) encoder에도 동일 패턴이 가능.\n\n**Padding의 함정**: ViT는 fixed input size를 요구. 다른 stream의 frame이 다른 resolution이면 padding 필요. Padding 비율이 30% 넘으면 batching 이득이 무력화. **모든 stream을 같은 resolution으로 normalize**하는 게 production blueprint.\n\n**Async kernel launch**: CUDA stream을 여러 개 띄워 encoder forward와 downstream LLM forward를 overlap. CPU-GPU communication도 overlap. 이건 PyTorch에서 `torch.cuda.Stream` API. 잘 짜면 effective latency를 추가 20-30% 단축.\n\n시니어 시그널: 'batch size를 어떻게 정할 것인가?'에 대해 'throughput 곡선의 knee point를 측정해서, latency budget이 허락하는 최대 batch'를 답할 수 있는가. 정량 측정 기반 결정이 중요."
+        }
+      ],
+      "analogy": {
+        "title": "공장 라인의 검수 공정",
+        "content": "Vision encoder는 공장 조립 라인의 **검수 공정**과 같다. 부품이 컨베이어로 흘러 들어오면 검수원이 들어 살펴보고 OK/NG 판단을 한다. 다음 공정(LLM)은 검수원의 판단을 기다린다.\n\n검수원이 한 부품에 1분씩 쓰면 라인 전체가 느려진다. 그래서 공장은 여러 최적화를 한다.\n\n**Token reduction = 부품의 일부만 보고 판단**. 부품 전체를 들춰보지 말고 핵심 5군데만 확인. 빠르고 quality도 비슷.\n\n**Distillation = 검수원 교체**. 베테랑 검수원 (CLIP-L)을 신입 (TinyCLIP)으로 교체. 정확도는 약간 떨어지지만 속도는 4배. 도메인이 정해져 있다면 신입도 충분.\n\n**Quantization = 검수 도구 단순화**. 정밀한 마이크로미터 (FP32) 대신 빠른 디지털 캘리퍼 (INT8). 0.1mm 단위까지는 안 봐도 된다면 win.\n\n**Batching = 한 번에 여러 부품을 들고 검사**. 한 박스 (batch=8) 들고 검사하면 시간당 처리량 5-10배. 단, 박스가 차기를 기다리면 첫 부품의 wait 시간이 늘어남.\n\n결정적 통찰: 검수 공정이 라인 전체의 속도를 결정하므로, **여기에 1초 줄이면 전체 throughput이 비례 증가**한다. Encoder도 마찬가지 — latency budget의 30-60% 차지하는 hotspot이라 leverage가 가장 크다. 다른 단계 5% 줄이는 것보다 encoder 30% 줄이는 게 훨씬 의미 있다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "Real-time encoder serving의 기본 패턴 — micro-batching으로 throughput을 회복하면서 latency 추가는 budget 안에 묶는다. TensorRT-style optimized engine을 가정.",
+        "code": "import asyncio\nimport torch\nimport time\nfrom collections import deque\n\nclass StreamingEncoder:\n    def __init__(self, model, max_batch=8, max_wait_ms=10):\n        self.model = model  # TensorRT engine, FP16 or INT8\n        self.max_batch = max_batch\n        self.max_wait = max_wait_ms / 1000.0\n        self.queue = deque()  # (frame_tensor, future, deadline)\n        self.running = True\n\n    async def encode(self, frame_tensor, latency_budget_ms=100):\n        loop = asyncio.get_event_loop()\n        fut = loop.create_future()\n        deadline = time.time() + latency_budget_ms / 1000.0\n        self.queue.append((frame_tensor, fut, deadline))\n        return await fut\n\n    async def batcher_loop(self):\n        while self.running:\n            if not self.queue:\n                await asyncio.sleep(0.001)\n                continue\n            # collect batch within wait window\n            start = time.time()\n            batch_items = []\n            while (len(batch_items) < self.max_batch\n                   and self.queue\n                   and time.time() - start < self.max_wait):\n                batch_items.append(self.queue.popleft())\n                if len(batch_items) >= self.max_batch:\n                    break\n                if not self.queue:\n                    await asyncio.sleep(0)  # yield, maybe more frames\n\n            # filter stale frames\n            now = time.time()\n            valid = [(f, fut, d) for f, fut, d in batch_items\n                     if d > now]\n            for f, fut, d in batch_items:\n                if d <= now:\n                    fut.set_exception(\n                        TimeoutError('encoder deadline missed'))\n\n            if not valid:\n                continue\n            tensors = torch.stack([v[0] for v in valid], dim=0)\n            with torch.cuda.amp.autocast(dtype=torch.float16):\n                tokens = self.model(tensors)  # (B, N_token, D)\n            for i, (_, fut, _) in enumerate(valid):\n                fut.set_result(tokens[i])",
+        "walkthrough": "**Micro-batching의 핵심**: `batcher_loop`가 들어오는 frame들을 max 10ms 동안 모으거나 batch=8이 차면 즉시 forward. 두 조건 중 빨리 도달하는 쪽에서 trigger. 이게 'latency 추가는 작게, throughput은 회복'의 trade-off 구현. `deadline` 체크로 budget 넘은 frame을 stale로 drop — TimeoutError로 caller에게 알림. `torch.cuda.amp.autocast(FP16)`은 quantization의 가장 단순한 시작 (실제 production은 INT8 TensorRT). Multi-stream serving에서는 여러 클라이언트의 encode 호출이 자동으로 같은 batch로 모임 — 따로 logic 추가 없음. 시니어가 즉시 지적할 부분: stale drop을 batch 직전에 하면 batch 크기가 변동적 — 더 좋은 패턴은 enqueue 시점에 deadline 체크."
+      },
+      "industryEvaluation": {
+        "overview": "Vision encoder 최적화는 ML systems 엔지니어의 core skill. ML platform, inference team, edge AI, autonomous vehicle 도메인에서 senior+의 가장 흔한 평가 영역. CUDA/TensorRT 지식까지 묻는 면접도 흔하다.",
+        "whatEngineersLookFor": [
+          "Encoder latency를 forward + upload + launch overhead로 분해해 측정",
+          "Token reduction, distillation, quantization, batching의 4축을 모두 정량 이해",
+          "INT8 quantization의 calibration data 중요성을 인지",
+          "Micro-batching의 wait/batch_size trade-off를 정량 분석",
+          "'stronger encoder vs higher FPS'를 시나리오 기반으로 결정"
+        ],
+        "redFlags": [
+          "Encoder를 'black box'로 다루고 latency 측정 안 함",
+          "Token 수 줄이는 trick (Q-Former, pooling)을 모름",
+          "Quantization을 'quality 떨어지니까 risky'로만 보고 시도 안 함",
+          "Single-frame inference만 고려, multi-tenant batching을 생각 못 함"
+        ],
+        "interviewQuestions": [
+          "CLIP ViT-L/14 encoder가 한 frame에 8ms 걸린다. 30 FPS 카메라 10대를 한 GPU로 serving하고 싶다. 어떤 최적화를 어떤 순서로 적용할 것인가? 각 최적화의 예상 effect를 정량적으로 답하라.",
+          "INT8 quantization을 했더니 lab benchmark에서는 quality drop 1%지만 production에서는 5% 떨어진다. 가능한 원인을 모두 열거하고 진단 방법을 답하라.",
+          "Micro-batching의 max_wait를 10ms로 잡았는데 throughput이 충분하지 않다. 늘리면 latency 영향이 있고, 줄이면 batch가 작아 throughput이 떨어진다. 어떻게 해결할 것인가?"
+        ],
+        "masteryVsFamiliar": "**Familiar**: TensorRT, quantization, batching 용어를 안다. **Mastery**: encoder를 layer-by-layer로 profile하고, 4가지 최적화 축의 정량적 effect를 예측하며, calibration data의 production representativeness를 본질적으로 이해한다. Multi-stream batching과 cross-batch padding 같은 production-only 함정을 인지하고, '강한 encoder vs 높은 FPS'를 시나리오 기반으로 결정한다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "Encoder = latency budget의 30-60%",
+          "content": "Real-time 최적화의 가장 큰 leverage point — 여기 1ms가 시스템 전체에 영향."
+        },
+        {
+          "title": "측정 단위는 forward + 모든 overhead",
+          "content": "Upload, launch, output reshape까지 — single-frame에서 launch overhead가 ms 단위 누적."
+        },
+        {
+          "title": "Token reduction은 두 곳에 이득",
+          "content": "Encoder 자체 attention 비용 감소 + downstream LLM context 절약."
+        },
+        {
+          "title": "TinyCLIP/MobileCLIP은 도메인 좁힐 때 강함",
+          "content": "일반 capability 손실 OK라면 4x speedup."
+        },
+        {
+          "title": "INT8 quantization은 production worth-it",
+          "content": "2x speedup, 1-2% quality 손실. 단 calibration data 선택이 결정적."
+        },
+        {
+          "title": "TensorRT는 launch overhead 제거가 큰 win",
+          "content": "Single-frame batch에서 PyTorch eager 대비 2배 차이."
+        },
+        {
+          "title": "Multi-stream serving은 batching의 천국",
+          "content": "다른 stream의 frame이 자연스럽게 batch — single-stream과 GPU 활용도가 5-10배 차이."
+        },
+        {
+          "title": "강한 encoder vs 높은 FPS는 시나리오 의존",
+          "content": "Conversational은 quality, monitoring은 FPS — 'best encoder'는 존재하지 않는다."
+        }
+      ]
+    },
+    {
+      "number": 6,
+      "emoji": "🗜️",
+      "title": "Token Compression for Streaming",
+      "titleKr": "스트리밍을 위한 토큰 압축",
+      "tldr": "오프라인 압축(HiCo, offline TokenMerge)은 시퀀스 전체를 한 번에 본다는 가정 위에 서 있다. 스트리밍에서는 'compression이 시간을 따라 incremental하게 일어나야 하고, 새로운 frame이 도착할 때마다 budget을 다시 분배해야 한다'는 제약이 추가된다. Flash-VStream의 STAR memory hierarchy, online TokenMerge variant, cluster-based summarization을 streaming 관점에서 다시 읽는다.",
+      "topics": [
+        "Offline vs streaming compression의 본질적 차이",
+        "Flash-VStream STAR memory hierarchy (Spatial / Temporal / Abstract / Retrieval)",
+        "Online TokenMerge / incremental clustering",
+        "Cluster center as compressed memory",
+        "Compression ratio vs fidelity vs latency cost 3축 트레이드오프",
+        "Token budget rebalancing over time",
+        "Reservoir sampling for streaming visual tokens",
+        "Token eviction policy: LRU vs salience"
+      ],
+      "learningGoals": [
+        "오프라인 HiCo 압축이 왜 스트리밍에 직접 적용되지 않는지 latency / commitment 관점에서 설명할 수 있다",
+        "Flash-VStream의 STAR 4-tier memory가 왜 'hierarchical'이어야 하는지 각 tier의 역할로 정당화할 수 있다",
+        "Online TokenMerge / incremental clustering이 offline 버전과 어떤 invariant를 깨고 그 대가로 무엇을 얻는지 말할 수 있다",
+        "compression ratio vs fidelity vs per-frame latency 3축 트레이드오프를 표로 그릴 수 있다",
+        "streaming token budget을 'fixed cap + eviction'으로 운영하는 두 가지 정책(LRU vs salience)을 sketch할 수 있다"
+      ],
+      "overview": "Chapter 4-5에서 streaming context와 visual encoder를 다뤘다면, 이 챕터는 그 사이에 끼는 *token compression layer*를 다룬다. General Video LLM에서는 압축이 'offline 후처리'였다. HiCo(VideoChat-Flash)나 offline TokenMerge처럼 전체 frame을 다 본 뒤 redundancy 분석을 한 번 돌려서 token budget에 맞춘다. Hour-scale에서는 episodic memory의 일부로 '이미 본 chunk를 압축해 저장'하는 게 핵심이었다 — 시간이 흘러도 *과거*는 변하지 않으므로 한 번 압축하면 끝이다.\n\nReal-time은 둘 다 깨진다. 첫째, **미래를 모른다**. 지금 도착한 frame이 30초 뒤 query에 결정적일지 노이즈일지 알 수 없다. 둘째, **commitment이 즉시 일어난다**. Offline은 전체를 본 뒤 무엇을 버릴지 결정하지만, streaming은 frame이 들어올 때마다 'memory에 넣을지, 어떤 압축 수준으로 넣을지, 누구를 evict할지'를 그 자리에서 결정해야 한다. 셋째, **압축 자체도 latency budget을 먹는다**. Offline은 압축에 1분이 걸려도 quality만 좋으면 된다. 스트리밍은 per-frame budget의 일부를 압축에 써야 하므로 *compression cost*가 1급 metric이 된다.\n\n그래서 이 챕터의 멘탈 모델은 'token을 더 잘 줄이는 알고리즘'이 아니라 **'시간을 따라 token budget을 어떻게 분배할 것인가'**다. STAR hierarchy, online TokenMerge, cluster-center memory는 모두 이 질문에 대한 서로 다른 답이다.",
+      "sections": [
+        {
+          "title": "1. 왜 offline 압축이 streaming에 직접 적용되지 않는가",
+          "content": "먼저 offline 압축이 무엇을 가정하는지 정리하자. HiCo(VideoChat-Flash, arXiv:2501.00574)는 frame sequence 전체에 hierarchical clustering을 돌려서 1/50까지 token을 줄인다. TokenMerge offline은 모든 token pair의 similarity를 한 번에 계산해서 bipartite matching으로 merge한다. 두 알고리즘 모두 *전체 sequence가 주어졌다*는 batch assumption 위에 서 있다.\n\n이 가정이 깨지면 세 가지 문제가 생긴다. (1) **Future 정보 부재**: HiCo가 'A frame이 cluster centroid가 되는 게 좋다'고 판단하려면 전체 distribution을 봐야 한다. 스트리밍에서는 t=10초 시점에 t=60초의 frame을 모른다. 그래서 centroid 선택이 *online estimation*이 된다. (2) **재배치 불가**: offline TokenMerge는 시퀀스를 여러 번 패스하며 merge를 refine할 수 있다. 스트리밍에서는 한 번 merge한 token을 *되돌릴 수 없다* — pipeline 다음 stage로 흘러갔기 때문. 결정이 final이라는 commitment 비용이 크다. (3) **Latency budget 분배**: offline 압축이 5분 영상에 30초를 써도 무방하지만, 실시간 33ms budget(30fps)에서 압축이 10ms 먹으면 encoder/LLM의 budget이 사라진다.\n\n결론: offline 압축의 'quality at any cost' 가정을 'quality under streaming constraint'로 다시 써야 한다. 그래서 streaming-friendly 압축은 (a) per-frame O(1)/O(log N) cost, (b) irreversible commit 가능, (c) future-blind decision 하에서도 합리적 — 이 세 invariant를 만족해야 한다."
+        },
+        {
+          "title": "2. Flash-VStream STAR memory hierarchy",
+          "content": "Flash-VStream(Zhang et al., arXiv:2406.08085)이 이 문제에 대한 가장 깔끔한 답을 줬다. 핵심은 **STAR**: Spatial / Temporal / Abstract / Retrieval 4-tier memory다. 단일 buffer가 아니라 *시간 스케일이 다른* 4개 layer가 협력한다.\n\n| Tier | 보관 단위 | 시간 스케일 | 압축 비율 |\n|---|---|---|---|\n| **Spatial** | 최근 1-2초 raw token | 단기 (현재 frame 주변) | 1x (raw) |\n| **Temporal** | 5-10초 windowed token | 중기 | 4-8x |\n| **Abstract** | 분 단위 cluster center | 장기 | 50-100x |\n| **Retrieval** | 전체 history index | 영구 | 1000x+ |\n\nSpatial tier는 '지금 무엇이 일어나고 있는가' 질문에 fidelity를 보장한다. Temporal tier는 '몇 초 전 무슨 일이 있었는가'에 대응하고 sliding window로 운영된다. Abstract tier는 분 단위의 *semantic gist*를 cluster centroid로 보관한다. Retrieval tier는 전체 history를 retrieval-friendly한 embedding index로 보관하고, query가 들어오면 abstract tier로는 부족할 때만 활성화된다.\n\n핵심 micro-design decision: 각 tier로 token이 *자동으로 강등(demotion)*된다. Spatial buffer가 가득 차면 oldest token이 temporal로 내려가면서 4-8개씩 묶여 평균된다. Temporal이 가득 차면 abstract로 내려가면서 K-means cluster center 하나로 줄어든다. 이건 Atkinson-Shiffrin의 sensory→working→long-term memory와 정확히 같은 패턴이지만, *시간이 흘러 자동으로 강등된다*는 게 streaming의 핵심 차별점이다. Hour-scale 시스템은 chunk 단위로 한 번에 처리해서 memory bank에 적재하지만, Flash-VStream은 frame이 도착할 때마다 STAR pipeline을 한 칸씩 shift시킨다.\n\n또 하나의 결정: tier 간 transition이 *deterministic schedule*이다. 'salience score가 높으면 spatial에 더 오래 둔다'가 아니다. 시간만 보고 결정한다. 왜? Salience 기반 retention은 *evaluation*이 필요해서 per-frame cost가 늘어난다. Streaming budget 안에서는 'simple but wrong sometimes'가 'optimal but slow'를 이긴다."
+        },
+        {
+          "title": "3. Online TokenMerge — incremental clustering의 invariant",
+          "content": "TokenMerge offline(Bolya et al., ICLR 2023, arXiv:2210.09461)은 ViT의 매 layer에서 token pair를 bipartite matching으로 merge한다. 시퀀스 전체를 보고 가장 비슷한 pair부터 줄인다. Streaming에서는 이 알고리즘이 그대로는 안 굴러간다 — 미래 token이 없기 때문이다.\n\nOnline variant의 핵심 아이디어는 **incremental cluster maintenance**다. 도착한 token을 기존 cluster 중 가장 비슷한 곳에 흡수(absorb)시키거나, 충분히 다르면 새 cluster를 만든다. 알고리즘 sketch:\n\n```\nfor t in stream:\n  emb = encoder(frame_t)\n  for token in emb:\n    sim, k = nearest_cluster(token, clusters)\n    if sim > merge_threshold:\n      clusters[k] = ema_update(clusters[k], token, alpha=0.1)\n    elif len(clusters) < CAP:\n      clusters.append(token)\n    else:\n      evict(least_recently_used)\n      clusters.append(token)\n```\n\n여기서 깨지는 offline invariant 세 개. (1) **Optimal merge order**: offline은 global similarity ranking으로 가장 비슷한 pair부터 처리한다. Online은 도착 순서대로 처리해서 *suboptimal*. 대신 per-token cost가 O(K) (cluster 수)로 고정. (2) **Reversibility**: offline은 'A와 B를 merge했는데 나중에 C가 들어왔으니 A-C가 더 어울린다'를 다시 할 수 있다. Online은 EMA update로 *부드러운 보정*만 가능. (3) **Cluster count**: offline은 target token 수를 정확히 맞춘다. Online은 CAP을 두고 *eviction policy*로 운영. K-means streaming 변종(BIRCH, online K-means)의 정신과 같다.\n\n실전에서는 *threshold + CAP + eviction* 세 hyperparameter가 streaming 압축의 dial이 된다. Threshold가 너무 낮으면 cluster가 폭발하고, 너무 높으면 모든 token이 하나로 뭉뜬다. CAP은 LLM context budget으로 결정. Eviction은 LRU(시간 기반) vs salience(query-aware)의 선택이 있다."
+        },
+        {
+          "title": "4. Cluster center as memory — fidelity / ratio / latency 3축",
+          "content": "Cluster-based summarization은 streaming 압축의 *주류 패턴*이 됐다. Flash-VStream의 Abstract tier, MovieChat의 short-term memory, 심지어 Gemini Live의 video token consolidation도 모두 cluster center 운영의 변종이다. 그러나 cluster 운영을 어떻게 tune하느냐에 따라 세 축이 trade-off된다.\n\n| Knob | Compression ratio | Fidelity | Per-frame latency |\n|---|---|---|---|\n| Cluster CAP 작게 | 높아짐 | 떨어짐 | 낮아짐 |\n| Merge threshold 낮게 | 낮아짐 | 높아짐 | 높아짐 (cluster 폭발) |\n| EMA alpha 크게 | - | 최근 weight | 낮아짐 |\n| Salience-aware eviction | - | 높아짐 (query 관련 유지) | 높아짐 (salience 평가 cost) |\n\n실전 숫자 감각: VideoLLM-online은 frame당 SigLIP 256 token을 *그대로* LLM에 넣지만 frame rate를 2 FPS로 제한한다. Flash-VStream은 Spatial 32 + Temporal 32 + Abstract 16 ≈ 80 token만 LLM context에 둔다 — 압축 비율 ~10x. 같은 budget으로 30 FPS를 받을 수 있다. 대신 정밀한 visual fact-checking('이 사람 셔츠에 작은 로고가 보이나')은 spatial tier가 잠깐 갖고 있다가 잃는다.\n\n여기서 시니어 결정 포인트: **'무엇을 잃을 것인가'를 product 요구로부터 역산하는가**. Sports 실시간 해설은 short-term fidelity가 결정적(Spatial tier 키워야 함). Long meeting summarization은 abstract gist가 결정적(Abstract tier 키워야 함). 같은 STAR architecture라도 tier capacity 배분이 product에 따라 다르다. 'STAR을 썼다'는 framework choice일 뿐 답이 아니다."
+        },
+        {
+          "title": "5. Token budget을 시간을 따라 분배하기 — eviction policy의 정치학",
+          "content": "Streaming 압축의 가장 까다로운 부분은 **eviction policy**다. Cluster CAP, STAR tier 모두 고정 budget이므로 새 token이 들어올 때 누구를 내보낼지 결정해야 한다. 두 주류 정책.\n\n**LRU (Least Recently Used).** 가장 오래된 token부터 demote/evict. 단순하고 빠르다 (O(1) with deque). 모든 token을 동등한 시간 가치로 본다는 가정 위에 있다. Sliding window의 자연스러운 일반화다. 단점: query가 '20분 전에 무슨 일이 있었나'면 이미 evict됐다.\n\n**Salience-aware.** 각 token에 'salience score'를 매기고 낮은 점수부터 evict. Score는 (a) encoder의 attention magnitude, (b) 이전 query에 의해 attend된 정도, (c) cluster centroid로서의 representative power 등으로 계산. 단점: 평가 자체가 cost. 또 'salience를 정확히 매길 수 있다'는 가정은 *future-blind* 환경에서 깨진다.\n\n중간 지점이 있다. **Tiered demotion**: LRU로 빠르게 강등하되, demotion 시점에 cluster center로 압축. 이게 STAR의 실제 동작이다. 'evict'를 binary로 보지 않고 'compress harder'로 다룬다. LRU의 O(1) 비용으로 운영하면서, fidelity는 compression schedule로 점진적 손실시킨다.\n\nProduction 관점에서 하나 더: **eviction 결정이 reproducible해야 한다**. Debugging이나 incident replay에서 'p99 latency가 튄 frame이 왜 evict됐는가'를 추적하려면 결정 함수가 deterministic이어야 한다. Salience-aware 정책이 stochastic하거나 model state에 의존하면 production에서 다루기 힘들다. 이게 industry에서 STAR 같은 'simple-but-deterministic' 압축이 'salience-aware optimal' 변종보다 많이 채택되는 이유다."
+        }
+      ],
+      "analogy": {
+        "title": "라이브 방송 PD의 다중 모니터 운영",
+        "content": "라이브 방송 PD실의 콘솔을 떠올려보자. PD 앞에는 모니터가 4개 있다. (1) 지금 방송에 나가는 메인 모니터(Spatial tier). 1초 단위로 모든 디테일을 본다. (2) 직전 30초의 4개 카메라 분할 프리뷰(Temporal tier). 어느 카메라 컷이 좋았는지 비교할 수 있게 들고 있는다. (3) 큐시트 보드(Abstract tier). 5분 단위로 'A 게스트 인터뷰, B 코너, C 광고' 같은 요약만 적혀 있다. (4) 아카이브 검색기(Retrieval tier). '3주 전 같은 게스트가 무슨 말 했지?'를 PD가 입력하면 그제서야 켜진다.\n\nOffline 압축은 방송이 끝난 다음 영상 편집자가 6시간 영상을 5분 하이라이트로 정리하는 것이다. 전체를 보고 결정한다. 충분한 시간이 있다. 결정을 되돌릴 수도 있다.\n\nStreaming 압축의 PD는 그 사치가 없다. 카메라에서 화면이 1초마다 새로 들어오고, 콘솔의 메인 모니터 buffer는 무한하지 않다. 1초마다 *오래된 화면을 어디로 옮길지*를 결정해야 한다. 큐시트 보드에 메모로 남기든, 4분할 프리뷰로 demote하든, 아카이브 검색기에 인덱싱하고 잊든. 결정을 잘못해서 30분 뒤 PD가 '아까 그 카메라 컷 다시!'라고 외쳐도, 이미 evict된 raw frame은 못 돌아온다 — 압축본만 남아 있다.\n\n그래서 PD실의 콘솔 설계가 STAR 그 자체다. 'tier가 여러 개여야 하는 이유'와 'tier 간 자동 강등이 있어야 하는 이유'가 라이브 방송 운영에서 자연스럽게 도출된다. Streaming token compression은 라이브 방송 콘솔을 LLM context에 옮긴 것이다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "Flash-VStream STAR memory hierarchy의 streaming-friendly sketch. 매 frame이 도착할 때 Spatial → Temporal → Abstract 자동 demotion이 일어나고, LLM context는 매번 4-tier에서 join해서 만들어진다. Cluster center 갱신은 EMA로 incremental.",
+        "code": "import torch\nimport torch.nn.functional as F\nfrom collections import deque\nfrom dataclasses import dataclass, field\nfrom typing import Deque, List\n\n@dataclass\nclass STARMemory:\n    spatial_cap: int = 32      # ~1s @ 30fps, raw recent tokens\n    temporal_cap: int = 32     # 4-8s window, pooled groups\n    abstract_cap: int = 16     # minute-scale cluster centers\n    pool_group: int = 4        # spatial->temporal mean-pool size\n    merge_thresh: float = 0.85 # cosine threshold for cluster absorb\n    ema_alpha: float = 0.1\n\n    spatial: Deque[torch.Tensor] = field(default_factory=deque)\n    temporal: Deque[torch.Tensor] = field(default_factory=deque)\n    abstract: List[torch.Tensor] = field(default_factory=list)\n    ab_counts: List[int] = field(default_factory=list)  # samples per cluster\n\n    def _demote_spatial_to_temporal(self):\n        # When spatial overflows, pool oldest group into one temporal slot.\n        if len(self.spatial) <= self.spatial_cap:\n            return\n        group = [self.spatial.popleft() for _ in range(self.pool_group)]\n        pooled = torch.stack(group).mean(0)\n        self.temporal.append(pooled)\n\n    def _demote_temporal_to_abstract(self):\n        if len(self.temporal) <= self.temporal_cap:\n            return\n        evicted = self.temporal.popleft()\n        # Try to absorb into nearest cluster; else create new (with eviction).\n        if self.abstract:\n            sims = torch.stack([F.cosine_similarity(evicted, c, dim=0)\n                                for c in self.abstract])\n            best, k = sims.max(0)\n            if best.item() > self.merge_thresh:\n                self.abstract[k] = ((1 - self.ema_alpha) * self.abstract[k]\n                                    + self.ema_alpha * evicted)\n                self.ab_counts[k] += 1\n                return\n        if len(self.abstract) >= self.abstract_cap:\n            # LRU-style eviction: drop least-updated cluster.\n            idx = min(range(len(self.abstract)), key=lambda i: self.ab_counts[i])\n            self.abstract.pop(idx); self.ab_counts.pop(idx)\n        self.abstract.append(evicted.clone()); self.ab_counts.append(1)\n\n    def ingest(self, frame_token: torch.Tensor):\n        self.spatial.append(frame_token)\n        self._demote_spatial_to_temporal()\n        self._demote_temporal_to_abstract()\n\n    def as_context(self) -> torch.Tensor:\n        parts = [list(self.spatial), list(self.temporal), self.abstract]\n        flat = [t for tier in parts for t in tier]\n        return torch.stack(flat) if flat else torch.empty(0)",
+        "walkthrough": "세 가지 streaming-friendly 디자인 결정이 보인다. (1) `_demote_spatial_to_temporal`은 deque의 popleft로 O(1). Spatial buffer가 가득 차면 *시간 순서대로* 4개씩 묶어 temporal로 강등하면서 평균 풀링한다 — salience 평가 없음, deterministic. (2) `_demote_temporal_to_abstract`은 cluster absorb 시도 → 실패 시 신규 cluster 생성 → cap 초과 시 'least-updated cluster를 evict'하는 streaming K-means 패턴. EMA update로 cluster center가 새 token 방향으로 *부드럽게* 이동. (3) `as_context`는 매 호출에서 4-tier를 join해 LLM context를 만든다. 호출 시점의 spatial은 최신 raw token, abstract는 분 단위 gist를 동시에 제공. 압축 비율 계산: spatial 32 + temporal 32 + abstract 16 = 80 token으로 운영하면 30 FPS 1분 = 1,800 frame × 256 token = 460K raw token이 80 token으로 들어간다. 5,750x 압축이지만 *recency-weighted* 압축이라서 최근 정보의 fidelity는 보존된다."
+      },
+      "industryEvaluation": {
+        "overview": "Token compression for streaming은 streaming pipeline의 'token budget controller'다. 시니어 평가에서는 후보가 (a) offline 압축과 streaming 압축의 차이를 invariant 단위로 짚는지, (b) STAR 같은 hierarchical memory가 왜 단일 buffer보다 합리적인지 시간 스케일로 정당화하는지, (c) compression ratio / fidelity / per-frame latency 3축을 product 요구로부터 역산하는지를 본다.",
+        "whatEngineersLookFor": [
+          "'미래를 모른다 + commitment이 즉시 + 압축도 budget을 먹는다' 세 invariant를 streaming 압축의 정의로 가져옴",
+          "STAR 4-tier를 단순히 외우는 게 아니라 *시간 스케일이 다른 4개*라는 구조로 정당화",
+          "cluster-based summary 운영에서 threshold / CAP / eviction 세 dial을 따로 분리",
+          "compression schedule (즉 누구를 언제 더 압축할지)을 product 요구(sports vs meeting)에서 역산",
+          "eviction 결정의 reproducibility를 production 관점에서 평가축에 둠"
+        ],
+        "redFlags": [
+          "HiCo나 offline TokenMerge를 streaming에 그대로 가져와도 된다고 답함",
+          "STAR의 4-tier를 '그냥 buffer를 4개 두면 좋다'로 환원하고 시간 스케일 차이를 설명 못함",
+          "cluster-based 압축에서 'K-means를 매 frame 다시 돌리면 된다'고 답함 (per-frame budget 무시)",
+          "salience-aware eviction을 production에 무조건 추천 (reproducibility / debug 어려움 무시)",
+          "압축 cost를 0으로 가정하고 LLM latency만 최적화"
+        ],
+        "interviewQuestions": [
+          "**Q1. STAR tier capacity 배분.** 30 FPS live sports 해설 시스템과 60분 회의 요약 시스템 두 product가 같은 STAR memory를 쓴다. 두 product에서 Spatial / Temporal / Abstract tier capacity를 어떻게 다르게 배분할 것인지, 실패 시나리오를 들어 정당화하라.",
+          "**Q2. Online TokenMerge가 깨는 invariant.** Offline TokenMerge가 보장하는 어떤 invariant를 online 변종이 깨는가? 그 trade를 받을 수 있는 product와 받을 수 없는 product를 각각 하나씩 들어라.",
+          "**Q3. LRU vs salience-aware eviction.** Streaming token pool의 eviction policy로 LRU와 salience-aware 중 LRU를 선택해 production에 배포한 결정을 옹호하라. 'optimal이 아닌데 왜 골랐는가'를 reproducibility, per-frame latency, debugging 세 축에서 정당화하라."
+        ],
+        "masteryVsFamiliar": "**Familiar**: Flash-VStream의 STAR, TokenMerge, HiCo 이름을 알고 'token을 줄이는 기법'으로 한 줄로 묶을 수 있다. **Mastery**: offline / hour-scale / streaming 압축이 깨는 invariant가 다름을 commitment·future-blindness·per-frame cost로 분리하고, STAR의 4-tier가 시간 스케일이 다른 memory의 자동 강등 schedule임을 도출한다. Online TokenMerge가 깨는 ordering·reversibility·count 세 invariant를 짚고 EMA / threshold / CAP를 production dial로 설명한다. Eviction policy 선택에서 LRU의 reproducibility가 production에 미치는 영향까지 평가축으로 가져온다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "Offline 압축의 3가지 가정이 streaming에서 깨진다",
+          "content": "미래 정보 부재, 즉시 commitment, 압축 자체의 latency cost — HiCo/TokenMerge offline은 이 셋 다 가정 가능하지만 streaming은 셋 다 가정 불가."
+        },
+        {
+          "title": "Flash-VStream STAR은 시간 스케일이 다른 4-tier memory다",
+          "content": "Spatial(초)/Temporal(수 초)/Abstract(분)/Retrieval(영구). 단일 buffer가 아닌 hierarchical이어야 *압축률과 fidelity를 시간 함수로* 분리 가능."
+        },
+        {
+          "title": "Tier 간 강등은 deterministic schedule이어야 한다",
+          "content": "Salience 기반 retention은 per-frame budget을 침범. Streaming에서는 'simple but wrong sometimes'가 'optimal but slow'를 이긴다."
+        },
+        {
+          "title": "Online TokenMerge는 3개 invariant를 깨고 O(K) cost를 얻는다",
+          "content": "Optimal merge order, reversibility, exact target count — 셋 다 포기. 대신 per-frame O(K) cluster-수 비용으로 streaming에 들어갈 수 있다."
+        },
+        {
+          "title": "Compression은 ratio·fidelity·latency 3축 trade다",
+          "content": "Cluster CAP, merge threshold, EMA alpha, eviction policy가 모두 세 축 사이의 dial. Product 요구로부터 어느 축이 critical인지 역산해야 한다."
+        },
+        {
+          "title": "Cluster center as memory가 streaming 압축의 주류 패턴이다",
+          "content": "Flash-VStream Abstract tier, MovieChat short-term, Gemini Live token consolidation 모두 동일 패턴의 변종. Streaming K-means / BIRCH의 정신과 직접 연결."
+        },
+        {
+          "title": "Eviction policy의 reproducibility가 production을 결정한다",
+          "content": "Salience-aware가 'optimal'이라도 stochastic이면 incident replay에서 'p99 튄 frame을 왜 evict했나'를 못 따진다. LRU + tiered demotion이 production에서 자주 이긴다."
+        },
+        {
+          "title": "STAR을 썼다는 framework choice일 뿐 답이 아니다",
+          "content": "Sports 해설 vs meeting 요약은 같은 STAR라도 tier capacity가 달라야 한다. Streaming 압축의 시니어 결정은 *capacity allocation을 product에서 역산하는 능력*이다."
+        }
+      ]
+    },
+    {
+      "number": 7,
+      "emoji": "🚀",
+      "title": "KV Cache & Continuous Batching for Real-time",
+      "titleKr": "실시간 추론을 위한 KV Cache와 Continuous Batching",
+      "tldr": "Streaming pipeline의 마지막 stage는 LLM inference다. 여기서 KV cache 전략(prefix-cache vs sliding window), continuous batching(vLLM, SGLang, TensorRT-LLM), speculative decoding이 모두 'prefill vs decode latency 비대칭'을 어떻게 다루느냐는 한 질문으로 수렴한다. Real-time video LLM에서 prefill이 매 frame마다 일어난다는 사실을 인지하면 inference 측 결정의 의도가 보인다.",
+      "topics": [
+        "Prefill vs decode latency 비대칭",
+        "KV cache layout과 메모리 점유",
+        "Prefix-cache (shared prompt) for streaming",
+        "Sliding window KV cache (Mistral, Streaming-LLM)",
+        "vLLM PagedAttention과 continuous batching",
+        "SGLang RadixAttention과 prefix tree",
+        "TensorRT-LLM in-flight batching",
+        "Speculative decoding for response generation",
+        "StreamingLLM의 attention sink"
+      ],
+      "learningGoals": [
+        "Prefill stage가 compute-bound이고 decode stage가 memory-bandwidth-bound인 비대칭을 정량적으로 설명할 수 있다",
+        "Real-time video LLM에서 vision token이 매 frame 추가되는 게 KV cache layout에 미치는 영향을 분석할 수 있다",
+        "Prefix-cache, sliding window, StreamingLLM의 attention sink 3가지 streaming KV 전략을 invariant 단위로 비교할 수 있다",
+        "vLLM PagedAttention과 SGLang RadixAttention의 차이를 'block 할당 vs prefix tree' 구조로 설명할 수 있다",
+        "Continuous batching이 streaming video LLM에서 multi-tenant serving에 어떻게 적용되는지 sketch할 수 있다"
+      ],
+      "overview": "Chapter 5에서 visual encoder 최적화를, Chapter 6에서 token compression을 다뤘다. 이 모두는 'LLM에 들어가는 것을 줄이는' 방향이었다. 이 챕터는 LLM 자체의 inference latency를 다룬다. Streaming video LLM의 latency budget에서 LLM inference는 보통 50% 이상을 차지하고, 거의 모든 production system의 p99 spike가 여기서 나온다.\n\n핵심 멘탈 모델 시프트: 일반 LLM 서빙에서는 '하나의 prompt를 받아 generate'가 unit of work였다. Hour-scale video LLM에서는 'video chunk와 user query를 받아 한 번 inference'가 unit이었다. **Real-time에서는 video token이 *지속적으로 prefill에 추가되고*, response generation은 sparse 이벤트로 발생한다**. 즉 prefill이 '한 번'이 아니라 *continuous stream*이다. KV cache 운영, batching 전략, speculative decoding 모두 이 사실을 받아들이고 다시 설계해야 한다.\n\nvLLM PagedAttention, SGLang RadixAttention, TensorRT-LLM in-flight batching, StreamingLLM attention sink는 일반 LLM 서빙에서 등장한 기법이지만 모두 video streaming에 들어올 때 의미가 다시 평가된다. 이 챕터는 그 재평가를 다룬다.",
+      "sections": [
+        {
+          "title": "1. Prefill vs decode latency 비대칭 — real-time의 가장 큰 함정",
+          "content": "LLM inference는 두 phase가 있다. **Prefill**: prompt 전체를 forward pass 한 번에 처리해 KV cache를 채운다. Compute-bound (matmul이 dominant). **Decode**: 한 token씩 autoregressive하게 생성. Memory-bandwidth-bound (KV cache load가 dominant). 일반 LLM 서빙에서는 prompt가 1K token이고 response가 500 token이면 prefill은 한 번, decode는 500번이다. 그래서 *decode optimization*이 traditional 관심사였다 (speculative decoding, FlashAttention 등).\n\nReal-time video LLM은 반대다. 30 FPS로 visual token이 들어오면서 prefill이 매 frame 일어난다. Frame당 SigLIP 256 token, 1초당 30 frame = 7,680 vision token이 매 초 prefill되어야 한다. Response generation은 'user가 질문할 때만' 또는 'system이 proactive response를 trigger할 때만'이라 sparse하다. VideoLLM-online (Chen et al., CVPR 2024, arXiv:2406.11816)이 EOS-based stream alignment를 선택한 것도 이 비대칭 때문이다 — 매 frame마다 LLM이 'EOS인지 새 response 시작인지' 판단해서, response가 없으면 decode를 아예 안 한다.\n\n이걸 숫자로 잡아보자. H100 기준 7B 모델, batch size 1.\n\n| Phase | 처리량 | 256 vision token / frame 처리 시간 |\n|---|---|---|\n| Prefill | ~50K tok/s (compute-bound) | ~5 ms |\n| Decode (1 token) | ~100 tok/s (memory-bandwidth) | ~10 ms / token |\n\n30 FPS = 33ms budget이라면 vision prefill만 5ms로 충분하지만, 만약 매 frame response 5 token씩 decode하면 50ms로 이미 budget 초과. 그래서 real-time video LLM은 **decode를 sparse하게** 만들어야 한다. Inference 측 모든 결정이 이 제약을 만족시키는 방향으로 정렬된다."
+        },
+        {
+          "title": "2. KV cache layout — streaming에서 누구를 evict할 것인가",
+          "content": "KV cache는 'past token의 K, V를 보관해서 다음 token attention에서 재계산을 피하는' 메커니즘이다. 일반 LLM에서는 prompt + 생성된 token의 K/V가 누적되고 generate 끝나면 release된다. 7B 모델, sequence length 8K 기준 KV cache는 ~2GB. 80GB H100이면 30-40 concurrent request까지 들어간다.\n\nReal-time video LLM은 다르다. Stream이 끝나지 않는다. 1시간 라이브 방송이면 30 FPS × 256 token × 3600s = 27.6M vision token이 누적된다. 7B 모델 KV cache로 환산하면 ~7TB. H100에 안 들어간다. 그래서 **KV cache eviction**이 1급 problem이다. 세 가지 주류 전략.\n\n**(a) Sliding window KV cache (Mistral, Longformer).** Window size W를 두고 가장 오래된 token의 K/V를 drop. Attention이 W token만 본다는 의미. 단순하고 빠르다. 단점: hard cutoff. Window 밖의 정보는 영영 못 본다.\n\n**(b) Prefix-cache (shared system prompt).** System prompt와 task instruction은 매 streaming session에서 동일하므로 K/V를 *한 번만* 계산해서 reuse. vLLM의 prefix caching, SGLang의 RadixAttention이 이를 자동화한다. Streaming video에서는 'system prompt + task description + early video summary'가 share 가능. 효과: prefill의 첫 수백 token을 0 cost로 skip.\n\n**(c) StreamingLLM의 attention sink (Xiao et al., ICLR 2024, arXiv:2309.17453).** Sliding window의 결정적 약점을 풀었다. Window를 그대로 운영하되 *맨 처음 몇 token*(보통 4개)의 K/V를 영구 보존. 왜? Softmax attention이 attention sink로 첫 token에 mass를 dumping하는 경향이 있어서, 이 token이 evict되면 perplexity가 폭발한다. 4 token만 살리면 infinite stream에서도 안정. 매우 단순하지만 streaming LLM의 standard가 됐다.\n\n시니어 선택 포인트: streaming video LLM은 보통 (b)+(c) hybrid다. System prompt는 prefix-cache로 영구화, vision token stream은 sliding window + attention sink로 유한화. (a) 단독은 attention collapse 위험."
+        },
+        {
+          "title": "3. vLLM PagedAttention과 SGLang RadixAttention — 다른 추상화의 다른 함의",
+          "content": "Real-time video LLM은 multi-user serving도 한다. 동시에 여러 stream을 받아 처리하는 inference engine의 선택이 latency 분포에 큰 영향을 준다. 두 주류 엔진.\n\n**vLLM PagedAttention (Kwon et al., SOSP 2023, arXiv:2309.06180).** KV cache를 OS의 paging처럼 *block 단위*로 관리. 각 block은 16 token K/V. 한 request의 KV cache는 block table을 통해 *비연속 메모리*에 흩어져 저장 가능. 효과: (1) memory fragmentation 거의 0, (2) prefix-cache가 block 단위 reuse로 자동, (3) continuous batching에서 새 request가 들어올 때 free block만 잡으면 됨. Real-time video에 적용 시: vision token stream이 매 frame block table에 16 token씩 append된다. Block 단위라 sliding window eviction도 깔끔.\n\n**SGLang RadixAttention (Zheng et al., NeurIPS 2024, arXiv:2312.07104).** Prefix-cache를 *radix tree*로 관리. 모든 request의 prompt prefix가 tree node로 표현되고, 공통 prefix는 자동 share. Effect: 'system prompt + user-specific instruction + video summary' 같은 nested prefix 구조에서 공유율이 극대화. Multi-tenant video LLM에서 사용자별 customization이 있어도 공통 부분이 다 share. 단점: tree node 관리 overhead. Real-time streaming에서 매 frame prefix가 바뀌는 패턴에는 PagedAttention 쪽이 더 자연스럽다.\n\n**TensorRT-LLM in-flight batching.** NVIDIA 진영. 같은 batch에 *prefill request*와 *decode request*를 섞어 처리하는 fused kernel. Continuous batching의 변종이다. Streaming video LLM에서는 'prefill heavy + decode light' 워크로드라 prefill에 max-shape padding을 적용하면 GPU utilization이 떨어진다. TensorRT-LLM은 dynamic shape kernel로 이걸 풀어준다. p99 latency에 가장 강한 선택지로 평가받는다.\n\n선택 가이드: 단일 stream low-latency → TensorRT-LLM. Multi-tenant with shared prefix → SGLang. 범용 + 빠른 prototyping → vLLM. Real-time video LLM에서는 보통 vLLM으로 시작해 production scale 들어가면 TensorRT-LLM으로 옮긴다."
+        },
+        {
+          "title": "4. Continuous batching이 video streaming에서 의미하는 것",
+          "content": "Continuous batching(Yu et al., OSDI 2022, Orca 논문, arXiv:2306.10720)은 'request가 끝나기를 기다리지 않고 새 request를 batch에 끼워넣는' 기법이다. 일반 LLM 서빙에서는 throughput을 2-3배 올린다. Real-time video LLM에서는 throughput보다 **latency tail 안정화**가 더 중요한 효과다.\n\n왜? 한 stream만 처리할 때 GPU utilization이 30-40%인 경우가 많다. Vision token 256개 prefill은 H100을 채우지 못한다. 다른 stream의 prefill을 같이 batch하면 utilization이 80%+로 올라간다. 그런데 *prefill batch는 compute-bound*라 batch size를 키워도 latency가 거의 안 늘어난다. 효과: 같은 p99 latency로 5-10배 많은 stream을 서빙.\n\n그러나 함정이 있다. **Decode와 prefill을 같은 batch에 넣으면 decode가 prefill 끝날 때까지 기다린다 — head-of-line blocking**. Real-time video는 prefill heavy라 decode가 항상 뒤로 밀린다. 해결책 두 가지.\n\n(1) **Prefill/decode 분리 (disaggregated serving)**: DistServe(Zhong et al., OSDI 2024, arXiv:2401.09670)와 SplitWise(Patel et al., ISCA 2024) 패턴. Prefill 전용 GPU pool과 decode 전용 GPU pool을 분리. Streaming video LLM에 자연스럽다 — 매 frame prefill은 한 pool에서, 가끔 trigger되는 decode는 다른 pool에서. 단점: KV cache를 두 GPU 사이에 옮겨야 한다 (RDMA / NVLink).\n\n(2) **Chunked prefill (Sarathi, Agrawal et al., arXiv:2308.16369)**: 큰 prefill을 chunk로 나눠 decode와 interleave. 같은 GPU에서 prefill chunk → decode token → prefill chunk → ... 형태로 schedule. Streaming video LLM에서는 매 frame의 256 token prefill을 chunk로 더 자르고 decode와 섞을 수 있다. Disaggregation보다 구현이 단순하고 KV transfer cost 없음.\n\n실전 추천: 단일 GPU / single-node는 chunked prefill, multi-node는 disaggregated. Production 시스템(Gemini Live 추정, GPT-4o Realtime API)은 후자로 평가된다."
+        },
+        {
+          "title": "5. Speculative decoding — response generation의 latency 줄이기",
+          "content": "Speculative decoding(Leviathan et al., ICML 2023, arXiv:2211.17192)은 작은 draft model이 K token을 예측하고, 큰 target model이 한 번의 forward pass로 검증해서 reject되기 전까지 accept하는 기법이다. Decode phase의 wall-clock을 2-3배 줄인다.\n\nReal-time video LLM에서 speculative decoding의 역할은 미묘하다. 앞 절에서 봤듯이 prefill이 dominant고 decode는 sparse하다. 그럼 speculative decoding은 의미가 적지 않을까? 정확히 그 반대다. **Sparse decode는 더 latency-sensitive하다**. User가 'what just happened?' 질문하면 system은 500ms 안에 응답해야 자연스럽다. 응답이 50 token이면 일반 decode로 500ms 걸린다. Speculative로 200ms로 줄이면 product UX가 달라진다.\n\nVideo LLM에서 speculative decoding 특화 패턴: **draft model이 visual context-free**일 수 있다. 즉 작은 LLaMA-1B 같은 draft가 vision token 없이 text token만 보고 response를 draft. Target model(LLaMA-7B Video)이 vision까지 보고 검증. 왜 가능한가? Response generation에서 다음 token은 대부분 grammatical / 문맥적 — vision은 가끔만 결정적이다. Reject rate가 30-40% 정도면 여전히 net win.\n\n또 하나의 패턴: **EAGLE-3 / Medusa** 류의 *target-aware draft head*. 별도 draft model 없이 target model의 hidden state에서 multi-token 예측 head를 학습. 메모리는 더 들지만 reject rate가 낮아져 1.5-2x 더 빠르다. GPT-4o Realtime API가 이 방향으로 평가된다.\n\nVideoLLM-online의 EOS-based stream alignment를 다시 보자. 매 frame 'EOS or not'을 결정하는 게 사실상 speculative decoding의 binary 변종이다. 'response를 generate해야 할 때만 decode를 시작'하는 게 sparse decode 패턴이고, 시작하면 speculative로 빠르게 끝낸다. 두 결정이 같은 latency budget logic에서 나온다."
+        }
+      ],
+      "analogy": {
+        "title": "24시간 라이브 통역사",
+        "content": "국제회의장에 24시간 상주하는 라이브 통역사를 떠올려보자. 통역사가 하는 일은 두 가지다. (1) *Prefill*: 화자의 새 문장이 들어오면 머릿속에 의미를 채워 넣는다. 매 문장마다 일어난다. 듣는 데 시간 별로 안 걸린다. (2) *Decode*: 누군가 통역사에게 'now translate'라고 신호하면 그제서야 입을 열어 한 단어씩 말한다. 자주 일어나지 않지만 일어나면 한참 길다.\n\n일반 LLM 서빙은 '회의가 한 번 열리고 통역하고 끝나는' 모델이다. 한 번 듣고 한 번 말한다. Hour-scale은 '6시간 강연을 다 들은 뒤 한 번 요약하는' 모델이다. Real-time video LLM은 24시간 라이브 통역사다. 듣는 건 끊임없이 일어나고 말하는 건 가끔 일어난다.\n\n이제 KV cache는 통역사의 *기억력*이다. 24시간 다 기억할 수는 없다. 그래서 (a) 회의의 주제와 참가자 명단 같은 *반복되는 맥락*은 영구 기억(prefix-cache), (b) 최근 5분 대화는 정확히 기억(sliding window), (c) 회의 첫 인사말은 다른 사람이 다 잊어도 통역사는 살려둔다 — 'softmax attention sink'처럼 통역의 어조 baseline이 되기 때문(StreamingLLM의 sink token).\n\n그리고 통역사가 여러 회의를 동시에 담당한다고 해보자. 회의 1에서 새 문장이 들어오는 동안, 회의 2에서 'translate' 신호가 왔다. 같은 뇌로 어떻게 처리하나? Continuous batching이다. 듣는 작업은 batch로 묶고, 말하는 작업은 흐름이 끊기지 않게 끼워 넣는다. Disaggregated serving은 한술 더 떠 듣는 통역사와 말하는 통역사를 따로 둔다. Speculative decoding은 통역사가 '다음 단어 후보 3개'를 미리 떠올려두는 기술이다 — 어차피 말할 거 미리 준비. 24시간 라이브 통역사의 모든 trick이 LLM inference에 그대로 매핑된다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "Streaming video LLM의 inference 스케줄러 sketch. vLLM-style API 위에 'frame이 도착할 때마다 prefill을 enqueue하고, EOS-based stream alignment로 response decode를 sparse하게 trigger하는' 패턴. Prefix-cache + sliding window + attention sink hybrid.",
+        "code": "import time\nfrom collections import deque\nfrom dataclasses import dataclass\nfrom typing import Deque, Optional\n\n@dataclass\nclass StreamState:\n    session_id: str\n    sink_tokens: int = 4              # StreamingLLM attention sink\n    window_size: int = 8192           # sliding KV window\n    prefix_kv_handle: Optional[str] = None  # cached system+task prefix\n    vision_buffer: Deque[int] = None  # token ids in current window\n    pending_decode: bool = False\n\nclass StreamingLLMScheduler:\n    def __init__(self, engine, prefix_text: str):\n        self.engine = engine  # vLLM/SGLang style\n        # Materialize system+task prefix once; reused per session.\n        self.shared_prefix_kv = engine.prefill_and_cache(prefix_text)\n        self.streams: dict[str, StreamState] = {}\n\n    def open_stream(self, sid: str) -> StreamState:\n        s = StreamState(session_id=sid,\n                        prefix_kv_handle=self.shared_prefix_kv,\n                        vision_buffer=deque())\n        self.streams[sid] = s\n        return s\n\n    def on_frame(self, sid: str, vision_tokens: list[int]):\n        s = self.streams[sid]\n        # 1) Append new vision tokens to window; preserve sink tokens.\n        s.vision_buffer.extend(vision_tokens)\n        evict_n = max(0, len(s.vision_buffer) - s.window_size + s.sink_tokens)\n        for _ in range(evict_n):\n            # Sink tokens (oldest s.sink_tokens) are protected by index logic\n            # inside engine; here we just trim the application-side window.\n            s.vision_buffer.popleft()\n        # 2) Incremental prefill: only the *new* tokens go through compute.\n        self.engine.prefill_incremental(\n            session_id=sid,\n            prefix=s.prefix_kv_handle,\n            new_tokens=vision_tokens,\n            sink_n=s.sink_tokens)\n        # 3) EOS-aligned probe: cheap forward to check if response should start.\n        logit = self.engine.peek_next_logit(sid)\n        if logit.argmax() != self.engine.eos_id:\n            s.pending_decode = True\n\n    def maybe_decode(self, sid: str, max_tokens: int = 64) -> Optional[str]:\n        s = self.streams[sid]\n        if not s.pending_decode:\n            return None\n        # Speculative decode: small draft proposes K, target verifies in 1 pass.\n        text = self.engine.speculative_decode(\n            sid, max_tokens=max_tokens, draft_k=4)\n        s.pending_decode = False\n        return text",
+        "walkthrough": "네 가지 streaming-specific 결정이 코드에 담겨 있다. (1) `shared_prefix_kv`: system + task prompt를 한 번만 prefill하고 모든 session이 share. vLLM PagedAttention의 block 공유 / SGLang radix tree의 핵심 ROI. (2) `on_frame`의 sliding window + sink: 가장 오래된 vision token부터 evict하되 *맨 앞 sink_tokens 개*는 항상 보존 — StreamingLLM의 attention sink 패턴 그대로. (3) `prefill_incremental`: 새로 들어온 vision token만 forward pass — vLLM의 incremental prefill이 자동으로 처리. *이전 frame의 prefill을 재활용*하기 때문에 256 token만 compute. (4) `maybe_decode`의 EOS-aligned probe: VideoLLM-online이 도입한 'response를 generate할지 EOS로 끝낼지'를 매 frame logit 한 번 보고 결정. Decode를 sparse하게 만드는 핵심 트릭. 그리고 decode가 trigger되면 speculative로 wall-clock을 줄인다. 이 4개를 합치면 30 FPS에서 33ms budget 안에 prefill + EOS probe + (sparse) decode를 다 끼워 넣는다."
+      },
+      "industryEvaluation": {
+        "overview": "KV cache와 continuous batching은 real-time video LLM serving의 '엔진룸'이다. 시니어 평가에서는 후보가 (a) prefill/decode 비대칭을 streaming context에서 실수 없이 적용하는지, (b) StreamingLLM attention sink 같은 micro-design의 background를 이해하는지, (c) vLLM/SGLang/TensorRT-LLM 선택을 product workload로부터 역산하는지를 본다.",
+        "whatEngineersLookFor": [
+          "Prefill compute-bound / decode memory-bandwidth-bound를 즉석에서 수치로 정당화",
+          "Real-time video LLM에서 prefill이 'continuous stream'이고 decode가 'sparse event'라는 워크로드 인식",
+          "Prefix-cache + sliding window + attention sink hybrid를 단일 buffer가 아닌 *역할 분리된 3개 메커니즘*으로 다룸",
+          "Disaggregated vs chunked prefill의 선택을 KV transfer cost와 GPU pool 수로 정당화",
+          "Speculative decoding을 'sparse decode일수록 가치 큼'으로 역설명할 수 있음"
+        ],
+        "redFlags": [
+          "KV cache eviction을 단순 sliding window로만 풀고 attention sink 없이 운영",
+          "prefill latency를 무시하고 decode 최적화(speculative, FlashAttention)만 강조",
+          "vLLM/SGLang/TensorRT-LLM을 'throughput 좋은 것 하나 고르면 된다'고 답함",
+          "continuous batching이 head-of-line blocking을 만들 수 있다는 사실을 모름",
+          "StreamingLLM의 4 token sink를 '그냥 마법의 trick'으로 보고 softmax attention sink 메커니즘 설명 못 함"
+        ],
+        "interviewQuestions": [
+          "**Q1. Streaming KV cache 전략 비교.** 30 FPS로 24시간 라이브 비디오 LLM을 운영한다. Sliding window only, prefix-cache + sliding window, StreamingLLM attention sink + prefix-cache 3가지 전략 중 1년 안정 운영을 위해 어떤 hybrid를 고를지, 각 실패 시나리오로 정당화하라.",
+          "**Q2. Disaggregated vs chunked prefill.** Single-GPU / single-node 환경과 multi-node 환경에서 두 전략 중 어느 쪽을 골라야 하는지, KV cache transfer cost와 GPU pool 분할의 tradeoff로 답하라. Streaming video LLM에서 chunked prefill이 disaggregation보다 자주 채택되는 이유는?",
+          "**Q3. Speculative decoding in video LLM.** Decode가 sparse한 video LLM에서 speculative decoding이 *더* 가치 있다는 주장의 근거는? Draft model을 vision-context-free 작은 LLM으로 골라도 되는 이유와 reject rate 30-40%가 net win인 계산을 보여라."
+        ],
+        "masteryVsFamiliar": "**Familiar**: vLLM, SGLang, TensorRT-LLM, KV cache, speculative decoding 이름을 알고 '추론 빠르게 하는 기법'으로 묶을 수 있다. **Mastery**: prefill compute-bound / decode memory-bandwidth-bound를 정량적으로 잡고, real-time video LLM의 워크로드가 prefill heavy + decode sparse임을 적시한다. KV cache eviction에서 prefix-cache / sliding window / attention sink 3개를 *역할 분리된 메커니즘*으로 합성하고, vLLM PagedAttention과 SGLang RadixAttention의 추상화 차이를 video streaming 워크로드에 매핑한다. Disaggregated vs chunked prefill을 KV transfer cost로 trade하고, speculative decoding을 sparse decode의 latency tail 축소 도구로 정당화한다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "Prefill compute-bound, decode memory-bandwidth-bound",
+          "content": "H100 7B 기준 prefill ~50K tok/s, decode ~100 tok/s. 두 phase의 비대칭이 모든 inference 최적화 결정의 출발점."
+        },
+        {
+          "title": "Real-time video LLM은 prefill heavy + decode sparse 워크로드다",
+          "content": "매 frame 256 vision token이 prefill되고, response는 user trigger 또는 EOS-based proactive trigger 시점에만 decode. 일반 LLM 서빙과 정반대 워크로드."
+        },
+        {
+          "title": "StreamingLLM의 attention sink는 softmax 구조 때문에 필요하다",
+          "content": "Sliding window가 sink token (보통 첫 4개) 없이 운영되면 attention mass dumping 대상이 사라져 perplexity 폭발. ICLR 2024, arXiv:2309.17453."
+        },
+        {
+          "title": "Production은 prefix-cache + sliding window + attention sink hybrid",
+          "content": "단일 메커니즘이 아니다. System prompt는 prefix-cache로 영구화, vision stream은 sliding window로 유한화, sink token으로 attention 안정화."
+        },
+        {
+          "title": "vLLM PagedAttention은 block 단위 KV 관리로 fragmentation을 제거한다",
+          "content": "OS paging metaphor. Vision token stream에 자연스러움. SOSP 2023, arXiv:2309.06180."
+        },
+        {
+          "title": "SGLang RadixAttention은 multi-tenant shared prefix에 강하다",
+          "content": "Prefix tree로 nested prefix 공유 자동화. Multi-user video LLM에서 system+task+user 계층 prefix 효율적. arXiv:2312.07104."
+        },
+        {
+          "title": "Continuous batching은 head-of-line blocking을 조심해야 한다",
+          "content": "Prefill batch에 decode를 섞으면 decode가 prefill을 기다린다. Disaggregated serving(DistServe) 또는 chunked prefill(Sarathi)로 해결."
+        },
+        {
+          "title": "Speculative decoding은 sparse decode일수록 가치가 크다",
+          "content": "Real-time UX는 500ms 응답 vs 200ms 응답 차이가 결정적. EAGLE/Medusa 같은 target-aware draft head가 production 추세. Decode를 sparse하게 만드는 EOS-based alignment와 함께 작동."
+        }
+      ]
+    },
+    {
+      "number": 8,
+      "emoji": "📊",
+      "title": "End-to-End Latency Profiling",
+      "titleKr": "엔드투엔드 레이턴시 프로파일링",
+      "tldr": "실시간 비디오 LLM의 latency는 6개 stage(capture → decode → sample → encode → reduce → LLM → response)로 쪼개진다. 각 stage의 p50/p95/p99을 따로 측정하고 Amdahl's law로 bottleneck을 찾아야 한다. SLA를 'overall p99'으로 잡는 건 게으른 답이고, stage별 budget을 분해해야 production에서 reproducible debugging이 가능해진다.",
+      "topics": [
+        "6-stage latency breakdown for real-time video LLM",
+        "p50 vs p95 vs p99의 statistical 의미와 product 함의",
+        "Amdahl's law for system bottleneck",
+        "Nvidia Nsight Systems / Nsight Compute",
+        "CUDA event timing vs wall-clock timing",
+        "Async tracing (py-spy, OpenTelemetry, Phoenix)",
+        "Per-stage SLA budgeting",
+        "Real production latency numbers (Gemini Live, GPT-4o Realtime)"
+      ],
+      "learningGoals": [
+        "Real-time video LLM의 6-stage pipeline을 모두 나열하고 각 stage의 latency 특성(jitter, tail)을 분류할 수 있다",
+        "p50/p95/p99의 statistical 차이와 SLA로 어느 percentile을 잡을지 product 요구에서 역산할 수 있다",
+        "Amdahl's law를 streaming pipeline에 적용해 bottleneck stage를 찾고 최적화 ROI를 정량화할 수 있다",
+        "Nvidia Nsight Systems로 GPU stage를 trace하고 async tracing으로 CPU/network stage를 join할 수 있다",
+        "Production latency budget 예시(33ms / 100ms / 500ms)를 stage별로 분해해 sketch할 수 있다"
+      ],
+      "overview": "Chapter 1-7까지가 'real-time video LLM의 각 stage가 무엇이고 어떻게 최적화하는가'였다면, 이 챕터는 *system 관점*으로 한 발 빠진다. 실시간 시스템에서 latency는 single number가 아니다. p50과 p99는 다른 quantity이고, 둘 사이의 차이가 *systemic jitter*의 측정이다. 그리고 6-stage pipeline에서 어느 stage가 bottleneck인지 모르면 어떤 최적화도 ROI를 정당화할 수 없다.\n\n핵심 멘탈 모델 시프트: General video LLM은 'accuracy'가 1급 metric이었다. Hour-scale은 'memory efficiency'를 같이 봤다. **Real-time은 latency distribution이 1급 metric이다**. 단일 평균이 아니라 분포 전체. 그리고 latency distribution을 다루려면 (a) stage별로 분해, (b) 각 stage의 jitter source 식별, (c) tail (p99)를 별도로 추적, (d) Amdahl's law로 ROI 계산 — 이 4가지를 마스터해야 한다.\n\n이 챕터는 Nvidia Nsight Systems, CUDA event timing, py-spy, OpenTelemetry, Phoenix 같은 tooling을 함께 다룬다. Production 시스템(Gemini Live, GPT-4o Realtime, Twelve Labs Marengo)의 실측 latency를 references로 사용한다.",
+      "sections": [
+        {
+          "title": "1. 6-stage latency breakdown — 무엇을 어떻게 측정할 것인가",
+          "content": "Real-time video LLM의 latency budget을 정확히 다루려면 stage 분해가 첫걸음이다. 6-stage breakdown은 다음과 같다.\n\n| Stage | 무엇 | 일반적 latency (30 FPS budget) |\n|---|---|---|\n| **1. Capture** | 카메라/네트워크에서 raw frame 수신 | 1-5 ms (camera) / 10-50 ms (network) |\n| **2. Decode** | H.264/H.265/AV1 → RGB tensor | 1-3 ms (NVDEC) / 5-15 ms (CPU) |\n| **3. Sample** | adaptive frame sampling 결정 | 0.1-1 ms |\n| **4. Encode** | SigLIP/CLIP visual encoding | 5-20 ms (per frame) |\n| **5. Reduce** | token compression (STAR, TokenMerge) | 1-5 ms |\n| **6. LLM** | prefill + (sparse) decode | 5-50 ms |\n| **(7. Response)** | text-to-speech, network return | 10-100 ms |\n\n각 stage의 jitter 특성이 다르다. Capture는 network 환경에 따라 p99가 폭발 (RTP packet loss, retransmit). Decode는 keyframe 주기에 따라 spike (B-frame일 때 backward decode 필요). Encode는 batch가 부분 사용될 때 jitter. LLM은 prefix-cache miss 시 spike.\n\n**측정 도구.** Stage별로 적절한 도구가 다르다. (1) Capture/Decode: CPU/OS 영역 → OpenTelemetry span, kernel trace. (2) Encode/Reduce/LLM: GPU 영역 → CUDA event (`torch.cuda.Event(enable_timing=True)`). Wall-clock(`time.perf_counter()`)으로 GPU stage를 재면 async launch 때문에 0에 가깝게 나온다 — 반드시 CUDA event + synchronize. (3) Cross-stage: distributed tracing (OpenTelemetry, Arize Phoenix). 같은 frame_id로 모든 span을 join.\n\n시니어 관점: 'p99 latency가 200ms이다'라는 답은 의미 없다. '6 stage 중 capture가 p99=80ms, encode가 p99=40ms, LLM이 p99=60ms로 sum이 180ms'가 답이다. 후자가 있어야 어디를 최적화할지 정해진다."
+        },
+        {
+          "title": "2. p50 / p95 / p99 — 왜 각각이 다른 product question이 답인가",
+          "content": "Latency를 single number로 reporting하면 절반의 정보가 사라진다. 분포의 어느 점을 보느냐가 product question을 결정한다.\n\n**p50 (median)**: 'typical user의 경험'. UX 설계의 baseline. Capacity planning에서 average load 계산에 사용. 그러나 p50만 보면 'minority가 끔찍한 경험을 한다'를 못 본다.\n\n**p95**: '20명 중 1명이 겪는 worst case'. Multi-tenant 시스템에서 fairness 관점. SLA contract의 typical 기준선. 'p95 < 100ms' 같은 명세가 가장 흔하다.\n\n**p99**: '100명 중 1명이 겪는 tail'. Tail-latency-sensitive 시스템(거래, 게임, 인터랙티브 응답)의 핵심. **Streaming video LLM에서 p99이 결정적인 이유**: stream이 *지속적*이라 한 user가 1시간 안에 p99 spike를 36번 (1초당 1번, p99 = 1%) 겪는다. p99=200ms가 평균적으로 좋아 보여도 user 입장에서는 'frame이 자주 끊긴다'.\n\n**p99.9, p99.99**: 극단 tail. 페이먼트, 통신 인프라 수준에서나 의미. Streaming video LLM 시작 단계에서는 over-engineering.\n\nProduct 질문에서 SLA 역산:\n\n- '평상시 자연스러운 응답 느낌' → p50 < 100ms\n- 'frame drop 안 일어나야 함' → p95 < frame budget (33ms @ 30 FPS)\n- 'tail spike 없이 안정' → p99 < 2 × frame budget\n- '인터랙티브 대화 응답' → p50 < 500ms, p95 < 1s\n\nSLA 설정의 정치학: 'p99 < 33ms' 같은 aggressive SLA는 비용이 제곱으로 증가한다. p95에서 p99로 옮기는 데 GPU 2-3배 필요한 경우가 많다. Product에서 '진짜 어디 percentile이 product 가치를 결정하는가'를 명시 안 하면 무한한 비용을 쓰게 된다."
+        },
+        {
+          "title": "3. Amdahl's law for streaming pipeline — ROI 계산",
+          "content": "Bottleneck을 찾았다고 최적화가 정당화되는 게 아니다. Amdahl's law를 streaming pipeline 버전으로 적용해야 한다. 총 latency가 L이고 한 stage가 f × L을 차지하면, 그 stage를 s배 빠르게 했을 때 전체 speedup은:\n\n```\nspeedup = 1 / ((1 - f) + f/s)\n```\n\n실전 예. 총 latency 100ms, encoder가 40ms(f=0.4). Encoder를 4배 빠르게 했을 때:\n\n```\nspeedup = 1 / (0.6 + 0.4/4) = 1 / 0.7 ≈ 1.43x\n```\n\n즉 encoder를 75% 줄여도 전체는 30% 단축. 만약 LLM이 50ms로 가장 크면 encoder 4배 최적화는 ROI가 그보다 낮다.\n\nStreaming pipeline의 변종: stage들이 *parallel*하게 돌면 max가 latency다. Pipeline staging이 되어 있다면:\n\n```\nframe N capture → decode → encode → ... → response\nframe N+1            capture → decode → encode → ...\n```\n\n각 stage가 별도 worker라면 throughput latency = max(stage latency)이고 critical path latency = sum이다. 'Frame이 33ms마다 들어가는데 처리는 100ms 걸린다'면 throughput은 OK(max stage가 33ms 이하면)지만 critical path(같은 frame의 처리 끝까지)는 100ms.\n\n시니어 결정 포인트: **어느 stage를 parallelize하고 어느 stage를 sequential로 둘 것인가**. Capture-decode-encode는 frame-independent라 parallel. Encode-reduce-LLM은 같은 frame에서 sequential이지만 *다른 frame 사이*는 parallel. 이 분리가 Chapter 9의 producer-consumer 아키텍처로 이어진다.\n\nROI 계산을 빠뜨리고 'encoder를 빠르게 하자'에 6개월 쓰는 게 가장 흔한 실수다. Latency profile을 보지 않고 시작한 optimization은 거의 항상 잘못된 stage를 친다."
+        },
+        {
+          "title": "4. Nvidia Nsight Systems와 CUDA event timing",
+          "content": "GPU stage profiling의 표준 도구는 **Nvidia Nsight Systems** (`nsys profile`)다. CUDA stream 단위로 모든 kernel launch, memcpy, sync을 timeline으로 시각화. Real-time video LLM에서 Nsight으로 봐야 할 것 세 가지.\n\n**(a) Kernel launch latency.** Python에서 GPU op을 호출하면 host→device launch에 ~5-10 µs overhead. 30 FPS pipeline에서 한 frame당 op 100개 launch하면 0.5-1ms가 launch만으로 쓰인다. Nsight으로 launch 사이 gap을 보면 'CUDA graph capture'로 fix할 후보가 보인다.\n\n**(b) Stream concurrency.** 다른 frame의 encode가 동시에 도는지(stream parallel) 직렬로 도는지(stream serial). PyTorch의 default stream만 쓰면 직렬이다. `torch.cuda.Stream()` 명시적으로 사용하면 parallel하지만 dependency 관리가 늘어난다. Nsight timeline에서 stream lane을 보면 즉시 진단.\n\n**(c) Memcpy 비용.** Host↔device 또는 device↔device. 8K×4K RGB frame은 ~100MB로 PCIe 4.0 16GB/s에서 6ms. NVDEC에서 직접 GPU memory로 decode하면 이 cost 없음. Nsight으로 NVDEC와 PyTorch tensor 사이 'cudaMemcpy'가 보이면 zero-copy 경로로 옮길 후보.\n\n**CUDA event timing 패턴**:\n\n```python\nstart = torch.cuda.Event(enable_timing=True)\nend = torch.cuda.Event(enable_timing=True)\nstart.record()\nout = encoder(frame)\nend.record()\ntorch.cuda.synchronize()\nms = start.elapsed_time(end)  # in milliseconds\n```\n\nWall-clock(`time.perf_counter()`)으로 재면 GPU op은 launch만 측정돼서 0에 가깝다. 항상 CUDA event를 쓰되, async pipeline에서 synchronize() 호출 자체가 latency를 늘릴 수 있다 — 측정 코드를 production hot path에 두면 안 된다. Sampling profiler처럼 1% trace만 켜는 게 표준."
+        },
+        {
+          "title": "5. Production latency budget 예시 — 33ms / 100ms / 500ms 운영",
+          "content": "Production system들의 latency target을 references로 보자. (정확한 숫자는 비공개이므로 *추정*과 *측정 보고*에 기반.)\n\n**Gemini Live (Google).** 모바일 디바이스에서 실시간 video chat. Reported median response latency ~500ms (Google I/O 2024). 즉 user 질문 후 응답까지 500ms target. Frame ingestion은 별도로 30 FPS = 33ms budget으로 추정. Response generation은 sparse trigger.\n\n**GPT-4o Realtime API (OpenAI).** Voice-to-voice ~232ms (OpenAI blog). Video까지 합쳐도 보통 < 500ms target. Token streaming으로 first-token latency를 줄이는 데 집중.\n\n**Twelve Labs Marengo / Pegasus.** 비디오 indexing/search 서비스. Real-time이라기보다 quasi-real-time (수초 lag 허용). 그러나 streaming ingestion으로 영상이 들어오는 동안 embedding을 만든다. 1 FPS sampling으로 운영하는 것으로 평가됨.\n\n실전 budget 분해 예시. 30 FPS = 33ms total budget으로 vision streaming LLM:\n\n| Stage | Target ms | Note |\n|---|---|---|\n| Capture | 3 | NVDEC + zero-copy |\n| Decode | 2 | HW decoder |\n| Sample (Chapter 3) | 0.5 | adaptive 결정 |\n| Encode (Chapter 5) | 8 | SigLIP small + batch 4 |\n| Reduce (Chapter 6) | 2 | online TokenMerge |\n| LLM prefill | 15 | 256 token incremental |\n| Buffer/queue | 2.5 | safety margin |\n| **Total** | **33** | **p95 budget** |\n\np99에서 +30% 여유 두면 ~45ms. SLA를 'p99 < frame budget'으로 잡으면 위 budget을 더 줄여야 한다. 일반적으로 30 FPS는 너무 빡빡해서 production은 10-15 FPS로 운영하고 user에게 '실시간'으로 보이게 한다. Gemini Live가 그렇게 평가됨.\n\n500ms response budget도 분해:\n\n| Stage | Target ms |\n|---|---|\n| Frame ingestion (latest few seconds) | 0 (이미 처리됨) |\n| Decode trigger probe | 5 |\n| LLM decode (50 token @ specdec 5ms/tok) | 250 |\n| TTS first audio | 100 |\n| Network return | 50 |\n| Margin | 95 |\n| **Total** | **500** |\n\nDecode가 250ms로 dominant. Speculative decoding이 1.5-2x 가속하면 budget이 100ms 풀린다. 이게 Chapter 7의 speculative decoding 결정이 product 수준에서 매우 가치 있는 이유다.\n\n시니어 관점: budget 분해를 안 한 채 'p99 < X를 맞춰라'라고 들으면 일을 못 시작한다. 분해표를 만드는 것 자체가 첫 deliverable이고, 분해표가 production communication의 공용 언어가 된다."
+        }
+      ],
+      "analogy": {
+        "title": "고급 레스토랑 키친의 ticket time",
+        "content": "미슐랭 키친에서 서비스 시간 동안 일어나는 일을 떠올려보자. 손님이 주문하면 (1) 서버가 ticket 작성(capture), (2) ticket 프린터가 출력(decode), (3) 헤드 셰프가 어느 station에 보낼지 결정(sample), (4) 각 station에서 조리(encode), (5) 패스에서 plate up(reduce), (6) 서버가 손님 테이블로 운반(LLM), (7) 손님 입에 들어감(response). 각 단계가 '한 ticket의 latency'를 만든다.\n\n키친 매니저가 보는 metric은 'ticket time'이다. 평균이 8분이라고 만족하지 않는다. 95th percentile이 12분이고 99th가 20분이면 'tonight 손님 100명 중 1명은 20분 기다린다'는 뜻이다. 그 손님은 다시 안 온다. 그래서 모든 키친에 'ticket time histogram'이 KPI로 걸려 있다.\n\n그리고 키친의 bottleneck은 한 station에 있다. Grill이 만약 station 중 가장 느리면 다른 station이 아무리 빨라도 ticket time이 grill에 묶인다(Amdahl's law). 매니저는 grill에 sous chef 한 명을 더 붙이거나 그릴을 두 대로 만들거나 grill을 거치지 않는 메뉴 비율을 늘리는 결정을 해야 한다. Garde manger(샐러드 station)에 인력을 더 쓰는 건 ticket time을 못 줄인다.\n\nStreaming video LLM은 정확히 이 키친이다. 6-stage는 station이고, ticket time histogram이 latency distribution이며, p99은 worst customer 100명 중 1명의 경험이다. Amdahl's law는 키친 매니저의 자원 배분 직관이다. Nsight Systems는 키친 안에 CCTV를 설치해서 어느 station에서 ticket이 멈춰 있는지 보는 것이다. 그리고 budget 분해표는 키친 매니저가 매일 아침 회의에서 보는 SLA 운영표다. 이 비유 그대로 production system을 운영하면 거의 다 맞다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "6-stage latency profiler. 각 stage에 같은 frame_id로 span을 찍고, CUDA event로 GPU stage를 정확히 측정. OpenTelemetry 호환 trace를 만들고 stage별 p50/p95/p99 histogram을 유지.",
+        "code": "import time\nimport torch\nimport numpy as np\nfrom collections import deque, defaultdict\nfrom contextlib import contextmanager\nfrom dataclasses import dataclass, field\nfrom typing import Optional\n\n@dataclass\nclass StageProfile:\n    samples: deque = field(default_factory=lambda: deque(maxlen=10000))\n\n    def add(self, ms: float):\n        self.samples.append(ms)\n\n    def percentiles(self) -> dict:\n        if not self.samples:\n            return {\"p50\": 0, \"p95\": 0, \"p99\": 0}\n        arr = np.fromiter(self.samples, dtype=np.float64)\n        return {\n            \"p50\": float(np.percentile(arr, 50)),\n            \"p95\": float(np.percentile(arr, 95)),\n            \"p99\": float(np.percentile(arr, 99)),\n        }\n\nclass PipelineProfiler:\n    STAGES = [\"capture\", \"decode\", \"sample\", \"encode\",\n              \"reduce\", \"llm_prefill\", \"llm_decode\", \"response\"]\n\n    def __init__(self, sample_rate: float = 0.01):\n        self.profiles = {s: StageProfile() for s in self.STAGES}\n        self.sample_rate = sample_rate  # only profile 1% of frames\n\n    @contextmanager\n    def stage_cpu(self, name: str, frame_id: int):\n        # CPU/host-side stage timing.\n        if not self._should_sample(frame_id):\n            yield; return\n        t0 = time.perf_counter()\n        yield\n        dt = (time.perf_counter() - t0) * 1000.0\n        self.profiles[name].add(dt)\n\n    @contextmanager\n    def stage_gpu(self, name: str, frame_id: int):\n        # GPU stage timing via CUDA events (wall-clock would lie).\n        if not self._should_sample(frame_id):\n            yield; return\n        start = torch.cuda.Event(enable_timing=True)\n        end = torch.cuda.Event(enable_timing=True)\n        start.record()\n        yield\n        end.record()\n        end.synchronize()\n        self.profiles[name].add(start.elapsed_time(end))\n\n    def _should_sample(self, frame_id: int) -> bool:\n        return (frame_id * 2654435761 & 0xFFFFFFFF) / 2**32 < self.sample_rate\n\n    def report(self) -> dict:\n        return {s: self.profiles[s].percentiles() for s in self.STAGES}\n\n    def critical_path_p99(self) -> float:\n        return sum(self.profiles[s].percentiles()[\"p99\"] for s in self.STAGES)\n\n    def amdahl_speedup(self, stage: str, factor: float) -> float:\n        total = sum(self.profiles[s].percentiles()[\"p99\"] for s in self.STAGES)\n        stage_t = self.profiles[stage].percentiles()[\"p99\"]\n        f = stage_t / total if total > 0 else 0\n        return 1.0 / ((1 - f) + f / factor)",
+        "walkthrough": "네 가지 production-grade 결정이 코드에 담겨 있다. (1) `stage_cpu` vs `stage_gpu` 분리: CPU stage는 `time.perf_counter()`로, GPU stage는 `torch.cuda.Event`로. 같은 코드로 GPU를 wall-clock으로 재면 async launch 때문에 0이 나온다. 시니어가 자주 빠뜨리는 함정. (2) `sample_rate=0.01`: 매 frame 측정하면 측정 자체가 latency budget을 침범. 1% sampling으로 충분한 percentile estimation. Hash-based(`frame_id * 2654435761`)로 deterministic — 같은 frame_id면 항상 같은 결정이라 replay에서 reproducible. (3) `report()`로 stage별 p50/p95/p99 dictionary 반환 — Prometheus / Datadog / OpenTelemetry에 그대로 export 가능. (4) `amdahl_speedup`: 'stage X를 factor배 빠르게 했을 때 전체 speedup' 직접 계산. 'Encoder를 4배 빠르게 하는 PR이 의미 있나'에 즉답 가능. 이 한 줄 함수가 6개월 잘못된 최적화를 막는다."
+      },
+      "industryEvaluation": {
+        "overview": "End-to-end latency profiling은 real-time video LLM 시스템 운영의 가장 기본 skill이다. 시니어 평가에서는 후보가 (a) 6-stage 분해를 즉석에서 하는지, (b) p50/p95/p99의 차이를 product question으로 매핑하는지, (c) Amdahl's law로 ROI를 계산하기 전에 최적화 PR을 거부할 수 있는지, (d) CUDA event vs wall-clock 같은 측정 함정을 알고 있는지를 본다.",
+        "whatEngineersLookFor": [
+          "6-stage breakdown을 외워서가 아니라 *역할 분리* 단위로 정의 (frame-indep vs frame-dep 등)",
+          "p50/p95/p99을 'tighter SLA는 비용 제곱 증가'로 product와 협상할 수 있는 사고",
+          "Amdahl's law 계산을 코드 없이 즉석에서 하는 직관",
+          "Nsight, CUDA event, py-spy, OpenTelemetry 4개 도구의 적용 영역을 정확히 분리",
+          "Sampling-based profiling을 production에 적용하는 1% rate 같은 운영 결정"
+        ],
+        "redFlags": [
+          "Latency를 single number(평균 또는 p50)로 reporting",
+          "최적화 PR을 ROI 계산 없이 merge",
+          "GPU stage를 wall-clock으로 measuring해 'fast하다'고 결론",
+          "Stage 간 dependency를 무시하고 throughput과 critical path를 혼동",
+          "'p99 < frame budget'을 product 협의 없이 commit해 무한 비용 약속"
+        ],
+        "interviewQuestions": [
+          "**Q1. SLA 분해.** Product가 'p95 < 100ms로 real-time video chat을 만들어달라'고 요청했다. 6-stage budget을 즉석에서 분해하라. 각 stage의 target ms와 그 합이 100ms에 들어가는지, p99에서 어떻게 행동할지를 표로 제시.",
+          "**Q2. Amdahl ROI.** 총 latency p99 = 120ms, encoder 50ms / LLM 40ms / 기타 30ms. 다음 PR 중 어느 것을 priority로 머지하고 왜인가? (a) encoder를 3배 빠르게 (b) LLM에 speculative decoding (1.5x) (c) reduce stage 0.5ms 줄이기. Amdahl 계산을 보여라.",
+          "**Q3. CUDA event 함정.** 'encoder latency가 0.1ms로 나왔다'는 PR 메시지를 보고 어떤 질문을 reviewer로서 던질 것인가? 측정 코드에 있을 수 있는 두 함정을 짚어라."
+        ],
+        "masteryVsFamiliar": "**Familiar**: 'latency profiling이 중요하다'는 답과 p99, Amdahl's law 이름을 안다. **Mastery**: 6-stage breakdown을 즉석에서 그려 각 stage의 jitter source까지 분류한다. p50/p95/p99을 streaming 환경에서 user-time exposure로 환산(1시간 stream에서 p99=1% spike 36번)해 product에 설명한다. Amdahl 계산으로 최적화 PR을 한 줄로 거부/승인할 수 있고, CUDA event vs wall-clock, sampling-based profiling, hash-based deterministic sampling 같은 운영 함정을 도구 레벨에서 짚는다. Budget 분해표를 production communication의 공용 언어로 사용한다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "Latency는 6-stage로 분해해서 봐야 한다",
+          "content": "Capture → decode → sample → encode → reduce → LLM → response. 각 stage의 jitter source와 측정 도구가 다르다. Single number 'p99 = 200ms'는 의미 없는 보고."
+        },
+        {
+          "title": "p50 / p95 / p99은 다른 product question에 답한다",
+          "content": "p50은 typical UX, p95는 SLA 협상, p99은 streaming 환경에서 user-time exposure (1시간 = 36번 spike). SLA percentile을 product와 명시적으로 협상해야 한다."
+        },
+        {
+          "title": "Amdahl's law가 최적화 PR의 게이트키퍼다",
+          "content": "speedup = 1 / ((1-f) + f/s). Bottleneck이 아닌 stage 최적화는 ROI 0. PR 머지 전에 분해표로 정량화해야 6개월 헛수고를 막는다."
+        },
+        {
+          "title": "GPU stage는 반드시 CUDA event로 측정",
+          "content": "Wall-clock은 async launch 때문에 0에 가깝게 나옴. `torch.cuda.Event(enable_timing=True)` + synchronize. 시니어가 자주 빠뜨리는 함정."
+        },
+        {
+          "title": "Sampling-based profiling이 production 표준",
+          "content": "매 frame 측정은 budget을 침범. 1% rate hash-based deterministic sampling으로 replay reproducibility까지 확보."
+        },
+        {
+          "title": "Production 시스템의 latency target은 ~500ms 대화 응답",
+          "content": "Gemini Live ~500ms, GPT-4o Realtime ~232ms voice-to-voice. Frame ingestion 33ms와 response generation 500ms는 다른 budget으로 분리."
+        },
+        {
+          "title": "30 FPS는 너무 빡빡하다, production은 10-15 FPS",
+          "content": "33ms total budget에 6-stage 분해를 다 채워 넣기 어려움. 'user에게 실시간으로 보이는 최소 FPS'(10-15)로 운영하고 인지적 fluency만 확보."
+        },
+        {
+          "title": "Budget 분해표가 production communication의 공용 언어",
+          "content": "Stage별 target과 measured값을 같이 보여주는 표가 매주 리뷰의 anchor. SLA 협상, optimization priority, 인력 배분 모두 분해표 위에서 결정."
+        }
+      ]
+    },
+    {
+      "number": 9,
+      "emoji": "🏗️",
+      "title": "Producer-Consumer Pipeline Architecture",
+      "titleKr": "프로듀서-컨슈머 파이프라인 아키텍처",
+      "tldr": "6-stage를 무엇으로 묶을지(async/sync, GPU/CPU 분리), stage 사이 queue를 어떻게 운영할지(backpressure, drop policy), failure mode(queue saturation, GPU starvation, head-of-line blocking)를 어떻게 다룰지가 streaming pipeline 아키텍처의 본질이다. Ray, asyncio, multiprocessing의 선택은 이 결정에서 파생된다.",
+      "topics": [
+        "Producer-consumer pattern in streaming pipeline",
+        "Async vs sync stage 분리",
+        "GPU stage와 CPU stage의 isolation",
+        "Queue 운영: backpressure, drop policy",
+        "Ray / asyncio / multiprocessing 비교",
+        "Failure mode: queue saturation, GPU starvation, HOL blocking",
+        "Invariant contract — plug-and-play 6-stage",
+        "Lock-free queue와 multi-producer-multi-consumer 패턴"
+      ],
+      "learningGoals": [
+        "Real-time video LLM의 6-stage를 producer-consumer 그래프로 그려 stage 사이의 queue / backpressure를 명시할 수 있다",
+        "async stage, sync stage, GPU stage, CPU stage를 4-quadrant로 분류하고 각 quadrant에 적합한 concurrency 모델을 선택할 수 있다",
+        "Ray actor, asyncio task, multiprocessing process 3개 선택지의 trade(memory share, IPC cost, GIL)을 비교할 수 있다",
+        "Queue saturation, GPU starvation, head-of-line blocking 3대 failure mode를 detection signal과 함께 설명할 수 있다",
+        "6-stage invariant contract를 정의해 stage 구현을 plug-and-play로 만들 수 있다"
+      ],
+      "overview": "Chapter 6-8까지가 각 stage 내부의 최적화였다면 이 챕터는 *stage 사이를 잇는 system*을 다룬다. Real-time pipeline의 가장 어려운 결정은 stage 알고리즘이 아니라 **stage들을 어떻게 묶고 어떻게 통신시키느냐**다. 6개 stage가 각각 자기 budget을 지킨다고 해서 전체가 work하지 않는다. Stage 사이 queue가 잘못 운영되면 한 stage의 spike가 전체 pipeline을 파괴한다.\n\n핵심 멘탈 모델 시프트: General video LLM은 'sampler.select()'가 unit이었다. Hour-scale은 'memory.write() / memory.retrieve()'가 unit이었다. **Real-time은 'stage.process(frame) → queue.put(token)'의 producer-consumer 그래프 전체가 unit이다**. 한 stage만 들어내서 swap할 수 있게 *invariant contract*를 정의하는 게 plug-and-play 아키텍처의 핵심이다.\n\n이 챕터는 Ray actor, asyncio, multiprocessing의 3-way 비교를 하고, queue 운영의 backpressure / drop policy를 production 결정 관점에서 다룬다. Failure mode를 detection signal과 함께 정리해 incident playbook에 가까운 형태로 마무리한다.",
+      "sections": [
+        {
+          "title": "1. 6-stage를 producer-consumer 그래프로 그리기",
+          "content": "Producer-consumer 패턴은 한 stage가 결과를 queue에 push하고 다음 stage가 pull해 처리하는 구조다. Real-time video LLM의 6-stage를 그래프로 표현하면:\n\n```\n[Capture] →q1→ [Decode] →q2→ [Sample] →q3→ [Encode] →q4→ [Reduce] →q5→ [LLM] →q6→ [Response]\n```\n\nQueue가 5개. 각 queue가 운영 결정을 요구한다. (a) **Bounded or unbounded?** Unbounded면 producer가 빠르고 consumer가 느릴 때 메모리 폭발. Real-time에서는 거의 항상 bounded. (b) **Capacity?** 1이면 strict pipeline(producer가 consumer 한 칸만 앞서 감), N이면 burst absorber. Real-time video는 보통 2-8 capacity. (c) **Full일 때 정책?** Block, drop oldest, drop newest, sample down. 이게 backpressure / drop policy의 핵심.\n\nGraph 구조를 보면 결정 포인트가 보인다. Capture와 Decode는 frame-independent해서 parallel. Sample은 sequential dependency가 있어 single-worker. Encode는 batchable해서 multi-frame batch worker. LLM은 KV cache state를 들고 있어 session-affinity. Stage마다 worker 모델이 다르다.\n\n핵심 결정: **'어디서 frame을 drop할 것인가'를 architecture 단에서 정해야 한다**. 모든 queue에서 drop 가능하게 두면 frame이 어디서 사라졌는지 debug 불가. 시니어 결정은 'capture 직후 (q1) 또는 reduce 직후 (q5)' 둘 중 하나로 *drop point를 고정*하는 것이다. q1 drop은 'too fast input' 처리, q5 drop은 'too slow LLM' 처리에 대응한다."
+        },
+        {
+          "title": "2. Async vs sync, GPU vs CPU — 4-quadrant 분류",
+          "content": "Stage를 어떤 concurrency 모델로 실행할지 결정하려면 4-quadrant 분류가 유용하다.\n\n| | Sync (blocking) | Async (non-blocking) |\n|---|---|---|\n| **CPU stage** | thread pool / multiprocessing | asyncio |\n| **GPU stage** | dedicated worker thread + CUDA stream | CUDA graph + async kernel launch |\n\n**Capture (CPU sync)**: 네트워크 socket read나 camera handle은 blocking system call이 많다. Asyncio도 가능하지만 lib 지원 따라 다름. 가장 단순한 건 dedicated thread.\n\n**Decode (GPU+CPU hybrid)**: NVDEC는 GPU async이고 PyCairo/OpenCV는 CPU sync. 둘 다 비-Python time 영역에 머무르므로 GIL 영향 적음. Decode worker를 dedicated thread로 두는 게 표준.\n\n**Sample (CPU async)**: 결정 로직만이라 매우 가볍다 (<1ms). asyncio coroutine으로 충분.\n\n**Encode (GPU sync)**: PyTorch encoder forward. GIL holding이 길어서 asyncio와 충돌. Dedicated worker + CUDA stream으로 isolate. Batching을 위해 micro-batcher 패턴 (Dynamic batch size를 100ms window 내에서 결정).\n\n**Reduce (GPU sync)**: TokenMerge / clustering. Encode와 같은 worker에 넣거나 별 worker에 별 GPU에 split. Multi-GPU면 NVLink로 token 옮기는 cost vs 분리 이득 비교.\n\n**LLM (GPU sync, session-affine)**: vLLM/SGLang process로 분리. KV cache state 때문에 session이 같은 process에 stick. Async API는 vLLM이 제공하지만 backend는 sync.\n\n시니어 직관: GPU 작업끼리도 *같은 GPU에서 같은 stream*이면 직렬, *다른 stream*이면 parallel. 다른 GPU면 IPC cost(NVLink). 한 frame이 encoder GPU에서 LLM GPU로 옮겨가는 데 ~1-2ms (256 token × 4096 dim × fp16 = 2MB / 50GB/s NVLink). 이 IPC cost를 무시하면 multi-GPU 분리가 net loss."
+        },
+        {
+          "title": "3. Ray vs asyncio vs multiprocessing — 어느 도구를 언제",
+          "content": "Concurrency 도구 선택은 stage 분류와 product 요구로부터 역산한다. 3가지 주류 선택지.\n\n**asyncio**. Python coroutine. CPU async에 강함. Multi-GPU나 multi-process로 못 확장. Single-machine + I/O bound stage(capture, response API 송수신) 묶기에 좋음. GIL을 그대로 떠안음 — GPU stage는 별 thread로 release해야 함. 단순 prototype에 가장 빠르다.\n\n**multiprocessing**. Process 단위 isolation. Stage마다 별 process로 두면 GIL 우회. IPC는 pickle + queue로 비용 큼 (256 token × fp16 = 0.5KB per frame이면 OK, 그러나 raw frame은 MB 단위라 IPC 부담). GPU stage 사이에는 CUDA IPC handle 사용 가능. Stage별 reliability isolation에 강함 (한 process 죽어도 다른 stage 살아남음). Production에서 stage 격리 정책으로 자주 채택.\n\n**Ray**. Actor 모델 + distributed. Stage 하나하나를 actor로 두면 cluster-scale로 확장 가능. Object store(Plasma)로 zero-copy shared memory. Multi-node로 LLM serving과 encoder serving을 분리 가능. 단점: framework overhead (cold start, actor scheduler). Single-node에서는 multiprocessing이 더 가볍다.\n\n**선택 가이드**:\n\n- Single-GPU prototype → asyncio + dedicated threads\n- Single-node production → multiprocessing or Ray local\n- Multi-node production → Ray + KubeRay or hand-rolled gRPC\n\n실전에서 자주 보이는 패턴: 'asyncio main loop + thread pool for GPU stages + Ray for LLM serving cluster'. Hybrid다. 'Ray만 쓴다' 또는 'asyncio만 쓴다'는 보통 잘못된 단순화. 각 도구가 잘하는 영역이 다르므로 stage 분류 결과에서 선택.\n\n주의: Triton Inference Server, NVIDIA Riva 같은 *비-Python* serving 도구를 LLM/encoder stage에 두면 GIL을 완전히 우회. Stage 사이 통신은 gRPC. Production 시스템 (Gemini Live 추정)에서 자주 보이는 architecture."
+        },
+        {
+          "title": "4. Failure mode 3대장 — queue saturation, GPU starvation, HOL blocking",
+          "content": "Pipeline의 알고리즘은 happy path에서 잘 돌아도 production에서는 failure mode가 가치를 결정한다. 3대장.\n\n**(1) Queue saturation.** Producer가 consumer보다 빠를 때 queue가 가득 찬다. Bounded queue면 backpressure 발생. 신호: queue.size() 메트릭이 capacity에 수렴. Upstream stage 처리 시간이 점점 늘어남 (block 때문). 해결: (a) drop policy 활성화, (b) consumer worker 추가, (c) producer rate 제한. 좋은 production은 saturation이 발생하기 전에 *drop policy*가 trigger되도록 명시 설계 — 'drop이 graceful degradation'.\n\n**(2) GPU starvation.** GPU worker가 input을 기다리며 idle. 신호: GPU utilization이 30% 이하로 떨어짐. Upstream queue size = 0. CPU stage가 bottleneck. 해결: (a) CPU stage prefetch buffer 늘리기, (b) CPU stage parallel worker 추가, (c) input pipeline에 prefetch_factor 추가. PyTorch DataLoader의 num_workers 패턴을 streaming pipeline에 가져온다.\n\n**(3) Head-of-line blocking.** 한 frame의 처리가 길어져 뒤 frame이 다 막힘. 신호: latency p99이 평균보다 10배 이상 튐. 해결: (a) per-frame timeout, (b) priority queue로 짧은 작업 우선, (c) stage timeout 후 skip. 단순한 방법은 'stage timeout 시 frame drop' — incident에서 reproducibility를 위해 timeout이 deterministic해야 함.\n\n시니어 평가 포인트: 후보가 'pipeline이 잘 도는가'를 묻기 전에 'failure mode가 무엇이고 detection signal이 무엇인가'를 묻는다. 그리고 detection이 가능한 메트릭(queue depth, GPU util, per-stage latency)을 architecture 단에서 1급 객체로 둔다. *Pipeline은 failure mode 정의 위에 서 있다*가 시니어 멘탈 모델."
+        },
+        {
+          "title": "5. Plug-and-play 6-stage — invariant contract",
+          "content": "Plug-and-play 아키텍처의 핵심은 *stage 구현을 swap 가능*하게 만드는 invariant contract다. 'Encoder를 SigLIP에서 InternVideo2로 바꾼다', 'Sampler를 AKS에서 BOLT로 바꾼다' 같은 변경이 *pipeline 코드를 안 건드리고* 가능해야 한다. 그러려면 각 stage의 interface가 정의되어야 한다.\n\n6-stage invariant contract sketch:\n\n```python\nclass Stage(Protocol):\n    name: str\n    def process(self, frame_id: int, payload: Any) -> Any: ...\n    def health(self) -> dict: ...  # latency, queue depth, errors\n    def drop_signal(self) -> bool: ...  # tell upstream to drop\n```\n\n각 stage가 (a) `frame_id`를 invariant로 통과시키고, (b) 자기 health를 노출하고, (c) 'drop이 필요한지' signal을 위로 보낸다. 이 3가지가 plug-and-play의 minimal contract다.\n\n**왜 frame_id 통과가 invariant인가**: 6-stage 끝에서 'response가 어느 frame에 대응하나'를 추적할 수 있어야 한다. Debugging에서도 'p99 spike가 발생한 frame이 어느 stage에서 늘어졌나'를 join하려면 frame_id가 같이 흘러야 한다. 새 stage를 추가할 때 frame_id를 떨어뜨리면 trace가 깨진다.\n\n**왜 drop_signal이 invariant인가**: Downstream이 saturate되면 upstream이 알아야 자기 decisions(sampling rate)을 조정. 'Capture가 30 FPS인데 LLM이 saturate되면 capture가 15 FPS로 떨어진다' 같은 adaptive behavior가 가능해진다. Contract 없이 push만 하면 가운데 queue에서 drop이 일어나고 reproducibility가 사라진다.\n\n**Stage swap 예**:\n\n- Encoder swap: SigLIP → InternVideo2 (Wang et al., arXiv:2403.15377). 같은 contract 따르면 1줄 변경.\n- Sampler swap: AKS → BOLT → Q-Frame. 모두 `process(frame_id, frame) -> selected_frame_id` contract.\n- LLM swap: vLLM → SGLang → TensorRT-LLM. KV cache 운영 차이는 stage 내부로 캡슐화.\n\n이 plug-and-play 사고는 Chapter 10의 A/B testing과 직접 연결된다. 두 stage 구현을 같은 contract 위에서 traffic split해야 신뢰할 만한 비교가 가능. Contract가 없는 시스템에서는 A/B 비교 자체가 의미를 잃는다."
+        }
+      ],
+      "analogy": {
+        "title": "공항 보안 검색대의 컨베이어 시스템",
+        "content": "국제공항 보안 검색대에서 일어나는 일을 떠올려보자. (1) 승객이 짐을 트레이에 담는다(capture). (2) 컨베이어가 X-ray 기계 안으로 짐을 보낸다(decode). (3) X-ray 영상에서 의심 짐을 분류하는 결정(sample). (4) 일반 짐은 통과시키고 의심 짐은 second screening으로 보낸다(encode). (5) Second screening 결과를 통합한다(reduce). (6) 보안 요원이 최종 결정한다(LLM). (7) 승객에게 짐 반환(response).\n\n공항은 모든 producer-consumer 시스템의 교과서다. 각 단계 사이에 trays이 *queue*로 쌓인다. 각 queue가 가득 차면 *backpressure*가 위로 전파된다. X-ray가 느리면 트레이 적재대가 가득 차고 승객은 새 짐을 못 올린다. 이때 공항이 하는 일: 두 번째 X-ray를 켠다(consumer 추가), 또는 'liquids check를 빠르게 skip'한다(drop policy)/'low-risk lane'으로 분리(priority queue).\n\nFailure mode 3대장도 그대로 매핑된다. (a) Queue saturation: 검색대 입구에 줄이 100명. (b) GPU starvation: X-ray 한 대가 5분 동안 짐을 못 받음 (앞에 사람이 짐을 안 올림). (c) Head-of-line blocking: 한 승객이 의심 짐 때문에 5분 걸려서 뒤 50명이 다 막힘.\n\n그리고 plug-and-play는 공항이 X-ray 기계를 새 모델로 바꿀 때 *컨베이어 시스템 전체를 안 건드리는* 것이다. 새 X-ray가 같은 트레이 사이즈, 같은 출력 포트, 같은 throughput 명세를 만족하면 swap이 가능. Invariant contract 그대로다. Streaming video LLM의 producer-consumer 아키텍처는 공항 보안 검색대를 GPU pipeline에 옮긴 것이다 — 모든 운영 결정이 비유의 직관 그대로 성립한다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "Multi-worker streaming pipeline의 sketch. CPU stage는 asyncio, GPU stage는 dedicated thread with CUDA stream. Stage 사이 bounded queue + drop policy. Health metric을 1급 객체로 노출.",
+        "code": "import asyncio\nimport torch\nfrom dataclasses import dataclass\nfrom typing import Any, Optional, Callable\nfrom collections import deque\n\n@dataclass\nclass FramePacket:\n    frame_id: int\n    payload: Any\n    enqueue_ts: float\n\nclass BoundedQueue:\n    def __init__(self, cap: int, name: str, drop_policy: str = \"oldest\"):\n        self.cap = cap; self.name = name; self.drop_policy = drop_policy\n        self.q: deque = deque()\n        self.event = asyncio.Event()\n        self.dropped = 0\n\n    async def put(self, pkt: FramePacket) -> bool:\n        if len(self.q) >= self.cap:\n            if self.drop_policy == \"oldest\":\n                self.q.popleft(); self.dropped += 1\n            elif self.drop_policy == \"newest\":\n                self.dropped += 1; return False\n            else:  # block\n                while len(self.q) >= self.cap:\n                    await asyncio.sleep(0.001)\n        self.q.append(pkt); self.event.set()\n        return True\n\n    async def get(self) -> FramePacket:\n        while not self.q:\n            self.event.clear()\n            await self.event.wait()\n        return self.q.popleft()\n\n    def health(self) -> dict:\n        return {\"name\": self.name, \"depth\": len(self.q),\n                \"cap\": self.cap, \"dropped\": self.dropped,\n                \"saturated\": len(self.q) >= self.cap * 0.9}\n\nclass GPUStage:\n    def __init__(self, name: str, fn: Callable, stream: torch.cuda.Stream):\n        self.name = name; self.fn = fn; self.stream = stream\n        self.latency_ms = deque(maxlen=1000)\n\n    async def run(self, in_q: BoundedQueue, out_q: BoundedQueue):\n        loop = asyncio.get_event_loop()\n        while True:\n            pkt = await in_q.get()\n            t0 = torch.cuda.Event(enable_timing=True)\n            t1 = torch.cuda.Event(enable_timing=True)\n            # Offload GPU work to a thread holding its CUDA stream.\n            def _work():\n                with torch.cuda.stream(self.stream):\n                    t0.record()\n                    out = self.fn(pkt.payload)\n                    t1.record()\n                t1.synchronize()\n                return out, t0.elapsed_time(t1)\n            out, dt = await loop.run_in_executor(None, _work)\n            self.latency_ms.append(dt)\n            await out_q.put(FramePacket(pkt.frame_id, out, pkt.enqueue_ts))\n\nasync def pipeline(stages: list[GPUStage], queues: list[BoundedQueue],\n                   source: Callable):\n    # Source pushes into queues[0]; stage i reads queues[i] and writes queues[i+1].\n    workers = [asyncio.create_task(s.run(queues[i], queues[i+1]))\n               for i, s in enumerate(stages)]\n    async for pkt in source():\n        ok = await queues[0].put(pkt)\n        if not ok:\n            # Backpressure signal: source can lower FPS or skip.\n            await asyncio.sleep(0.005)\n    await asyncio.gather(*workers)",
+        "walkthrough": "네 가지 production-grade 결정이 코드에 보인다. (1) `BoundedQueue`에 `drop_policy`를 명시 — 'oldest', 'newest', 'block' 중 *architecture 단계에서 선택*. Queue가 saturated 됐을 때 어떻게 동작할지를 코드 단에서 단언하는 게 시니어 디자인. (2) `GPUStage.run`이 `loop.run_in_executor`로 GPU 작업을 thread pool에 offload — asyncio main loop을 GPU op이 block하지 않게. CUDA stream을 명시적으로 잡아서 stage 간 stream 분리 가능 (parallel execution). (3) `health()`가 모든 queue/stage에서 1급 객체로 노출 — Prometheus exporter나 dashboard에 그대로 join. *Saturated signal이 metric으로 노출*되므로 alert을 architecture로 정당화 가능. (4) `pipeline` 함수의 source가 `put()` 결과로 `ok=False`를 받으면 sleep — backpressure가 source로 전파되는 path. Capture rate를 자동으로 줄이는 adaptive FPS의 토대. 30 FPS → 15 FPS automatic downshift가 이 한 줄로 구현된다."
+      },
+      "industryEvaluation": {
+        "overview": "Producer-consumer pipeline architecture는 streaming video LLM의 system engineering 영역이다. 시니어 평가에서는 후보가 (a) stage들을 producer-consumer graph로 그릴 수 있는지, (b) failure mode 3대장을 detection signal과 함께 짚는지, (c) Ray/asyncio/multiprocessing의 선택을 stage 분류로부터 역산하는지, (d) invariant contract로 plug-and-play를 설계하는지를 본다.",
+        "whatEngineersLookFor": [
+          "6-stage를 producer-consumer graph로 그리고 각 queue의 운영 정책(bound, drop) 명시",
+          "async/sync × CPU/GPU 4-quadrant 분류와 각 quadrant의 concurrency 모델 매칭",
+          "Ray/asyncio/multiprocessing을 'single-node prototype vs multi-node production'으로 자연스럽게 분리",
+          "Failure mode 3대장(saturation, starvation, HOL)을 detection metric과 함께 정의",
+          "Plug-and-play를 위해 frame_id, health, drop_signal 같은 invariant contract를 stage 단에서 강제"
+        ],
+        "redFlags": [
+          "6-stage를 모두 하나의 asyncio coroutine으로 묶음 (GPU stage가 main loop을 block)",
+          "Queue를 unbounded로 두고 'OS가 알아서 다룬다'고 답함",
+          "Drop policy를 모든 queue에서 가능하게 두고 *drop point를 fix하지 않음*",
+          "Ray를 'distributed니까 production에 좋다'고 단순 추천 — single-node overhead 무시",
+          "Stage swap을 위한 contract를 정의 안 하고 'code refactoring으로 매번 바꾸면 된다'고 답함"
+        ],
+        "interviewQuestions": [
+          "**Q1. Drop point 고정.** 30 FPS streaming pipeline에서 LLM이 가끔 spike를 일으켜 q5가 saturate된다. Drop을 q1(capture 직후) 또는 q5(reduce 직후) 어디서 일어나게 architecture를 잡을지, 두 선택의 trade를 explain하라.",
+          "**Q2. Concurrency 도구 선택.** Single-GPU prototype을 production multi-node 시스템으로 확장한다. 어떤 stage를 Ray actor로, 어떤 stage를 asyncio task로, 어떤 stage를 별 process로 둘 것인가? 각 결정의 근거를 4-quadrant 분류로 정당화하라.",
+          "**Q3. Failure mode detection.** GPU utilization이 30%로 떨어지고 latency p99이 평소의 5배가 됐다는 alert이 왔다. 3대장 중 어떤 failure mode일 가능성이 높은가? 어떤 추가 metric을 보고 진단을 확정할 것인가? 해결 액션은?"
+        ],
+        "masteryVsFamiliar": "**Familiar**: producer-consumer 패턴을 안다. Ray/asyncio/multiprocessing 이름을 들어봤다. **Mastery**: 6-stage를 producer-consumer graph로 그려 각 queue의 bound/drop policy를 architecture 단에서 단언한다. CPU/GPU × async/sync 4-quadrant로 stage를 분류해 concurrency 도구를 stage별로 매칭하고, drop point를 architecture로 *고정*해 debug-friendly한 시스템을 만든다. Failure mode 3대장을 detection signal과 함께 incident playbook으로 정리하고, plug-and-play를 위한 invariant contract(frame_id, health, drop_signal)로 stage swap을 *코드 변경 없이* 가능하게 한다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "6-stage를 producer-consumer graph로 그려야 운영 결정이 보인다",
+          "content": "각 queue의 bound, capacity, drop policy가 *architecture 단계에서* 명시되어야 한다. 'OS가 알아서'는 production에서 실패한다."
+        },
+        {
+          "title": "Drop point는 architecture로 고정해야 한다",
+          "content": "모든 queue에서 drop 가능하면 어디서 frame이 사라졌는지 debug 불가. q1(input too fast) 또는 q5(LLM too slow) 한 곳으로 고정."
+        },
+        {
+          "title": "Async/sync × CPU/GPU 4-quadrant로 stage를 분류한다",
+          "content": "각 quadrant에 적합한 concurrency 모델이 다르다. GPU stage는 dedicated worker + CUDA stream, CPU async stage는 asyncio coroutine."
+        },
+        {
+          "title": "Ray / asyncio / multiprocessing은 stage 분류에서 역산",
+          "content": "asyncio = single-node prototype, multiprocessing = stage 격리 + GIL 우회, Ray = multi-node distributed. Production은 거의 항상 hybrid."
+        },
+        {
+          "title": "Failure mode 3대장: queue saturation, GPU starvation, HOL blocking",
+          "content": "각각 detection signal이 다르다 (queue depth, GPU util, latency tail). Pipeline은 happy path가 아니라 failure mode 정의 위에 서 있다."
+        },
+        {
+          "title": "Plug-and-play는 invariant contract로 가능해진다",
+          "content": "frame_id 통과, health 노출, drop_signal 전파 3가지가 minimal contract. Encoder/sampler/LLM swap이 코드 변경 없이 가능."
+        },
+        {
+          "title": "Backpressure를 source로 전파해야 adaptive FPS가 된다",
+          "content": "Downstream saturated 시 capture rate를 자동 하향. 30 → 15 FPS automatic downshift가 graceful degradation의 기반."
+        },
+        {
+          "title": "Stage 격리가 reliability를 만든다",
+          "content": "Multiprocessing/Ray로 stage를 격리하면 한 stage crash가 전체 pipeline을 죽이지 않음. 'Encoder process가 죽으면 capture/decode는 살아 있고 새 encoder process가 spawn된다'가 production 표준."
+        }
+      ]
+    },
+    {
+      "number": 10,
+      "emoji": "🌐",
+      "title": "Production Deployment & Monitoring",
+      "titleKr": "프로덕션 배포와 모니터링",
+      "tldr": "Real-time video LLM의 production은 latency histogram, drop rate, GPU utilization 3대 metric으로 운영된다. A/B 비교는 same-frame replay나 shadow traffic으로 신뢰성을 확보하고, canary rollout으로 배포 위험을 격리한다. Overload 시 'drop frame vs drop quality'의 graceful degradation 정책, cost-aware autoscaling, Gemini Live / GPT-4o Realtime / Twelve Labs Marengo 같은 실제 시스템의 운영 패턴을 정리한다.",
+      "topics": [
+        "Production observability: latency histogram, drop rate, GPU utilization",
+        "Same-frame replay와 shadow traffic A/B testing",
+        "Canary rollout과 traffic split",
+        "Graceful degradation: drop frame vs drop quality vs drop response",
+        "Cost-aware autoscaling (GPU utilization + queue depth)",
+        "Gemini Live / GPT-4o Realtime / Twelve Labs Marengo 운영 패턴",
+        "Incident playbook과 on-call rotation",
+        "Cost-per-stream metric"
+      ],
+      "learningGoals": [
+        "Real-time video LLM의 3대 observability metric을 정의하고 Prometheus/Datadog dashboard로 design할 수 있다",
+        "Same-frame replay와 shadow traffic 두 A/B testing 패턴의 신뢰성 차이를 product 결정으로 매핑할 수 있다",
+        "Canary rollout을 traffic split + early-warning metric으로 sketch할 수 있다",
+        "Graceful degradation의 3축(drop frame / drop quality / drop response)을 product 요구로부터 정렬할 수 있다",
+        "Cost-per-stream metric을 정의하고 GPU autoscaling을 SLA × cost로 정당화할 수 있다"
+      ],
+      "overview": "Chapter 1-9까지가 real-time video LLM을 *어떻게 만들 것인가*였다면 이 챕터는 *어떻게 운영할 것인가*다. Production은 'algorithm이 좋다'로는 부족하다. 매일 24시간 reliable하게 돌고, 새 모델을 안전하게 배포하고, overload 시 graceful하게 degrade하고, 비용을 통제하는 운영 전체를 다뤄야 한다.\n\n핵심 멘탈 모델 시프트: General/hour-scale video LLM은 benchmark 점수가 성공 기준이었다. Real-time production은 **'1년간 99.9% uptime으로 SLA를 지키면서 cost-per-stream을 control한다'**가 성공 기준이다. Benchmark accuracy 1% 개선이 production p99 latency 30% 증가를 정당화하지 못한다. 평가축이 완전히 달라진다.\n\n이 챕터는 Gemini Live, GPT-4o Realtime API, Twelve Labs Marengo 같은 실제 production 시스템의 운영 패턴을 references로 사용한다. Observability, A/B testing, canary rollout, graceful degradation, autoscaling을 정리하고 incident playbook의 형태로 마무리한다.",
+      "sections": [
+        {
+          "title": "1. 3대 observability metric — latency histogram, drop rate, GPU utilization",
+          "content": "Real-time video LLM production의 dashboard는 3개 핵심 metric 위에 서 있다. 다른 100개 metric은 이 3개에서 파생되거나 troubleshooting 도구에 가깝다.\n\n**(1) Latency histogram (per stage, per percentile).** Chapter 8에서 정의한 6-stage breakdown × p50/p95/p99. Single number가 아니라 *분포 자체*를 dashboard에 표시. Prometheus에서는 `histogram_quantile()` 함수로 quantile 계산, Grafana로 stage별 heatmap. 시계열 위에서 분포의 *shape change*를 본다. 평균이 같아도 multimodal로 변하면 latent 문제. 'p99이 p95의 1.5배를 넘어가면 alert' 같은 정책으로 운영.\n\n**(2) Drop rate (per drop point, per reason).** Chapter 9에서 *drop point를 architecture로 고정*했으므로 정확한 measurement가 가능. Drop reason은 (a) queue saturation, (b) stage timeout, (c) explicit policy (overload mode). 각 reason별 rate를 분리해서 표시해야 'queue가 차서 drop'인지 'LLM이 느려서 timeout'인지 즉시 식별 가능. Drop rate가 0%인 것이 항상 좋은 게 아니라 product 정책이 'soft drop으로 quality 보호'면 일정 drop을 허용. 정책과 metric이 align되어야 한다.\n\n**(3) GPU utilization (per GPU, per stage).** GPU가 놀고 있으면 cost 낭비, 가득 차 있으면 queue saturation. *Saturated point*는 보통 80-85%. NVIDIA DCGM exporter로 SM utilization, memory utilization, NVLink throughput을 모두 수집. Stream concurrency를 측정하려면 NVML보다 Nsight system trace의 sample이 더 정확. Multi-tenant serving에서는 GPU utilization × concurrent streams로 *per-stream cost*를 환산.\n\n그 외 메트릭은 이 3개의 함수: queue depth는 latency histogram의 leading indicator, error rate는 drop rate의 한 reason, throughput은 GPU utilization의 derivative. 3대를 명확히 잡으면 dashboard가 100개 metric을 다 보지 않아도 운영 가능.\n\n시니어 결정 포인트: **alert을 무엇으로 걸 것인가**. 너무 민감하면 alert fatigue, 너무 둔하면 incident 놓침. 보통 'p99 latency > SLA × 1.5', 'drop rate > 1%', 'GPU utilization < 20% for 5 min'을 page-trigger로 설정. Lower severity는 ticket으로."
+        },
+        {
+          "title": "2. A/B testing for video LLM — same-frame replay와 shadow traffic",
+          "content": "두 pipeline 변종을 비교할 때 *어느 쪽이 더 나은가*를 production traffic으로 측정하는 게 A/B testing이다. Video LLM은 일반 web A/B와 다른 신뢰성 문제가 있다.\n\n**문제**: 같은 video stream에 대한 두 pipeline의 응답을 비교하려면 두 pipeline이 *같은 input*을 받아야 하는데, traffic split (user 50% A, 50% B)으로 하면 사용자가 보는 stream이 다르고 *상황*도 다르다. 'Pipeline A의 latency가 낮다'가 algorithm 차이인지 stream 차이인지 모른다.\n\n**Same-frame replay**. Production에서 잘 동작한 stream을 녹화해두고 두 pipeline에 동일 input을 흘려 비교. Ground-truth control이 가능. 단점: production load와 traffic distribution을 모방 못 함. 실험실 결과가 production에서 재현 안 되는 경우 많음. 새 alg을 평가할 때 *initial gate*로 적합.\n\n**Shadow traffic**. Production user의 stream을 *mirror*해서 두 pipeline에 동시에 보냄. Pipeline A의 응답만 user에게 전달, B는 evaluation만. Cost 증가하지만 (~2x) 동일 input + production distribution. Latency, drop rate, output quality를 fair comparison. 단점: B의 응답을 user에게 안 줘서 *interactive metric* (user follow-up question 비율 등) 측정 불가.\n\n**Traffic split**. 일반 web A/B의 video version. User-level split 또는 stream-level split. 동일 input 보장은 안 되지만 *interactive metric* 측정 가능. Power 부족하기 쉬워서 sample size가 큼.\n\n실전 결합 패턴: (1) same-frame replay로 algorithm correctness 1차 gate, (2) shadow traffic으로 production-load latency/quality 2차 gate, (3) traffic split (1% canary)으로 interactive metric 측정. 단계적 escalation.\n\n주의: **latency metric은 shadow traffic에서 가장 신뢰**. Algorithm metric (accuracy proxy)은 *same-frame이 필요*. User satisfaction은 *traffic split이 유일한 방법*. 어느 metric을 비교하느냐에 따라 적합한 testing 패턴이 다르다."
+        },
+        {
+          "title": "3. Canary rollout — 새 모델을 안전하게 배포하기",
+          "content": "Canary rollout은 새 버전을 적은 traffic부터 시작해 점진적으로 늘리며 problem을 일찍 detect하는 패턴이다. Real-time video LLM에 적용 시 특수성.\n\n**단계 sketch**:\n\n```\n1%   for 1 hour  → 자동 게이트 (early metric)\n5%   for 1 hour  → 자동 게이트\n25%  for 1 hour  → 자동 게이트 (large enough for power)\n50%  for 4 hours → 자동 게이트 (off-peak ↔ peak 둘 다 보기)\n100% → full rollout\n```\n\n각 단계에서 *early-warning metric*을 봐서 자동 abort. 보통 (a) p99 latency가 baseline의 1.3배 초과, (b) drop rate > 2%, (c) GPU utilization > 90% sustained, (d) error rate > baseline × 2. 자동 게이트가 잡지 못하는 *quality regression*은 manual review.\n\n**Stream-level affinity**. 한 user의 stream은 *한 버전에 stick*해야 한다. Canary와 baseline을 frame-by-frame 섞으면 (a) 같은 KV cache를 못 쓰고, (b) user가 'sometimes 잘 답함, sometimes 못 답함'으로 incoherent하게 느낌. Routing layer에서 session_id hashing으로 affinity 보장.\n\n**Rollback 메커니즘**. Canary 도중 문제를 발견하면 *즉시* baseline으로 traffic을 돌려야 한다. Traffic split을 routing layer에서 control하면 1초 안에 rollback 가능. Code/binary 배포는 더 느려서 emergency에서 부족. 시니어 결정: 'canary 도중 rollback button을 한 손에 둔다'.\n\n**Multi-region**. Production 시스템은 region 단위로 rollout. 'US-East 1% canary 성공' → 'US-East 100% rollout' → 'EU-West 1% canary' → ... 식. Region별 timezone/usage pattern 차이로 catch되는 bug가 다르다. Gemini Live가 region별 staged rollout으로 운영되는 것으로 평가됨.\n\n실전 함정: canary 1%가 너무 작아서 *quiet hours에 metric이 stable로 보임*. Off-peak 시간에 1%만 보면 noise에 묻힘. Peak hours 포함된 윈도우로 stage gating을 잡거나, *sample size 기반* gating(예: '최소 10K frame 후에 평가') 으로 보강."
+        },
+        {
+          "title": "4. Graceful degradation — overload 시 무엇을 잃을 것인가",
+          "content": "Production에서 overload는 *언제든* 일어난다. Trending event로 traffic 2x, 새 region launch 시 underprovision, GPU vendor incident. 'Graceful하게 degrade한다'는 시스템이 죽지 않고 *서비스 quality를 의도적으로 낮춰* 살아남는다는 뜻. 3가지 dial.\n\n**(a) Drop frame**. FPS를 30 → 15 → 10으로 자동 하향. Capture stage에서 drop. Latency budget이 살아남는다. User는 'frame이 약간 끊기는 느낌'으로 인지하지만 응답 자체는 받는다. Sports / interactive visualization product에서는 강한 degradation으로 느껴짐.\n\n**(b) Drop quality**. Encoder를 SigLIP-Large에서 SigLIP-Small로 swap, token 수를 256에서 64로, LLM을 70B에서 7B로 fallback. 알고리즘 quality는 떨어지지만 throughput과 latency가 늘어남. User는 '응답이 약간 덜 정확해진 느낌'으로 인지. Meeting summarization / chat product에서 graceful.\n\n**(c) Drop response**. Proactive response trigger를 off, user explicit query에만 응답. Decode 횟수를 줄여 prefill에 budget을 몰아준다. Video understanding 기반 추천 같은 product가 사라지지만 core video chat은 유지.\n\n시니어 결정: **product가 어떤 degradation을 견딜 수 있는가**를 사전 협의. Sports live 해설은 'frame drop = product death'. Meeting summarization은 'frame drop OK, quality drop은 받아들임'. 둘이 다른 fallback 순서로 운영. 'overload 시 알아서 잘 한다'는 답은 시스템이 deterministic하지 않아서 incident response를 망친다.\n\n**자동화 vs 수동.** Drop frame은 보통 자동 (capture stage backpressure). Drop quality는 *traffic 임계값 기반 자동*이거나 *수동 toggle*. Drop response는 거의 항상 수동 (product impact 크므로). Toggle을 LaunchDarkly / 자체 feature flag로 두면 incident 중 빠르게 active 가능.\n\nGemini Live의 production rollout 초기 보고: low-resource 디바이스에서 'frame을 자동으로 줄여 latency를 유지하는' behavior가 명시적. (a)+(b) hybrid로 운영된 것으로 평가."
+        },
+        {
+          "title": "5. Cost-aware autoscaling과 incident playbook",
+          "content": "Real-time video LLM의 cost 단위는 *per-stream-hour*다. 한 stream을 1시간 처리하는 데 GPU $X. 이 metric을 정의 안 하면 cost optimization을 못 한다.\n\n**Cost-per-stream 계산**:\n\n```\ncost_per_stream_hour = (gpu_hour_price × gpu_count) / concurrent_streams\n```\n\nH100 spot $2/hr, 4 GPU node $8/hr, 동시 20 stream → $0.4/stream-hour. SLA p99 30ms에서 동시 30 stream으로 올리면 $0.27. 그러나 30 stream이면 p99이 50ms로 튀어 SLA 위반. *Cost-SLA frontier* 위에서 운영 점을 product와 협상.\n\n**Autoscaling 정책**. 두 signal로 결정.\n\n- **GPU utilization 기반**: 80% 이상 5분 sustained → scale up, 30% 이하 10분 sustained → scale down.\n- **Queue depth 기반**: 모든 stage의 queue depth가 60% 이상 → scale up. Leading indicator로 utilization보다 빠르게 반응.\n\nReal-time은 *scale-up latency*가 critical. K8s에서 새 GPU node를 띄우는 데 cold start 3-5분 걸린다. 그동안 overload가 지속되면 graceful degradation으로 보호. 'autoscaling이 도착하기 전에 degradation으로 살아남는다'가 시니어 운영 직관.\n\n**Warm pool 패턴**. 미리 N개 node를 'warm standby'로 띄워두면 cold start 없이 즉시 traffic 분배. Cost는 + 10-20%지만 SLA 안정. Gemini Live 같은 high-SLA 서비스에서 표준.\n\n**Incident playbook**. 'p99 latency가 SLA × 1.5 초과 alert이 page됐을 때 무엇을 할 것인가'를 미리 결정.\n\n```\nStep 1 (1분 내): dashboard에서 어느 stage가 늘었는지 확인. queue depth와 GPU util 함께 보기.\nStep 2 (5분 내): bottleneck이 GPU면 graceful degradation toggle (drop frame to 15 FPS).\nStep 3 (10분 내): bottleneck이 disappear되면 monitor 모드. 지속되면 emergency scale-up.\nStep 4 (30분 내): root cause가 식별되면 rollback 또는 hotfix.\nStep 5 (사후): post-mortem, dashboard에 새 metric 추가, runbook 업데이트.\n```\n\n이 playbook이 chapter 8의 6-stage breakdown, chapter 9의 producer-consumer architecture, chapter 10의 graceful degradation을 다 사용한다. Production engineering은 이전 챕터의 모든 의사결정이 결합되는 곳이다.\n\n**Production references**. Gemini Live (Google I/O 2024): mobile 디바이스 ~500ms response, region별 staged rollout. GPT-4o Realtime API (OpenAI 2024): voice-to-voice ~232ms, streaming voice in WebSocket. Twelve Labs Marengo / Pegasus: streaming video search/QA, 1 FPS sampling으로 1시간 영상을 quasi-real-time embedding으로 indexing. 세 시스템 모두 (a) 3대 metric 위에 운영, (b) graceful degradation 명시적, (c) regional staged rollout 표준의 패턴을 공유한다.\n\n시니어 평가: production engineering은 '한 chapter의 trick'이 아니라 *모든 chapter의 의사결정이 incident response 5분에 동원되는 능력*이다. 그게 real-time video LLM senior의 정의에 가깝다."
+        }
+      ],
+      "analogy": {
+        "title": "24시간 발전소 운영실",
+        "content": "전력 발전소 control room을 떠올려보자. Operator가 보는 dashboard는 정확히 3개 metric에 집중한다. (1) 출력 전압의 *분포*: 평균만 보지 않는다. p99 spike가 일어나면 transmission grid가 깨진다. (2) 송전 *drop rate*: 일부 라인이 trip돼서 부하가 다른 곳으로 옮겨갔나. (3) 설비 *utilization*: 터빈이 idle하면 fuel 낭비, full capacity면 spike 시 fallback 없음.\n\n새 turbine을 도입할 때 발전소는 즉시 100% 전환하지 않는다. 1%부터 시작해서 1%→5%→25%→100%로 단계적으로 부하를 옮기며 *진동, 발열, 효율*을 측정한다. 어느 단계에서든 metric이 기준 이탈하면 emergency switch로 baseline turbine으로 즉시 복귀. Canary rollout 그대로다.\n\nOverload 상황 — heat wave로 전력 수요 폭증 — 에서 발전소는 *blackout을 막기 위해* (a) 일부 industrial customer의 공급을 줄이고(drop quality), (b) 일부 region의 전압을 95%로 낮추고(drop frame), (c) non-essential service 차단(drop response). 무엇을 잃을지 사전에 협의된 정책으로 운영. '알아서 잘 한다'는 답이 없다.\n\nCost-per-stream은 발전 단가($/kWh)다. Spot price × turbine 수 / 공급 가구. 이 단가를 모르고 발전소를 운영하지 않는다. Real-time video LLM의 production engineering은 24시간 발전소 운영을 GPU pipeline에 옮긴 것이다 — 모든 dashboard, 모든 playbook, 모든 economic decision이 그대로 매핑된다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "Production observability + graceful degradation의 통합 sketch. 3대 metric을 Prometheus exporter로 노출, queue depth + latency tail 기반 자동 degradation, canary traffic split을 routing layer로 control.",
+        "code": "from prometheus_client import Histogram, Counter, Gauge\nfrom dataclasses import dataclass\nfrom enum import Enum\nfrom typing import Callable\nimport time\n\n# === 1) 3대 metric exporters ===\nLATENCY = Histogram(\"video_llm_stage_latency_ms\", \"per-stage latency\",\n                    [\"stage\"], buckets=(5, 10, 20, 33, 50, 100, 200, 500))\nDROPS = Counter(\"video_llm_drops_total\", \"frame drops by reason\",\n                [\"reason\"])  # saturation/timeout/policy\nGPU_UTIL = Gauge(\"video_llm_gpu_utilization\", \"per-gpu SM utilization\",\n                 [\"gpu_id\"])\n\n# === 2) Degradation state machine ===\nclass Mode(Enum):\n    NORMAL = \"normal\"\n    REDUCE_FPS = \"reduce_fps\"        # capture 30 -> 15\n    REDUCE_QUALITY = \"reduce_quality\"  # encoder small + token 64\n    REDUCE_BOTH = \"reduce_both\"\n\n@dataclass\nclass DegradationPolicy:\n    p99_target_ms: float = 50.0\n    queue_high_water: float = 0.7   # 70% capacity triggers escalation\n    queue_low_water: float = 0.3\n    cooldown_s: float = 30.0\n    last_change_ts: float = 0.0\n    mode: Mode = Mode.NORMAL\n\n    def step(self, p99_ms: float, max_queue_ratio: float) -> Mode:\n        now = time.time()\n        if now - self.last_change_ts < self.cooldown_s:\n            return self.mode\n        # Escalate on p99 breach OR queue high-water.\n        if p99_ms > self.p99_target_ms or max_queue_ratio > self.queue_high_water:\n            new = {Mode.NORMAL: Mode.REDUCE_FPS,\n                   Mode.REDUCE_FPS: Mode.REDUCE_BOTH,\n                   Mode.REDUCE_QUALITY: Mode.REDUCE_BOTH,\n                   Mode.REDUCE_BOTH: Mode.REDUCE_BOTH}[self.mode]\n        # De-escalate on stability.\n        elif max_queue_ratio < self.queue_low_water and p99_ms < self.p99_target_ms * 0.8:\n            new = {Mode.NORMAL: Mode.NORMAL,\n                   Mode.REDUCE_FPS: Mode.NORMAL,\n                   Mode.REDUCE_QUALITY: Mode.NORMAL,\n                   Mode.REDUCE_BOTH: Mode.REDUCE_FPS}[self.mode]\n        else:\n            new = self.mode\n        if new != self.mode:\n            self.mode = new; self.last_change_ts = now\n        return new\n\n# === 3) Canary routing with session affinity ===\ndef route_stream(session_id: str, canary_fraction: float,\n                 baseline: Callable, canary: Callable) -> Callable:\n    # Deterministic hash so a session sticks to one version.\n    h = (hash(session_id) & 0xFFFFFFFF) / 2**32\n    return canary if h < canary_fraction else baseline\n\n# === 4) Per-frame instrumentation ===\nclass InstrumentedStage:\n    def __init__(self, name: str, fn: Callable):\n        self.name = name; self.fn = fn\n        self.timer = LATENCY.labels(stage=name)\n\n    def __call__(self, payload):\n        t0 = time.perf_counter()\n        out = self.fn(payload)\n        dt_ms = (time.perf_counter() - t0) * 1000.0\n        self.timer.observe(dt_ms)\n        return out\n\ndef record_drop(reason: str):\n    DROPS.labels(reason=reason).inc()",
+        "walkthrough": "네 가지 production-grade pattern이 코드에 담겨 있다. (1) `LATENCY` Histogram의 bucket이 frame budget 단위(5, 10, 20, 33, 50, ...) — Prometheus histogram quantile이 이 bucket 경계에 맞춰 정확. SLA p99 = 50ms를 정확히 측정하려면 bucket이 50ms 경계를 포함해야 함. (2) `DegradationPolicy.step`의 *cooldown_s*: state oscillation을 막는 핵심. p99이 한 spike만으로 quality drop 발동 후 30초 안에 normal 복귀 시 시스템이 불안정해짐. Hysteresis(high-water + low-water 분리)와 cooldown 둘 다 필요. (3) `route_stream`의 `hash(session_id)` 기반 routing — Chapter 9의 stream-level affinity 그대로. 같은 user는 항상 같은 버전. Canary rollout 시 'sometimes A sometimes B'로 incoherent UX 방지. (4) `InstrumentedStage`가 어떤 fn도 wrapping해 latency 측정 — Chapter 8의 6-stage profiling이 production observability로 자연스럽게 연결. *Wrapping pattern이라 instrumentation을 stage 구현에 강제하지 않음* — plug-and-play contract와 일치."
+      },
+      "industryEvaluation": {
+        "overview": "Production deployment & monitoring은 모든 이전 챕터의 의사결정이 incident response 5분에 동원되는 영역이다. 시니어 평가에서는 후보가 (a) 3대 metric 위에 운영 사고를 정렬하는지, (b) A/B testing의 신뢰성 trade를 product 결정으로 매핑하는지, (c) graceful degradation을 product 요구로부터 정렬하는지, (d) cost-per-stream과 SLA frontier를 정량적으로 협상하는지를 본다.",
+        "whatEngineersLookFor": [
+          "3대 metric (latency histogram, drop rate, GPU utilization)을 dashboard 설계의 axis로 정렬",
+          "same-frame replay / shadow traffic / traffic split을 비교 metric별로 적합한 testing 패턴으로 매칭",
+          "Canary rollout에서 stream-level affinity와 자동 abort gate를 architecture로 강제",
+          "Graceful degradation의 3축(frame/quality/response)을 product impact 순서로 사전 협의",
+          "Cost-per-stream을 SLA × concurrent_streams의 frontier 위에서 협상"
+        ],
+        "redFlags": [
+          "Latency를 single number(평균 또는 p50)로 dashboard에 표시",
+          "A/B testing을 traffic split만 알고 same-frame/shadow를 모름",
+          "Canary를 1% → 100% 한 번에 (점진적 단계와 자동 abort 없음)",
+          "Graceful degradation 정책 없이 'overload 시 알아서 한다'고 답",
+          "Cost-per-stream metric 정의 없이 GPU 추가만 답"
+        ],
+        "interviewQuestions": [
+          "**Q1. A/B testing 패턴 선택.** 새 encoder를 production에 도입한다. (a) algorithm correctness, (b) production latency, (c) user satisfaction 3가지 metric을 각각 어떤 A/B 패턴(same-frame replay / shadow traffic / traffic split)으로 측정할 것인지 정당화하라.",
+          "**Q2. Graceful degradation 정책.** Sports live 해설 product와 meeting summarization product가 같은 video LLM 시스템을 공유한다. 둘이 다른 degradation 정책을 가져야 한다. drop frame / drop quality / drop response의 우선 순위를 각 product마다 다르게 설계하고 정당화하라.",
+          "**Q3. Cost vs SLA frontier.** Concurrent stream 20 → 30으로 늘리면 비용은 33% 줄지만 p99이 30ms → 50ms로 증가한다. Product가 'p99 < 40ms를 약속했다'면 어떤 협상으로 frontier 위 다른 점을 제안할 것인가? Warm pool, autoscaling threshold, region별 차등 운영 등 가용한 dial을 들어 답하라."
+        ],
+        "masteryVsFamiliar": "**Familiar**: Prometheus, canary rollout, A/B testing 이름을 알고 'production 운영이 중요하다'고 답할 수 있다. **Mastery**: 3대 metric 위에 dashboard와 alert을 design하고, A/B testing 패턴을 비교 metric별로 분리한다. Canary를 stream-level affinity + 자동 abort gate로 단계적 escalation하고, graceful degradation 3축을 product 요구로부터 정렬한다. Cost-per-stream metric을 SLA frontier로 협상하고, incident playbook을 이전 챕터의 모든 의사결정과 join해 5분 내 진단을 가능하게 한다. Gemini Live / GPT-4o Realtime / Twelve Labs Marengo 운영 패턴을 references로 자기 시스템 설계 결정을 정당화한다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "Production은 3대 metric 위에 서 있다",
+          "content": "Latency histogram (per stage, per percentile), drop rate (per reason), GPU utilization (per GPU). 다른 metric은 이 3개의 함수. Dashboard와 alert 모두 3대 axis로 정렬."
+        },
+        {
+          "title": "A/B testing은 비교 metric에 따라 패턴이 다르다",
+          "content": "Algorithm correctness = same-frame replay, production latency = shadow traffic, user satisfaction = traffic split. 단일 도구로 다 측정 안 됨."
+        },
+        {
+          "title": "Canary rollout은 stream-level affinity 위에서 escalation",
+          "content": "1% → 5% → 25% → 50% → 100% 자동 게이트, session_id hashing으로 user-stick. p99/drop rate/GPU 초과 시 자동 abort, rollback 1초 내."
+        },
+        {
+          "title": "Graceful degradation 3축: drop frame / drop quality / drop response",
+          "content": "Product 별로 사전 협의된 순서로 자동 발동. Sports = frame이 절대 줄면 안 됨, meeting = quality 줄여도 OK. 알아서 잘 한다는 답은 없다."
+        },
+        {
+          "title": "Cost-per-stream-hour가 cost optimization의 단위",
+          "content": "(gpu_hour × count) / concurrent_streams. SLA frontier 위에서 product와 운영 점 협상. 이 metric 없이 GPU 추가만 답하면 cost 통제 불가."
+        },
+        {
+          "title": "Autoscaling은 queue depth가 leading indicator",
+          "content": "GPU utilization 80%는 lagging, queue depth 60%는 leading. Cold start 3-5분 동안 graceful degradation으로 보호. Warm pool로 high-SLA service 안정화."
+        },
+        {
+          "title": "Incident playbook이 이전 챕터 의사결정을 통합한다",
+          "content": "5분 내 6-stage breakdown으로 bottleneck 식별 → degradation toggle → emergency scale-up → root cause. Chapter 8/9/10이 동시에 동원되는 능력이 시니어의 정의."
+        },
+        {
+          "title": "Production references — Gemini Live / GPT-4o Realtime / Twelve Labs",
+          "content": "세 시스템 모두 (a) 3대 metric, (b) 명시적 graceful degradation, (c) regional staged rollout 공통 패턴. 자기 시스템 설계를 이 references와 join해 정당화하는 게 시니어 communication."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch1: The Real-time Video LLM Problem — Real-time Video LLM — direcf</title>
+  <meta name="description" content="Real-time Video LLM은 &#x27;어떤 프레임을 고를까&#x27;도 &#x27;어떻게 기억할까&#x27;도 아닌, &#x27;latency budget 안에서 끊임없이 들어오는 스트림을 어떻게 처리할까&#x27;라는 시스템 문제다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/multimodal-ai">Real-time Video LLM</a><span class="sep">›</span>
+        <strong>Ch01 The Real-time Video LLM Problem</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 01 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🎯</div>
+      <h1 class="chapter-title">The Real-time Video LLM Problem</h1>
+      <div class="chapter-title-kr">실시간 Video LLM이라는 새로운 문제</div>
+      <div class="chapter-tldr">Real-time Video LLM은 &#x27;어떤 프레임을 고를까&#x27;도 &#x27;어떻게 기억할까&#x27;도 아닌, &#x27;latency budget 안에서 끊임없이 들어오는 스트림을 어떻게 처리할까&#x27;라는 시스템 문제다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-01.png" alt="Chapter 1 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 1 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>General/Hour-scale/Real-time Video LLM의 본질적 차이를 한 문장으로 설명할 수 있다</li><li>VStream-Bench, OVO-Bench, StreamingBench가 각각 측정하는 능력이 무엇인지 구분할 수 있다</li><li>VideoLLM-online의 EOS-based alignment가 왜 streaming의 핵심 idea인지 설명할 수 있다</li><li>대화형/모니터링형/이벤트형 시나리오별 latency budget (p50/p99)을 수치로 제시할 수 있다</li><li>왜 단순히 좋은 sampler + 좋은 memory를 붙여도 real-time이 안 되는지 설명할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>이전 두 코스에서 우리는 video understanding의 두 가지 큰 패러다임을 봤다. <strong>General Video LLM</strong> (1-3분 짜리 짧은 비디오)에서는 '주어진 N개 프레임 중 가장 informative한 K개를 어떻게 고를까'가 핵심이었다 — AKS, BOLT, Frame-Voyager, Q-Frame, AdaRD-Key, FOCUS 같은 sampler 설계가 전부였다. <strong>Hour-scale Video LLM</strong> (수 시간짜리 비디오)에서는 '컨텍스트 윈도우는 유한한데 비디오는 무한할 때 어떻게 기억할까'가 핵심이었다 — LongVU, MovieChat, Flash-VStream, MA-LMM, MovieNet의 memory hierarchy 설계가 답이었다.</p>
+<p><strong>Real-time Video LLM은 이 둘 모두와 본질적으로 다른 문제다.</strong> 비디오가 '주어져 있는' 게 아니다. 비디오는 <strong>끊임없이 들어온다</strong>. 카메라가 매초 30 프레임을 토해내는 동안 LLM은 '아직 다음 프레임이 와도 되는지' 결정해야 하고, 사용자는 '지금 화면에 보이는 것에 대해' 즉각적 응답을 기대한다. 이건 더 이상 'frame selection' 문제도, 'memory compression' 문제도 아니다. <strong>시스템 문제(systems problem)</strong>다. Producer-consumer queue, backpressure, sliding context, encoder latency, KV cache 관리가 모델 아키텍처만큼 중요해진다.</p>
+<p>이 챕터에서는 그 mental model shift를 명시적으로 정립한다. VideoLLM-online (CVPR 2024)의 EOS-based stream alignment가 왜 단순한 트릭이 아니라 'streaming-native' 사고의 결정체인지, VStream-Bench와 OVO-Bench가 정확히 무엇을 측정하려는지, 그리고 Gemini Live나 GPT-4o realtime이 production에서 어떤 latency budget으로 동작하는지를 살펴본다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>왜 &#x27;Sampler 잘 짜기&#x27;와 &#x27;Memory 설계&#x27;만으로는 부족한가</h2><p>General Video LLM에서 frame sampling은 <strong>offline</strong> 문제였다. AKS는 비디오 전체를 본 다음 keyframe을 고르고, Frame-Voyager는 query를 받아 어떤 프레임이 답에 기여할지 학습한다. 이 모든 알고리즘의 공통 가정은 <strong>모든 프레임을 미리 볼 수 있다</strong>는 점이다. Causal 제약이 없다. '나중에 등장할 더 좋은 프레임'을 기다릴 수 있다.</p>
+<p>Real-time에서는 이 가정이 무너진다. 프레임 t를 받았을 때, 우리는 프레임 t+1, t+2가 무엇일지 모른다. 동시에 사용자는 'now, 지금 무엇이 보여요?'라고 묻는다. AKS를 그대로 가져와 쓰면? 모든 프레임이 들어올 때까지 기다려야 하니 latency가 비디오 길이와 같아진다. 즉 <strong>offline sampler를 그대로 streaming에 붙이면 latency가 ∞로 발산한다.</strong></p>
+<p>Hour-scale memory system도 비슷한 함정이 있다. MovieChat의 short-term/long-term memory는 비디오를 chunk 단위로 끊어 미리 encoding한 다음 압축한다. 이건 비디오 길이가 정해져 있을 때만 의미가 있다. 24시간 스트리밍 카메라에 MovieChat 메모리를 그대로 적용하면 long-term memory가 단조 증가하면서 결국 컨텍스트가 터진다. <strong>Memory hierarchy를 streaming에 적용하려면 forgetting 정책이 필수</strong>고, 이건 hour-scale 논문들이 잘 다루지 않은 부분이다.</p>
+<p>그래서 Real-time Video LLM의 mental model은 <strong>Streaming Pipeline + Adaptive Processing</strong>으로 시프트해야 한다. '어떤 프레임을 고를까'가 아니라 '들어오는 스트림을 어떤 paced rate로 consume하고, 어떤 budget 안에 답을 내놓을까'다.</p></div><div class="sb-block"><h2>Real-time Benchmarks: 각각이 정확히 무엇을 측정하는가</h2><p>Senior engineer로서 가장 먼저 점검할 것은 <strong>벤치마크가 정확히 무엇을 측정하는지</strong>다. Real-time을 표방한 벤치마크가 여럿 있지만 측정 능력이 미묘하게 다르다.</p>
+<p><strong>VStream-Bench</strong> (Flash-VStream 논문, NeurIPS 2024): streaming video QA를 측정한다. 비디오의 각 시점 t_i에서 질문이 들어오고, 모델은 t_i까지 본 정보만으로 답해야 한다. 즉 <strong>memory persistence</strong> (과거 정보를 얼마나 잘 유지하는가)와 <strong>causal reasoning</strong>을 평가한다. 정확도뿐만 아니라 frame-by-frame inference time도 측정한다.</p>
+<p><strong>OVO-Bench</strong> (Online Video Understanding, 2024): 'online' 시나리오를 더 명시적으로 다룬다. Backward (과거 회상), Realtime (현재 인식), Forward (proactive prediction) 세 가지 능력을 분리해 측정한다. 핵심 통찰: <strong>real-time 능력은 단일 스코어가 아니라 다축 스코어</strong>다.</p>
+<p><strong>StreamingBench</strong> (2024): proactive response 능력을 측정한다. '뭔가 일어났을 때 모델이 먼저 말할 수 있는가?' 사용자가 묻기 전에 시스템이 알람을 띄울 수 있는지. 이건 monitoring/safety 시나리오의 핵심이다.</p>
+<p><strong>ETBench</strong> (Event-level Temporal Understanding): 이벤트 boundary를 얼마나 정확히 잡는지 측정한다. 'when did X happen?'에 답할 수 있는 능력.</p>
+<p>시니어가 흔히 하는 실수: 'Flash-VStream이 VStream-Bench에서 SOTA니까 우리 시스템에 좋을 거야'라고 결론짓는 것. 실제 production이 monitoring 시나리오라면 StreamingBench 점수가 더 중요할 수 있다. <strong>벤치마크와 시나리오를 매칭하는 능력</strong>이 평가의 시작이다.</p></div><div class="sb-block"><h2>VideoLLM-online과 EOS-based Stream Alignment</h2><p>Real-time Video LLM의 흐름을 바꾼 논문 하나만 꼽으라면 단연 <strong>VideoLLM-online</strong> (Joya Chen et al., CVPR 2024)다. 이 논문의 핵심 기여는 모델 아키텍처가 아니라 <strong>학습 objective의 재정의</strong>다.</p>
+<p>기존 video LLM은 'video → response'를 학습한다. 즉 비디오 전체를 입력으로 받고 한 번의 response를 생성한다. VideoLLM-online은 이걸 streaming에 맞게 재정의한다: 매 프레임이 들어올 때마다 모델은 <strong>'지금 답할까 (response token), 아니면 더 기다릴까 (EOS-like silence token)'</strong>를 결정한다. 이게 바로 <strong>EOS-based stream alignment</strong>다.</p>
+<p>구체적으로, 학습 데이터에서 narration이 등장하는 시점은 'speak' 라벨이 붙고, 그 외 시점은 'silence' (EOS와 유사한 토큰) 라벨이 붙는다. 추론 시 모델은 매 프레임마다 다음 토큰을 sampling한다 — silence가 나오면 다음 프레임을 기다리고, 일반 토큰이 나오면 그때부터 응답을 시작한다.</p>
+<p>왜 이게 중요한가? 기존 video LLM은 '언제 응답해야 하는지'에 대한 모델링이 없다. 사용자가 명시적으로 물어야 답한다. 그래서 proactive response (시스템이 먼저 말함)가 불가능했다. VideoLLM-online은 이걸 <strong>next-token prediction 안에 자연스럽게 녹여낸다</strong>. EOS 토큰이 'I have nothing to say yet'을 의미하도록 재해석한 것이다.</p>
+<p>Micro-design decision으로 읽어야 할 부분은 <strong>왜 별도 trigger network를 두지 않고 LM head 안에 통합했는가</strong>다. 별도 trigger를 두면 두 모듈 사이 동기화 문제가 생기고 backprop이 갈라진다. 같은 헤드 안에 통합하면 모델이 'context'와 'timing'을 jointly 학습한다. 이건 streaming-native 모델 설계의 표준이 됐다.</p></div><div class="sb-block"><h2>Industry: Gemini Live, GPT-4o realtime, Streaming Vision Transformer</h2><p>학계 논문만으로는 real-time의 실제 모습을 알기 어렵다. <strong>Gemini Live</strong>와 <strong>GPT-4o realtime</strong>은 production-grade real-time video LLM의 현주소다.</p>
+<p><strong>Gemini Live</strong> (2024)는 카메라 입력을 받아 실시간 대화한다. 공개된 아키텍처 디테일은 제한적이지만, 알려진 사실은 (1) 비디오를 1-2 FPS로 downsample, (2) 음성 stream과 video stream을 별도 채널로 multiplex, (3) end-to-end latency target은 700ms 수준 (사람과의 자연스러운 turn-taking을 위한 임계점). 학계 SOTA인 VideoLLM-online이 ~300ms throughput을 목표한다면, production은 user-perceived latency를 최우선한다는 점이 다르다.</p>
+<p><strong>GPT-4o realtime</strong> (2024): WebSocket API로 노출된다. 이건 음성+비전 multi-modal streaming의 production blueprint다. 핵심 디자인: (1) <strong>partial response streaming</strong> (모델이 첫 토큰부터 즉시 흘려보냄), (2) <strong>interruption handling</strong> (사용자가 끼어들면 generation을 중단), (3) <strong>VAD (Voice Activity Detection) integration</strong>으로 사용자 말이 끝났음을 빠르게 감지. 비디오 측에서는 client-side encoder를 두어 raw frame이 아닌 embedding을 전송하는 패턴도 보인다.</p>
+<p><strong>Streaming Vision Transformer</strong> (Liang et al., 2023): cross-frame attention을 streaming-friendly하게 재설계한 archi. 핵심은 매 프레임을 독립 encoding하지 않고 <strong>state-carrying transformer</strong>처럼 동작시킨다는 점이다. 즉 frame t의 attention이 frame t-1의 KV를 reuse한다. 이건 KV cache 패턴을 vision encoder에 적용한 좋은 예시다.</p>
+<p>이 시스템들에서 공통적으로 보이는 패턴: <strong>모델 아키텍처보다 데이터 흐름이 더 중요하다</strong>. Frame을 어떻게 enqueue/dequeue하는가, encoder와 LLM을 어떻게 pipeline parallel로 돌리는가, 첫 토큰이 나오기까지 (TTFT) 무엇이 critical path인가 — 이것들이 production real-time의 진짜 문제다.</p></div><div class="sb-block"><h2>Latency Targets: 시나리오별 budget</h2><p>Real-time이라는 단어를 마치 한 가지 의미인 것처럼 쓰는 건 시니어가 가장 자주 잡아내는 사고의 헐거움이다. 시나리오별로 latency budget이 크게 다르다.</p>
+<p><strong>대화형 (Conversational)</strong>: 사용자가 화면을 보면서 모델과 대화. End-to-end latency target은 <strong>&lt;500ms (p50), &lt;1000ms (p99)</strong>. 700ms를 넘으면 자연스러운 turn-taking이 깨진다 (인간 대화의 conversational gap은 평균 200ms 정도). TTFT (Time To First Token)가 특히 중요 — 첫 토큰이 200ms 안에 나오면 사용자는 '빠르다'고 느낀다.</p>
+<p><strong>모니터링 (Monitoring)</strong>: CCTV, 보안, 산업 모니터링. <strong>&lt;100ms p99 latency</strong>가 일반적이다. 사고 발생 시 1초 안에 알람이 떠야 하는데, 시스템 알람 → 사람 인지 → 행동까지 고려하면 모델 추론은 100ms 안에 끝나야 한다. FPS 요구사항도 더 엄격하다 (보통 10-30 FPS).</p>
+<p><strong>이벤트형 (Event-driven / Alerting)</strong>: 특정 이벤트가 일어날 때만 응답. Latency보다 <strong>precision/recall</strong>과 <strong>throughput</strong>이 중요. 24시간 운영 시 false positive가 분당 0.1개를 넘으면 operator가 무시하기 시작한다. 모델 latency는 1-5초까지 허용되는 경우가 많다.</p>
+<p>시니어 평가 시그널: 후보자에게 'real-time video LLM 시스템을 설계하라'고 했을 때 <strong>'어떤 시나리오인가?'를 먼저 묻는지</strong> 보면 된다. Latency budget 없이 아키텍처를 그리기 시작하면 그건 어디서 본 그림을 옮기는 것뿐이다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">방송국 PD vs 라이브 카메라맨</div>
+      <div class="a-body"><p><strong>General Video LLM</strong>은 영화 편집실의 편집자에 가깝다. 촬영본 전체를 받아놓고 '어떤 컷을 살릴까'를 고민한다. 모든 footage가 손에 있고, 되감을 수 있고, 다시 볼 수 있다. <strong>Hour-scale Video LLM</strong>은 다큐멘터리 작가다. 100시간 분량의 raw footage를 어떻게 압축해 카드에 정리할지, 어떤 노트는 즉시 버리고 어떤 노트는 평생 보관할지를 설계한다.</p>
+<p><strong>Real-time Video LLM</strong>은 라이브 방송의 PD다. 카메라가 지금 이 순간을 찍고 있고, 1초 후 무슨 장면이 들어올지 모른다. 시청자는 지연 없는 화면을 기대하고, 광고 들어갈 타이밍은 정해져 있고, MC가 말실수하면 즉시 자막으로 정정해야 한다. PD는 '편집자처럼 다 보고 결정'할 수 없다. '작가처럼 모두 정리'할 시간도 없다. 들어오는 데이터를 정해진 budget 안에 처리하고, 못 따라가는 정보는 과감히 버린다.</p>
+<p>이 비유에서 흥미로운 건 <strong>'버리는 결정'이 PD의 최고 스킬</strong>이라는 점이다. Real-time 시스템도 마찬가지다. 'frame을 dropping하면 안 된다'는 강박을 가진 엔지니어는 real-time 시스템을 못 만든다. <strong>드롭은 design의 일부</strong>다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>Real-time Video LLM의 가장 단순한 형태 — frame stream을 받아 latency budget 안에 process하고, 못 따라가면 drop하는 패턴. 실제 production에서는 더 복잡하지만 이 구조가 모든 streaming pipeline의 뼈대다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import asyncio
+import time
+from collections import deque
+
+class RealTimeVideoLLM:
+    def __init__(self, latency_budget_ms=500, max_queue_size=10):
+        self.budget = latency_budget_ms / 1000.0
+        self.queue = deque(maxlen=max_queue_size)  # 자동 drop
+        self.dropped = 0
+        self.processed = 0
+
+    async def producer(self, camera_stream):
+        async for frame, ts in camera_stream:  # 30 FPS 카메라
+            if len(self.queue) == self.queue.maxlen:
+                self.dropped += 1  # backpressure: oldest frame drop
+            self.queue.append((frame, ts))
+            await asyncio.sleep(0)  # cooperate
+
+    async def consumer(self, model):
+        while True:
+            if not self.queue:
+                await asyncio.sleep(0.001)
+                continue
+            frame, capture_ts = self.queue.popleft()
+            age = time.time() - capture_ts
+            if age &gt; self.budget:
+                self.dropped += 1  # stale frame drop
+                continue
+            start = time.time()
+            response = await model.infer(frame)  # encoder + LLM
+            elapsed = time.time() - start
+            self.processed += 1
+            if elapsed &gt; self.budget:
+                # SLO violation: log and continue
+                print(f&#x27;p99 budget violated: {elapsed*1000:.0f}ms&#x27;)
+            yield response, capture_ts</code></pre>
+      <div class="c-walk"><p>핵심은 세 가지 drop 메커니즘이다. (1) <code>deque(maxlen=...)</code>로 queue overflow 시 oldest를 자동 drop — backpressure의 가장 단순한 형태. (2) <code>age &gt; budget</code> 체크로 stale frame을 process하지 않음 — 이미 늦었으면 답해도 의미 없다. (3) <code>elapsed &gt; budget</code>은 inference 자체가 SLO를 깬 경우 — 알람과 메트릭으로 잡아낸다. 시니어가 이 코드에서 즉시 지적할 부분: <code>model.infer</code>가 single-frame이지만 실제로는 sliding window context를 함께 전달해야 한다 (다음 챕터들의 주제).</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">Real-time video LLM 시스템 설계는 ML 인터뷰에서 **system design + ML knowledge**의 교차점으로 출제된다. ML platform 팀, robotics, autonomous vehicle, AR/VR, surveillance 도메인의 senior+ 포지션에서 자주 등장한다. 평가의 핵심은 후보자가 &#x27;real-time&#x27;을 정량적으로 사고하는가다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>Latency budget을 시나리오별로 정량화 — &#x27;500ms 정도?&#x27;가 아니라 &#x27;TTFT p50 200ms, end-to-end p99 800ms&#x27;처럼 명시</li><li>Offline frame sampling 알고리즘을 streaming에 그대로 못 붙이는 이유를 즉시 설명 (causal 제약)</li><li>벤치마크별 측정 능력 구분 — VStream-Bench의 memory persistence vs StreamingBench의 proactive response</li><li>VideoLLM-online의 EOS alignment 같은 micro-design을 &#x27;why this matters&#x27; 관점에서 해석</li><li>&#x27;drop&#x27;을 design의 일부로 받아들이는 태도 — 모든 프레임을 처리해야 한다는 강박이 없음</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>&#x27;real-time&#x27;을 단일 정의로 사용 — 시나리오 구분 없음</li><li>AKS, BOLT 같은 offline sampler를 real-time에 그대로 쓰겠다고 답함</li><li>Latency target을 묻지 않고 바로 모델 아키텍처부터 그림</li><li>Frame drop을 &#x27;bug&#x27;로 인식 — 모든 프레임을 처리해야 한다고 고집</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>VideoLLM-online이 EOS token으로 streaming을 해결한 방식을 설명하라. 왜 별도 trigger module을 두지 않았는가?</li><li>VStream-Bench와 OVO-Bench 둘 다 SOTA인 모델 A와, OVO-Bench만 SOTA인 모델 B가 있다. 보안 모니터링 시스템에 어떤 걸 선택할 것이며, 그 결정에 추가로 어떤 측정이 필요한가?</li><li>30 FPS 카메라에서 들어오는 비디오에 대해 GPT-4o realtime 수준의 응답성을 내고 싶다. 어떤 latency를 측정할 것이며, p50/p99 target은 얼마로 잡을 것인가?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> **Familiar**: VideoLLM-online, Flash-VStream 같은 논문 이름을 알고 &#x27;streaming video LLM&#x27;이라는 용어를 쓸 수 있다. **Mastery**: 어떤 벤치마크가 어떤 능력을 측정하는지 분리해 설명하고, latency budget을 시나리오별로 정량화하며, &#x27;frame drop은 bug가 아니라 design&#x27;이라는 mental model이 체화되어 있다. 그리고 EOS-based alignment 같은 micro-decision의 동기를 &#x27;왜 다른 방식이 아닌가&#x27;까지 설명할 수 있다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>Mental Model Shift</h3><p>Real-time은 &#x27;sampler 잘 짜기&#x27;도 &#x27;memory 설계&#x27;도 아닌 &#x27;**Streaming Pipeline + Adaptive Processing**&#x27; 문제다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>Causal 제약이 모든 것을 바꾼다</h3><p>Offline sampler를 그대로 streaming에 못 붙인다 — 미래 프레임을 기다릴 수 없다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>벤치마크는 능력별로 분리됨</h3><p>VStream-Bench (memory persistence), OVO-Bench (backward/realtime/forward), StreamingBench (proactive)는 서로 다른 능력을 잰다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>EOS Alignment의 의미</h3><p>VideoLLM-online의 핵심은 next-token prediction 안에 &#x27;언제 말할지&#x27;를 자연스럽게 통합한 것이다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>Latency는 시나리오별 정량화</h3><p>대화형 &lt;500ms p50, 모니터링 &lt;100ms p99, 이벤트형은 throughput과 precision이 우선.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>Production은 TTFT가 핵심</h3><p>Gemini Live, GPT-4o realtime 모두 first-token latency를 user-perceived latency의 proxy로 본다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>Drop은 design의 일부</h3><p>Frame을 버리지 않으려는 강박은 real-time 시스템 설계의 가장 큰 적이다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>시스템 문제로의 전환</h3><p>모델 아키텍처보다 데이터 흐름 (queue, backpressure, pipeline parallelism)이 latency를 결정한다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <span></span>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-02.html">Streaming Input Pipeline →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+</body></html>

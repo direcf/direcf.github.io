@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch8: End-to-End Latency Profiling — Real-time Video LLM — direcf</title>
+  <meta name="description" content="실시간 비디오 LLM의 latency는 6개 stage(capture → decode → sample → encode → reduce → LLM → response)로 쪼개진다. 각 stage의 p50/p95/p99을 따로 측정하고 Amdahl&#x27;s law로 bottleneck을 찾아야 한다. SLA를 &#x27;overall p99&#x27;으로 잡는 건 게으른 답이고, stage별 budget을 분해해야 production에서 reproducible debugging이 가능해진다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/multimodal-ai">Real-time Video LLM</a><span class="sep">›</span>
+        <strong>Ch08 End-to-End Latency Profiling</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 08 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">📊</div>
+      <h1 class="chapter-title">End-to-End Latency Profiling</h1>
+      <div class="chapter-title-kr">엔드투엔드 레이턴시 프로파일링</div>
+      <div class="chapter-tldr">실시간 비디오 LLM의 latency는 6개 stage(capture → decode → sample → encode → reduce → LLM → response)로 쪼개진다. 각 stage의 p50/p95/p99을 따로 측정하고 Amdahl&#x27;s law로 bottleneck을 찾아야 한다. SLA를 &#x27;overall p99&#x27;으로 잡는 건 게으른 답이고, stage별 budget을 분해해야 production에서 reproducible debugging이 가능해진다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-08.png" alt="Chapter 8 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 8 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>Real-time video LLM의 6-stage pipeline을 모두 나열하고 각 stage의 latency 특성(jitter, tail)을 분류할 수 있다</li><li>p50/p95/p99의 statistical 차이와 SLA로 어느 percentile을 잡을지 product 요구에서 역산할 수 있다</li><li>Amdahl&#x27;s law를 streaming pipeline에 적용해 bottleneck stage를 찾고 최적화 ROI를 정량화할 수 있다</li><li>Nvidia Nsight Systems로 GPU stage를 trace하고 async tracing으로 CPU/network stage를 join할 수 있다</li><li>Production latency budget 예시(33ms / 100ms / 500ms)를 stage별로 분해해 sketch할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>Chapter 1-7까지가 'real-time video LLM의 각 stage가 무엇이고 어떻게 최적화하는가'였다면, 이 챕터는 <em>system 관점</em>으로 한 발 빠진다. 실시간 시스템에서 latency는 single number가 아니다. p50과 p99는 다른 quantity이고, 둘 사이의 차이가 <em>systemic jitter</em>의 측정이다. 그리고 6-stage pipeline에서 어느 stage가 bottleneck인지 모르면 어떤 최적화도 ROI를 정당화할 수 없다.</p>
+<p>핵심 멘탈 모델 시프트: General video LLM은 'accuracy'가 1급 metric이었다. Hour-scale은 'memory efficiency'를 같이 봤다. <strong>Real-time은 latency distribution이 1급 metric이다</strong>. 단일 평균이 아니라 분포 전체. 그리고 latency distribution을 다루려면 (a) stage별로 분해, (b) 각 stage의 jitter source 식별, (c) tail (p99)를 별도로 추적, (d) Amdahl's law로 ROI 계산 — 이 4가지를 마스터해야 한다.</p>
+<p>이 챕터는 Nvidia Nsight Systems, CUDA event timing, py-spy, OpenTelemetry, Phoenix 같은 tooling을 함께 다룬다. Production 시스템(Gemini Live, GPT-4o Realtime, Twelve Labs Marengo)의 실측 latency를 references로 사용한다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>1. 6-stage latency breakdown — 무엇을 어떻게 측정할 것인가</h2><p>Real-time video LLM의 latency budget을 정확히 다루려면 stage 분해가 첫걸음이다. 6-stage breakdown은 다음과 같다.</p>
+<table>
+<thead>
+<tr>
+<th>Stage</th>
+<th>무엇</th>
+<th>일반적 latency (30 FPS budget)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>1. Capture</strong></td>
+<td>카메라/네트워크에서 raw frame 수신</td>
+<td>1-5 ms (camera) / 10-50 ms (network)</td>
+</tr>
+<tr>
+<td><strong>2. Decode</strong></td>
+<td>H.264/H.265/AV1 → RGB tensor</td>
+<td>1-3 ms (NVDEC) / 5-15 ms (CPU)</td>
+</tr>
+<tr>
+<td><strong>3. Sample</strong></td>
+<td>adaptive frame sampling 결정</td>
+<td>0.1-1 ms</td>
+</tr>
+<tr>
+<td><strong>4. Encode</strong></td>
+<td>SigLIP/CLIP visual encoding</td>
+<td>5-20 ms (per frame)</td>
+</tr>
+<tr>
+<td><strong>5. Reduce</strong></td>
+<td>token compression (STAR, TokenMerge)</td>
+<td>1-5 ms</td>
+</tr>
+<tr>
+<td><strong>6. LLM</strong></td>
+<td>prefill + (sparse) decode</td>
+<td>5-50 ms</td>
+</tr>
+<tr>
+<td><strong>(7. Response)</strong></td>
+<td>text-to-speech, network return</td>
+<td>10-100 ms</td>
+</tr>
+</tbody>
+</table>
+<p>각 stage의 jitter 특성이 다르다. Capture는 network 환경에 따라 p99가 폭발 (RTP packet loss, retransmit). Decode는 keyframe 주기에 따라 spike (B-frame일 때 backward decode 필요). Encode는 batch가 부분 사용될 때 jitter. LLM은 prefix-cache miss 시 spike.</p>
+<p><strong>측정 도구.</strong> Stage별로 적절한 도구가 다르다. (1) Capture/Decode: CPU/OS 영역 → OpenTelemetry span, kernel trace. (2) Encode/Reduce/LLM: GPU 영역 → CUDA event (<code>torch.cuda.Event(enable_timing=True)</code>). Wall-clock(<code>time.perf_counter()</code>)으로 GPU stage를 재면 async launch 때문에 0에 가깝게 나온다 — 반드시 CUDA event + synchronize. (3) Cross-stage: distributed tracing (OpenTelemetry, Arize Phoenix). 같은 frame_id로 모든 span을 join.</p>
+<p>시니어 관점: 'p99 latency가 200ms이다'라는 답은 의미 없다. '6 stage 중 capture가 p99=80ms, encode가 p99=40ms, LLM이 p99=60ms로 sum이 180ms'가 답이다. 후자가 있어야 어디를 최적화할지 정해진다.</p></div><div class="sb-block"><h2>2. p50 / p95 / p99 — 왜 각각이 다른 product question이 답인가</h2><p>Latency를 single number로 reporting하면 절반의 정보가 사라진다. 분포의 어느 점을 보느냐가 product question을 결정한다.</p>
+<p><strong>p50 (median)</strong>: 'typical user의 경험'. UX 설계의 baseline. Capacity planning에서 average load 계산에 사용. 그러나 p50만 보면 'minority가 끔찍한 경험을 한다'를 못 본다.</p>
+<p><strong>p95</strong>: '20명 중 1명이 겪는 worst case'. Multi-tenant 시스템에서 fairness 관점. SLA contract의 typical 기준선. 'p95 &lt; 100ms' 같은 명세가 가장 흔하다.</p>
+<p><strong>p99</strong>: '100명 중 1명이 겪는 tail'. Tail-latency-sensitive 시스템(거래, 게임, 인터랙티브 응답)의 핵심. <strong>Streaming video LLM에서 p99이 결정적인 이유</strong>: stream이 <em>지속적</em>이라 한 user가 1시간 안에 p99 spike를 36번 (1초당 1번, p99 = 1%) 겪는다. p99=200ms가 평균적으로 좋아 보여도 user 입장에서는 'frame이 자주 끊긴다'.</p>
+<p><strong>p99.9, p99.99</strong>: 극단 tail. 페이먼트, 통신 인프라 수준에서나 의미. Streaming video LLM 시작 단계에서는 over-engineering.</p>
+<p>Product 질문에서 SLA 역산:</p>
+<ul>
+<li>'평상시 자연스러운 응답 느낌' → p50 &lt; 100ms</li>
+<li>'frame drop 안 일어나야 함' → p95 &lt; frame budget (33ms @ 30 FPS)</li>
+<li>'tail spike 없이 안정' → p99 &lt; 2 × frame budget</li>
+<li>'인터랙티브 대화 응답' → p50 &lt; 500ms, p95 &lt; 1s</li>
+</ul>
+<p>SLA 설정의 정치학: 'p99 &lt; 33ms' 같은 aggressive SLA는 비용이 제곱으로 증가한다. p95에서 p99로 옮기는 데 GPU 2-3배 필요한 경우가 많다. Product에서 '진짜 어디 percentile이 product 가치를 결정하는가'를 명시 안 하면 무한한 비용을 쓰게 된다.</p></div><div class="sb-block"><h2>3. Amdahl&#x27;s law for streaming pipeline — ROI 계산</h2><p>Bottleneck을 찾았다고 최적화가 정당화되는 게 아니다. Amdahl's law를 streaming pipeline 버전으로 적용해야 한다. 총 latency가 L이고 한 stage가 f × L을 차지하면, 그 stage를 s배 빠르게 했을 때 전체 speedup은:</p>
+<pre><code>speedup = 1 / ((1 - f) + f/s)
+</code></pre>
+<p>실전 예. 총 latency 100ms, encoder가 40ms(f=0.4). Encoder를 4배 빠르게 했을 때:</p>
+<pre><code>speedup = 1 / (0.6 + 0.4/4) = 1 / 0.7 ≈ 1.43x
+</code></pre>
+<p>즉 encoder를 75% 줄여도 전체는 30% 단축. 만약 LLM이 50ms로 가장 크면 encoder 4배 최적화는 ROI가 그보다 낮다.</p>
+<p>Streaming pipeline의 변종: stage들이 <em>parallel</em>하게 돌면 max가 latency다. Pipeline staging이 되어 있다면:</p>
+<pre><code>frame N capture → decode → encode → ... → response
+frame N+1            capture → decode → encode → ...
+</code></pre>
+<p>각 stage가 별도 worker라면 throughput latency = max(stage latency)이고 critical path latency = sum이다. 'Frame이 33ms마다 들어가는데 처리는 100ms 걸린다'면 throughput은 OK(max stage가 33ms 이하면)지만 critical path(같은 frame의 처리 끝까지)는 100ms.</p>
+<p>시니어 결정 포인트: <strong>어느 stage를 parallelize하고 어느 stage를 sequential로 둘 것인가</strong>. Capture-decode-encode는 frame-independent라 parallel. Encode-reduce-LLM은 같은 frame에서 sequential이지만 <em>다른 frame 사이</em>는 parallel. 이 분리가 Chapter 9의 producer-consumer 아키텍처로 이어진다.</p>
+<p>ROI 계산을 빠뜨리고 'encoder를 빠르게 하자'에 6개월 쓰는 게 가장 흔한 실수다. Latency profile을 보지 않고 시작한 optimization은 거의 항상 잘못된 stage를 친다.</p></div><div class="sb-block"><h2>4. Nvidia Nsight Systems와 CUDA event timing</h2><p>GPU stage profiling의 표준 도구는 <strong>Nvidia Nsight Systems</strong> (<code>nsys profile</code>)다. CUDA stream 단위로 모든 kernel launch, memcpy, sync을 timeline으로 시각화. Real-time video LLM에서 Nsight으로 봐야 할 것 세 가지.</p>
+<p><strong>(a) Kernel launch latency.</strong> Python에서 GPU op을 호출하면 host→device launch에 ~5-10 µs overhead. 30 FPS pipeline에서 한 frame당 op 100개 launch하면 0.5-1ms가 launch만으로 쓰인다. Nsight으로 launch 사이 gap을 보면 'CUDA graph capture'로 fix할 후보가 보인다.</p>
+<p><strong>(b) Stream concurrency.</strong> 다른 frame의 encode가 동시에 도는지(stream parallel) 직렬로 도는지(stream serial). PyTorch의 default stream만 쓰면 직렬이다. <code>torch.cuda.Stream()</code> 명시적으로 사용하면 parallel하지만 dependency 관리가 늘어난다. Nsight timeline에서 stream lane을 보면 즉시 진단.</p>
+<p><strong>(c) Memcpy 비용.</strong> Host↔device 또는 device↔device. 8K×4K RGB frame은 ~100MB로 PCIe 4.0 16GB/s에서 6ms. NVDEC에서 직접 GPU memory로 decode하면 이 cost 없음. Nsight으로 NVDEC와 PyTorch tensor 사이 'cudaMemcpy'가 보이면 zero-copy 경로로 옮길 후보.</p>
+<p><strong>CUDA event timing 패턴</strong>:</p>
+<pre><code class="language-python">start = torch.cuda.Event(enable_timing=True)
+end = torch.cuda.Event(enable_timing=True)
+start.record()
+out = encoder(frame)
+end.record()
+torch.cuda.synchronize()
+ms = start.elapsed_time(end)  # in milliseconds
+</code></pre>
+<p>Wall-clock(<code>time.perf_counter()</code>)으로 재면 GPU op은 launch만 측정돼서 0에 가깝다. 항상 CUDA event를 쓰되, async pipeline에서 synchronize() 호출 자체가 latency를 늘릴 수 있다 — 측정 코드를 production hot path에 두면 안 된다. Sampling profiler처럼 1% trace만 켜는 게 표준.</p></div><div class="sb-block"><h2>5. Production latency budget 예시 — 33ms / 100ms / 500ms 운영</h2><p>Production system들의 latency target을 references로 보자. (정확한 숫자는 비공개이므로 <em>추정</em>과 <em>측정 보고</em>에 기반.)</p>
+<p><strong>Gemini Live (Google).</strong> 모바일 디바이스에서 실시간 video chat. Reported median response latency ~500ms (Google I/O 2024). 즉 user 질문 후 응답까지 500ms target. Frame ingestion은 별도로 30 FPS = 33ms budget으로 추정. Response generation은 sparse trigger.</p>
+<p><strong>GPT-4o Realtime API (OpenAI).</strong> Voice-to-voice ~232ms (OpenAI blog). Video까지 합쳐도 보통 &lt; 500ms target. Token streaming으로 first-token latency를 줄이는 데 집중.</p>
+<p><strong>Twelve Labs Marengo / Pegasus.</strong> 비디오 indexing/search 서비스. Real-time이라기보다 quasi-real-time (수초 lag 허용). 그러나 streaming ingestion으로 영상이 들어오는 동안 embedding을 만든다. 1 FPS sampling으로 운영하는 것으로 평가됨.</p>
+<p>실전 budget 분해 예시. 30 FPS = 33ms total budget으로 vision streaming LLM:</p>
+<table>
+<thead>
+<tr>
+<th>Stage</th>
+<th>Target ms</th>
+<th>Note</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Capture</td>
+<td>3</td>
+<td>NVDEC + zero-copy</td>
+</tr>
+<tr>
+<td>Decode</td>
+<td>2</td>
+<td>HW decoder</td>
+</tr>
+<tr>
+<td>Sample (Chapter 3)</td>
+<td>0.5</td>
+<td>adaptive 결정</td>
+</tr>
+<tr>
+<td>Encode (Chapter 5)</td>
+<td>8</td>
+<td>SigLIP small + batch 4</td>
+</tr>
+<tr>
+<td>Reduce (Chapter 6)</td>
+<td>2</td>
+<td>online TokenMerge</td>
+</tr>
+<tr>
+<td>LLM prefill</td>
+<td>15</td>
+<td>256 token incremental</td>
+</tr>
+<tr>
+<td>Buffer/queue</td>
+<td>2.5</td>
+<td>safety margin</td>
+</tr>
+<tr>
+<td><strong>Total</strong></td>
+<td><strong>33</strong></td>
+<td><strong>p95 budget</strong></td>
+</tr>
+</tbody>
+</table>
+<p>p99에서 +30% 여유 두면 ~45ms. SLA를 'p99 &lt; frame budget'으로 잡으면 위 budget을 더 줄여야 한다. 일반적으로 30 FPS는 너무 빡빡해서 production은 10-15 FPS로 운영하고 user에게 '실시간'으로 보이게 한다. Gemini Live가 그렇게 평가됨.</p>
+<p>500ms response budget도 분해:</p>
+<table>
+<thead>
+<tr>
+<th>Stage</th>
+<th>Target ms</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Frame ingestion (latest few seconds)</td>
+<td>0 (이미 처리됨)</td>
+</tr>
+<tr>
+<td>Decode trigger probe</td>
+<td>5</td>
+</tr>
+<tr>
+<td>LLM decode (50 token @ specdec 5ms/tok)</td>
+<td>250</td>
+</tr>
+<tr>
+<td>TTS first audio</td>
+<td>100</td>
+</tr>
+<tr>
+<td>Network return</td>
+<td>50</td>
+</tr>
+<tr>
+<td>Margin</td>
+<td>95</td>
+</tr>
+<tr>
+<td><strong>Total</strong></td>
+<td><strong>500</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Decode가 250ms로 dominant. Speculative decoding이 1.5-2x 가속하면 budget이 100ms 풀린다. 이게 Chapter 7의 speculative decoding 결정이 product 수준에서 매우 가치 있는 이유다.</p>
+<p>시니어 관점: budget 분해를 안 한 채 'p99 &lt; X를 맞춰라'라고 들으면 일을 못 시작한다. 분해표를 만드는 것 자체가 첫 deliverable이고, 분해표가 production communication의 공용 언어가 된다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">고급 레스토랑 키친의 ticket time</div>
+      <div class="a-body"><p>미슐랭 키친에서 서비스 시간 동안 일어나는 일을 떠올려보자. 손님이 주문하면 (1) 서버가 ticket 작성(capture), (2) ticket 프린터가 출력(decode), (3) 헤드 셰프가 어느 station에 보낼지 결정(sample), (4) 각 station에서 조리(encode), (5) 패스에서 plate up(reduce), (6) 서버가 손님 테이블로 운반(LLM), (7) 손님 입에 들어감(response). 각 단계가 '한 ticket의 latency'를 만든다.</p>
+<p>키친 매니저가 보는 metric은 'ticket time'이다. 평균이 8분이라고 만족하지 않는다. 95th percentile이 12분이고 99th가 20분이면 'tonight 손님 100명 중 1명은 20분 기다린다'는 뜻이다. 그 손님은 다시 안 온다. 그래서 모든 키친에 'ticket time histogram'이 KPI로 걸려 있다.</p>
+<p>그리고 키친의 bottleneck은 한 station에 있다. Grill이 만약 station 중 가장 느리면 다른 station이 아무리 빨라도 ticket time이 grill에 묶인다(Amdahl's law). 매니저는 grill에 sous chef 한 명을 더 붙이거나 그릴을 두 대로 만들거나 grill을 거치지 않는 메뉴 비율을 늘리는 결정을 해야 한다. Garde manger(샐러드 station)에 인력을 더 쓰는 건 ticket time을 못 줄인다.</p>
+<p>Streaming video LLM은 정확히 이 키친이다. 6-stage는 station이고, ticket time histogram이 latency distribution이며, p99은 worst customer 100명 중 1명의 경험이다. Amdahl's law는 키친 매니저의 자원 배분 직관이다. Nsight Systems는 키친 안에 CCTV를 설치해서 어느 station에서 ticket이 멈춰 있는지 보는 것이다. 그리고 budget 분해표는 키친 매니저가 매일 아침 회의에서 보는 SLA 운영표다. 이 비유 그대로 production system을 운영하면 거의 다 맞다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>6-stage latency profiler. 각 stage에 같은 frame_id로 span을 찍고, CUDA event로 GPU stage를 정확히 측정. OpenTelemetry 호환 trace를 만들고 stage별 p50/p95/p99 histogram을 유지.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import time
+import torch
+import numpy as np
+from collections import deque, defaultdict
+from contextlib import contextmanager
+from dataclasses import dataclass, field
+from typing import Optional
+
+@dataclass
+class StageProfile:
+    samples: deque = field(default_factory=lambda: deque(maxlen=10000))
+
+    def add(self, ms: float):
+        self.samples.append(ms)
+
+    def percentiles(self) -&gt; dict:
+        if not self.samples:
+            return {&quot;p50&quot;: 0, &quot;p95&quot;: 0, &quot;p99&quot;: 0}
+        arr = np.fromiter(self.samples, dtype=np.float64)
+        return {
+            &quot;p50&quot;: float(np.percentile(arr, 50)),
+            &quot;p95&quot;: float(np.percentile(arr, 95)),
+            &quot;p99&quot;: float(np.percentile(arr, 99)),
+        }
+
+class PipelineProfiler:
+    STAGES = [&quot;capture&quot;, &quot;decode&quot;, &quot;sample&quot;, &quot;encode&quot;,
+              &quot;reduce&quot;, &quot;llm_prefill&quot;, &quot;llm_decode&quot;, &quot;response&quot;]
+
+    def __init__(self, sample_rate: float = 0.01):
+        self.profiles = {s: StageProfile() for s in self.STAGES}
+        self.sample_rate = sample_rate  # only profile 1% of frames
+
+    @contextmanager
+    def stage_cpu(self, name: str, frame_id: int):
+        # CPU/host-side stage timing.
+        if not self._should_sample(frame_id):
+            yield; return
+        t0 = time.perf_counter()
+        yield
+        dt = (time.perf_counter() - t0) * 1000.0
+        self.profiles[name].add(dt)
+
+    @contextmanager
+    def stage_gpu(self, name: str, frame_id: int):
+        # GPU stage timing via CUDA events (wall-clock would lie).
+        if not self._should_sample(frame_id):
+            yield; return
+        start = torch.cuda.Event(enable_timing=True)
+        end = torch.cuda.Event(enable_timing=True)
+        start.record()
+        yield
+        end.record()
+        end.synchronize()
+        self.profiles[name].add(start.elapsed_time(end))
+
+    def _should_sample(self, frame_id: int) -&gt; bool:
+        return (frame_id * 2654435761 &amp; 0xFFFFFFFF) / 2**32 &lt; self.sample_rate
+
+    def report(self) -&gt; dict:
+        return {s: self.profiles[s].percentiles() for s in self.STAGES}
+
+    def critical_path_p99(self) -&gt; float:
+        return sum(self.profiles[s].percentiles()[&quot;p99&quot;] for s in self.STAGES)
+
+    def amdahl_speedup(self, stage: str, factor: float) -&gt; float:
+        total = sum(self.profiles[s].percentiles()[&quot;p99&quot;] for s in self.STAGES)
+        stage_t = self.profiles[stage].percentiles()[&quot;p99&quot;]
+        f = stage_t / total if total &gt; 0 else 0
+        return 1.0 / ((1 - f) + f / factor)</code></pre>
+      <div class="c-walk"><p>네 가지 production-grade 결정이 코드에 담겨 있다. (1) <code>stage_cpu</code> vs <code>stage_gpu</code> 분리: CPU stage는 <code>time.perf_counter()</code>로, GPU stage는 <code>torch.cuda.Event</code>로. 같은 코드로 GPU를 wall-clock으로 재면 async launch 때문에 0이 나온다. 시니어가 자주 빠뜨리는 함정. (2) <code>sample_rate=0.01</code>: 매 frame 측정하면 측정 자체가 latency budget을 침범. 1% sampling으로 충분한 percentile estimation. Hash-based(<code>frame_id * 2654435761</code>)로 deterministic — 같은 frame_id면 항상 같은 결정이라 replay에서 reproducible. (3) <code>report()</code>로 stage별 p50/p95/p99 dictionary 반환 — Prometheus / Datadog / OpenTelemetry에 그대로 export 가능. (4) <code>amdahl_speedup</code>: 'stage X를 factor배 빠르게 했을 때 전체 speedup' 직접 계산. 'Encoder를 4배 빠르게 하는 PR이 의미 있나'에 즉답 가능. 이 한 줄 함수가 6개월 잘못된 최적화를 막는다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">End-to-end latency profiling은 real-time video LLM 시스템 운영의 가장 기본 skill이다. 시니어 평가에서는 후보가 (a) 6-stage 분해를 즉석에서 하는지, (b) p50/p95/p99의 차이를 product question으로 매핑하는지, (c) Amdahl&#x27;s law로 ROI를 계산하기 전에 최적화 PR을 거부할 수 있는지, (d) CUDA event vs wall-clock 같은 측정 함정을 알고 있는지를 본다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>6-stage breakdown을 외워서가 아니라 *역할 분리* 단위로 정의 (frame-indep vs frame-dep 등)</li><li>p50/p95/p99을 &#x27;tighter SLA는 비용 제곱 증가&#x27;로 product와 협상할 수 있는 사고</li><li>Amdahl&#x27;s law 계산을 코드 없이 즉석에서 하는 직관</li><li>Nsight, CUDA event, py-spy, OpenTelemetry 4개 도구의 적용 영역을 정확히 분리</li><li>Sampling-based profiling을 production에 적용하는 1% rate 같은 운영 결정</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>Latency를 single number(평균 또는 p50)로 reporting</li><li>최적화 PR을 ROI 계산 없이 merge</li><li>GPU stage를 wall-clock으로 measuring해 &#x27;fast하다&#x27;고 결론</li><li>Stage 간 dependency를 무시하고 throughput과 critical path를 혼동</li><li>&#x27;p99 &lt; frame budget&#x27;을 product 협의 없이 commit해 무한 비용 약속</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>**Q1. SLA 분해.** Product가 &#x27;p95 &lt; 100ms로 real-time video chat을 만들어달라&#x27;고 요청했다. 6-stage budget을 즉석에서 분해하라. 각 stage의 target ms와 그 합이 100ms에 들어가는지, p99에서 어떻게 행동할지를 표로 제시.</li><li>**Q2. Amdahl ROI.** 총 latency p99 = 120ms, encoder 50ms / LLM 40ms / 기타 30ms. 다음 PR 중 어느 것을 priority로 머지하고 왜인가? (a) encoder를 3배 빠르게 (b) LLM에 speculative decoding (1.5x) (c) reduce stage 0.5ms 줄이기. Amdahl 계산을 보여라.</li><li>**Q3. CUDA event 함정.** &#x27;encoder latency가 0.1ms로 나왔다&#x27;는 PR 메시지를 보고 어떤 질문을 reviewer로서 던질 것인가? 측정 코드에 있을 수 있는 두 함정을 짚어라.</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> **Familiar**: &#x27;latency profiling이 중요하다&#x27;는 답과 p99, Amdahl&#x27;s law 이름을 안다. **Mastery**: 6-stage breakdown을 즉석에서 그려 각 stage의 jitter source까지 분류한다. p50/p95/p99을 streaming 환경에서 user-time exposure로 환산(1시간 stream에서 p99=1% spike 36번)해 product에 설명한다. Amdahl 계산으로 최적화 PR을 한 줄로 거부/승인할 수 있고, CUDA event vs wall-clock, sampling-based profiling, hash-based deterministic sampling 같은 운영 함정을 도구 레벨에서 짚는다. Budget 분해표를 production communication의 공용 언어로 사용한다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>Latency는 6-stage로 분해해서 봐야 한다</h3><p>Capture → decode → sample → encode → reduce → LLM → response. 각 stage의 jitter source와 측정 도구가 다르다. Single number &#x27;p99 = 200ms&#x27;는 의미 없는 보고.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>p50 / p95 / p99은 다른 product question에 답한다</h3><p>p50은 typical UX, p95는 SLA 협상, p99은 streaming 환경에서 user-time exposure (1시간 = 36번 spike). SLA percentile을 product와 명시적으로 협상해야 한다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>Amdahl&#x27;s law가 최적화 PR의 게이트키퍼다</h3><p>speedup = 1 / ((1-f) + f/s). Bottleneck이 아닌 stage 최적화는 ROI 0. PR 머지 전에 분해표로 정량화해야 6개월 헛수고를 막는다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>GPU stage는 반드시 CUDA event로 측정</h3><p>Wall-clock은 async launch 때문에 0에 가깝게 나옴. `torch.cuda.Event(enable_timing=True)` + synchronize. 시니어가 자주 빠뜨리는 함정.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>Sampling-based profiling이 production 표준</h3><p>매 frame 측정은 budget을 침범. 1% rate hash-based deterministic sampling으로 replay reproducibility까지 확보.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>Production 시스템의 latency target은 ~500ms 대화 응답</h3><p>Gemini Live ~500ms, GPT-4o Realtime ~232ms voice-to-voice. Frame ingestion 33ms와 response generation 500ms는 다른 budget으로 분리.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>30 FPS는 너무 빡빡하다, production은 10-15 FPS</h3><p>33ms total budget에 6-stage 분해를 다 채워 넣기 어려움. &#x27;user에게 실시간으로 보이는 최소 FPS&#x27;(10-15)로 운영하고 인지적 fluency만 확보.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>Budget 분해표가 production communication의 공용 언어</h3><p>Stage별 target과 measured값을 같이 보여주는 표가 매주 리뷰의 anchor. SLA 협상, optimization priority, 인력 배분 모두 분해표 위에서 결정.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-07.html">← KV Cache &amp; Continuous Batching for Real-time</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-09.html">Producer-Consumer Pipeline Architecture →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+</body></html>

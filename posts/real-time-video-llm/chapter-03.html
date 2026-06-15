@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch3: Adaptive Frame Sampling under Latency Budget — Real-time Video LLM — direcf</title>
+  <meta name="description" content="Real-time에서 frame sampling은 &#x27;informative함&#x27;을 고르는 문제가 아니라 &#x27;budget이 허락하는 만큼만 처리&#x27;하는 causal, online 결정 문제다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/multimodal-ai">Real-time Video LLM</a><span class="sep">›</span>
+        <strong>Ch03 Adaptive Frame Sampling under Latency Budget</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 03 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🎬</div>
+      <h1 class="chapter-title">Adaptive Frame Sampling under Latency Budget</h1>
+      <div class="chapter-title-kr">Latency Budget 하의 적응적 프레임 샘플링</div>
+      <div class="chapter-tldr">Real-time에서 frame sampling은 &#x27;informative함&#x27;을 고르는 문제가 아니라 &#x27;budget이 허락하는 만큼만 처리&#x27;하는 causal, online 결정 문제다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-03.png" alt="Chapter 3 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 3 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>Offline frame selection (AKS, Frame-Voyager)을 streaming에 그대로 못 쓰는 이유를 설명할 수 있다</li><li>Fixed interval, event-driven, query-aware sampling 각각의 latency/quality 특성을 비교할 수 있다</li><li>VideoLLM-online의 EOS sampling이 &#x27;budget-aware&#x27; 결정을 어떻게 모델 안에 내재화하는지 설명할 수 있다</li><li>Latency 압력이 높을 때 frame skip을 결정하는 policy를 설계할 수 있다</li><li>Adaptive sampling의 quality 손실을 정량적으로 평가하는 metric을 제시할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>이전 코스에서 우리는 frame sampling을 '유한한 K개를 N개 중에서 informative하게 고르는' 문제로 봤다. AKS는 key-frame을 entropy로, BOLT는 budget-aware로, Frame-Voyager는 query-aware로 골랐다. 이 모든 SOTA의 공통점: <strong>전체 비디오가 손에 있다</strong>. K/N ratio를 임의로 정할 수 있고, 어떤 프레임이 답에 기여할지 미리 본 다음 결정한다.</p>
+<p>Real-time에서 이 가정이 무너지면 sampling 문제가 완전히 다른 모습이 된다. 첫째, <strong>causal 제약</strong>: frame t를 처리할지 결정할 때 t+1을 못 본다. 둘째, <strong>budget 제약</strong>: 'best frame'을 고를 시간이 없다. 셋째, <strong>rate 제약</strong>: 카메라가 30 FPS인데 모델이 5 FPS 처리하면 6프레임 중 5개는 '버릴지 미룰지'를 즉시 결정해야 한다.</p>
+<p>이 챕터에서는 이 새로운 문제를 다룬다. Offline에서 streaming으로 mental model이 어떻게 시프트하는지, VideoLLM-online의 EOS 기반 sampling이 왜 단순한 keyframe 선택이 아니라 'response generation과 sampling을 통합한' 한 단계 진화인지, 그리고 production에서 latency 압력이 높을 때 어떻게 graceful degradation할지를 본다.</p>
+<p>Mental model: Offline = '최고의 K를 고른다'. Streaming = <strong>'now, 이 frame을 처리할 만한가? 아니면 미루거나 버릴까?'를 매 frame마다 결정</strong>한다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>Offline에서 Online으로: 무엇이 바뀌는가</h2><p>AKS (NeurIPS 2024)는 비디오 전체에서 entropy 높은 K개 프레임을 고른다. 가장 informative하다고 판단되는 순간들이 답에 기여한다. 이건 <strong>batched optimization</strong> 문제다 — N개 점수를 매기고 top-K를 선택.</p>
+<p>Streaming에서 이걸 그대로 적용하면? 각 frame이 들어올 때마다 'entropy를 계산해 buffer에 쌓고, 1초마다 top-K를 골라 process'한다는 패턴이 가능하다. 하지만 두 가지 문제가 즉시 발생한다.</p>
+<p><strong>문제 1: temporal locality 손실</strong>. Offline AKS는 비디오 끝까지 봐서 'a frame at minute 3 is one of the best 8'을 결정한다. Streaming에서는 '지난 1초 안에서 top-K'만 가능하다. 1초 단위 local maxima와 global maxima가 다르면 답 품질이 떨어진다. <strong>Local greedy = global suboptimal</strong>이라는 고전적 함정.</p>
+<p><strong>문제 2: latency vs quality 동적 trade-off</strong>. Offline에서는 K가 정해진 hyperparameter. Streaming에서는 <strong>K가 실시간 가용 budget의 함수</strong>다. CPU 부하가 높아져서 frame당 200ms 걸리면 K를 줄여야 한다. 부하가 가라앉으면 K를 늘려 quality 회복. 이건 controller 문제 — sampler 자체가 system load의 feedback을 받아야 한다.</p>
+<p>BOLT (NeurIPS 2024)의 budget-aware sampling이 그나마 streaming friendly에 가깝다. 'budget이 K개일 때 어떤 K개가 informative한가'를 미리 학습. Streaming version: '이번 second의 budget이 K개일 때 지금까지 본 frame 중 어떤 K개를 LLM에 넣을까'를 매초 결정. 하지만 BOLT도 결국 chunk 끝까지 봐야 결정 가능하므로 약간의 lookback 지연이 필요하다.</p>
+<p><strong>Streaming sampler의 본질</strong>: '미래를 못 보는 한계' + '시스템 부하에 적응' + '답 품질의 graceful degradation'. 이 세 가지가 동시 성립해야 한다.</p></div><div class="sb-block"><h2>Sampling 전략들: Fixed Interval, Event-Driven, Query-Aware Online</h2><p>Streaming sampling의 대표적 4가지 전략을 latency/quality trade-off 관점에서 비교한다.</p>
+<p><strong>Fixed Interval Sampling</strong>: 매 N frame마다 1개를 process. 가장 단순. 30 FPS → N=6이면 5 FPS 처리. <strong>장점</strong>: 결정적, latency 예측 가능. <strong>단점</strong>: 정보 밀도와 무관하게 균등 sampling → 중요한 순간을 놓침. Baseline으로 항상 비교 대상이 된다.</p>
+<p><strong>Event-Driven Sampling</strong>: 'frame difference', 'motion', 'audio onset' 같은 cheap signal로 '뭔가 일어났을 때만' process. CCTV 시나리오의 표준. 99%의 frame이 같으면 1% 만 LLM에 보냄. <strong>장점</strong>: 평균 처리량 극적 감소. <strong>단점</strong>: detector quality에 의존, false negative가 사건을 놓침. <strong>시그널 detector → trigger → LLM</strong> 패턴 — detector가 latency budget의 첫 단계.</p>
+<p><strong>Query-Aware Online</strong>: 사용자 query가 있을 때 '이 frame이 답에 기여하는가'를 cheap classifier로 판단. Frame-Voyager의 streaming 버전에 해당. <strong>장점</strong>: 사용자 의도 반영. <strong>단점</strong>: query 없을 때 default 정책 필요 (event-driven으로 fallback).</p>
+<p><strong>EOS-Based Sampling (VideoLLM-online)</strong>: 모델 자체가 '지금 process할까, 다음 frame을 기다릴까'를 next-token으로 결정. EOS-like token이 'no response yet'을 의미. <strong>장점</strong>: sampling과 response generation이 jointly 학습됨 — 외부 sampler가 없어도 자체 budget을 인지. <strong>단점</strong>: 학습에 narration-aligned data가 필요, response가 늦어질 위험.</p>
+<p>Production blueprint: <strong>multi-tier sampling</strong>. (1) 모든 frame은 cheap detector (motion + audio)로 trigger 판단. (2) Trigger된 frame만 vision encoder로. (3) 일정 frame batch가 쌓이면 LLM에 sliding window context로 전달. 각 tier가 다음 tier의 latency budget을 조절한다. 'sampling은 한 곳에서 결정'이 아니라 <strong>여러 단계에 분산</strong>된다.</p></div><div class="sb-block"><h2>VideoLLM-online의 EOS-based Sampling, 깊이 보기</h2><p>Chapter 1에서 EOS alignment의 개념을 봤다. 여기서는 sampling 관점에서 다시 본다.</p>
+<p>전통적 video LLM은 'video → response' 매핑이다. 모델이 sampling 결정에 관여하지 않는다 — 외부 sampler가 골라준 frame을 받아 답한다. VideoLLM-online은 다르다. 매 frame이 들어올 때 모델은 prefix <code>[v_1, v_2, ..., v_t]</code>를 보고 next token을 sampling한다. Token vocabulary에 <strong>silence token</strong> (또는 EOS-like)이 있다. Silence가 sampling되면? '아직 답할 만한 게 없다' → 다음 frame을 기다린다. Word token이 sampling되면 그 시점부터 response 시작.</p>
+<p>이게 sampling 문제로 매우 흥미로운 점: <strong>'어떤 frame을 LLM에 넣을지'와 '언제 응답할지'가 같은 메커니즘으로 결정</strong>된다. 모델 입장에서 frame은 매번 들어오지만, 'response'라는 외부 행동은 silence 토큰이 끊길 때만 발생한다. 즉 silence가 자연스러운 'frame skipping (응답 측 skipping)'이다.</p>
+<p>학습 데이터 구조: narration-aligned video (Ego4D, narrated cooking video 같은). 시간 축에 narration이 있는 구간은 word token, 그 외는 silence token으로 라벨링. 모델은 'narration timing'을 학습한다 — '이런 visual pattern이 나오면 narration이 시작될 만하다'.</p>
+<p>Micro-design 통찰: <strong>왜 silence token을 LM vocabulary에 통합했는가, 별도 trigger network가 아니라</strong>. 별도 trigger를 두면 (1) 두 모듈 사이의 동기화 (frame이 들어올 때마다 trigger를 평가) 비용, (2) trigger와 response 사이의 latency, (3) backprop의 분리 (joint 학습 안 됨). LM head 안에 통합하면 모든 게 next-token prediction 하나로 끝난다.</p>
+<p>Production에서의 한계: silence 결정이 'no response'이지 'no processing'이 아니다. 즉 vision encoder forward는 어쨌든 매 frame 돌아간다. 진정한 frame-level skip을 하려면 별도 gating이 필요 — VideoLLM-online + cheap event detector 조합이 production blueprint.</p></div><div class="sb-block"><h2>Latency 압력 하의 Frame Skip Decision</h2><p>Real-time 시스템은 부하가 일정하지 않다. 어떤 순간 모델이 frame당 100ms로 처리하다가, 갑자기 GPU 다른 process가 끼어들어 200ms로 늘어나기도 한다. 이때 시스템은 'graceful degradation'을 해야 한다 — quality는 떨어지더라도 latency는 유지.</p>
+<p><strong>Skip policy</strong>의 구현: queue depth와 frame age를 보고 결정한다.</p>
+<pre><code>if age(frame) &gt; budget * 0.8:
+    # 거의 stale → skip
+elif queue_depth &gt; threshold and frame_is_low_motion:
+    # 부하 + 정보 적음 → skip
+else:
+    process(frame)
+</code></pre>
+<p>이런 단순한 rule이 의외로 강력하다. 'low motion frame을 skip'은 frame difference (이전 frame과의 L2 norm 등)로 cheap 판단. Information-theoretic으로는 redundant frame이라 skip해도 quality 손실이 적다.</p>
+<p><strong>Adaptive K</strong>: VideoLLM-online 스타일에서, response 빈도를 system load에 따라 조절. 부하가 높으면 silence를 더 길게 — 즉 'response를 덜 자주' 생성. 이건 inference-time hyperparameter (temperature, silence bias)로 control 가능. <strong>모델 retraining 없이 budget 조절</strong>이 가능하다는 점이 production에서 중요.</p>
+<p><strong>Tail latency 관리</strong>: p99 latency가 budget을 초과하는 frame이 1%만 있어도 사용자 경험은 크게 나빠진다. Production에서는 'budget 초과가 예상되는 frame은 미리 skip' 패턴을 쓴다. Encoder forward 직전에 'expected latency'를 예측 (recent moving average) — budget 초과 예상 시 skip. 이건 control theory의 PID controller와 유사한 feedback loop.</p>
+<p><strong>Quality 측정</strong>: skip이 quality에 미치는 영향을 정량화하지 않으면 policy를 tune할 수 없다. Production metric: 'response quality (LLM-as-judge로 평가) vs skip rate'. Skip rate 0%에서의 quality를 baseline 100, 20% skip 시 95, 50% skip 시 80 같은 식. 이 curve가 system의 <strong>degradation profile</strong>이다.</p></div><div class="sb-block"><h2>Drop vs Process: 결정 모델</h2><p>Drop과 process의 결정을 수학적으로 모델링하면 흥미로운 그림이 나온다. 각 frame에 대해 <strong>utility (process해서 얻는 quality 이득)</strong>와 <strong>cost (latency 소비)</strong>를 매기고, budget 제약 하에 utility maximization.</p>
+<p>Utility 추정: cheap predictor (motion magnitude, scene change detector, query relevance score) 기반. Frame과 이전 N개 frame의 차이가 크면 utility 높음. Query가 'is there a person'이면 person detector score가 utility의 proxy.</p>
+<p>Cost 추정: 모델의 recent latency moving average. 동적으로 변함.</p>
+<p>결정 rule: <code>process if utility / cost &gt; threshold</code>. Threshold는 system load에 따라 동적 조정 — 부하 높으면 threshold 높임 (process를 덜 함), 부하 낮으면 낮춤.</p>
+<p>이 모델의 학문적 배경은 <strong>online resource allocation</strong> 문제. Streaming setting에서 미래의 utility/cost를 모르므로 한 가지 simple policy로 다 풀 수 없고, <strong>threshold를 system load에 따라 adapt</strong>하는 게 실용적 답.</p>
+<p>Flash-VStream (2024)이 비슷한 아이디어를 memory tier 사이에서 구현했다. STAR (Spatial-Temporal-Abstract-Retrieved) hierarchy에서 frame을 어느 tier로 보낼지를 utility 기반으로 결정. 이건 다음 챕터의 주제이지만, sampling과 memory 관리가 streaming에서 deeply intertwined되어 있음을 시사한다.</p>
+<p>실전 시그널: 후보자가 'skip이 quality에 얼마나 영향을 주는지 어떻게 측정할 것인가?'에 대해 LLM-as-judge나 downstream task accuracy 같은 구체적 metric을 제시할 수 있는가. '대충 봐서 괜찮으면 OK' 식의 답은 production에서 작동하지 않는다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">응급실 트리아지 간호사</div>
+      <div class="a-body"><p>Offline frame sampling은 의대 교수가 '이 100명 환자 차트 중 가장 흥미로운 사례 10개를 골라달라'는 과제와 같다. 모든 차트를 살펴보고, 차분히 비교하고, 최고의 10개를 선정한다. 시간이 얼마나 걸리든 문제 없다.</p>
+<p><strong>Streaming sampling은 응급실 트리아지 간호사</strong>의 일이다. 환자가 끊임없이 들어온다. 한 명을 자세히 보면 다음 환자가 기다리고, 그 사이 위급한 환자가 나타날 수 있다. 간호사는 매 환자에 대해 즉시 결정한다 — '이 환자는 지금 의사에게 (process), 이 환자는 대기실에서 잠시 (queue), 이 환자는 가벼우니 나중에 (skip)'. 그리고 결정적으로, <strong>응급실에 한 번에 들어갈 수 있는 의사의 수가 정해져 있다 (budget)</strong>. 의사가 모두 바쁘면 트리아지 기준이 더 까다로워진다 (load-adaptive threshold).</p>
+<p>VideoLLM-online의 EOS sampling은 '환자가 들어올 때마다 의사가 직접 보고 한 줄 평을 적되, 별 거 아니면 그냥 silence를 적는' 시스템과 같다. 트리아지와 진단이 한 사람에게 통합되어 있다. 효율적이지만 의사가 늘 거기 있어야 한다.</p>
+<p>이 비유에서 핵심: <strong>'모든 환자를 다 본다'는 강박은 시스템을 무너뜨린다</strong>. Real-time sampling도 마찬가지다. Quality는 '몇 명을 보았는가'가 아니라 '본 환자에 대해 얼마나 빨리 정확한 결정을 했는가'로 측정된다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>Adaptive sampling controller — system load와 frame utility를 동시 고려해 process/skip을 결정한다. Production code의 단순화 버전.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import time
+import numpy as np
+from collections import deque
+
+class AdaptiveSampler:
+    def __init__(self, budget_ms=100, ema_alpha=0.2):
+        self.budget = budget_ms / 1000.0
+        self.latency_ema = budget_ms / 1000.0  # init at budget
+        self.alpha = ema_alpha
+        self.prev_frame = None
+        self.threshold = 1.0  # adapts to load
+        self.skip_count = 0
+        self.process_count = 0
+
+    def utility(self, frame):
+        # cheap motion-based utility
+        if self.prev_frame is None:
+            return 1.0
+        diff = np.mean(np.abs(
+            frame.astype(np.float32) - self.prev_frame.astype(np.float32)
+        )) / 255.0
+        return float(diff * 10)  # scaled motion magnitude
+
+    def should_process(self, frame, age):
+        # stale frame: always skip
+        if age &gt; self.budget:
+            self.skip_count += 1
+            return False
+        # adaptive threshold based on recent load
+        load_factor = self.latency_ema / self.budget
+        threshold = self.threshold * (1.0 + load_factor)
+        u = self.utility(frame)
+        if u &lt; threshold:
+            self.skip_count += 1
+            return False
+        self.prev_frame = frame
+        return True
+
+    def report_latency(self, latency_s):
+        self.process_count += 1
+        self.latency_ema = (1 - self.alpha) * self.latency_ema \
+                           + self.alpha * latency_s</code></pre>
+      <div class="c-walk"><p>Core idea는 <strong>threshold가 load_factor에 따라 동적으로 움직인다</strong>는 점이다. <code>latency_ema</code>가 budget의 80%면 load_factor 0.8, threshold가 1.8배로 올라간다 — 더 informative한 frame만 process. 부하가 가라앉으면 threshold가 낮아져 더 많은 frame을 process. <code>utility</code>는 cheap motion-based metric — production에서는 학습된 score head를 쓸 수 있다. <code>report_latency</code>로 EMA를 업데이트하는 feedback loop가 controller의 핵심. 시니어가 즉시 지적할 부분: utility의 1차원 metric만으로는 부족하다 — query-aware utility가 추가되어야 conversational 시나리오에 통한다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">Adaptive sampling은 ML과 systems의 교차점 — &#x27;모델 inference cost를 어떻게 동적으로 관리할 것인가&#x27;라는 production-critical 질문이다. ML platform, edge inference, model serving 팀에서 가장 중시된다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>Offline sampler를 streaming에 그대로 쓸 수 없는 이유 (causal)를 즉시 설명</li><li>Load-adaptive threshold 같은 controller 사고를 자연스럽게 함</li><li>Frame skip을 &#x27;quality degradation&#x27;이 아니라 &#x27;graceful degradation&#x27;으로 받아들임</li><li>VideoLLM-online의 EOS 통합이 sampling 문제의 답이 된다는 통찰</li><li>Skip rate vs quality curve를 SLA의 일부로 다룸</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>Offline sampler (AKS, BOLT)를 그대로 streaming에 쓰겠다는 답변</li><li>Fixed K (frame 수)를 모든 부하 상황에서 동일하게 유지</li><li>Skip을 &#x27;frame loss&#x27;로 인식 — 모든 frame을 처리해야 한다고 고집</li><li>Load feedback loop 없이 static policy만 제시</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>VideoLLM-online의 silence token이 sampling 문제를 어떻게 해결하는지 설명하라. 별도 sampler를 두는 것과 비교해 장단점은?</li><li>GPU 부하가 갑자기 2배로 증가했을 때 frame skip rate를 어떻게 동적으로 조정할 것인가? Quality와의 trade-off를 정량화하라.</li><li>Event-driven sampling과 query-aware sampling을 동시에 사용하는 hybrid system을 설계하라. Detector가 false negative를 낼 때 어떻게 fallback하는가?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> **Familiar**: frame sampling을 안다, &#x27;top-K&#x27; 개념을 쓸 수 있다. **Mastery**: causal/online 제약을 즉시 짚고, load-adaptive threshold controller를 설계할 수 있으며, EOS 통합 같은 micro-design의 의도를 읽고, skip rate vs quality를 SLA metric으로 본다. Skip을 &#x27;버린 frame&#x27;이 아니라 &#x27;시스템 design의 일부&#x27;로 본다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>Causal 제약이 sampling 문제를 바꾼다</h3><p>미래 frame을 못 보므로 offline의 &#x27;top-K&#x27; 사고가 적용 안 된다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>K는 system load의 함수</h3><p>Static K가 아니라 budget이 허락하는 K. 부하가 높으면 K 줄여 quality 희생.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>EOS Sampling = response + sampling 통합</h3><p>VideoLLM-online의 silence token은 &#x27;언제 응답할지&#x27;와 &#x27;어떤 frame이 중요한지&#x27;를 하나의 메커니즘으로 결정.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>Multi-tier sampling이 production 표준</h3><p>Cheap detector → encoder → LLM 순으로 점점 비싼 단계, 각 단계에서 filtering.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>Skip은 graceful degradation의 도구</h3><p>Quality와 latency trade-off의 dial. SLA metric으로 export.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>Load-adaptive threshold가 핵심</h3><p>Controller 사고 — recent latency EMA를 보고 threshold를 동적 조정.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>Stale frame은 항상 drop</h3><p>Budget을 이미 넘긴 frame은 process해도 의미 없다 — 가장 단순한 win.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>Sampling은 한 곳에서 결정하지 않는다</h3><p>Pipeline의 여러 단계에 분산 — capture, detector, encoder, LLM 각각이 자기 단계의 sampling 결정을 함.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-02.html">← Streaming Input Pipeline</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-04.html">Sliding Window &amp; Streaming Context →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+</body></html>
