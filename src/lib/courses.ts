@@ -1,6 +1,7 @@
 import ep from "../data/courses/engineering-philosophy.json";
 import sa from "../data/courses/system-architecture.json";
 import vc from "../data/courses/video-codec.json";
+import jw from "../data/courses/jepa-world-models.json";
 
 export interface Chapter {
   number: number;
@@ -41,6 +42,7 @@ export const COURSES: Record<string, Course> = {
   "engineering-philosophy": ep as Course,
   "system-architecture":   sa as Course,
   "video-codec":           vc as Course,
+  "jepa-world-models":      jw as Course,
 };
 
 export function chapterSlug(n: number) {
