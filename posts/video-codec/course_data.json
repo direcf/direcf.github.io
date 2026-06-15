@@ -1,0 +1,1100 @@
+{
+  "topic": "Video Codecs — H.264, H.265, AV1, and Beyond",
+  "topicKr": "비디오 코덱 — H.264·H.265·AV1과 그 너머",
+  "topicSlug": "video-codec",
+  "level": "intermediate",
+  "codeLanguage": "Python",
+  "categorySlug": "computer-science",
+  "description": "비디오 압축의 원리부터 차세대 코덱까지. Raw 데이터의 압도적 크기에서 시작해, 세 가지 중복·압축 파이프라인·DCT·모션 추정·I/P/B 프레임·GOP를 거쳐 H.264·H.265·AV1의 디테일을 비교한다. 마지막은 ffmpeg로 실전 — 컨테이너·하드웨어 인코더·HLS/DASH ABR 스트리밍까지. Python + ffmpeg 코드 예시 포함.",
+  "chapters": [
+    {
+      "number": 1,
+      "emoji": "📐",
+      "title": "Why Video Compression",
+      "titleKr": "비디오 압축이 필요한 이유",
+      "tldr": "비디오 데이터는 비현실적으로 거대하다. 압축이 없으면 '비디오'라는 미디어 자체가 성립하지 않는다 — 이 한 줄이 모든 코덱의 출발점이다.",
+      "topics": [
+        "Raw 비디오 데이터 크기",
+        "Bitrate와 압축비",
+        "Codec의 정의",
+        "Lossless vs Lossy",
+        "Shannon의 정보이론"
+      ],
+      "learningGoals": [
+        "Raw 비디오 데이터의 실제 크기를 직접 계산할 수 있다",
+        "'Codec'이라는 단어의 어원과 정확한 의미를 안다",
+        "압축이 단순 트릭이 아니라 수학·정보이론에 뿌리를 둔다는 사실을 이해한다",
+        "손실(Lossy)과 무손실(Lossless) 압축의 본질적 차이를 구분한다",
+        "코덱이 풀어야 할 '근본 문제'가 무엇인지 한 문장으로 설명할 수 있다"
+      ],
+      "overview": "비디오 코덱을 공부하기 전에 단 한 가지 사실만 머리에 박으면 된다 — **비디오 데이터는 비현실적으로 거대하다**. 그래서 압축이 필요하다. 이 한 줄이 우리가 앞으로 9개 챕터에 걸쳐 다룰 모든 기술(DCT·모션 추정·CABAC·CTU 등)의 출발점이다.\n\n이번 장은 짧지만 중요하다. 실제 숫자로 'raw 비디오가 얼마나 거대한가'를 체감하고, 그래서 코덱이 어떤 '게임'을 하고 있는지를 직관적으로 그려본다. 압축률 100배·200배는 마법이 아니라, 비디오 데이터에 숨어 있는 거대한 중복을 영리하게 활용하는 정보이론적 게임의 결과다.",
+      "sections": [
+        {
+          "title": "1.1 Raw 비디오의 절망적인 크기",
+          "content": "1080p 30fps 비디오의 raw 데이터량을 계산해 보자. 1920×1080 픽셀, 한 픽셀당 RGB 3채널 × 8비트 = 24비트, 초당 30프레임.\n\n**1920 × 1080 × 24 × 30 ≈ 1,492 Mbps ≈ 1.5 Gbps.**\n\n초당 1.5 기가비트다. 너의 인터넷이 100Mbps라면, 1초 분량을 받는 데 15초가 걸린다. 즉 압축 없이는 실시간 재생이 불가능하다.\n\n4K(3840×2160) 60fps이면 12Gbps, 8K 60fps이면 약 50Gbps. 디스크에 저장한다고 해도 1시간짜리 1080p 영상이 약 650GB다. 우리가 일상에서 보는 1080p 영화 파일이 보통 2~4GB임을 생각하면 **150~300배 정도 압축이 일어나고 있다**는 의미다.\n\n이 게임의 본질: 이 150배 압축을 화질 손실 없이 가까이, 또는 사람 눈에 거의 안 보이는 손실로 달성해야 한다."
+        },
+        {
+          "title": "1.2 코덱(Codec)의 정확한 정의",
+          "content": "Codec = **Co**der + **Dec**oder의 합성어. 인코더는 압축하고, 디코더는 복원한다.\n\n둘은 짝이다. H.264로 인코딩된 영상은 H.264 디코더로만 복원할 수 있고, AV1로 인코딩된 영상은 AV1 디코더로만 복원할 수 있다. 이게 디바이스 호환성의 본질이다 — 아이폰이 H.265로 찍은 영상을 옛 안드로이드가 못 보는 이유는, 그 안드로이드에 H.265 디코더가 없거나(또는 HW 가속 없이 SW로만 가능해 배터리 폭주) 하기 때문이다.\n\n또 하나 중요한 구분: **'코덱'과 '컨테이너'는 다르다**. `.mp4`라는 확장자는 컨테이너고, 그 안에 H.264·H.265·AV1 어떤 비디오 코덱이든 들어 있을 수 있다. 우체국 박스(컨테이너) vs 그 안의 내용물(코덱). 자세한 건 챕터 10에서 다룬다."
+        },
+        {
+          "title": "1.3 압축은 정보이론적 게임",
+          "content": "코덱은 트릭의 모음이 아니다. **Shannon의 정보이론**에 뿌리를 둔 수학이다.\n\nShannon이 1948년에 정립한 것: 어떤 데이터든 그 데이터의 '엔트로피(entropy)' 한계까지만 무손실 압축 가능하다. 엔트로피는 데이터의 '무질서도' 또는 '예측 불가능성'의 양. 완전 무작위 데이터는 엔트로피가 최대라 압축이 안 된다.\n\n다행히 비디오 데이터는 엔트로피가 매우 낮다. 인접 픽셀은 거의 같고, 인접 프레임도 거의 같고, 인간 눈은 디테일을 다 못 본다. 이런 '예측 가능성'이 클수록 압축률이 폭증한다.\n\n그래서 비디오 코덱이 하는 일을 한 문장으로 요약하면: **'데이터 안의 예측 가능한 부분을 최대한 찾아내 제거하는 것'**. 이 한 문장이 H.264·H.265·AV1을 모두 관통하는 정신이다."
+        },
+        {
+          "title": "1.4 손실(Lossy) vs 무손실(Lossless)",
+          "content": "압축에는 두 종류가 있다.\n\n**무손실(Lossless)**: 압축 후 복원하면 원본과 비트 단위로 동일. 보통 2~4배 압축. 의료·아카이브·전문 후반작업에 쓰임. 예: FFV1, H.264 Lossless 모드.\n\n**손실(Lossy)**: 사람이 인지 못 하는 정보를 일부러 버리고 압축. 100~300배 압축 가능. 우리가 일상에서 보는 모든 비디오. 예: 일반 H.264/H.265/AV1.\n\n무손실 압축은 정보이론 한계에 의해 압축률이 강하게 제한된다. 그래서 일상 비디오는 거의 다 Lossy다. 손실의 핵심은 **'무엇을 버려도 사람이 못 알아차리느냐'** — 이게 챕터 2의 '시각적 중복'과 챕터 4의 '양자화'로 이어진다.\n\n엔지니어가 기억할 것: 같은 비트레이트에서 더 잘 보이게 = 같은 화질에 더 작은 파일 = 더 영리하게 손실을 분배. 이게 H.264 → H.265 → AV1의 발전 방향이다."
+        },
+        {
+          "title": "1.5 이 코스의 지도",
+          "content": "앞으로 9개 챕터에서 다룰 흐름:\n\n- **2장**: 비디오에 숨어 있는 세 가지 중복(공간·시간·시각)을 본다.\n- **3장**: 모든 현대 코덱이 공유하는 4단계 파이프라인(예측 → 변환 → 양자화 → 엔트로피)을 소개한다.\n- **4–5장**: 파이프라인의 핵심 두 부품 — DCT/양자화, 모션 추정 — 을 깊게 본다.\n- **6장**: I/P/B 프레임과 GOP 구조.\n- **7–8장**: 두 거인 H.264와 H.265를 디테일하게 비교한다.\n- **9장**: AV1 + 로열티 무료 운동, 차세대 표준 경쟁.\n- **10장**: ffmpeg로 실전 — 컨테이너, CRF, 스트리밍 ABR, 하드웨어 인코더.\n\n각 장 끝의 코드는 Python(`numpy` + `subprocess`로 ffmpeg 호출) 위주. 직접 돌려보면서 따라가면 가장 빠르다."
+        }
+      ],
+      "analogy": {
+        "title": "책 한 권을 한 단락으로",
+        "content": "톨스토이의 『전쟁과 평화』는 약 50만 단어다. 그 책을 누구에게 \"한 단락으로 요약해 줘\" 하면, 사람마다 결과가 다르다. 어떤 사람은 \"러시아 귀족 가족들의 나폴레옹 전쟁 전후 이야기\"라고 말하고, 어떤 사람은 \"역사 속 개인의 무력함과 사랑\"이라고 말한다.\n\n둘 다 손실이 있다. 디테일은 다 사라졌다. 하지만 핵심 정보는 살아 있고, 책을 안 읽은 사람도 '대략 어떤 책'인지 안다. 이게 손실 압축이다. 원본의 99.99%를 버렸지만 핵심은 보존됐다.\n\n비디오 코덱이 하는 일도 똑같다. 한 프레임 안의 픽셀 200만 개를 '무엇을 버려도 사람이 못 알아차리느냐'의 기준으로 잘라낸다. 압축률이 100배, 200배인 이유는 비디오 데이터가 톨스토이 소설보다 훨씬 더 중복이 많기 때문이다 — 옆 픽셀은 거의 같고, 옆 프레임도 거의 같고, 사람 눈은 둔감하다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "Raw 비디오의 실제 크기를 계산해 보고, 일반적인 압축 파일과 비교해 보자. 숫자가 직접 보이면 코덱이 풀고 있는 문제의 규모가 체감된다.",
+        "code": "def raw_video_size(width, height, fps, bit_depth=24, duration_sec=1):\n    \"\"\"Return raw video data size in bits and bytes.\"\"\"\n    bits = width * height * bit_depth * fps * duration_sec\n    return bits, bits / 8\n\nconfigs = [\n    (\"480p 30fps\",  720,  480, 30),\n    (\"1080p 30fps\", 1920, 1080, 30),\n    (\"1080p 60fps\", 1920, 1080, 60),\n    (\"4K 60fps\",    3840, 2160, 60),\n    (\"8K 60fps\",    7680, 4320, 60),\n]\n\nprint(f\"{'name':<14} {'1초':>14} {'1시간':>14}\")\nprint(\"-\" * 46)\nfor name, w, h, fps in configs:\n    bits_per_sec, _ = raw_video_size(w, h, fps)\n    mbps = bits_per_sec / 1e6\n    gb_per_hour = bits_per_sec * 3600 / 8 / 1e9\n    print(f\"{name:<14} {mbps:>10.0f} Mbps  {gb_per_hour:>10.1f} GB\")\n\n# 결과 (실행해 보면 충격적):\n# 1080p 30fps   →  1,493 Mbps,    672 GB/시간\n# 4K 60fps      → 11,944 Mbps,  5,374 GB/시간\n# 8K 60fps      → 47,776 Mbps, 21,499 GB/시간\n\n# 일반 1080p 영화 파일(2GB/2시간 ≈ 2.2Mbps)과 비교하면\n# 1,493 / 2.2 ≈ 680배 압축. 이게 코덱이 하는 일.\n",
+        "walkthrough": "raw_video_size는 단순한 곱셈이지만 숫자가 직관에 충격을 준다. 1080p 30fps 영화 1시간이 672GB. 우리가 보는 압축된 1080p 영화 파일이 ~2GB라는 걸 생각하면, 코덱이 약 300~700배의 압축을 해주고 있다. 이 압축률을 가능하게 하는 건 다음 챕터에서 다룰 '세 가지 중복'의 활용이다."
+      },
+      "industryEvaluation": {
+        "overview": "비디오 엔지니어 면접에서 '비디오 데이터의 raw 크기를 즉석에서 계산할 수 있느냐'는 기본 중의 기본. 이걸 못 하면 비트레이트 설정·스토리지 견적 같은 실무 결정을 못 한다.",
+        "whatEngineersLookFor": [
+          "Raw 크기를 즉석에서 계산할 수 있는 감각 (해상도·fps·bit depth 조합)",
+          "Lossy/Lossless 트레이드오프를 도메인별로 판단 가능 (의료 vs 스트리밍)",
+          "'코덱'과 '컨테이너'의 구분을 명확히 인지",
+          "압축률 100배가 정보이론에 기반한 것임을 이해"
+        ],
+        "redFlags": [
+          "'코덱이 영상을 작게 만들어준다' 수준에서 멈춤",
+          "Mbps와 MB/s를 혼동",
+          "MP4를 코덱이라고 부름 (실제로는 컨테이너)",
+          "Lossless가 항상 더 좋다고 생각"
+        ],
+        "interviewQuestions": [
+          "1080p 60fps 영상을 raw로 1시간 저장하면 디스크가 얼마나 필요한가?",
+          "Lossless 압축이 어떤 도메인에선 필수이고 어떤 도메인에선 낭비인지 예시로 설명해 주세요",
+          "MP4와 H.264의 관계를 설명해 주세요"
+        ],
+        "masteryVsFamiliar": "Familiar는 '코덱은 비디오를 작게 만들어준다'를 안다. Mastery는 raw 데이터 크기를 즉석에서 계산하고, lossy/lossless 선택을 도메인별로 정당화하며, 압축률이 정보이론적 한계에 묶여 있다는 점까지 이해한다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "Raw는 비현실적",
+          "content": "1080p 30fps = 1.5Gbps. 압축 없이 비디오는 존재 불가."
+        },
+        {
+          "title": "Codec = Coder + Decoder",
+          "content": "둘은 짝. 호환성 문제의 본질."
+        },
+        {
+          "title": "코덱 ≠ 컨테이너",
+          "content": "MP4(컨테이너) 안에 H.264·H.265·AV1 다 가능."
+        },
+        {
+          "title": "Shannon의 한계",
+          "content": "무손실 압축은 엔트로피까지만. 무한 압축은 불가능."
+        },
+        {
+          "title": "비디오는 중복이 많다",
+          "content": "그래서 100~300배 압축이 현실적."
+        },
+        {
+          "title": "Lossy의 본질",
+          "content": "사람이 못 인지하는 정보를 일부러 버린다."
+        },
+        {
+          "title": "코덱의 핵심 게임",
+          "content": "데이터 안의 예측 가능성을 최대한 찾아 제거."
+        },
+        {
+          "title": "이 코스의 지도",
+          "content": "중복 → 파이프라인 → 부품 → 코덱 진화 → 실전."
+        }
+      ]
+    },
+    {
+      "number": 2,
+      "emoji": "🔁",
+      "title": "The Three Redundancies",
+      "titleKr": "세 가지 중복 — 공간·시간·시각",
+      "tldr": "비디오 압축이 가능한 이유는 데이터 안에 세 종류의 중복(redundancy)이 있기 때문이다. 모든 코덱은 이 셋을 어떻게 더 잘 발견하고 제거하느냐의 게임이다.",
+      "topics": [
+        "공간적 중복 (Spatial)",
+        "시간적 중복 (Temporal)",
+        "시각적 중복 (Perceptual)",
+        "Color subsampling (YUV 4:2:0)",
+        "Human Visual System"
+      ],
+      "learningGoals": [
+        "세 가지 중복을 각각 정확히 정의할 수 있다",
+        "왜 인접 픽셀이 비슷한지(공간), 인접 프레임이 비슷한지(시간), 인간 눈이 둔감한지(시각)를 설명할 수 있다",
+        "YUV 4:2:0 color subsampling이 왜 \"공짜 50% 압축\"인지 안다",
+        "각 중복이 코덱 파이프라인의 어느 단계에서 활용되는지 매핑할 수 있다",
+        "왜 모든 비디오 코덱이 RGB가 아닌 YUV를 쓰는지 이해한다"
+      ],
+      "overview": "1장에서 \"비디오는 압축 가능한 게 정보이론적 사실\"이라고 했다. 이번 장은 그 정보이론적 자산의 정체를 구체화한다 — **세 가지 중복**.\n\n공간적·시간적·시각적 중복. 이 셋이 모든 비디오 코덱이 활용하는 자원이고, 코덱의 진화는 사실상 이 셋을 어떻게 더 영리하게 발견하고 제거하느냐의 누적이다. H.264 → H.265 → AV1의 차이도 결국 이 셋을 다루는 정교함의 차이로 설명할 수 있다.",
+      "sections": [
+        {
+          "title": "2.1 공간적 중복 (Spatial Redundancy) — 한 프레임 안에서",
+          "content": "한 프레임을 자세히 보면 옆 픽셀이 거의 똑같다. 푸른 하늘은 수십만 픽셀이 거의 같은 파란색이고, 사람 얼굴은 부드러운 살색 그라데이션이다.\n\n이 사실을 코덱은 이렇게 활용한다 — **'이 픽셀은 위쪽 또는 왼쪽 픽셀로부터 예측 가능하다'**. 예측이 맞으면 그 픽셀의 값을 다시 저장할 필요가 없다. '예측과의 차이(residual)'만 저장한다. 차이가 작을수록 압축이 잘 된다.\n\n이게 **인트라 예측(Intra prediction)**의 원리다. H.264는 9방향, H.265는 35방향, AV1은 56방향. 방향이 많을수록 더 정확한 예측 → 더 작은 잔차 → 더 좋은 압축.\n\n공간적 중복이 활용되는 곳: I-프레임의 인트라 예측, P/B 프레임 안의 인트라 블록."
+        },
+        {
+          "title": "2.2 시간적 중복 (Temporal Redundancy) — 프레임 사이에서",
+          "content": "30fps 비디오에서 1번 프레임과 2번 프레임의 시간 차이는 1/30초. 그 짧은 시간에 화면 전체가 바뀌는 일은 거의 없다. 사람이 걷는 화면이라도 배경 99%가 그대로고, 다리 위치만 살짝 달라진다.\n\n이걸 활용하는 게 **인터 예측(Inter prediction)** = **모션 보상(Motion Compensation)**. 2번 프레임의 어떤 블록을 처음부터 그릴 필요 없이, '1번 프레임의 (x+5, y) 위치에서 블록을 그대로 가져오면 거의 맞는다'고 알려주면 된다. 이때 그 '(+5, 0)'이 **모션 벡터(Motion Vector)**다.\n\n시간적 중복이 활용되는 곳: P-프레임(이전 프레임 참조), B-프레임(이전+이후 둘 다 참조). 모션 벡터 + 작은 residual만 저장하면 되니까 P/B 프레임은 I 프레임보다 압축률이 압도적으로 높다. 보통 P는 I의 1/5~1/10 크기, B는 1/20~1/50 크기.\n\n코덱 진화의 핵심은 \"얼마나 정확한 모션 벡터를 빨리 찾느냐\". 이게 챕터 5의 주제다."
+        },
+        {
+          "title": "2.3 시각적 중복 (Perceptual Redundancy) — 인간 눈의 한계",
+          "content": "셋째 중복은 데이터 자체가 아니라 **수신자(인간 눈)의 한계**에서 온다.\n\n사람 눈은 모든 신호에 동등하게 민감하지 않다. 잘 알려진 비대칭:\n- **밝기에는 민감**, **색상에는 둔감** — 흑백 사진이 컬러보다 디테일이 잘 보이는 이유\n- **저주파(부드러운 변화)에는 민감**, **고주파(날카로운 디테일)에는 둔감** — 특히 움직이는 영역에서\n- **밝은 영역의 노이즈는 잘 보이지 않음**, **어두운 영역의 노이즈는 잘 보임** (Weber-Fechner)\n\n이 비대칭이 손실 압축의 황금 영역이다. 사람이 인지 못 하는 정보를 골라 버린다 → 같은 화질에 더 작은 파일.\n\n구체적으로 이게 활용되는 두 곳:\n1. **Color subsampling**: 색상 채널 해상도를 밝기 채널의 절반으로 (YUV 4:2:0). 데이터량 즉시 50% 감소.\n2. **양자화의 가중치**: 저주파 계수는 정밀하게, 고주파 계수는 거칠게 양자화. 챕터 4에서 다룬다."
+        },
+        {
+          "title": "2.4 YUV 4:2:0 — 거의 공짜 50% 압축",
+          "content": "현대 비디오는 RGB가 아니라 **YUV**(Y: 밝기, U/V: 색차) 공간에서 작업한다. 변환 공식은 단순한 선형 매트릭스.\n\nY(밝기)는 풀 해상도로 두고, U/V(색상)는 가로·세로 절반씩 다운샘플 → **YUV 4:2:0**. 결과: 데이터량이 RGB의 50%. 거의 공짜다. 화질 손실은 사람 눈으로 거의 인지 불가능.\n\n다른 옵션:\n- **4:4:4**: 색차도 풀 해상도 — 영화 제작·HDR 마스터링 등 전문 영역\n- **4:2:2**: 가로만 절반 — 방송용 (XDCAM 등)\n- **4:2:0**: 가로·세로 모두 절반 — 거의 모든 소비자 비디오의 표준\n\n왜 코덱 강의에서 이 디테일이 중요한가? 모든 H.264/H.265/AV1 인코더가 기본적으로 4:2:0을 가정하기 때문이다. 이 첫 단계가 이미 50% 압축이고, 나머지 단계들이 그 위에서 또 압축한다."
+        },
+        {
+          "title": "2.5 세 중복이 코덱 어디서 활용되는가",
+          "content": "정리: 어떤 중복이 어디서 활용되는지 매핑.\n\n| 중복 | 활용되는 코덱 단계 | 결과 |\n|---|---|---|\n| 공간적 | 인트라 예측 + DCT | I-프레임 효율 |\n| 시간적 | 인터 예측 (모션 보상) | P/B-프레임 효율 |\n| 시각적 | YUV 4:2:0 + 양자화 가중치 | 손실의 영리한 분배 |\n\nH.264 → H.265 → AV1의 발전을 이 셋의 관점에서 보면:\n- **공간적**: 인트라 예측 방향이 9 → 35 → 56으로 늘어남\n- **시간적**: 모션 벡터 정밀도가 1/4 픽셀 → 1/4 픽셀 + AMVP → 1/8 픽셀 + warped motion으로 발전\n- **시각적**: 양자화 매트릭스가 더 정교해지고, AV1은 적응형 양자화 + Loop Restoration까지\n\n이 매핑이 머릿속에 있으면 나머지 챕터의 모든 디테일이 \"아, 이건 어느 중복을 더 잘 활용하려는 거구나\"로 자연스럽게 연결된다."
+        }
+      ],
+      "analogy": {
+        "title": "다국어 회의의 통역사",
+        "content": "국제회의에서 영어 → 한국어 동시통역을 한다고 치자. 통역사는 모든 단어를 그대로 옮기지 않는다. 세 가지 종류의 '중복'을 본능적으로 제거한다.\n\n**공간적 중복**: \"the the the\"처럼 한 문장 안의 반복은 한 번만 옮긴다. **시간적 중복**: 발언자가 \"like\", \"you know\"를 반복하면 무시. **시각적(수신자의) 중복**: 청중이 이미 아는 사실(\"미국 대통령은 워싱턴 D.C.에 산다\")은 굳이 옮기지 않는다.\n\n비디오 코덱이 정확히 이렇게 일한다. 한 프레임 안의 반복(공간), 프레임 사이의 반복(시간), 인간 눈이 못 보는 디테일(시각). 셋 다 발견해 제거하면, 100배 압축은 마법이 아니라 통역사가 본능적으로 하는 일이다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "공간·시간·시각 세 가지 중복을 직접 측정해 보자. 인접 픽셀 차이, 인접 프레임 차이, 색차 채널의 분포 — 각각이 얼마나 작은지 보면 압축의 자원이 보인다.",
+        "code": "import numpy as np\nimport cv2\n\n# 비디오 첫 두 프레임 읽기\ncap = cv2.VideoCapture('sample.mp4')\n_, frame1 = cap.read()\n_, frame2 = cap.read()\ncap.release()\n\n# 1) 공간적 중복: 인접 픽셀과의 차이 분포\nh_diff = np.abs(frame1[:, 1:].astype(int) - frame1[:, :-1].astype(int))\nv_diff = np.abs(frame1[1:, :].astype(int) - frame1[:-1, :].astype(int))\nprint(f'평균 가로 픽셀 차이: {h_diff.mean():.2f}  (0~255 중)')\nprint(f'평균 세로 픽셀 차이: {v_diff.mean():.2f}')\n\n# 2) 시간적 중복: 프레임 간 차이\ntemporal_diff = np.abs(frame1.astype(int) - frame2.astype(int))\nprint(f'프레임 간 평균 차이: {temporal_diff.mean():.2f}')\nprint(f'  → 픽셀의 {(temporal_diff < 5).mean()*100:.1f}%는 차이가 5 이하')\n\n# 3) 시각적 중복: YUV 변환 후 색차 채널의 \"정보량\"\nyuv = cv2.cvtColor(frame1, cv2.COLOR_BGR2YUV)\ny, u, v = yuv[:,:,0], yuv[:,:,1], yuv[:,:,2]\nprint(f'Y(밝기) std:    {y.std():.1f}')\nprint(f'U(색차) std:    {u.std():.1f}  ← 훨씬 작음')\nprint(f'V(색차) std:    {v.std():.1f}')\n# → U/V는 변동이 작아서 다운샘플해도 거의 안 보임 = 4:2:0 정당화\n",
+        "walkthrough": "이 코드의 결과가 거짓말을 안 한다. 일반 비디오에서 인접 픽셀의 평균 차이는 10 이하(0~255 중)다. 인접 프레임의 60~80% 픽셀은 차이가 5 이하다. 그리고 YUV로 변환하면 U/V 채널의 분산이 Y의 1/3 정도다. 이 세 숫자가 바로 코덱이 활용하는 자원의 양이다. 압축률 100배가 마법이 아니라 이 자원의 정직한 활용 결과라는 사실이 보인다."
+      },
+      "industryEvaluation": {
+        "overview": "세 가지 중복은 비디오 엔지니어 인터뷰의 '기본' 질문. 이걸 깔끔히 설명할 수 있느냐가 \"코덱을 안다\"와 \"단어만 안다\"를 가른다.",
+        "whatEngineersLookFor": [
+          "셋을 각각 정확히 정의하고 예시를 댈 수 있는지",
+          "YUV 4:2:0이 왜 거의 공짜인지 (인간 시각의 비대칭) 설명 가능",
+          "코덱 진화를 '셋의 활용 정교화'로 매핑할 수 있는지",
+          "RGB vs YUV 선택의 의미를 안다"
+        ],
+        "redFlags": [
+          "셋을 외운 단어로만 알고 예시를 못 댐",
+          "왜 YUV를 쓰는지 모름 ('전통이라서' 답변)",
+          "색상 채널이 밝기 채널보다 덜 중요하다는 사실을 모름"
+        ],
+        "interviewQuestions": [
+          "비디오 압축이 가능한 이유를 세 가지로 말해 보세요",
+          "왜 거의 모든 비디오 코덱이 4:2:0을 쓰나요? 4:4:4이 더 좋지 않나요?",
+          "H.265가 H.264보다 더 잘 압축하는 이유를 '중복 활용'의 관점에서 설명해 주세요"
+        ],
+        "masteryVsFamiliar": "Familiar는 '공간·시간·시각 중복이 있다'를 외운다. Mastery는 셋을 즉석에서 예시와 함께 설명하고, 각 코덱의 발전이 어느 중복을 어떻게 더 잘 다루느냐로 매핑된다는 걸 이해한다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "세 가지 중복",
+          "content": "공간(픽셀 사이) · 시간(프레임 사이) · 시각(인간 눈)."
+        },
+        {
+          "title": "공간적 중복",
+          "content": "인접 픽셀이 거의 같다 → 인트라 예측의 자원."
+        },
+        {
+          "title": "시간적 중복",
+          "content": "인접 프레임이 거의 같다 → 모션 보상의 자원."
+        },
+        {
+          "title": "시각적 중복",
+          "content": "인간 눈의 비대칭 → 손실의 영리한 분배."
+        },
+        {
+          "title": "YUV 4:2:0",
+          "content": "거의 공짜 50% 압축. 모든 소비자 코덱의 기본."
+        },
+        {
+          "title": "Y vs UV",
+          "content": "밝기에 민감, 색상에 둔감 → 색차 채널 다운샘플."
+        },
+        {
+          "title": "코덱 진화의 본질",
+          "content": "셋을 더 정교하게 활용하는 누적."
+        },
+        {
+          "title": "압축은 정직한 게임",
+          "content": "마법이 아니라 데이터 안의 진짜 중복을 발견·제거한다."
+        }
+      ]
+    },
+    {
+      "number": 3,
+      "emoji": "🏭",
+      "title": "The Compression Pipeline",
+      "titleKr": "압축 파이프라인 — 예측·변환·양자화·엔트로피",
+      "tldr": "모든 현대 비디오 코덱(H.264·H.265·AV1)이 공유하는 4단계 파이프라인. 이 그림이 머릿속에 있으면 어느 코덱의 디테일도 자기 자리를 찾는다.",
+      "topics": [
+        "Prediction (Intra/Inter)",
+        "Transform (DCT)",
+        "Quantization",
+        "Entropy coding (CABAC)",
+        "In-loop filter"
+      ],
+      "learningGoals": [
+        "현대 코덱의 4단계 파이프라인을 정확한 순서로 외운다",
+        "각 단계가 어떤 중복(공간/시간/시각)을 활용하는지 매핑한다",
+        "양자화가 손실의 유일한 단계임을 이해한다",
+        "엔트로피 코딩이 무손실 마무리임을 안다",
+        "in-loop filter가 왜 끝이 아니라 루프 안에 있는지 설명할 수 있다"
+      ],
+      "overview": "비디오 코덱은 마법의 블랙박스가 아니다. **모든 현대 코덱이 같은 파이프라인을 공유**한다. H.264, H.265, AV1, VP9, VVC — 디테일은 다르지만 큰 흐름은 동일하다. 이번 장은 그 큰 그림 그 자체.\n\n그 그림: **예측(Prediction) → 변환(Transform) → 양자화(Quantization) → 엔트로피 부호화(Entropy coding)**. 이걸 \"PTQE\"로 외워두면, 4·5·7·8장에서 나올 모든 디테일이 \"아, 이건 PTQE의 어느 단계에서 무슨 일을 하는 거구나\"로 자기 자리를 찾는다.",
+      "sections": [
+        {
+          "title": "3.1 1단계 — 예측 (Prediction): 비슷한 부분 추측",
+          "content": "압축의 첫 번째 진짜 일은 '예측'이다. 원본 블록을 그대로 저장하지 않고, **다른 데이터로부터 추측한 다음 차이만 저장**한다.\n\n두 가지 예측이 있다.\n\n**인트라 예측 (Intra)**: 같은 프레임 안의 옆 블록 픽셀로부터 추측. '이 블록은 위쪽 픽셀들의 평균이겠지' 또는 '왼쪽 픽셀들을 오른쪽으로 복사하면 비슷하겠지'. H.264는 9방향, H.265는 35방향, AV1은 56방향.\n\n**인터 예측 (Inter)**: 다른 프레임의 비슷한 블록으로부터 추측. 모션 벡터로 \"이전 프레임의 (x+5, y-2) 위치에서 블록을 가져오면 거의 맞다\"고 알려준다.\n\n예측 결과: **잔차(residual) = 원본 - 예측**. 예측이 잘 맞을수록 잔차가 작아진다. 다음 단계들은 이 잔차에만 적용된다.\n\n예측의 위력: 잘 맞는 예측은 잔차를 거의 0에 가깝게 만든다. 0이 많은 데이터는 압축이 폭증한다. 코덱 성능의 절반 이상이 이 단계의 정확도에 달려 있다."
+        },
+        {
+          "title": "3.2 2단계 — 변환 (Transform): 주파수 도메인으로",
+          "content": "잔차를 그대로 저장하지 않고 **변환**한다. 8×8 또는 16×16 블록을 **DCT(Discrete Cosine Transform)**로 변환하면 주파수 도메인으로 옮겨진다.\n\n직관: 한 블록 안의 픽셀 변화를 '저주파(부드러운 그라데이션) + 고주파(날카로운 디테일)'의 조합으로 분해. DCT 결과는 한 코너에 저주파, 다른 코너에 고주파가 모인 행렬.\n\n왜 변환을 하나?\n- **에너지 압축(energy compaction)**: 자연 이미지의 에너지가 저주파 몇 개 계수에 집중됨 → 고주파는 0에 가까움\n- **양자화에 유리**: 다음 단계인 양자화에서 \"저주파는 정밀하게, 고주파는 거칠게\" 다룰 수 있게 됨\n- **시각적 중복 활용**: 인간 눈이 고주파에 둔감하다는 사실을 이용 가능\n\nDCT 자체는 가역적이다(역DCT로 완벽 복원). 손실은 다음 단계인 양자화에서만 일어난다. 자세한 수학은 챕터 4."
+        },
+        {
+          "title": "3.3 3단계 — 양자화 (Quantization): 손실의 유일한 자리",
+          "content": "**여기가 손실 압축의 모든 손실이 일어나는 단계.** 이 한 단계만 lossy다. 나머지는 다 가역적이다.\n\n양자화는 DCT 계수를 양자화 매트릭스로 나눈 다음 정수로 반올림. 예: 계수 47을 양자화 스텝 8로 나누면 5.875 → 6. 복원할 때 6 × 8 = 48이 되어 1만큼 손실.\n\n핵심: **양자화 매트릭스는 균일하지 않다**. 저주파 계수는 작은 스텝(정밀하게), 고주파 계수는 큰 스텝(거칠게). 이 비대칭이 \"사람 눈이 못 인지하는 고주파를 더 많이 버린다\"는 시각적 중복의 활용이다.\n\n양자화 스텝의 강도를 결정하는 게 **QP(Quantization Parameter)** 또는 **CRF(Constant Rate Factor)**. 둘 다 '얼마나 많이 버리느냐'를 조절. 낮을수록 정밀(고화질·고용량), 높을수록 거칠(저화질·저용량).\n\n엔지니어가 일상에서 가장 많이 만지는 옵션이 이 QP/CRF. ffmpeg `-crf 23` 같은 게 바로 이 값."
+        },
+        {
+          "title": "3.4 4단계 — 엔트로피 부호화 (Entropy coding): 무손실 마무리",
+          "content": "양자화 후 데이터에는 0이 잔뜩 섞여 있고, 작은 정수들이 반복된다. 이걸 무손실로 최대한 압축하는 게 엔트로피 부호화.\n\n원리: 자주 나오는 값에 짧은 비트열, 드물게 나오는 값에 긴 비트열을 할당. Shannon이 1948년에 증명한 한계까지 압축 가능.\n\n**H.264에서 두 종류:**\n- **CAVLC** (Context-Adaptive Variable Length Coding): 빠르지만 효율 낮음. Baseline profile.\n- **CABAC** (Context-Adaptive Binary Arithmetic Coding): 느리지만 10% 더 효율. Main/High profile.\n\n**H.265는 CABAC만**, **AV1은 SBAC(Symbol-Based Arithmetic Coding)** 으로 발전.\n\n엔트로피 부호화는 가역적이라 손실 없음. 디코더가 이 단계부터 거꾸로 복원해 나간다 — 엔트로피 디코딩 → 역양자화 → 역DCT → 예측 + 잔차 = 복원된 블록."
+        },
+        {
+          "title": "3.5 In-Loop Filter — 파이프라인 안에 숨은 5번째 단계",
+          "content": "파이프라인을 4단계로 단순화했지만, 현대 코덱에는 또 하나 결정적 단계가 있다 — **In-Loop Filter**.\n\n왜 필요한가? 양자화에서 손실이 생기면 블록 경계가 어색하게 보이는 **블록 노이즈(blocky artifact)**가 생긴다. 8×8 블록 단위로 따로 처리됐기 때문에 경계가 튀어 보임. 이걸 부드럽게 만드는 게 deblocking filter.\n\n더 중요한 점: **이 필터가 디코더 후처리가 아니라 인코더 루프 안에 있다**는 것. 왜? 다음 P/B 프레임을 예측할 때 참조 프레임으로 쓰는 게 \"필터 거친 결과\"여야 한다. 안 그러면 인코더(필터 거친 것 참조)와 디코더(필터 거친 것 참조) 사이에 차이가 생겨 점점 누적된다 = drift.\n\nH.265 이후는 deblocking + **SAO(Sample Adaptive Offset)**까지 추가. AV1은 거기에 **CDEF + Loop Restoration**까지 3중 필터.\n\n이 필터들의 누적이 최신 코덱이 같은 비트레이트에서 더 좋아 보이는 큰 이유 중 하나."
+        }
+      ],
+      "analogy": {
+        "title": "음식 배달 시스템",
+        "content": "맥도날드의 햄버거가 어떻게 배달되는지 보자. (1) **주문 예측**: AI가 \"이 시간에 빅맥 100개 나갈 거다\"로 미리 만들기 시작. (2) **냉동 변환**: 패티를 압축·냉동해서 부피 줄임. (3) **양자화**: 정확히 100g이 아니라 95~105g 사이로 그냥 둠 (사람이 알아챌 한계 안에서 손실 허용). (4) **포장 압축**: 같은 모양 박스에 빈틈없이 쟁여서 트럭 한 대에 더 많이 실음.\n\n비디오 코덱의 PTQE 파이프라인이 정확히 이렇다. 예측(주문 예측), 변환(냉동 압축), 양자화(허용 오차 안에서 손실), 엔트로피 부호화(빈틈없는 포장).\n\n그리고 In-Loop Filter는 \"배달 트럭이 흔들려서 햄버거가 살짝 어그러진 걸 매장에서 다시 정리하는 직원\". 이 직원이 없으면 다음 배달 때 어그러진 햄버거를 기준으로 또 만들어서 점점 더 어그러진다 = drift."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "8×8 블록 하나에 파이프라인 전체(예측 → DCT → 양자화 → 엔트로피)를 적용해 보자. 실제 H.264·H.265 인코더의 한 블록 처리 흐름을 단순화한 데모.",
+        "code": "import numpy as np\nfrom scipy.fftpack import dct, idct\n\n# 8x8 블록 (그라데이션 + 약간 노이즈)\nblock = np.array([[i + j + np.random.randint(-3, 4)\n                   for j in range(8)] for i in range(8)], dtype=float)\nprint('원본 블록:'); print(block.astype(int))\n\n# 1) PREDICT: 단순 DC 예측 (블록 평균값)\npredicted = np.full_like(block, block.mean())\nresidual = block - predicted\nprint('\\n잔차(평균):', residual.mean())\n\n# 2) TRANSFORM: 2D DCT\ndef dct2(x): return dct(dct(x.T, norm='ortho').T, norm='ortho')\ndef idct2(x): return idct(idct(x.T, norm='ortho').T, norm='ortho')\ncoeffs = dct2(residual)\nprint('\\nDCT 계수 (저주파↖, 고주파↘):'); print(coeffs.round(1))\n\n# 3) QUANTIZE: 양자화 매트릭스 (저주파는 정밀, 고주파는 거칠게)\nQ = np.array([\n    [16, 11, 10, 16, 24, 40, 51, 61],\n    [12, 12, 14, 19, 26, 58, 60, 55],\n    [14, 13, 16, 24, 40, 57, 69, 56],\n    [14, 17, 22, 29, 51, 87, 80, 62],\n    [18, 22, 37, 56, 68, 109,103, 77],\n    [24, 35, 55, 64, 81, 104,113, 92],\n    [49, 64, 78, 87, 103,121,120,101],\n    [72, 92, 95, 98, 112,100,103, 99]])  # JPEG 표준 매트릭스\nquantized = np.round(coeffs / Q).astype(int)\nprint('\\n양자화 결과 (0이 잔뜩):'); print(quantized)\n\n# 4) ENTROPY: 0의 비율\nzeros = (quantized == 0).sum()\nprint(f'\\n64개 계수 중 {zeros}개가 0 — 엔트로피 부호화의 자원')\n\n# 디코더: 역과정\nrestored = idct2(quantized * Q) + predicted\nprint(f'\\n복원 후 평균 오차: {np.abs(restored - block).mean():.2f}')\n",
+        "walkthrough": "이 8×8 블록 하나에 PTQE 파이프라인이 다 들어 있다. (1) DC 예측으로 잔차 생성, (2) DCT로 주파수 도메인 변환, (3) 양자화 매트릭스로 나누어 정수화 — 여기서 64개 계수 중 절반 이상이 0이 된다. (4) 0이 많아진 데이터는 엔트로피 부호화로 압축 폭증. 디코더는 역양자화 → 역DCT → 잔차 + 예측 = 복원. 사람이 인지하기 어려운 손실(평균 오차 1~2)만 남는다."
+      },
+      "industryEvaluation": {
+        "overview": "PTQE 파이프라인을 외우는 게 비디오 엔지니어의 시작. 면접에서 '예측 → 변환 → 양자화 → 엔트로피'를 즉답할 수 있어야 한다.",
+        "whatEngineersLookFor": [
+          "4단계를 순서대로 즉답할 수 있는지",
+          "양자화가 손실의 유일한 자리임을 정확히 안다",
+          "DCT가 손실이 아닌 변환임을 안다",
+          "in-loop filter가 왜 루프 안에 있어야 하는지(drift 방지) 설명 가능"
+        ],
+        "redFlags": [
+          "DCT가 압축이라고 생각",
+          "예측을 안 거치고 바로 변환·양자화한다고 생각",
+          "인코더만 알고 디코더의 역과정을 설명 못 함"
+        ],
+        "interviewQuestions": [
+          "비디오 코덱의 압축 파이프라인을 4단계로 설명해 주세요",
+          "양자화가 손실의 유일한 단계라는 게 무슨 뜻인가요?",
+          "In-loop filter가 왜 디코더 후처리가 아니라 인코더 루프 안에 있어야 하나요?"
+        ],
+        "masteryVsFamiliar": "Familiar는 'PTQE' 단어를 안다. Mastery는 각 단계가 무엇을 하는지, 어떤 중복을 활용하는지, 왜 그 순서인지를 설명할 수 있고, in-loop filter의 위치 이유까지 안다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "PTQE 파이프라인",
+          "content": "Predict → Transform → Quantize → Entropy. 모든 코덱이 공유."
+        },
+        {
+          "title": "예측이 가장 중요",
+          "content": "잔차를 작게 만드는 게 압축의 절반."
+        },
+        {
+          "title": "Intra vs Inter",
+          "content": "같은 프레임 안 vs 다른 프레임 참조."
+        },
+        {
+          "title": "DCT는 손실 없음",
+          "content": "변환은 가역적. 손실은 다음 단계만."
+        },
+        {
+          "title": "양자화 = 유일한 손실",
+          "content": "여기서만 사람 눈 인지 한계 활용."
+        },
+        {
+          "title": "엔트로피 = 무손실 마무리",
+          "content": "Shannon 한계까지 압축. CABAC, SBAC."
+        },
+        {
+          "title": "In-Loop Filter",
+          "content": "Drift 방지를 위해 루프 안에 위치."
+        },
+        {
+          "title": "코덱은 같은 그림",
+          "content": "디테일이 다를 뿐 큰 흐름은 H.264~AV1 동일."
+        }
+      ]
+    },
+    {
+      "number": 4,
+      "emoji": "🎚️",
+      "title": "DCT and Quantization",
+      "titleKr": "DCT와 양자화 — 변환과 손실의 수학",
+      "tldr": "코덱의 손실은 양자화 한 단계에서만 일어난다. 양자화의 정확한 의미와 CRF·QP 같은 옵션이 실제로 무엇을 하는지 알면, 화질과 용량의 트레이드오프를 손에 잡힌다.",
+      "topics": [
+        "2D DCT의 수학적 직관",
+        "양자화 매트릭스의 의미",
+        "QP (Quantization Parameter)",
+        "CRF · CBR · VBR",
+        "Rate-Distortion 곡선"
+      ],
+      "learningGoals": [
+        "2D DCT가 무엇을 하는지 그림으로 설명할 수 있다",
+        "양자화 매트릭스가 왜 균일하지 않은지(시각적 중복 활용) 안다",
+        "QP와 CRF의 관계를 안다",
+        "CBR/VBR/CRF 세 가지 비트레이트 모드의 차이를 구분한다",
+        "Rate-Distortion 곡선이 코덱 평가의 핵심임을 이해한다"
+      ],
+      "overview": "3장에서 PTQE 파이프라인의 큰 그림을 봤다. 이번 장은 그 중 가장 신비롭게 들리는 두 단계 — **변환(Transform)**과 **양자화(Quantization)** — 를 깊이 본다.\n\n이 두 단계의 정확한 의미를 알면 실무에서 자주 만지는 옵션들(CRF, QP, CBR, VBR)이 정확히 무엇을 하는지 보인다. 'CRF 23이 좋은가 28이 좋은가'에 답할 수 있게 된다.",
+      "sections": [
+        {
+          "title": "4.1 2D DCT — 8×8 블록을 주파수로 분해",
+          "content": "DCT(Discrete Cosine Transform)는 이산 코사인 변환. 8×8 픽셀 블록을 입력하면 8×8 계수 행렬을 출력하는데, 이 출력의 의미는 \"입력 블록을 64개의 기본 무늬(basis function)의 가중합으로 표현했을 때의 가중치\"다.\n\n64개의 기본 무늬는 정해져 있다. 왼쪽 위는 '균일한 회색', 오른쪽 아래는 '체크무늬', 가운데는 '줄무늬' 등. 저주파(부드러운 변화)는 왼쪽 위, 고주파(빠른 변화)는 오른쪽 아래.\n\n**핵심 사실**: 자연 이미지의 에너지가 저주파 몇 개 계수에 집중된다. 한 8×8 블록에서 64개 계수 중 의미 있는 값은 보통 5~10개 정도. 나머지는 거의 0. **이 성질이 압축의 자원**이다.\n\nDCT는 가역적이다. 역DCT(IDCT)로 손실 없이 복원 가능. DCT 자체로는 데이터를 줄이지 않는다 — 데이터를 '양자화하기 좋은 형태'로 옮길 뿐이다."
+        },
+        {
+          "title": "4.2 양자화 매트릭스 — 시각적 중복의 직접적 사용",
+          "content": "DCT 결과를 양자화 매트릭스(Q)로 나누어 정수로 반올림한다. Q는 8×8 행렬이고, **값이 위치마다 다르다**. 표준 JPEG Q를 보면:\n\n```\n16  11  10  16  24  40  51  61\n12  12  14  19  26  58  60  55\n14  13  16  24  40  57  69  56\n...\n72  92  95  98 112 100 103  99\n```\n\n왼쪽 위(저주파)는 12~16처럼 작고, 오른쪽 아래(고주파)는 99~112처럼 크다. **저주파는 정밀하게 보존, 고주파는 거칠게 양자화**.\n\n왜? 인간 눈은 저주파(부드러운 그라데이션)의 변화에 민감하고, 고주파(미세한 디테일)엔 둔감하기 때문. 시각적 중복의 직접적 활용이다.\n\nJPEG·H.264·H.265·AV1 모두 이 비대칭 양자화를 쓴다. 디테일은 다르지만 정신은 같다."
+        },
+        {
+          "title": "4.3 QP와 CRF — 사용자가 만지는 손잡이",
+          "content": "양자화의 강도를 결정하는 게 **QP(Quantization Parameter)** 다. 0(완벽)~51(최대 손실). QP를 6 올리면 양자화 스텝이 정확히 2배 커진다.\n\n실제 인코더는 QP를 직접 다루지 않고 **CRF(Constant Rate Factor)** 라는 추상 레이어를 제공한다. CRF는 \"같은 시각적 화질을 유지하도록 QP를 동적으로 조절\". 즉 빠른 움직임 장면엔 QP를 올리고(어차피 안 보임), 정적 장면엔 QP를 내림(정밀하게).\n\nCRF 값의 의미:\n- H.264: CRF 18(거의 무손실) ~ 28(저화질), 기본 23\n- H.265: CRF 22 ~ 32, 기본 28\n- AV1: CRF 25 ~ 35, 기본 30\n\n같은 CRF여도 코덱이 다르면 결과가 다르다. H.264 CRF 23과 H.265 CRF 28이 비슷한 화질·비슷한 용량. 실무 팁: \"H.264 CRF 23 = 좋은 기본값\", \"H.265 CRF 28 = 좋은 기본값\". 외워두면 일상의 90%를 커버."
+        },
+        {
+          "title": "4.4 CBR vs VBR vs CRF — 세 가지 비트레이트 모드",
+          "content": "비트레이트 제어 모드는 세 가지.\n\n**CBR (Constant Bit Rate)**: 비트레이트 일정 유지. 정적 장면도 액션 장면도 같은 비트레이트. 화질이 균일하지 않음(액션에선 깨짐). 라이브 방송에 필수 — 네트워크 대역폭이 일정해야 하니까.\n\n**VBR (Variable Bit Rate)**: 평균 비트레이트 목표, 장면에 따라 가변. 정적엔 적게 쓰고 액션엔 많이 씀. CBR보다 화질 균일. 평균 비트레이트가 고정된 게 핵심.\n\n**CRF (Constant Rate Factor)**: 화질 일정 유지, 비트레이트 가변. 정적은 작고 액션은 크다. 파일 크기를 미리 모름. 다운로드용·아카이브용에 최적.\n\n선택 기준:\n- 라이브 스트리밍 → CBR (대역폭 보장 필수)\n- VOD 스트리밍(Netflix 식) → VBR (파일 크기 예측 + 균일 화질)\n- 다운로드·후반작업 → CRF (최고 효율, 크기 무관)\n- 일반 사용자가 ffmpeg로 변환 → **CRF 23(H.264) 또는 CRF 28(H.265)**"
+        },
+        {
+          "title": "4.5 Rate-Distortion 곡선 — 코덱 평가의 표준",
+          "content": "코덱을 비교할 때 \"화질이 좋다\" 는 주관적이라 객관적 측정이 필요하다. 표준은 **Rate-Distortion 곡선**.\n\nY축은 화질 측정값(PSNR, SSIM, VMAF), X축은 비트레이트. 각 CRF 값마다 한 점을 찍어 곡선을 만든다. **곡선이 위쪽에 있을수록 좋은 코덱** — 같은 비트레이트에서 더 좋은 화질, 또는 같은 화질에 더 적은 비트레이트.\n\n주요 화질 측정값:\n- **PSNR (Peak Signal-to-Noise Ratio)**: 픽셀 단위 오차. 단순하지만 사람 인지와 잘 안 맞음. dB 단위.\n- **SSIM**: 구조 유사도. PSNR보다 사람 인지에 가까움.\n- **VMAF**: Netflix가 만든 머신러닝 기반 메트릭. 현재 산업 표준. 0~100 점수.\n\nAV1이 'H.265 대비 30% 좋다'고 할 때 그 비교가 보통 같은 VMAF 점수에서의 비트레이트 차이를 본다. 엔지니어가 코덱을 평가할 땐 항상 R-D 곡선을 본다 — 한 점만 비교하면 오해 가능."
+        }
+      ],
+      "analogy": {
+        "title": "오케스트라를 압축하기",
+        "content": "베토벤 5번 교향곡을 녹음할 때 모든 악기 모든 순간 동등하게 정밀하게 녹음할 필요는 없다. 베이스 라인(저주파)은 정밀해야 한다 — 사람 귀가 베이스의 미세한 변화를 느낀다. 심벌즈의 고주파 노이즈는 거칠게 녹음해도 사람이 못 알아챈다.\n\n그래서 음악 압축은 \"저주파에 비트를 많이, 고주파에 비트를 적게\" 분배한다. 같은 파일 크기에 사람 귀에 더 좋은 음질.\n\nDCT + 양자화 매트릭스가 정확히 이 일을 한다. 한 8×8 블록을 64개 \"음(주파수)\"으로 분해한 다음, 저주파 음은 정밀하게, 고주파 음은 거칠게 양자화. 결과: 같은 파일 크기에 사람 눈에 더 좋은 화질. CRF는 그 양자화의 전체 강도를 한 손잡이로 조절하는 것."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "CRF 값을 18, 23, 28, 33으로 바꾸면서 같은 영상을 인코딩한 다음, 파일 크기와 VMAF 점수를 측정. Rate-Distortion 곡선의 한 점을 직접 만들어 본다.",
+        "code": "import subprocess, os, json\n\nINPUT = 'sample.mp4'\nresults = []\n\nfor crf in [18, 23, 28, 33]:\n    output = f'out_crf{crf}.mp4'\n    # 1) Encode with the given CRF\n    subprocess.run([\n        'ffmpeg', '-y', '-i', INPUT,\n        '-c:v', 'libx264', '-crf', str(crf),\n        '-preset', 'medium', '-an', output\n    ], check=True, capture_output=True)\n\n    size_mb = os.path.getsize(output) / 1e6\n\n    # 2) Compute VMAF against the original (libvmaf filter)\n    out = subprocess.run([\n        'ffmpeg', '-i', output, '-i', INPUT,\n        '-lavfi', 'libvmaf=log_path=vmaf.json:log_fmt=json',\n        '-f', 'null', '-'\n    ], check=True, capture_output=True)\n    vmaf = json.load(open('vmaf.json'))['pooled_metrics']['vmaf']['mean']\n\n    results.append((crf, size_mb, vmaf))\n    print(f'CRF {crf:2d}: {size_mb:6.1f} MB, VMAF={vmaf:5.1f}')\n\n# 결과 예시:\n# CRF 18:  85.3 MB, VMAF=98.7  ← 거의 무손실, 거대\n# CRF 23:  22.1 MB, VMAF=95.2  ← 표준, 작음\n# CRF 28:   7.4 MB, VMAF=88.6  ← 작지만 살짝 깨짐 보임\n# CRF 33:   2.8 MB, VMAF=75.4  ← 명확히 화질 떨어짐\n",
+        "walkthrough": "CRF 5단계 차이가 파일 크기를 2~3배 바꾼다는 사실이 직접 보인다. VMAF는 90 이상이면 거의 인지 못 함, 80~90은 살짝 보임, 70 이하는 명확히 깨짐. 일반적으로 CRF 23(H.264) 또는 28(H.265)이 VMAF 90~95 정도라 사람 눈에 좋고 파일 크기도 합리적인 sweet spot."
+      },
+      "industryEvaluation": {
+        "overview": "DCT·양자화·CRF는 비디오 엔지니어 일상의 한가운데. 모든 인코딩 결정이 이 한 손잡이를 어떻게 돌리느냐.",
+        "whatEngineersLookFor": [
+          "QP와 CRF의 관계를 정확히 안다",
+          "CBR/VBR/CRF 선택 기준을 도메인별로 댈 수 있다",
+          "VMAF·SSIM·PSNR의 차이를 안다",
+          "Rate-Distortion 곡선으로 코덱 비교 가능"
+        ],
+        "redFlags": [
+          "'CRF 낮을수록 좋다'를 화질 면에서 정확히 모름",
+          "라이브 방송에 CRF 모드 쓰려고 함 (CBR이 맞음)",
+          "한 점만 보고 코덱 우열 판단",
+          "PSNR이 화질이라고 생각 (사람 인지와 다름)"
+        ],
+        "interviewQuestions": [
+          "CRF 23과 28의 차이를 H.264·H.265 각각 설명해 주세요",
+          "라이브 방송에 CBR을 쓰는 이유는?",
+          "VMAF가 PSNR보다 좋은 메트릭으로 평가받는 이유는?"
+        ],
+        "masteryVsFamiliar": "Familiar는 'CRF 23 쓰면 된다'를 안다. Mastery는 CRF·QP·CBR·VBR의 사용 도메인을 매핑하고, R-D 곡선으로 코덱을 비교하며, VMAF로 객관적 평가를 한다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "DCT",
+          "content": "8×8 블록을 주파수 도메인으로. 가역적."
+        },
+        {
+          "title": "양자화 = 손실",
+          "content": "유일한 lossy 단계. 매트릭스로 비대칭 분배."
+        },
+        {
+          "title": "QP / CRF",
+          "content": "양자화 강도. 낮을수록 정밀(고화질·고용량)."
+        },
+        {
+          "title": "CBR vs VBR vs CRF",
+          "content": "비트레이트 일정 vs 평균 일정 vs 화질 일정."
+        },
+        {
+          "title": "라이브엔 CBR",
+          "content": "대역폭 보장 필수."
+        },
+        {
+          "title": "VOD엔 VBR/CRF",
+          "content": "파일 크기 vs 화질 균일."
+        },
+        {
+          "title": "VMAF가 표준",
+          "content": "Netflix 기준. 사람 인지에 가까움."
+        },
+        {
+          "title": "R-D 곡선",
+          "content": "코덱 비교의 표준. 한 점만 보면 오해."
+        }
+      ]
+    },
+    {
+      "number": 5,
+      "emoji": "🏃",
+      "title": "Motion Estimation and Compensation",
+      "titleKr": "모션 추정과 보상 — 시간적 중복의 핵심",
+      "tldr": "프레임 사이의 시간적 중복을 활용하는 핵심 기술. 모션 벡터를 얼마나 정확하고 빠르게 찾느냐가 인터 예측의 품질을 결정한다.",
+      "topics": [
+        "Block matching",
+        "Motion Vector",
+        "Sub-pixel 정확도",
+        "Reference frames",
+        "Computational cost"
+      ],
+      "learningGoals": [
+        "모션 추정과 모션 보상의 정확한 의미와 순서를 안다",
+        "Block matching 알고리즘이 무엇인지 설명할 수 있다",
+        "Sub-pixel 정확도가 왜 필요하고 어떻게 구현되는지 안다",
+        "인코더의 가장 큰 연산 비용이 이 단계임을 이해한다",
+        "Reference frame 개수가 압축률·연산 비용에 미치는 영향을 안다"
+      ],
+      "overview": "비디오의 압축률이 폭증하는 결정적 이유는 **모션 보상**이다. I-프레임만으로는 1/10도 어렵지만 P/B-프레임이 들어가면 1/100~1/300이 가능. 그 마법의 중심에 모션 추정이 있다.\n\n이번 장은 모션 벡터가 어떻게 만들어지고, 왜 인코더의 연산 비용 80%를 차지하며, 코덱의 진화가 어떻게 이 단계를 더 정교하게 만들어 왔는지 본다.",
+      "sections": [
+        {
+          "title": "5.1 모션 추정과 모션 보상의 구분",
+          "content": "둘은 짝이지만 다른 일이다.\n\n**모션 추정 (Motion Estimation)** — **인코더만 하는 일**. 현재 프레임의 블록 하나를 잡고, 참조 프레임에서 가장 비슷한 블록을 찾는다. 그 위치 차이가 모션 벡터.\n\n**모션 보상 (Motion Compensation)** — **인코더·디코더 둘 다 하는 일**. 모션 벡터를 받아 참조 프레임에서 그 위치의 블록을 가져와 \"예측\"으로 사용. 잔차 = 현재 - 예측을 계산하고 그것만 압축.\n\n왜 이 구분이 중요한가? **인코더는 모션 추정에서 압도적 시간을 쓰지만, 디코더는 그 결과(모션 벡터)만 받아 모션 보상하면 끝**. 그래서 인코딩은 느리고 디코딩은 빠르다. 이게 \"라이브 방송엔 H.264, 저장엔 H.265/AV1\"의 근거 중 하나다.\n\n코덱 진화는 사실상 \"모션 추정을 더 영리하게, 모션 보상을 더 정교하게\"의 누적이다."
+        },
+        {
+          "title": "5.2 Block Matching — 모션 벡터 찾기",
+          "content": "가장 단순한 모션 추정 알고리즘이 **block matching**. 현재 프레임의 한 블록(보통 16×16)을 참조 프레임의 주변 영역(예: ±32 픽셀)에서 모든 위치와 비교, 가장 비슷한 위치를 찾는다.\n\n비슷한 정도를 측정하는 함수:\n- **SAD (Sum of Absolute Differences)**: 차이 절댓값 합. 빠름.\n- **SATD (Sum of Absolute Transformed Differences)**: SAD를 Hadamard 변환 후. 더 정확.\n- **SSE (Sum of Squared Errors)**: 차이 제곱 합.\n\n**Full search** (모든 위치 다 비교)는 정확하지만 느리다. 32×32 범위면 한 블록당 1024번 비교. 1080p 30fps이면 초당 수십억 번. 비현실적.\n\n그래서 실제 인코더는 **빠른 검색 알고리즘**을 쓴다:\n- **Diamond search**: 다이아몬드 패턴으로 검색 → 빠르지만 local minimum 위험\n- **Hexagon search**: 육각형 패턴 → 균형\n- **EPZS (Enhanced Predictive Zonal Search)**: 인접 블록의 모션 벡터로 시작점 예측 → x264·x265 기본\n\nPreset(`-preset slow` vs `-preset ultrafast`)이 결정하는 게 바로 이 검색의 철저함이다."
+        },
+        {
+          "title": "5.3 Sub-pixel 정확도 — 1/4·1/8 픽셀",
+          "content": "정수 픽셀 단위 모션 벡터로는 부족하다. 카메라가 0.5픽셀 움직였다면 정수로 표현 못 함. 그래서 **sub-pixel 정확도**.\n\n- **H.264**: 1/4 픽셀 정확도\n- **H.265**: 1/4 픽셀 정확도\n- **AV1**: 1/8 픽셀 정확도\n\n0.25 픽셀 위치의 \"픽셀 값\"이 뭔가? 보간(interpolation)으로 만든다. H.264는 6-tap FIR 필터, H.265는 8-tap, AV1은 8-tap + warping까지.\n\n왜 중요한가: sub-pixel 정확도가 높을수록 더 정확한 예측 → 더 작은 잔차 → 더 좋은 압축. H.264 → AV1로 가면서 압축률 향상의 한 축이 여기다.\n\n비용: 보간 필터를 모든 모션 추정 후보 위치에 적용해야 하니 연산이 폭증. 인코더 비용의 큰 부분."
+        },
+        {
+          "title": "5.4 Reference Frames — 여러 참조 프레임",
+          "content": "초창기 코덱(MPEG-2)은 바로 직전 프레임 1개만 참조했다. H.264부터는 **여러 참조 프레임** 지원. 최대 16장까지(메모리·연산 비용 한계 내에서).\n\n왜 도움이 되나? 어떤 객체가 잠깐 가려졌다가 다시 나타나는 경우 — \"직전 프레임에선 안 보이지만 5프레임 전엔 보인다\". 그 5프레임 전을 참조하면 예측이 잘 맞는다.\n\nH.265의 **CRA(Clean Random Access)·IDR·BLA** 같은 키프레임 정책이 reference frame 관리의 일부.\n\nB-프레임의 경우 **양방향 참조** — 이전 프레임 + 이후 프레임 둘 다 사용. \"이 블록은 직전 프레임의 (x+3, y-1)이거나 직후 프레임의 (x-2, y+1)의 평균\"이라고 예측. 더 정확.\n\n**참조 프레임 개수의 트레이드오프**:\n- 많으면 → 더 좋은 예측 → 더 작은 파일\n- 많으면 → 더 많은 메모리 → 디코더가 더 강력해야 함\n- 많으면 → 인코딩이 더 느림 (각 참조 프레임마다 검색)"
+        },
+        {
+          "title": "5.5 AV1의 새 무기 — Warped Motion과 Global Motion",
+          "content": "H.264·H.265는 \"평행이동(translation)\"만 다룬다. 즉 블록이 옆으로·위아래로 움직였다는 가정. 하지만 실제로는 회전·줌·perspective 변화도 일어난다.\n\n**AV1의 Warped Motion**: 블록 단위 회전·확대·shear까지 표현. \"이 블록은 참조 프레임에서 (x+5, y-2) 위치에서 가져오되, 10도 회전 + 1.05배 확대\"라고 표현 가능.\n\n**Global Motion**: 카메라 패닝·줌처럼 화면 전체가 같은 방향으로 움직이는 경우, 프레임 단위로 전역 변환을 정의. 모든 블록의 모션 벡터 대신 한 번에 처리.\n\n이 두 기법이 AV1이 H.265 대비 30% 더 좋은 압축률을 달성하는 주요 이유 중 하나. 자연 영상에서 회전·줌·패닝은 매우 흔하다.\n\n단점: 모션 추정의 검색 공간이 폭증해서 인코딩이 H.265보다 5~10배 느려진다. AV1 도입의 가장 큰 장벽."
+        }
+      ],
+      "analogy": {
+        "title": "CCTV에서 도난범 추적",
+        "content": "한 사람이 가게에서 물건을 훔쳐 도망갔다. CCTV 영상을 보고 추적할 때, 1번 카메라(밤 9시)의 그 사람을 찾아 그 사람의 모습을 기억한다. 그 다음 2번 카메라(밤 9시 5분) 영상에서 \"같은 사람이 어디 있을까?\" 찾는다. 옷·키·걸음걸이가 비슷한 사람을 발견 — 가게에서 동쪽으로 100m 떨어진 위치에서 발견했다고 치자.\n\n이 \"100m 동쪽\"이 모션 벡터다. 그리고 이 정보를 가지고 \"5분 뒤엔 같은 사람이 동쪽으로 100m 더 갔을 거다\"라고 예측하는 게 모션 보상이다.\n\n비디오 코덱이 정확히 이걸 한다. 한 블록의 \"같은 모습\"을 다음 프레임에서 찾아 위치 차이만 기록(모션 벡터), 그 위치에서 픽셀을 가져와 다음 프레임을 만든다(모션 보상). 차이는: CCTV 추적은 한 사람 한 명, 비디오 코덱은 한 프레임에 수천 블록 동시에. 그래서 빠른 검색 알고리즘이 핵심."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "두 프레임 사이의 모션 벡터를 직접 계산해 보자. 단순한 SAD 기반 block matching.",
+        "code": "import cv2\nimport numpy as np\n\ncap = cv2.VideoCapture('sample.mp4')\n_, frame_prev = cap.read()\n_, frame_curr = cap.read()\ncap.release()\n\nBLOCK = 16\nSEARCH = 16  # ± 16 pixels around the original position\n\ndef sad(a, b):\n    return np.abs(a.astype(int) - b.astype(int)).sum()\n\ndef find_mv(curr_block, prev_frame, cx, cy):\n    \"\"\"Return the best (dx, dy) and its SAD.\"\"\"\n    best, best_mv = float('inf'), (0, 0)\n    h, w = prev_frame.shape[:2]\n    for dy in range(-SEARCH, SEARCH + 1):\n        for dx in range(-SEARCH, SEARCH + 1):\n            x, y = cx + dx, cy + dy\n            if x < 0 or y < 0 or x + BLOCK > w or y + BLOCK > h:\n                continue\n            candidate = prev_frame[y:y+BLOCK, x:x+BLOCK]\n            cost = sad(curr_block, candidate)\n            if cost < best:\n                best, best_mv = cost, (dx, dy)\n    return best_mv, best\n\n# Compute MVs for the whole current frame\nh, w = frame_curr.shape[:2]\nmvs = []\nfor cy in range(0, h - BLOCK, BLOCK):\n    for cx in range(0, w - BLOCK, BLOCK):\n        curr_block = frame_curr[cy:cy+BLOCK, cx:cx+BLOCK]\n        mv, cost = find_mv(curr_block, frame_prev, cx, cy)\n        mvs.append((cx, cy, mv[0], mv[1], cost))\n\n# Stats: how much motion?\nmv_array = np.array([(m[2], m[3]) for m in mvs])\nprint(f'모션 벡터 평균: dx={mv_array[:,0].mean():.2f}, dy={mv_array[:,1].mean():.2f}')\nprint(f'  → 화면 전체가 평균 ({mv_array[:,0].mean():.1f}, {mv_array[:,1].mean():.1f}) 픽셀 움직임 = 카메라 패닝')\nprint(f'\\n0 모션 블록 비율: {(np.abs(mv_array).sum(axis=1) == 0).mean()*100:.1f}%')\nprint(f'  → 정적 영역의 비율. 모션 보상이 없어도 되는 블록')\n",
+        "walkthrough": "이 단순 구현으로 모션 벡터 분포가 보인다. 일반 비디오에서 카메라 패닝이 있으면 모든 블록의 MV가 같은 방향, 정적 장면이면 거의 모든 MV가 0. 실제 x264/x265는 이보다 100배 빠른 EPZS·Hex 검색을 쓰지만 핵심 아이디어는 동일. 특히 \"모션 벡터의 평균이 카메라 움직임\"이라는 점이 AV1의 Global Motion 발상의 근거."
+      },
+      "industryEvaluation": {
+        "overview": "모션 추정은 인코더 비용의 80%. 코덱 성능 차이의 가장 큰 부분이 이 단계의 정교함.",
+        "whatEngineersLookFor": [
+          "모션 추정·보상의 구분을 명확히 안다",
+          "Block matching의 검색 알고리즘 종류와 trade-off를 안다",
+          "Sub-pixel 정확도가 왜 필요한지 안다",
+          "x264·x265의 preset이 무엇을 바꾸는지 설명 가능"
+        ],
+        "redFlags": [
+          "모션 추정과 모션 보상을 혼동",
+          "Full search가 실용적이라고 생각",
+          "Sub-pixel 보간이 손실이라고 오해",
+          "Reference frame 개수가 디코더 비용에 미치는 영향 모름"
+        ],
+        "interviewQuestions": [
+          "모션 추정과 모션 보상의 차이는?",
+          "왜 sub-pixel 모션 벡터가 필요한가요?",
+          "x264의 `-preset slow`와 `-preset ultrafast`의 가장 큰 차이는?"
+        ],
+        "masteryVsFamiliar": "Familiar는 '모션 벡터로 다음 프레임 예측한다'를 안다. Mastery는 검색 알고리즘·서브픽셀·multiple reference·warped motion까지 매핑하고, preset 선택이 인코더의 모션 추정 비용을 어떻게 바꾸는지 안다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "추정 vs 보상",
+          "content": "인코더가 MV 찾기 vs 둘 다 MV로 예측."
+        },
+        {
+          "title": "Block matching",
+          "content": "참조 프레임에서 비슷한 블록 찾기."
+        },
+        {
+          "title": "비용의 80%",
+          "content": "인코더 시간의 대부분이 모션 추정."
+        },
+        {
+          "title": "Sub-pixel",
+          "content": "1/4·1/8 픽셀 보간. 더 정확한 예측."
+        },
+        {
+          "title": "Multi-reference",
+          "content": "여러 프레임 참조. 가려졌다 나타난 객체."
+        },
+        {
+          "title": "B-frame 양방향",
+          "content": "이전+이후 둘 다 참조. 가장 효율적."
+        },
+        {
+          "title": "Warped/Global motion",
+          "content": "AV1의 신무기. 회전·줌·패닝 직접 표현."
+        },
+        {
+          "title": "Preset = 검색 철저함",
+          "content": "ultrafast~slow가 검색 깊이를 조절."
+        }
+      ]
+    },
+    {
+      "number": 6,
+      "emoji": "🎞️",
+      "title": "I/P/B Frames and GOP",
+      "titleKr": "프레임 종류와 GOP 구조",
+      "tldr": "비디오는 모든 프레임을 똑같이 압축하지 않는다. I·P·B 세 종류와 그것들의 구조(GOP)가 스트리밍·랜덤 액세스·압축률을 결정한다.",
+      "topics": [
+        "I-frame (Intra)",
+        "P-frame (Predicted)",
+        "B-frame (Bidirectional)",
+        "GOP (Group of Pictures)",
+        "Keyframe interval"
+      ],
+      "learningGoals": [
+        "I/P/B 세 프레임의 압축 방식과 크기 비교를 안다",
+        "GOP의 정의와 구조(IBBP...IBBP)를 그릴 수 있다",
+        "키프레임 간격이 스트리밍·검색·랜덤 액세스에 미치는 영향을 안다",
+        "B-프레임이 왜 가장 작고 가장 디코딩이 복잡한지 이해한다",
+        "라이브 방송과 VOD에서 GOP 설정이 어떻게 다른지 안다"
+      ],
+      "overview": "지금까지 'P-프레임은 이전을 참조한다' 정도로만 다뤘다. 이번 장은 그 분류를 정확히 짚고, 그 프레임들이 모여 만드는 **GOP(Group of Pictures)** 구조와 그 구조가 실무에 미치는 영향을 본다.\n\nGOP 설정 하나가 스트리밍 화질, 랜덤 액세스 속도, 라이브 지연을 동시에 결정한다. 이걸 모르면 라이브 방송 운영을 못 한다.",
+      "sections": [
+        {
+          "title": "6.1 세 종류의 프레임",
+          "content": "| 타입 | 풀네임 | 압축 방식 | 평균 크기 | 자기완결 |\n|---|---|---|---|---|\n| **I** | Intra-coded | 자기 자신만(인트라 예측) | 1× (큼) | ✅ |\n| **P** | Predicted | 이전 I/P 참조 | ~1/5 | ❌ |\n| **B** | Bidirectional | 이전 + 이후 참조 | ~1/20 | ❌ |\n\n**I-프레임**: JPEG 한 장과 비슷한 자기완결적 프레임. 인트라 예측 + DCT + 양자화. 가장 큰 압축률은 못 내지만 다른 프레임에 의존하지 않음 → 여기서 재생 시작·시킹·랜덤 액세스 가능.\n\n**P-프레임**: 이전 I 또는 P 프레임 참조. 모션 보상으로 예측 + 잔차만 저장. I 크기의 1/5~1/10. 화면이 천천히 변하면 더 작아짐.\n\n**B-프레임**: 이전 + 이후 둘 다 참조. \"앞뒤 보면 가운데는 이렇게 됐을 거다\"의 양방향 예측. 가장 작지만 가장 복잡 — 디코딩하려면 다음 P/I 프레임이 먼저 도착해야 함."
+        },
+        {
+          "title": "6.2 GOP (Group of Pictures) — 반복 단위",
+          "content": "프레임 시퀀스의 반복 단위가 GOP. 전형적인 GOP:\n\n`I B B P B B P B B P B B I B B P ...`\n← --- GOP 1 (12프레임) --- → ← --- GOP 2 ... → \n\nGOP 길이 = 12 (1초당 30fps이면 0.4초). 이 GOP 안의 모든 P·B는 앞쪽 I에 의존. 다음 I가 새 GOP 시작.\n\n**GOP 구조의 두 축**:\n1. **GOP 길이(GOP size)**: I 프레임 사이 간격. 짧으면(예: 0.5초) 시킹 빠르고 에러 복구 쉽지만 압축률 손해. 길면(예: 5초) 압축률 좋지만 시킹 느리고 에러 누적 위험.\n2. **B-프레임 개수**: 두 P/I 사이에 들어가는 B 개수. 0(B 없음)~3개가 일반적. 많을수록 압축 좋지만 디코더 복잡도·지연 증가.\n\nGOP 길이는 도메인별로:\n- 일반 VOD: 2~5초 (60~150 프레임)\n- 라이브 스트리밍: 1~2초 (지연·복구 트레이드오프)\n- 화상회의: 0.5초 이하 또는 I-frame 없음(SVC)\n- Blu-ray: 0.5초 이하 (시킹·반응성 우선)"
+        },
+        {
+          "title": "6.3 키프레임 간격과 실무",
+          "content": "GOP의 시작 I 프레임을 **키프레임(keyframe)** 또는 **IDR 프레임(Instantaneous Decoder Refresh)** 이라고 부른다. IDR는 \"이 프레임 이후로 이전 어떤 프레임도 참조 안 함\"을 보장. 시킹의 진입점.\n\nffmpeg의 핵심 옵션:\n\n```bash\n# 키프레임 간격 60 프레임 (2초 @ 30fps)\nffmpeg -i input.mp4 -c:v libx264 -g 60 -keyint_min 60 -sc_threshold 0 ...\n```\n\n- `-g 60`: 최대 GOP 길이 60\n- `-keyint_min 60`: 최소 GOP 길이 60 (강제)\n- `-sc_threshold 0`: 장면 전환에서 자동 키프레임 삽입 안 함 (일정 간격 유지)\n\n**왜 일정 간격이 중요?** 스트리밍(HLS·DASH)에선 세그먼트 경계가 키프레임에 맞춰야 함. 그래야 클라이언트가 세그먼트 단위로 받아 디코딩할 수 있음. 키프레임 간격이 들쭉날쭉하면 segmenter가 깨짐.\n\n표준 패턴: HLS 세그먼트 2초 → 키프레임 간격 2초. DASH도 비슷."
+        },
+        {
+          "title": "6.4 B-프레임의 비용 — 인코딩·디코딩·지연",
+          "content": "B-프레임은 압축률에선 최고지만 세 가지 비용이 있다.\n\n**인코딩 비용**: 양방향 검색이라 모션 추정 2배. preset slow일수록 B 검색이 더 철저해짐.\n\n**디코딩 지연(reorder delay)**: B를 디코딩하려면 \"다음 P\"가 먼저 도착해야 한다. 즉 화면 출력 순서와 디코딩 순서가 다르다.\n\n예시 GOP: `I B B P` (출력 순서)\n- 디코딩 순서: `I → P → B → B` (P를 먼저 디코딩해야 B 디코딩 가능)\n- 디코딩 후 화면에 표시할 때 다시 순서 재배열\n\n**라이브 방송에서 치명적**: B 프레임 N개가 들어가면 출력이 N프레임만큼 지연. 30fps에서 B 2개면 약 67ms 추가 지연. 화상회의·게임 스트리밍에선 이 지연이 컴플레인 원인.\n\n**해결책**:\n- 라이브: `-bf 0` (B 프레임 끄기) 또는 `-bf 1` (최소)\n- VOD: `-bf 3` (기본) — 압축률 우선\n- 화상회의: B 프레임 + I 프레임 둘 다 최소화, P만으로 가는 모드도 있음"
+        },
+        {
+          "title": "6.5 GOP 길이와 에러 복구",
+          "content": "스트리밍 도중 패킷이 손실됐다고 치자. 한 P 프레임이 깨지면 그 뒤의 P·B 프레임이 모두 영향. \"drift\"라고 한다. 다음 I 프레임이 와야 회복.\n\n즉 **GOP 길이가 에러 복구 시간을 결정**. GOP 5초면 최악의 경우 5초간 화면이 깨진 채 유지. GOP 1초면 최대 1초.\n\n라이브 스트리밍의 트레이드오프:\n- 짧은 GOP (1초): 에러 복구 빠름, 시킹 빠름, 압축률 손해 (~10%)\n- 긴 GOP (5초): 에러 복구 느림, 압축률 좋음 (~10% 향상)\n\n**현실의 선택**:\n- YouTube Live: 2초 GOP\n- Twitch: 2초 GOP (HLS 세그먼트와 동기화)\n- Netflix VOD: 2~4초 GOP\n- 한국 IPTV: 0.5초 GOP (채널 전환 반응성)\n\nGOP 길이는 \"라이브 도메인의 reactivity vs 압축률\" 트레이드오프 그 자체."
+        }
+      ],
+      "analogy": {
+        "title": "일기 쓰기의 세 가지 방식",
+        "content": "일기를 어떻게 쓸까? 세 가지 방식이 있다.\n\n(I) **새 일기**: 매일 모든 걸 처음부터 쓴다. 누가 봐도 그 날의 모든 게 다 적혀 있음. 그러나 길어진다.\n\n(P) **어제 일기 + 변경분**: \"어제 일기와 같은데, 점심에 김치찌개 대신 된장찌개를 먹었다\"만 쓴다. 짧지만 어제 일기를 같이 봐야 이해 가능.\n\n(B) **앞뒤 일기 + 추측**: \"어제는 비, 오늘은 비, 그러니 오늘 점심 메뉴는 어제와 비슷했을 거다\"라고 앞뒤 일기로 가운데를 추측한다. 가장 짧지만 앞뒤 둘 다 필요.\n\n비디오 코덱의 I·P·B가 정확히 이렇다. I는 자기완결이라 크지만 \"여기서 재생 시작 가능\". P는 작지만 이전 의존. B는 가장 작지만 양방향 의존 → 디코딩 순서가 출력 순서와 다름.\n\nGOP는 \"몇 일에 한 번 새 일기를 쓸까\"의 선택이다. 매일 새로 쓰면 일기장이 두꺼워지지만 어느 날을 펴도 그 날을 알 수 있다. 한 달에 한 번 새로 쓰면 일기장은 얇아지지만 중간을 보려면 처음부터 다 읽어야 한다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "ffprobe로 영상의 GOP 구조를 분석하고, GOP 길이가 다른 인코딩 결과를 비교해 보자.",
+        "code": "import subprocess, json\n\ndef analyze_gop(path):\n    \"\"\"Extract frame types from a video and report GOP stats.\"\"\"\n    out = subprocess.run([\n        'ffprobe', '-v', 'error',\n        '-select_streams', 'v:0',\n        '-show_entries', 'frame=pict_type',\n        '-of', 'json', path\n    ], capture_output=True, text=True, check=True)\n    frames = json.loads(out.stdout)['frames']\n    types = [f['pict_type'] for f in frames]\n\n    counts = {t: types.count(t) for t in set(types)}\n    print(f'{path}: {counts}')\n\n    # Find GOP boundaries (I-frames)\n    i_positions = [i for i, t in enumerate(types) if t == 'I']\n    if len(i_positions) > 1:\n        gops = [i_positions[i+1] - i_positions[i] for i in range(len(i_positions)-1)]\n        print(f'  평균 GOP 길이: {sum(gops)/len(gops):.1f} 프레임')\n        print(f'  최소·최대 GOP: {min(gops)}~{max(gops)}')\n    return types\n\n# Encode with different GOP settings\nfor gop in [30, 60, 120, 240]:\n    out = f'gop_{gop}.mp4'\n    subprocess.run([\n        'ffmpeg', '-y', '-i', 'sample.mp4',\n        '-c:v', 'libx264',\n        '-g', str(gop),\n        '-keyint_min', str(gop),\n        '-sc_threshold', '0',\n        '-bf', '2',                # B-frames: 2 between I/P\n        '-preset', 'medium', '-crf', '23', '-an', out\n    ], check=True, capture_output=True)\n    analyze_gop(out)\n    import os\n    print(f'  파일 크기: {os.path.getsize(out)/1e6:.2f} MB\\n')\n\n# 결과 예시 (1080p 30fps 10초 영상):\n# GOP 30 (1초):  {I: 11, P: 100, B: 189}, 파일 4.2 MB\n# GOP 60 (2초):  {I:  6, P:  98, B: 196}, 파일 3.8 MB\n# GOP 120 (4초): {I:  3, P:  99, B: 198}, 파일 3.5 MB\n# GOP 240 (8초): {I:  2, P: 100, B: 198}, 파일 3.4 MB\n# → GOP 길수록 압축 좋지만 시킹·복구 느림\n",
+        "walkthrough": "ffprobe가 프레임 타입 시퀀스를 그대로 보여준다. GOP 1초 vs 8초의 파일 크기 차이가 약 20%. 이 20%를 잃더라도 라이브 방송엔 GOP 짧은 게 필수 — 시킹·에러 복구가 즉각적이어야 함. VOD는 GOP 길게 가서 압축률 최대화. 도메인별로 다른 답이 나오는 대표적 트레이드오프."
+      },
+      "industryEvaluation": {
+        "overview": "GOP 설정은 스트리밍 운영의 첫 결정. 잘못 설정하면 segmenter 깨짐·시킹 실패·라이브 지연 폭증.",
+        "whatEngineersLookFor": [
+          "I/P/B의 크기·디코딩 순서·자기완결성을 안다",
+          "GOP 길이의 도메인별 적정값을 안다",
+          "HLS/DASH 세그먼트 길이와 키프레임 간격의 관계 안다",
+          "B-frame 개수와 라이브 지연의 관계 안다"
+        ],
+        "redFlags": [
+          "GOP 길이를 임의로 설정하고 세그먼트와 안 맞춤",
+          "라이브에서 B-frame 3개 쓰고 지연 컴플레인 받음",
+          "장면 전환에서 자동 키프레임을 끄지 않고 segmenter 깨뜨림",
+          "I/P/B의 디코딩 순서가 출력 순서와 다르다는 사실 모름"
+        ],
+        "interviewQuestions": [
+          "라이브 방송에 적절한 GOP 길이는? 왜?",
+          "B-프레임이 압축률에 좋은데 화상회의에서 안 쓰는 이유는?",
+          "HLS 세그먼트 길이와 키프레임 간격이 다르면 어떤 문제가 생기나요?"
+        ],
+        "masteryVsFamiliar": "Familiar는 'I·P·B가 있다'를 안다. Mastery는 GOP·키프레임·세그먼트·지연·복구의 관계를 도메인별로 설계하고, ffmpeg 옵션으로 구현할 수 있다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "I/P/B",
+          "content": "자기완결 / 단방향 예측 / 양방향 예측."
+        },
+        {
+          "title": "크기 비교",
+          "content": "I >> P >> B. 보통 1:1/5:1/20."
+        },
+        {
+          "title": "B는 양날의 검",
+          "content": "최고 압축률, 최악 지연."
+        },
+        {
+          "title": "GOP",
+          "content": "I 사이 간격. 압축·시킹·복구의 트레이드오프."
+        },
+        {
+          "title": "키프레임 = IDR",
+          "content": "GOP 시작. 스트리밍 세그먼트 경계."
+        },
+        {
+          "title": "라이브엔 짧은 GOP",
+          "content": "1~2초. 지연·복구 우선."
+        },
+        {
+          "title": "VOD엔 긴 GOP",
+          "content": "2~5초. 압축률 우선."
+        },
+        {
+          "title": "세그먼트와 동기화",
+          "content": "키프레임 간격이 세그먼트 길이와 같아야."
+        }
+      ]
+    },
+    {
+      "number": 7,
+      "emoji": "📺",
+      "title": "H.264 (AVC) — The Universal Codec",
+      "titleKr": "H.264 — 모든 곳에 있는 코덱",
+      "tldr": "2003년 이후 모든 인터넷·모바일·BD의 사실상 표준. 압도적 호환성과 합리적 라이센스로 \"안전한 선택\"의 대명사. 2026년에도 여전히 가장 많이 쓰인다.",
+      "topics": [
+        "AVC 표준의 등장",
+        "Macroblock 16×16",
+        "9방향 인트라 예측",
+        "CABAC vs CAVLC",
+        "Profile (Baseline/Main/High)"
+      ],
+      "learningGoals": [
+        "H.264의 등장 배경과 시대적 의미를 안다",
+        "Macroblock 단위 처리와 sub-블록 분할을 이해한다",
+        "9방향 인트라 예측의 직관과 한계를 안다",
+        "CABAC와 CAVLC의 차이·trade-off를 안다",
+        "Profile/Level의 의미와 호환성 영향을 안다"
+      ],
+      "overview": "H.264는 **2003년에 등장해 2026년에도 가장 많이 쓰이는 비디오 코덱**이다. 등장 후 23년이 지났지만 압도적 호환성과 충분한 압축률로 여전히 '안전한 선택'.\n\n이번 장은 H.264의 핵심 기술과 그것이 만들어낸 \"코덱 표준이란 무엇인가\"의 본보기를 본다. H.265·AV1은 모두 H.264의 후속이고, H.264를 모르면 그 후속들을 이해 못 한다.",
+      "sections": [
+        {
+          "title": "7.1 등장 배경 — MPEG-2의 한계와 인터넷 시대",
+          "content": "1995년 MPEG-2가 DVD·디지털 방송의 표준이 됐다. 비트레이트 8~10Mbps에서 SD(720×480) 화질. 당시엔 충분했지만 인터넷·HD 시대로 가면서 한계가 보였다.\n\n1080p HD를 MPEG-2로 인코딩하면 20Mbps 필요. 당시 인터넷 평균 속도가 1Mbps 수준이라 비현실적. \"같은 화질에 절반 비트레이트\"가 절실했다.\n\nITU-T VCEG(H.26x 시리즈)와 ISO/IEC MPEG(MPEG-x 시리즈)가 \"이번엔 같이 만들자\"고 합의 — **Joint Video Team(JVT)** 결성. 결과물이 H.264 = MPEG-4 Part 10 = AVC(Advanced Video Coding). 2003년 표준화.\n\n한 줄 요약: **MPEG-2 대비 같은 화질에 절반 비트레이트**. 1080p HD를 10Mbps에 가능 → DVD에서 BD로, 위성에서 IPTV로, PC에서 인터넷·모바일로의 거대한 이행을 가능하게 한 결정적 기술."
+        },
+        {
+          "title": "7.2 Macroblock 16×16과 sub-블록 분할",
+          "content": "H.264의 기본 처리 단위는 **16×16 픽셀의 매크로블록(macroblock)**. 한 프레임을 16×16 격자로 나눠 각 매크로블록을 독립적으로 압축.\n\n하지만 16×16이 항상 최적은 아니다. 디테일이 많은 영역은 더 작게, 단조로운 영역은 더 크게 처리해야 효율적. 그래서 **매크로블록을 더 작은 sub-블록으로 분할 가능**:\n\n- 16×16 → 16×8 → 8×16 → 8×8\n- 8×8 → 8×4 → 4×8 → 4×4\n\n인코더는 각 매크로블록마다 \"어떻게 분할하면 최적인가\"를 탐색. 분할이 정밀할수록 압축은 좋지만 시그널링 오버헤드도 늘어남.\n\nH.264 vs H.265 비교 지점: H.265는 16×16 매크로블록 대신 **CTU(Coding Tree Unit, 최대 64×64)** 를 쓴다. 더 큰 블록으로 단조 영역을 효율적 처리. 이게 H.265 압축 효율의 큰 부분."
+        },
+        {
+          "title": "7.3 9방향 인트라 예측 — 같은 프레임 안에서의 추측",
+          "content": "I-프레임의 압축 핵심은 인트라 예측. H.264는 4×4 블록 단위로 **9방향 예측**:\n\n- DC (블록 평균)\n- Vertical (수직)\n- Horizontal (수평)\n- Diagonal Down-Left\n- Diagonal Down-Right\n- Vertical-Right\n- Horizontal-Down\n- Vertical-Left\n- Horizontal-Up\n\n각 방향은 \"왼쪽 + 위쪽 블록의 픽셀을 어떻게 외삽(extrapolate)해 현재 4×4를 채울까\"의 규칙. 예: Vertical은 위쪽 행 픽셀을 그대로 아래로 복사.\n\n인코더가 9방향 다 시도해 가장 잘 맞는 걸 선택. 잘 맞는 방향이 있으면 잔차가 매우 작아짐 → 압축 폭증.\n\n16×16 매크로블록은 별도로 **4방향 예측**(DC·Vertical·Horizontal·Planar)도 가능. 큰 단조 영역에 효율적.\n\nH.265는 이걸 **35방향**으로, AV1은 **56방향**으로 확장. 자세한 건 다음 장."
+        },
+        {
+          "title": "7.4 CABAC vs CAVLC — 엔트로피 부호화 두 갈래",
+          "content": "H.264의 마지막 압축 단계 엔트로피 부호화는 두 가지를 제공한다.\n\n**CAVLC (Context-Adaptive Variable Length Coding)**:\n- Huffman 류의 가변 길이 부호화\n- 컨텍스트(주변 블록 상태)에 따라 코드 테이블 변경\n- 빠름·구현 간단\n- Baseline profile에서 강제\n\n**CABAC (Context-Adaptive Binary Arithmetic Coding)**:\n- 산술 부호화. Shannon 한계에 더 가까움\n- 같은 데이터에 **10% 더 적은 비트** (압축 효율 향상)\n- 그러나 계산 비용 큼 (디코더 부담)\n- Main·High profile에서 사용\n\n**실무 트레이드오프**: 모바일(특히 옛 기기)·라이브 인코딩엔 CAVLC, VOD·고화질엔 CABAC. ffmpeg `-x264-params no-cabac`로 끌 수 있음.\n\nH.265는 **CABAC만 사용**. CAVLC 제거. 디코더가 강해진 시대라 가능한 선택. AV1은 **SBAC(Symbol-Based Arithmetic Coding)** 으로 발전 — 더 효율적이지만 또 더 무거움."
+        },
+        {
+          "title": "7.5 Profile과 Level — 호환성의 미디엄",
+          "content": "H.264 표준은 거대하다. 모든 디바이스가 모든 기능을 지원할 수는 없음. 그래서 **Profile**과 **Level**로 부분집합 정의.\n\n**Profile = 기능 집합**:\n- **Baseline**: 가장 단순. B-프레임 없음, CAVLC만. 화상회의·옛 모바일.\n- **Main**: B-프레임 + CABAC. 일반 TV·SD.\n- **High**: 8×8 변환, 4:2:0 외, 무손실 모드. BD·HD 스트리밍.\n- **High 10/4:4:4**: 10bit, 4:4:4 컬러. 전문 영역.\n\n**Level = 처리 능력**:\n- Level 3.0: SD 30fps\n- Level 4.0: 1080p 30fps\n- Level 4.2: 1080p 60fps\n- Level 5.1: 4K 30fps\n- Level 5.2: 4K 60fps\n\n**호환성의 의미**: \"이 영상은 H.264 High@L4.0\" 이면 \"Main 디코더는 못 풀 수도 있고, L4.0 미만 디코더도 못 풀 수도\". 옛 아이폰이 어떤 영상을 못 보는 게 보통 이 Profile/Level 미스매치.\n\n**실무 팁**: 모든 디바이스 호환을 원하면 **Baseline 또는 Main @ L3.1** 이하 사용. 화질을 양보하지만 안 깨짐."
+        }
+      ],
+      "analogy": {
+        "title": "모눈종이로 그림 그리기",
+        "content": "초등학교 미술시간에 모눈종이를 받았다고 치자. \"풍경화를 그려야 하는데, 한 칸 한 칸 채워야 한다.\" 16×16 모눈종이 블록을 받았는데, 푸른 하늘 영역은 그냥 \"이 16×16 다 같은 파란색\"이라고 하면 된다. 디테일이 많은 나무 영역은 \"16×16을 4×4 단위로 쪼개서 더 세밀하게 그리겠다\"고 한다.\n\n이게 H.264의 16×16 매크로블록 + sub-블록 분할의 직관이다. 단조 영역은 큰 단위로(시그널링 절약), 디테일 영역은 작은 단위로(품질 보존).\n\n그리고 인트라 예측은 \"옆 칸을 봐서 추측하기\". 위쪽 칸이 파란색이면 아래도 파랗겠지(Vertical). 왼쪽이 빨강이면 오른쪽도 비슷하겠지(Horizontal). 9가지 추측 방향. 잘 맞는 방향을 골라 \"이 방향으로 추측하고, 실제와의 차이만 적자\".\n\nH.264가 모든 디바이스에 들어간 이유: 이 \"모눈종이 그림\" 방식이 충분히 단순해서 작은 칩으로도 디코딩 가능. 동시에 충분히 정교해서 화질이 인터넷 시대에 맞는 수준. 단순함과 효율의 절묘한 균형."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "ffmpeg + libx264로 다양한 H.264 옵션을 비교. Profile·Preset·CABAC·B-frame이 파일 크기와 인코딩 시간에 어떻게 영향을 주는지.",
+        "code": "import subprocess, os, time\n\nINPUT = 'sample.mp4'\n\nconfigs = [\n    ('baseline_fast', ['-profile:v', 'baseline', '-preset', 'ultrafast', '-crf', '23']),\n    ('main_medium',   ['-profile:v', 'main',     '-preset', 'medium',    '-crf', '23']),\n    ('high_slow',     ['-profile:v', 'high',     '-preset', 'slow',      '-crf', '23']),\n    ('high_veryslow', ['-profile:v', 'high',     '-preset', 'veryslow',  '-crf', '23']),\n    ('no_cabac',      ['-profile:v', 'main',     '-preset', 'medium',    '-crf', '23',\n                       '-x264-params', 'no-cabac=1']),\n    ('no_bframe',     ['-profile:v', 'main',     '-preset', 'medium',    '-crf', '23',\n                       '-bf', '0']),\n]\n\nprint(f'{\"config\":<18} {\"time\":>7} {\"size MB\":>10} {\"vs medium\":>12}')\nprint('-' * 50)\n\nfor name, opts in configs:\n    output = f'h264_{name}.mp4'\n    t0 = time.time()\n    subprocess.run([\n        'ffmpeg', '-y', '-i', INPUT,\n        '-c:v', 'libx264', *opts,\n        '-an', output\n    ], check=True, capture_output=True)\n    dt = time.time() - t0\n    size = os.path.getsize(output) / 1e6\n    print(f'{name:<18} {dt:>6.1f}s {size:>9.2f} MB')\n\n# 결과 예시 (1080p 10s 영상):\n# baseline_fast      0.4s   3.45 MB   ← 호환 최고, 화질 낮음\n# main_medium        1.2s   3.12 MB   ← 일반적 기본\n# high_slow          4.8s   2.95 MB   ← +30% 시간, -5% 크기\n# high_veryslow     18.3s   2.90 MB   ← +15배 시간, -1.7% 크기\n# no_cabac           1.1s   3.44 MB   ← CABAC 끄면 +10% 커짐\n# no_bframe          1.0s   3.51 MB   ← B 끄면 +13% 커짐\n",
+        "walkthrough": "옵션의 ROI가 명확히 보인다. CABAC을 켜는 것만으로 10% 줄어들고(거의 무료), B-프레임 추가로 13% 줄어든다. Preset slow는 30% 시간 더 들이고 5% 줄임 — sweet spot. veryslow는 15배 시간에 1.7%만 추가 — 비용 대비 거의 무가치. 그래서 표준 권고가 `-preset medium` 또는 `slow`. veryslow는 archive용에만."
+      },
+      "industryEvaluation": {
+        "overview": "H.264 옵션의 의미와 trade-off를 손에 잡혀 있어야 비디오 엔지니어. 모든 인코딩 결정이 이 옵션들로 표현됨.",
+        "whatEngineersLookFor": [
+          "Profile/Level의 호환성 영향을 안다",
+          "Preset의 \"인코딩 시간 vs 압축률\" trade-off 직관",
+          "CABAC·B-frame의 비용·효과를 안다",
+          "x264의 옵션을 ffmpeg 명령으로 직접 작성 가능"
+        ],
+        "redFlags": [
+          "Profile을 \"무조건 High가 좋다\"고 생각",
+          "Preset veryslow를 일상에 씀 (ROI 0)",
+          "Baseline을 \"옛날 거\"로 무시 (실제로는 화상회의·옛 모바일에 필수)",
+          "Level 미스매치로 인한 호환성 사고 모름"
+        ],
+        "interviewQuestions": [
+          "H.264 Baseline·Main·High의 차이와 사용 도메인은?",
+          "CABAC vs CAVLC를 언제 선택하나요?",
+          "Preset medium·slow·veryslow 중 어느 것이 일반 VOD에 적절한가요? 왜?"
+        ],
+        "masteryVsFamiliar": "Familiar는 '`-c:v libx264 -crf 23`'을 안다. Mastery는 Profile·Level·Preset·B-frame·CABAC·refs·me_method 등 주요 옵션의 효과를 즉답하고, 도메인별로 최적 조합을 설계한다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "H.264 = AVC",
+          "content": "2003년. MPEG-2 대비 같은 화질에 절반 비트레이트."
+        },
+        {
+          "title": "Macroblock 16×16",
+          "content": "처리 단위. 8×4까지 sub-블록 분할."
+        },
+        {
+          "title": "인트라 9방향",
+          "content": "옆 블록 픽셀로 추측. 잘 맞으면 잔차 폭감."
+        },
+        {
+          "title": "CABAC > CAVLC",
+          "content": "10% 더 좋지만 더 무거움."
+        },
+        {
+          "title": "Profile 호환성",
+          "content": "Baseline·Main·High. 디바이스 호환의 미디엄."
+        },
+        {
+          "title": "Level = 능력",
+          "content": "L3.1(SD) ~ L5.2(4K60). 디코더 처리 한계."
+        },
+        {
+          "title": "Preset = 검색 철저함",
+          "content": "Medium~Slow가 sweet spot. Veryslow는 ROI 0."
+        },
+        {
+          "title": "여전히 표준",
+          "content": "2026년에도 가장 많이 쓰이는 코덱. 안전한 선택."
+        }
+      ]
+    },
+    {
+      "number": 8,
+      "emoji": "🎬",
+      "title": "H.265 (HEVC) — The 4K Codec",
+      "titleKr": "H.265 — 4K 시대를 연 코덱",
+      "tldr": "H.264 대비 같은 화질에 절반 비트레이트. 4K·HDR·아이폰 비디오의 표준. 그러나 라이센스 지옥과 인코딩 비용 폭증이 도입의 큰 장벽.",
+      "topics": [
+        "CTU 64×64 가변 분할",
+        "35방향 인트라 예측",
+        "향상된 모션 추정",
+        "병렬 처리 (Tile·WPP)",
+        "라이센스 이슈"
+      ],
+      "learningGoals": [
+        "H.265의 핵심 혁신(CTU·35방향·향상된 인터)을 설명할 수 있다",
+        "CTU의 quad-tree 분할이 왜 압축률을 폭증시키는지 안다",
+        "H.265 인코딩이 왜 5~10배 느린지 근거와 함께 설명 가능",
+        "Tile·WPP가 어떻게 병렬 인코딩을 가능하게 하는지 안다",
+        "H.265 도입이 느렸던 라이센스 사정을 알고 의사결정에 반영할 수 있다"
+      ],
+      "overview": "H.265 (HEVC)는 2013년 표준화. H.264와 같은 JCT 팀이 만들었지만 \"같은 화질에 또 절반 비트레이트\"라는 도약을 이뤘다. **4K·8K·HDR 시대를 가능하게 한 결정적 기술**.\n\n이번 장은 H.265가 H.264 대비 어떻게 두 배 효율을 냈는지, 그 대가가 무엇이었는지, 그리고 라이센스라는 비기술적 문제가 도입을 어떻게 지연시켰는지 본다.",
+      "sections": [
+        {
+          "title": "8.1 H.265가 H.264 대비 두 배 효율인 이유",
+          "content": "한 줄: **모든 단계에서 더 정교하게**. 세 가지가 결정적이다.\n\n**(1) 더 큰 블록과 가변 분할**: H.264의 16×16 매크로블록 대신 **CTU(Coding Tree Unit) 64×64**. 그 안에서 quad-tree로 64→32→16→8까지 잘게 분할.\n\n**(2) 더 많은 인트라 예측 방향**: 9방향 → **35방향**. 더 정확한 추측 → 더 작은 잔차.\n\n**(3) 더 정교한 모션 보상**: AMVP(Advanced MV Prediction), 머지 모드, 더 정밀한 보간 필터.\n\n이 셋의 누적 결과가 \"같은 화질에 절반 비트레이트\". 4K 영상을 1080p 수준의 비트레이트로 보낼 수 있게 됨 → 4K 스트리밍·BD가 현실이 됨.\n\n다만 **인코딩이 5~10배 느려진다**. CTU 분할의 탐색 공간이 폭증하기 때문. 디코딩은 비슷한 수준(약간 더 무거움)이라 디바이스 디코딩에는 큰 부담 없음."
+        },
+        {
+          "title": "8.2 CTU와 Quad-Tree 분할 — 핵심 혁신",
+          "content": "CTU는 H.265의 가장 큰 발상 전환. **\"고정 크기 블록\"이라는 가정을 버린다**.\n\n한 64×64 CTU 안에서 인코더가 결정:\n- 이 CTU는 단조 영역(하늘)이면 → 64×64 한 덩어리\n- 디테일이 있는 영역이면 → 4분할 32×32\n- 그 32×32 중 일부가 더 디테일하면 → 다시 4분할 16×16\n- 끝까지 → 8×8\n\n이 분할이 **quad-tree** 구조. 디테일 양에 맞춰 블록 크기가 자동 적응.\n\n왜 큰가? 푸른 하늘 64×64 한 덩어리로 처리하면 시그널링 오버헤드가 압도적으로 작다. H.264는 같은 영역을 16×16 매크로블록 16개로 처리 → 시그널링이 16배.\n\n비용: 인코더가 \"어떻게 분할할까\"를 탐색해야 함. CTU 하나당 가능한 분할 조합이 수십 가지. 이게 H.265 인코딩 비용 폭증의 주범.\n\nx265는 빠른 RDO(Rate-Distortion Optimization) 알고리즘으로 이 탐색을 줄이지만, x264 대비 5~10배 느린 게 현실. preset slow에서는 30~50배까지."
+        },
+        {
+          "title": "8.3 35방향 인트라 예측 + Planar·DC",
+          "content": "인트라 예측이 9 → 35 방향. 정확히는:\n- DC (블록 평균) 1개\n- Planar (선형 그라데이션) 1개\n- 방향성 33개 (수직·수평·대각선·그 사이의 각 단계)\n\n총 35 모드. H.264 대비 거의 4배. 더 정확한 추측 → 더 작은 잔차 → 더 좋은 압축.\n\n특히 **Planar** 모드가 흥미롭다. \"이 블록은 네 모서리로부터 부드러운 그라데이션\"이라고 예측. 자연 이미지의 부드러운 영역(피부·하늘)에서 매우 효과적.\n\n비용: 인코더가 35방향을 다 시도하면 H.264 대비 4배 인트라 비용. 빠른 알고리즘(코스트 기반 가지치기)으로 줄이지만 여전히 큰 비용.\n\nAV1은 이걸 **56방향 + 다양한 변형**으로 확장. 더 좋지만 더 무거움. 이게 코덱 진화의 정직한 룰."
+        },
+        {
+          "title": "8.4 Tile·WPP — 병렬 처리의 첫 도입",
+          "content": "H.265의 또 다른 큰 발전: **병렬 인코딩·디코딩 지원**. H.264는 매크로블록 사이 의존성이 강해 병렬화가 어려웠음.\n\n**Tile**: 프레임을 직사각형 타일로 나눠 각 타일을 독립적으로 처리. 멀티코어 CPU·GPU 가속에 유리. 4K 영상을 4타일로 나누면 4코어가 동시에 처리.\n\n**WPP (Wavefront Parallel Processing)**: 한 행씩 시작 시점을 살짝 늦춰 \"파도\"처럼 병렬 처리. 의존성 유지하면서 병렬화.\n\n**Slice**: 한 프레임을 여러 슬라이스로 나눠 독립 처리. 에러 복구에도 유리.\n\n이 셋이 4K·8K 시대를 가능하게 한 또 다른 축. 실시간 4K 인코딩이 가능해진 게 이 병렬화 덕분.\n\nffmpeg에선 `-x265-params \"tiles=4:wpp=1\"` 같이 사용."
+        },
+        {
+          "title": "8.5 라이센스 지옥 — 기술 외의 거대한 장벽",
+          "content": "H.265의 기술은 훌륭했지만 **라이센스 정리가 재앙이었다**.\n\nH.264는 MPEG LA라는 단일 패텐트 풀에서 라이센스 관리. 명확하고 비교적 합리적. 그래서 빠르게 보급.\n\nH.265는 **세 개의 패텐트 풀** + **수많은 독립 권리자**가 각자 라이센스 요구. MPEG LA, HEVC Advance, Velos Media, 그리고 별도 권리 주장자들.\n\n결과:\n- 제조사가 어디서·얼마를 내야 할지 모름\n- 인터넷 회사(브라우저)가 H.265 지원을 미룸 — Chrome·Firefox가 오래 거부\n- 운영체제·디바이스마다 다른 지원 — 아이폰은 빠르게, 안드로이드는 늦게, 데스크톱 브라우저는 더 늦게\n\n이 라이센스 분쟁이 결국 **Alliance for Open Media(AOMedia)** 결성을 촉발 — Google·Mozilla·Cisco·Netflix·Microsoft·Amazon·Intel·Apple이 모여 \"우리가 로열티 무료 코덱 만들자\". 결과물이 AV1.\n\n교훈: **기술적 우수성이 도입을 보장하지 않는다**. 비기술적 요인(라이센스·정책·표준화 과정)이 시장을 좌우. 이게 9장에서 다룰 AV1·VVC 전쟁의 배경."
+        }
+      ],
+      "analogy": {
+        "title": "지도를 가변 크기 영역으로 나누기",
+        "content": "한국 지도를 행정 구역으로 나눈다고 치자. H.264는 \"모든 영역을 가로세로 같은 크기로 자른다\". 부산 같은 도시도, 강원도 같은 산악 지역도 동일 격자. 도시 내부는 격자가 너무 커서 상세 정보가 안 들어가고, 산악은 격자가 너무 작아 빈 격자가 잔뜩.\n\nH.265의 CTU는 \"인구 밀도에 따라 격자 크기 가변\". 서울 시내는 작은 격자(8×8), 강원도 산악은 큰 격자(64×64) 한 덩어리. 각 영역의 디테일에 맞춤 → 같은 정보를 더 적은 격자로 표현.\n\n그리고 35방향 인트라 예측은 \"옆 영역을 보고 이 영역 추측\"이 9방향에서 35방향으로 정교화. 부산 옆 동래의 인구 밀도를 알면, 동래 옆 해운대도 비슷할 거다. 9가지 방향(동·서·남·북·…)으로 추측하던 걸 35가지 세분된 방향(북북동·동북동·…)으로.\n\n결과: 같은 지도 정보를 절반의 용량으로 표현. 그러나 \"어떻게 가변 격자를 그릴까\"를 결정하는 데 5배 시간이 든다. 압축률과 인코딩 비용의 정직한 트레이드오프."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "같은 영상을 x264와 x265로 인코딩해 R-D 비교. 파일 크기·VMAF·인코딩 시간을 측정.",
+        "code": "import subprocess, os, time, json\n\nINPUT = 'sample.mp4'\n\nconfigs = [\n    ('x264 fast',     ['libx264', '-preset', 'fast',   '-crf', '23']),\n    ('x264 medium',   ['libx264', '-preset', 'medium', '-crf', '23']),\n    ('x264 slow',     ['libx264', '-preset', 'slow',   '-crf', '23']),\n    ('x265 fast',     ['libx265', '-preset', 'fast',   '-crf', '28']),\n    ('x265 medium',   ['libx265', '-preset', 'medium', '-crf', '28']),\n    ('x265 slow',     ['libx265', '-preset', 'slow',   '-crf', '28']),\n]\n\nresults = []\nfor name, opts in configs:\n    output = f'{name.replace(\" \", \"_\")}.mp4'\n    t0 = time.time()\n    subprocess.run([\n        'ffmpeg', '-y', '-i', INPUT,\n        '-c:v', *opts, '-an', output\n    ], check=True, capture_output=True)\n    dt = time.time() - t0\n    size = os.path.getsize(output) / 1e6\n\n    # VMAF\n    subprocess.run([\n        'ffmpeg', '-y', '-i', output, '-i', INPUT,\n        '-lavfi', 'libvmaf=log_path=v.json:log_fmt=json',\n        '-f', 'null', '-'\n    ], check=True, capture_output=True)\n    vmaf = json.load(open('v.json'))['pooled_metrics']['vmaf']['mean']\n\n    results.append((name, dt, size, vmaf))\n    print(f'{name:<14} {dt:>6.1f}s  {size:>6.2f} MB  VMAF={vmaf:5.1f}')\n\n# 결과 예시 (1080p 30fps 10s):\n# x264 fast        0.8s   3.45 MB  VMAF=94.2\n# x264 medium      1.5s   3.12 MB  VMAF=95.0\n# x264 slow        4.8s   2.98 MB  VMAF=95.5\n# x265 fast        4.2s   1.82 MB  VMAF=93.8   ← 같은 화질, 절반 크기\n# x265 medium     12.5s   1.65 MB  VMAF=94.6\n# x265 slow       42.1s   1.55 MB  VMAF=95.0   ← x264 medium과 같은 화질, 50% 크기\n",
+        "walkthrough": "직접 비교가 명확하다. x265 medium은 x264 medium 대비 **인코딩 시간 8배, 파일 크기 절반**. R-D 곡선이 압도적으로 위. 그러나 \"8배 느린 인코딩\"의 비용이 라이브·실시간엔 받아들이기 어려움. 그래서 VOD·다운로드용엔 x265, 라이브엔 여전히 x264."
+      },
+      "industryEvaluation": {
+        "overview": "H.265 옵션과 trade-off를 손에 잡혀 있어야 4K·HDR 시대 비디오 엔지니어. 라이센스 사정까지 알면 의사결정 정확도가 다름.",
+        "whatEngineersLookFor": [
+          "CTU·quad-tree 분할의 직관과 비용 효과를 안다",
+          "x264 대비 x265의 인코딩 시간이 왜 5~10배인지 설명 가능",
+          "Tile·WPP의 의미와 4K 실시간 인코딩에서의 가치 안다",
+          "라이센스 사정을 알고 도입 결정에 반영"
+        ],
+        "redFlags": [
+          "'H.265는 무조건 좋다'며 라이브에 사용 시도",
+          "x265 preset veryslow를 일상에 씀",
+          "라이센스 이슈 모른 채 제품 출시",
+          "Profile·Level 차이가 H.264와 같다고 가정"
+        ],
+        "interviewQuestions": [
+          "H.265가 H.264 대비 압축률 두 배인 이유를 세 가지로 설명해 주세요",
+          "x265 인코딩이 x264보다 느린 본질적 이유는?",
+          "H.265의 라이센스 문제가 AV1 등장에 어떻게 영향을 주었나요?"
+        ],
+        "masteryVsFamiliar": "Familiar는 'H.265는 H.264보다 압축률 좋다'를 안다. Mastery는 CTU·인트라 35방향·병렬 처리의 효과와 비용을 분해하고, 라이센스 사정까지 고려한 도입 결정을 한다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "H.265 = HEVC",
+          "content": "2013년. H.264 대비 같은 화질에 절반 비트레이트."
+        },
+        {
+          "title": "CTU 64×64 가변",
+          "content": "Quad-tree 분할. 단조 영역은 크게, 디테일은 작게."
+        },
+        {
+          "title": "35방향 인트라",
+          "content": "9 → 35. Planar 모드 추가."
+        },
+        {
+          "title": "병렬 처리",
+          "content": "Tile·WPP·Slice. 4K 실시간 가능."
+        },
+        {
+          "title": "인코딩 5~10배 느림",
+          "content": "CTU 탐색 비용이 주범."
+        },
+        {
+          "title": "라이센스 지옥",
+          "content": "3개 풀 + 별도 권리자. 도입 큰 장벽."
+        },
+        {
+          "title": "4K·HDR의 표준",
+          "content": "BD 4K, 아이폰 비디오, Netflix 4K."
+        },
+        {
+          "title": "AV1을 촉발",
+          "content": "라이센스 불만이 AOMedia 결성으로."
+        }
+      ]
+    },
+    {
+      "number": 9,
+      "emoji": "🚀",
+      "title": "AV1 and the Royalty-Free Future",
+      "titleKr": "AV1 — 로열티 무료의 차세대",
+      "tldr": "Google·Netflix·Apple·Mozilla가 손잡고 만든 로열티 무료 코덱. H.265 대비 30% 더 효율적이지만 인코딩이 5~10배 더 느리다. 2026년 차세대의 사실상 표준 후보.",
+      "topics": [
+        "AOMedia와 AV1의 탄생",
+        "VP9과의 관계",
+        "Superblock 128×128",
+        "AV1의 신무기 (CDEF·Loop Restoration·Warped Motion)",
+        "VVC(H.266) vs AV1 경쟁"
+      ],
+      "learningGoals": [
+        "AV1이 탄생한 배경(라이센스 분쟁)을 안다",
+        "VP9에서 AV1로의 진화를 이해한다",
+        "AV1의 핵심 신기술 3-4개를 설명할 수 있다",
+        "AV1 인코딩의 현실적 비용을 안다",
+        "VVC(H.266)와의 차세대 경쟁 구도를 본다"
+      ],
+      "overview": "H.265의 라이센스 분쟁에 지친 회사들이 **\"우리가 로열티 무료 코덱을 만들자\"**고 모인 게 **Alliance for Open Media(AOMedia)**. 2015년 결성. 결과물이 **AV1**(2018 표준화).\n\n이번 장은 AV1의 기술적 특징, VP9에서의 계승, 그리고 \"AV1 vs VVC\"의 차세대 표준 전쟁을 본다. 이걸 알아야 2026년 이후 비디오 인프라 결정을 합리적으로 할 수 있다.",
+      "sections": [
+        {
+          "title": "9.1 AOMedia의 결성과 AV1의 탄생",
+          "content": "2015년 9월, 거대 기술 기업들이 모여 **Alliance for Open Media** 결성. 창립 멤버: Google·Mozilla·Microsoft·Cisco·Intel·Netflix·Amazon. 곧 Apple도 참여(2018).\n\n목적 한 줄: **로열티 무료 비디오 코덱 표준 만들기**. H.265의 라이센스 지옥 → 인터넷 회사 입장에선 자신들이 호스팅하는 모든 비디오에 라이센스 비용을 내야 함 → 거대.\n\nAV1은 세 가지 코덱의 융합:\n- **VP9** (Google) — 이미 YouTube에 쓰이던 코덱\n- **Daala** (Mozilla) — 새로운 변환 기법\n- **Thor** (Cisco) — 화상회의용 코덱\n\n이 셋의 좋은 부분을 합쳐 2018년 AV1 1.0 발표. **H.265 대비 같은 화질에 30% 적은 비트레이트** 달성.\n\n라이센스: **완전 무료**. 사용·구현·재배포 모두 무료. AOMedia 회원사는 자신들의 패텐트를 무료로 라이센스. 이게 AV1의 가장 큰 가치."
+        },
+        {
+          "title": "9.2 VP9에서 AV1로 — 점진적 진화",
+          "content": "VP9은 2013년 Google이 발표한 코덱. YouTube에서 4K 영상에 이미 쓰이고 있었음. 압축률은 대략 H.265와 비슷.\n\nAV1은 VP9의 자연스러운 후속이자 큰 도약. 주요 변화:\n\n**Superblock 64×64 → 128×128**: H.265 CTU(64×64)보다 더 큼. 4K·8K 시대의 단조 영역을 더 효율적으로 처리.\n\n**더 많은 인트라 방향**: VP9 10방향 → AV1 56방향 + non-directional 모드. 자연 이미지의 모든 그라데이션·패턴에 적응.\n\n**더 정밀한 모션**: 1/4 픽셀 → 1/8 픽셀. + warped motion, global motion.\n\n**새로운 변환**: DCT 외에 ADST(Asymmetric DST), FLIPADST, IDTX(Identity)까지 4가지 변환 선택 가능. 잔차 분포에 맞춤.\n\n**CDEF + Loop Restoration**: 새로운 in-loop 필터 2종. 자세한 건 다음 섹션."
+        },
+        {
+          "title": "9.3 CDEF·Loop Restoration·Warped Motion — 새 무기",
+          "content": "AV1의 압축 효율을 만든 결정적 신기술 셋.\n\n**CDEF (Constrained Directional Enhancement Filter)**: \"방향성 디블록 + 디링잉\" 필터. 양자화로 생긴 블록 노이즈와 링잉(고주파 노이즈) 제거. 방향을 감지해 그 방향으로만 평활화 → 디테일 보존하면서 노이즈만 제거.\n\n**Loop Restoration**: 양자화 손실을 \"학습된 필터\"로 복원. Self-Guided 필터와 Wiener 필터 두 종류. 인코더가 영역마다 어느 필터·어떤 파라미터를 쓸지 선택. **거의 ML 같은 발상** — 사실 ML 인코더의 전조.\n\n**Warped Motion + Global Motion**: 챕터 5에서 다룬 회전·확대·shear 표현. 자연 영상의 카메라 패닝·줌·perspective 변화를 직접 표현.\n\n이 셋의 누적이 H.265 대비 30% 효율 향상의 큰 부분. 단점: 인코더 비용 폭증. AV1 라이브 인코딩은 매우 비싼 GPU/ASIC 필요."
+        },
+        {
+          "title": "9.4 AV1 인코딩의 현실 — 5~10배 느림",
+          "content": "AV1의 표준 인코더 libaom-av1은 **느리다**. x265 medium 대비 5~10배, x264 medium 대비 50~100배 느림. preset slowest에서는 1080p 영상이 실시간의 1/100 속도로 인코딩.\n\n이 비용이 AV1 도입의 가장 큰 장벽. 대규모 VOD 라이브러리(YouTube·Netflix)는 한 번 인코딩하면 수십억 번 재생되니까 정당화. 일반 사용자가 매일 인코딩하기엔 너무 무겁다.\n\n**대안 인코더들**:\n- **SVT-AV1** (Intel + Netflix): libaom 대비 5~10배 빠름. 일반 사용 가능 수준.\n- **rav1e** (Mozilla, Rust): 안전성·속도 둘 다 중시.\n- **하드웨어 인코더**: NVIDIA RTX 40·Intel Arc·Apple M3 이상에서 AV1 HW 인코딩 지원. 실시간 4K 가능.\n\n디코딩은 그렇게 부담스럽지 않음. 거의 모든 최신 디바이스가 SW로 디코딩 가능하고, 2022년 이후 폰·노트북·TV는 HW 디코더 내장."
+        },
+        {
+          "title": "9.5 AV1 vs VVC(H.266) — 차세대 경쟁",
+          "content": "AV1의 대척점에 **VVC(H.266)** 가 있다. 2020년 표준화. 같은 JCT 팀(ITU-T + MPEG)이 H.265 후속으로 만든 것.\n\n기술적 비교:\n| | AV1 | VVC (H.266) |\n|---|---|---|\n| 출시 | 2018 | 2020 |\n| 압축 효율 (vs H.265) | +30% | +50% |\n| 인코딩 비용 | 매우 높음 | 매우 높음 |\n| 라이센스 | **무료** | 유료 (또 라이센스 분쟁 중) |\n| 채택 | YouTube·Netflix·Twitch | 한국 ATSC 3.0 일부 |\n\nVVC가 기술적으로 더 효율적이지만 **라이센스 분쟁이 또 반복** — H.265 때와 똑같은 패텐트 풀 다발화. \"VVC를 채택해도 어디서·얼마를 내야 할지 모르겠다\".\n\n결과: 2026년 현재 인터넷 회사들은 거의 다 AV1 베팅. YouTube는 이미 AV1을 4K·고비트레이트 영상에 기본 사용. Netflix·Twitch도 AV1 확대.\n\nVVC는 방송·전문 영역에서 일부 사용. 인터넷에서는 거의 안 보임. **\"기술이 표준을 결정하는 게 아니라 비즈니스가 결정한다\"** 의 두 번째 사례.\n\n다음 세대는 AOMedia가 **AV2** 준비 중 (2026~2027 예상). 또 한 번 무료 코덱의 도약."
+        }
+      ],
+      "analogy": {
+        "title": "Linux vs Unix",
+        "content": "1970~80년대 Unix는 기술적으로 훌륭했지만 라이센스가 복잡했다. AT&T·Berkeley·Sun이 각자 권리 주장. 기업이 Unix를 쓰려면 매년 거대한 라이센스 비용.\n\nLinus Torvalds가 1991년 \"우리가 무료로 만들자\"고 Linux 시작. 처음엔 기술적으로 Unix 대비 부족. 그러나 무료라는 사실 + 커뮤니티 + 대형 회사들(Red Hat·IBM·Google)의 베팅으로 결국 서버 시장의 95%를 가져감.\n\nAV1과 AOMedia가 정확히 같은 패턴. H.265·VVC(Unix)는 기술적으로 정교하지만 라이센스가 복잡. AV1(Linux)은 무료 + 거대 기업 베팅(Google·Netflix·Apple). 결국 인터넷 비디오의 미래는 AV1로 가고 있다.\n\n교훈: 기술적 우수성이 표준을 만들지 않는다. **라이센스 + 생태계 베팅**이 만든다. 이게 비디오 코덱 인프라 결정을 \"기술팀만의 결정\"이 아니라 \"비즈니스·법무 포함\"으로 만드는 이유."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "x264·x265·SVT-AV1을 같은 영상에 적용해 R-D 곡선 비교. \"AV1이 H.265 대비 30% 효율\"이 직접 보인다.",
+        "code": "import subprocess, os, time, json\n\nINPUT = 'sample.mp4'\n\nconfigs = [\n    # codec, lib, preset, crf\n    ('x264 medium',  'libx264',         'medium', 23),\n    ('x265 medium',  'libx265',         'medium', 28),\n    ('AV1 (SVT-AV1)','libsvtav1',       '8',      30),  # SVT preset 8=slow\n]\n\nresults = []\nfor name, lib, preset, crf in configs:\n    output = f'{name.replace(\" \", \"_\").replace(\"(\", \"\").replace(\")\", \"\")}.mp4'\n    t0 = time.time()\n    subprocess.run([\n        'ffmpeg', '-y', '-i', INPUT,\n        '-c:v', lib, '-preset', preset,\n        '-crf', str(crf), '-an', output\n    ], check=True, capture_output=True)\n    dt = time.time() - t0\n    size = os.path.getsize(output) / 1e6\n\n    subprocess.run([\n        'ffmpeg', '-y', '-i', output, '-i', INPUT,\n        '-lavfi', 'libvmaf=log_path=v.json:log_fmt=json',\n        '-f', 'null', '-'\n    ], check=True, capture_output=True)\n    vmaf = json.load(open('v.json'))['pooled_metrics']['vmaf']['mean']\n\n    print(f'{name:<16} {dt:>7.1f}s  {size:>6.2f} MB  VMAF={vmaf:5.1f}')\n    results.append((name, dt, size, vmaf))\n\n# 결과 예시 (1080p 30fps 10s):\n# x264 medium       1.5s   3.12 MB  VMAF=95.0\n# x265 medium      12.5s   1.65 MB  VMAF=94.6  ← 53% 작음\n# AV1 (SVT-AV1)    28.7s   1.18 MB  VMAF=94.2  ← H.265 대비 +28% 작음\n# → 같은 화질, AV1이 H.264 대비 38% 크기. 인코딩은 19배 느림.\n",
+        "walkthrough": "직접 측정한 R-D 차이가 명확하다. AV1이 H.265 대비 ~28%, H.264 대비 ~62% 더 작은 파일. 그러나 인코딩 시간이 SVT-AV1 preset 8(중간 정도)에서도 x264 medium의 20배. libaom-av1을 쓰면 100배까지. 그래서 \"인코딩 비용 정당화\" — 한 번 인코딩해서 많이 재생되는 VOD 라이브러리에 최적, 라이브엔 부적합."
+      },
+      "industryEvaluation": {
+        "overview": "AV1·VVC·차세대 코덱 동향을 안다는 게 2026년 비디오 엔지니어 시니어의 차별점.",
+        "whatEngineersLookFor": [
+          "AOMedia 결성 배경(H.265 라이센스)을 안다",
+          "AV1 vs VVC의 trade-off를 도메인별로 판단 가능",
+          "SVT-AV1·libaom·rav1e의 차이와 사용처 안다",
+          "HW AV1 디코더의 시장 확산 시기 안다"
+        ],
+        "redFlags": [
+          "AV1이 무조건 좋다고 도입하고 라이브 인코더가 폭주",
+          "VP9과 AV1의 관계를 모름",
+          "VVC가 H.265의 후속이라 무조건 도입해야 한다고 주장",
+          "AV1의 라이센스 무료성을 모름"
+        ],
+        "interviewQuestions": [
+          "AOMedia가 결성된 이유와 AV1의 가치 제안은?",
+          "AV1과 VVC의 기술·라이센스 비교는?",
+          "당신 서비스가 라이브 스트리밍 위주라면 AV1을 채택할 이유가 있나요?"
+        ],
+        "masteryVsFamiliar": "Familiar는 'AV1은 H.265 후속, 무료'를 안다. Mastery는 AOMedia 결성 배경·VP9 계승·새 기술(CDEF·LR·warped motion)·SVT-AV1 등 인코더 옵션·VVC 비교까지 통합적으로 판단한다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "AOMedia",
+          "content": "Google·Netflix·Apple 등 결성. H.265 라이센스 분쟁 대응."
+        },
+        {
+          "title": "AV1 = 무료",
+          "content": "회원사 패텐트 무료 라이센스. 인터넷의 큰 자산."
+        },
+        {
+          "title": "H.265 대비 +30%",
+          "content": "같은 화질에 30% 더 작은 비트레이트."
+        },
+        {
+          "title": "Superblock 128",
+          "content": "H.265 CTU 64보다 2배. 4K·8K에 유리."
+        },
+        {
+          "title": "56방향 인트라",
+          "content": "H.265 35방향에서 또 도약."
+        },
+        {
+          "title": "CDEF + LR",
+          "content": "새 in-loop 필터. ML 인코더의 전조."
+        },
+        {
+          "title": "느린 인코딩",
+          "content": "x264 medium의 20~100배. VOD엔 OK, 라이브엔 어려움."
+        },
+        {
+          "title": "AV1이 미래",
+          "content": "VVC와 경쟁 중. 라이센스로 AV1 우세."
+        }
+      ]
+    },
+    {
+      "number": 10,
+      "emoji": "🛠️",
+      "title": "Practical Engineering with ffmpeg",
+      "titleKr": "ffmpeg 실전 — 컨테이너·스트리밍·하드웨어",
+      "tldr": "코덱 이론을 손에 잡힌 도구로. 컨테이너 vs 코덱·CRF·하드웨어 인코더·ABR 스트리밍의 실전 매뉴얼.",
+      "topics": [
+        "컨테이너 vs 코덱",
+        "ffmpeg 핵심 명령",
+        "하드웨어 인코더 (NVENC·VideoToolbox·QSV)",
+        "ABR 스트리밍 (HLS·DASH)",
+        "트랜스코딩 파이프라인"
+      ],
+      "learningGoals": [
+        "컨테이너와 코덱을 정확히 구분하고 도메인별 선택 가능",
+        "ffmpeg의 핵심 명령 5-7개를 외운다",
+        "하드웨어 인코더의 trade-off를 안다 (NVENC·VideoToolbox·QSV)",
+        "HLS·DASH 스트리밍을 ffmpeg로 만들 수 있다",
+        "Two-pass·multi-bitrate 같은 실전 파이프라인을 이해한다"
+      ],
+      "overview": "이 코스의 마지막 장. 1~9장의 이론을 실전 도구로 묶는다. **ffmpeg**가 비디오 엔지니어의 스위스 아미 나이프. 이번 장은 ffmpeg의 주요 사용 패턴 — 트랜스코딩, 컨테이너 변환, 하드웨어 가속, ABR 스트리밍 — 을 매뉴얼처럼 다룬다.\n\n이번 장의 명령들을 외우면 비디오 관련 일상 업무의 90%를 ffmpeg 한 줄로 해결할 수 있다.",
+      "sections": [
+        {
+          "title": "10.1 컨테이너 vs 코덱 — 한 번 더 정리",
+          "content": "비디오 파일은 두 층으로 구성된다.\n\n**컨테이너 (Container)**: 비디오·오디오·자막·메타데이터를 한 파일로 묶는 봉투. 코덱이 아니라 **포맷**.\n- `.mp4` (ISO BMFF) — 가장 호환성 좋음. H.264·H.265·AV1·AAC 모두 가능\n- `.mkv` (Matroska) — 거의 모든 코덱 가능. 자막 다국어 잘 다룸\n- `.webm` (서브셋 of Matroska) — VP9·AV1 + Opus 위주. 웹 친화\n- `.mov` (QuickTime) — Apple. ProRes·H.264·H.265\n- `.ts` (MPEG-TS) — 방송·HLS. 스트리밍에 적합\n\n**비디오 코덱 (Video Codec)**: 영상 자체의 압축 방식. H.264·H.265·AV1·VP9·ProRes 등.\n\n**오디오 코덱 (Audio Codec)**: 음향의 압축. AAC·Opus·MP3·FLAC.\n\n한 `.mp4` 안에 H.264 + AAC, 또는 H.265 + AAC, 또는 AV1 + Opus 모두 가능. **파일 확장자만 보고 코덱을 추측하면 안 된다**. `ffprobe`로 확인:\n\n```bash\nffprobe -v error -show_streams video.mp4 | grep codec_name\n# codec_name=h264\n# codec_name=aac\n```\n\n엔지니어가 가장 자주 만지는 컨테이너는 **MP4(호환성)** 와 **TS(스트리밍)**. 도메인별로 외우면 90% 커버."
+        },
+        {
+          "title": "10.2 ffmpeg 핵심 명령 — 외워두면 인생 편해짐",
+          "content": "ffmpeg의 일상 명령. 외워두면 매일 쓴다.\n\n```bash\n# 1) 정보 확인\nffprobe -v error -show_format -show_streams input.mp4\n\n# 2) H.264 기본 트랜스코딩 (가장 자주 씀)\nffmpeg -i input.mp4 -c:v libx264 -crf 23 -preset medium -c:a aac out.mp4\n\n# 3) H.265로 (절반 크기)\nffmpeg -i input.mp4 -c:v libx265 -crf 28 -preset medium -c:a aac out.mp4\n\n# 4) 다시 인코딩 없이 컨테이너만 변경 (빠르고 무손실)\nffmpeg -i input.mkv -c copy out.mp4\n\n# 5) 해상도 변경 (1080p → 720p)\nffmpeg -i input.mp4 -vf scale=1280:720 -c:v libx264 -crf 23 -c:a copy out.mp4\n\n# 6) 일부 잘라내기 (5초~25초)\nffmpeg -ss 5 -t 20 -i input.mp4 -c copy clip.mp4\n\n# 7) 키프레임 간격 강제 (스트리밍 준비)\nffmpeg -i input.mp4 -c:v libx264 -g 60 -keyint_min 60 -sc_threshold 0 \\\n       -force_key_frames 'expr:gte(t,n_forced*2)' out.mp4\n\n# 8) 오디오만 추출\nffmpeg -i input.mp4 -vn -c:a copy audio.m4a\n\n# 9) GIF로 변환 (작은 클립)\nffmpeg -i input.mp4 -vf 'fps=15,scale=480:-1:flags=lanczos' -c:v gif out.gif\n```\n\n이 9개가 실무 명령의 80%. 나머지는 자주 안 씀."
+        },
+        {
+          "title": "10.3 하드웨어 인코더 — NVENC·VideoToolbox·QSV",
+          "content": "ffmpeg는 **하드웨어 가속 인코더**도 지원. CPU 대신 전용 칩(GPU·ASIC)으로 인코딩 → **10~50배 빠름**. 단, 화질은 SW 인코더(x264·x265) 보다 약간 떨어짐.\n\n**NVIDIA NVENC** (RTX/GTX GPU):\n```bash\nffmpeg -i input.mp4 -c:v h264_nvenc -preset p4 -cq 23 -c:a aac out.mp4\nffmpeg -i input.mp4 -c:v hevc_nvenc -preset p4 -cq 28 -c:a aac out.mp4\n```\n\n**Apple VideoToolbox** (Mac):\n```bash\nffmpeg -i input.mp4 -c:v h264_videotoolbox -b:v 4M -c:a aac out.mp4\nffmpeg -i input.mp4 -c:v hevc_videotoolbox -b:v 2M -c:a aac out.mp4\n```\n\n**Intel Quick Sync (QSV)** (Intel CPU 내장):\n```bash\nffmpeg -i input.mp4 -c:v h264_qsv -global_quality 23 -c:a aac out.mp4\n```\n\n**언제 HW vs SW**:\n- 라이브 스트리밍 (1080p@60 이상) → HW 필수. 5-10% 화질 손해 감수.\n- 실시간 화상회의 → HW 필수. 저전력 + 짧은 지연.\n- VOD 라이브러리 (한 번 인코딩 → 영원히 재생) → SW가 정답. 화질 최우선.\n- 모바일 녹화 → 디바이스 HW가 알아서 (대부분 HEVC HW)."
+        },
+        {
+          "title": "10.4 ABR 스트리밍 — HLS·DASH 만들기",
+          "content": "스트리밍 서비스는 **여러 비트레이트**를 동시에 만들어 클라이언트가 네트워크 상태에 따라 자동 전환 → **ABR(Adaptive Bit Rate)**.\n\nffmpeg로 HLS 생성:\n\n```bash\nffmpeg -i input.mp4 \\\n  -filter_complex '[0:v]split=3[v1][v2][v3]; \\\n                  [v1]scale=w=1280:h=720[v1out]; \\\n                  [v2]scale=w=854:h=480[v2out]; \\\n                  [v3]scale=w=640:h=360[v3out]' \\\n  -map '[v1out]' -c:v:0 libx264 -b:v:0 3M -maxrate:0 3.5M -bufsize:0 6M \\\n  -map '[v2out]' -c:v:1 libx264 -b:v:1 1.5M -maxrate:1 1.8M -bufsize:1 3M \\\n  -map '[v3out]' -c:v:2 libx264 -b:v:2 800k -maxrate:2 1M -bufsize:2 1.6M \\\n  -map a:0 -c:a aac -b:a 128k \\\n  -g 60 -keyint_min 60 -sc_threshold 0 \\\n  -f hls -hls_time 2 -hls_list_size 0 \\\n  -hls_segment_filename 'stream_%v/seg_%03d.ts' \\\n  -master_pl_name master.m3u8 \\\n  -var_stream_map 'v:0,a:0 v:1,a:0 v:2,a:0' \\\n  'stream_%v/playlist.m3u8'\n```\n\n결과:\n```\nmaster.m3u8        ← 메타: 3개 품질 선택지\nstream_0/...       ← 720p 3Mbps 세그먼트\nstream_1/...       ← 480p 1.5Mbps\nstream_2/...       ← 360p 800kbps\n```\n\n클라이언트(브라우저 HLS.js, iOS Safari, Android ExoPlayer)가 master.m3u8을 읽고 네트워크 상태에 따라 세 품질을 동적 전환.\n\n**핵심 옵션 정리**:\n- `-g 60 -keyint_min 60 -sc_threshold 0`: 키프레임 일정 간격 (세그먼트 경계 일치)\n- `-hls_time 2`: 세그먼트 길이 2초\n- `-maxrate -bufsize`: VBR 캡 — 네트워크 안정성"
+        },
+        {
+          "title": "10.5 Two-pass와 트랜스코딩 파이프라인",
+          "content": "**Two-pass 인코딩**: 1회차에 전체 영상을 분석해 비트레이트 분포를 미리 정한 다음, 2회차에 그 분포대로 인코딩. **목표 평균 비트레이트를 정확히 맞춰야 할 때** 사용.\n\n```bash\n# pass 1\nffmpeg -y -i input.mp4 -c:v libx264 -b:v 2M -pass 1 -an -f null /dev/null\n# pass 2\nffmpeg -i input.mp4 -c:v libx264 -b:v 2M -pass 2 -c:a aac out.mp4\n```\n\n사용처: 정확한 파일 크기·비트레이트 목표가 있는 다운로드용. CRF로는 파일 크기를 미리 모르는 게 단점인데 two-pass가 해결.\n\n**전형적인 프로덕션 트랜스코딩 파이프라인**:\n1. **Ingest**: 원본 영상 받음 (보통 ProRes·H.264 고비트레이트)\n2. **Mezzanine 생성**: 후반작업·QC용 중간 인코딩 (H.264 high bitrate)\n3. **ABR ladder 생성**: 360p~4K 5~7단계 비트레이트로 인코딩 (코덱별·해상도별)\n4. **Segmenting**: HLS/DASH로 분할\n5. **CDN 업로드**: 세그먼트를 CDN에 푸시\n6. **모니터링**: VMAF·viewer drop rate 추적\n\nNetflix·YouTube 같은 회사는 이 파이프라인을 **수십 개 코덱 × 수십 개 비트레이트 × 수십 개 해상도** 조합으로 운영. 한 영상이 200~300번 인코딩됨.\n\nffmpeg는 이 파이프라인의 핵심 도구. 직접 운영하든 매니지드 서비스(AWS Elemental·Mux·Cloudflare Stream)를 쓰든 내부는 ffmpeg."
+        }
+      ],
+      "analogy": {
+        "title": "공항의 화물 처리 파이프라인",
+        "content": "공항에서 화물을 처리하는 흐름을 보자. (1) 짐 도착 (ingest), (2) X-ray 검사 (QC), (3) 항공기·차량·기차 각각 다른 포장 (multi-bitrate), (4) 컨테이너에 적재 (segmenting), (5) 운송 (CDN 업로드), (6) 도착지에서 모니터링.\n\n각 단계가 비디오 트랜스코딩 파이프라인과 정확히 매핑된다. 그리고 컨테이너의 의미도 분명해진다 — 한 화물(영상)을 어떤 봉투(MP4·TS)에 담을지는 도착지(클라이언트)에 따라 다르다.\n\n하드웨어 인코더는 \"전용 화물 처리기\". CPU(범용 직원)가 한 박스 포장하는 데 10분이면, 전용 기계는 30초. 화질이 살짝 떨어지지만 처리량 폭증.\n\nABR 스트리밍은 \"고객 차량에 따라 다른 크기 박스 자동 선택\". 작은 차에는 작은 박스(360p), 큰 트럭에는 큰 박스(4K). 클라이언트가 자기 능력을 보고 자동 선택."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "Python으로 ffmpeg를 wrapping해서 ABR ladder를 자동 생성하는 미니 파이프라인. 실제 프로덕션에서 자주 쓰는 패턴.",
+        "code": "import subprocess\nfrom pathlib import Path\n\ndef generate_abr_ladder(input_path, output_dir, codec='h264'):\n    \"\"\"Generate HLS multi-bitrate ladder.\"\"\"\n    output_dir = Path(output_dir)\n    output_dir.mkdir(parents=True, exist_ok=True)\n\n    # ABR ladder: (height, bitrate Kbps)\n    ladder = [\n        (360,   800),\n        (480,  1500),\n        (720,  3000),\n        (1080, 5000),\n    ]\n\n    lib = {'h264': 'libx264', 'h265': 'libx265', 'av1': 'libsvtav1'}[codec]\n\n    # Build the filter complex\n    split = f'[0:v]split={len(ladder)}'\n    splits = ''.join(f'[v{i}]' for i in range(len(ladder)))\n    scales = ';'.join(\n        f'[v{i}]scale=-2:{h}[v{i}out]'\n        for i, (h, _) in enumerate(ladder)\n    )\n    filter_complex = f'{split}{splits}; {scales}'\n\n    cmd = ['ffmpeg', '-y', '-i', str(input_path),\n           '-filter_complex', filter_complex]\n\n    for i, (h, b) in enumerate(ladder):\n        cmd += ['-map', f'[v{i}out]',\n                f'-c:v:{i}', lib,\n                f'-b:v:{i}', f'{b}k',\n                f'-maxrate:{i}', f'{int(b*1.2)}k',\n                f'-bufsize:{i}', f'{b*2}k']\n\n    cmd += ['-map', 'a:0', '-c:a', 'aac', '-b:a', '128k',\n            '-g', '60', '-keyint_min', '60', '-sc_threshold', '0',\n            '-f', 'hls', '-hls_time', '2', '-hls_list_size', '0',\n            '-hls_segment_filename', f'{output_dir}/v%v/s%03d.ts',\n            '-master_pl_name', 'master.m3u8',\n            '-var_stream_map',\n            ' '.join(f'v:{i},a:0' for i in range(len(ladder))),\n            f'{output_dir}/v%v/playlist.m3u8']\n\n    print('Running:', ' '.join(cmd[:8]), '...')\n    subprocess.run(cmd, check=True)\n    print(f'✓ ABR ladder ready at {output_dir}/master.m3u8')\n\n# Usage\ngenerate_abr_ladder('input.mp4', 'hls_out', codec='h264')\n# Output:\n# hls_out/\n#   master.m3u8        ← 클라이언트 진입점\n#   v0/playlist.m3u8 + s001.ts ... (360p 800k)\n#   v1/playlist.m3u8 + s001.ts ... (480p 1.5M)\n#   v2/playlist.m3u8 + s001.ts ... (720p 3M)\n#   v3/playlist.m3u8 + s001.ts ... (1080p 5M)\n",
+        "walkthrough": "이 함수가 프로덕션 ABR 파이프라인의 미니어처. 입력 영상 하나에서 4단계 비트레이트의 HLS 세트를 생성. 클라이언트(웹·iOS·Android)가 `master.m3u8`을 받아 네트워크 상태에 따라 자동으로 품질 전환. 실제 대형 서비스는 이 ladder를 7~10단계로 늘리고, H.264·H.265·AV1 세 코덱 다 만들어서 디바이스별 fallback까지 처리한다."
+      },
+      "industryEvaluation": {
+        "overview": "ffmpeg를 손에 잡힌 도구로 만드는 게 비디오 엔지니어의 최소 자질. 면접에서 'ffmpeg 명령 즉답' + 'ABR 구조 이해'를 본다.",
+        "whatEngineersLookFor": [
+          "컨테이너·코덱 구분과 ffprobe로 검증 가능",
+          "ffmpeg 일상 명령 5-7개 외우고 있음",
+          "HW vs SW 인코더의 trade-off 도메인별로 판단",
+          "HLS/DASH ABR ladder 설계 가능",
+          "Two-pass·single-pass 선택 기준 안다"
+        ],
+        "redFlags": [
+          "MP4가 코덱이라고 답함",
+          "라이브에 x265 preset slow 쓰려고 함",
+          "키프레임 간격을 세그먼트 길이와 안 맞춰 HLS 깨뜨림",
+          "ABR ladder를 7-10단계가 아니라 1-2단계만 만듦"
+        ],
+        "interviewQuestions": [
+          "HLS와 DASH의 차이와 사용 사례를 설명해 주세요",
+          "NVENC vs x264의 trade-off는?",
+          "ABR ladder 설계 시 고려할 요소를 5가지 말해 주세요"
+        ],
+        "masteryVsFamiliar": "Familiar는 'ffmpeg로 인코딩한다'를 안다. Mastery는 컨테이너·코덱·해상도·비트레이트·키프레임·세그먼트·CDN까지 통합적으로 설계하고, ffmpeg 명령으로 직접 구현하며, HW·SW 인코더를 도메인별로 선택한다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "컨테이너 ≠ 코덱",
+          "content": "MP4 안에 H.264·H.265·AV1 다 가능."
+        },
+        {
+          "title": "ffprobe로 확인",
+          "content": "확장자만 보고 추측 X."
+        },
+        {
+          "title": "9개 명령 외우기",
+          "content": "일상 업무의 80%를 커버."
+        },
+        {
+          "title": "Stream copy",
+          "content": "`-c copy`로 무인코딩 컨테이너 변환."
+        },
+        {
+          "title": "HW 인코더",
+          "content": "10-50배 빠름, 화질 약간 손해. 라이브 필수."
+        },
+        {
+          "title": "ABR ladder",
+          "content": "여러 비트레이트 동시 생성. ABR 스트리밍의 기본."
+        },
+        {
+          "title": "HLS = 2초 세그먼트 + 일정 키프레임",
+          "content": "둘 안 맞추면 깨짐."
+        },
+        {
+          "title": "Two-pass",
+          "content": "정확한 비트레이트 목표 시. CRF는 크기 예측 불가."
+        }
+      ]
+    }
+  ]
+}
