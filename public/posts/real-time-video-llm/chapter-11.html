@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch11: Architecting the Next-Generation Real-time VLM — Real-time Video LLM — direcf</title>
+  <meta name="description" content="2026년 6월 기준 SOTA의 진짜 한계를 직시하고, 그것을 풀기 위한 다음 세대 시스템을 직접 설계해본다 — Cascade architecture, Chunk-level temporal encoder, Structured scene-graph memory, 그리고 가장 어려운 &#x27;Timing of Speech&#x27; 문제까지.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/multimodal-ai">Real-time Video LLM</a><span class="sep">›</span>
+        <strong>Ch11 Architecting the Next-Generation Real-time VLM</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 11 <span style="opacity:.3">·</span> 11 chapters
+      </div>
+      <div class="chapter-emoji">🌟</div>
+      <h1 class="chapter-title">Architecting the Next-Generation Real-time VLM</h1>
+      <div class="chapter-title-kr">차세대 Real-time VLM 아키텍처 설계</div>
+      <div class="chapter-tldr">2026년 6월 기준 SOTA의 진짜 한계를 직시하고, 그것을 풀기 위한 다음 세대 시스템을 직접 설계해본다 — Cascade architecture, Chunk-level temporal encoder, Structured scene-graph memory, 그리고 가장 어려운 &#x27;Timing of Speech&#x27; 문제까지.</div>
+
+      <div class="cs-wrap">
+        <div style="padding:40px;background:var(--bg-soft);border-radius:12px;color:var(--muted);text-align:center;border:1px dashed var(--border);">🍌 이미지 준비 중</div>
+        <div class="cs-label">🍌 Nano Banana — Chapter 11 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>현재 production real-time VLM(Gemini Live, GPT-4o Realtime, Flash-VStream, VideoLLM-online)의 진짜 한계 4가지를 진단할 수 있다</li><li>Cascade architecture가 왜 단일 거대 모델보다 우월한지, 그리고 stage별 latency budget을 어떻게 설정하는지 설명할 수 있다</li><li>Frame-level encoder 대신 chunk-level temporal encoder(V-JEPA-2 계열)를 쓸 때의 정량적 이점을 계산할 수 있다</li><li>Token-based memory vs structured scene-graph memory의 trade-off를 분석하고, 어떤 case에서 graph가 우월한지 판단할 수 있다</li><li>&#x27;Timing of Speech&#x27; 문제가 왜 가장 어려운 미해결 문제인지 이해하고, RL-from-user-feedback으로 학습 가능한 &#x27;speak_now classifier&#x27; 디자인을 제안할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>지금까지 10개 챕터를 통해 우리는 <strong>Real-time Video LLM의 멘탈 모델</strong>이 'sampler 잘 짜기 → memory system 설계 → streaming pipeline + adaptive processing'으로 진화해왔다는 것을 보았다. 그리고 각 단계의 핵심 메커니즘을 깊이 들여다보았다.</p>
+<p>그런데 한 발 물러서서 보면, 2026년 6월 기준 <strong>모든 production system은 여전히 어딘가 어색하다.</strong> Gemini Live는 빠르지만 깊은 이해가 없고, GPT-4o Realtime은 자연스럽지만 30분 전 일을 못 기억한다. Flash-VStream은 elegant하지만 production에서는 안 쓴다. 무엇이 빠져 있는가?</p>
+<p>이 챕터에서는 <strong>내가 처음부터 만든다면 어떤 시스템을 만들 것인가</strong>를 함께 고민한다. 단순히 좋은 idea를 나열하는 것이 아니라, 현재 한계의 근본 원인을 진단하고, 그것을 풀기 위한 architectural decision들을 깊이 따져본다. 이 챕터를 마치면 당신은 <strong>다음 세대 real-time VLM을 설계할 수 있는 시야</strong>를 갖게 될 것이다. 시니어 인터뷰에서 '이 분야를 어떻게 발전시키겠는가?'라는 질문이 나왔을 때, 이 챕터의 사고 framework가 그대로 적용된다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>현재 SOTA의 진짜 한계 — 4가지 진단</h2><p><strong>1. Latency는 좋아졌는데 '이해'는 깊지 않다.</strong></p>
+<p>Gemini Live, GPT-4o Realtime을 써보면 streaming token은 충분히 빠르다. 200-500ms 안에 응답이 시작된다. 그런데 정작 '방금 뭐 본 거야?'라고 물으면 표면적인 답을 한다. '사람이 컵을 들었네요'까지는 가는데, '그 컵이 왜 거기 있었지? 처음에는 다른 자리에 있지 않았어?' 같은 질문에 무너진다.</p>
+<p>이유: <strong>Memory가 token-level에 머물러 있다.</strong> Flash-VStream의 STAR 4-tier도 결국 token cluster이고, 그래서 'high-level concept을 인덱싱'할 능력이 없다. 30분 전 일을 기억하려면 그동안의 token을 전부 KV cache에 들고 있어야 하는데, 그러면 latency가 무너진다.</p>
+<p><strong>2. 언제 말해야 할지 모른다.</strong></p>
+<p>Reactive하게는 잘 답한다. 사용자가 물으면 답한다. 그런데 <strong>proactive interjection</strong>이 자연스럽지 않다. '방금 그거 보셨어요?' '저거 이상한데요?' 같은 자발적 발화를 못 한다. 사람과의 가장 큰 차이가 여기서 나온다.</p>
+<p>현재 시스템들은 '항상 침묵하다가 호출되면 말한다' 방식이거나 '계속 말한다' 방식이다. 둘 다 어색하다. <strong>언제 입을 열 것인가</strong>는 별개의 학습 문제인데, 아직 아무도 잘 풀지 못했다.</p>
+<p><strong>3. Encoder가 진짜 병목이다.</strong></p>
+<p>LLM 추론 측은 vLLM, SGLang, TensorRT-LLM으로 충분히 빨라졌다. 1ms 단위로 KV cache 관리하고, continuous batching으로 throughput 짜낸다. 그런데 그 앞단의 <strong>CLIP/SigLIP encoder가 frame당 5-15ms</strong> 먹는다. 30fps로 돌리면 150-450ms/sec, 사실상 한 GPU를 encoder가 점유한다.</p>
+<p>이게 종종 과소평가된다. 사람들은 'LLM이 비싸'라고 생각하지만, real-time에서는 <strong>vision encoder가 LLM보다 비싼 경우가 흔하다.</strong> 특히 streaming에서는.</p>
+<p><strong>4. Multimodal이 후처리(bolted-on)다.</strong></p>
+<p>Audio는 Whisper로 ASR 따로 돌리고, video는 CLIP으로 따로 돌리고, 그 결과를 LLM 앞에 concat해서 넣는다. 이건 <strong>late fusion</strong>이고, 진짜 multimodal이 아니다.</p>
+<p>사람이 영화를 볼 때 'audio'와 'video'를 따로 처리하지 않는다. 입 모양과 음성이 자연스럽게 합쳐져서 인식된다. 그런데 현재 시스템은 lip-sync mismatch에도 둔감하고, audio cue가 video understanding을 enhance하는 일도 없다.</p>
+<p>이 4가지를 짚지 못하면, 다음 세대 시스템 설계가 표면적인 개선에 머문다.</p></div><div class="sb-block"><h2>핵심 통찰 ① — Cascade Architecture (단일 거대 모델이 아니라 단계적 escalation)</h2><p>지금까지의 시스템들은 <strong>하나의 거대한 모델</strong>로 모든 걸 처리하려 했다. CLIP → Q-Former → LLM 단방향 pipeline. 모든 frame이 모든 stage를 통과한다.</p>
+<p>그런데 <strong>인간의 시각도 그렇지 않다.</strong> 시각 자극은 superior colliculus에서 빠르게(20-50ms) reflex 반응을 일으키고, visual cortex에서 인식(100-200ms), frontal lobe에서 판단(300ms+)이 일어난다. 모든 자극이 frontal lobe까지 가지 않는다. 길에서 갑자기 뭔가 움직이면 머리로 생각하기 전에 몸이 먼저 움찔한다 — superior colliculus가 직접 작동한 거다.</p>
+<p><strong>같은 원리를 시스템에 적용하면:</strong></p>
+<pre><code>Stage 1 (1ms budget):    Patch motion + Audio VAD
+                          ← DNN 없이 신호 처리만. 어떤 패치가 움직였나, 사람 목소리가 들리나?
+
+Stage 2 (50ms budget):    Tiny vision encoder (5M params, e.g. MobileViT)
+                          ← 'Is this interesting?' 만 빠르게 판단
+                          ← Spatial saliency map으로 ROI 도출
+
+Stage 3 (200ms budget):   Heavy temporal encoder (V-JEPA-2)
+                          ← Stage 2가 'interesting'이라고 판단한 chunk만 처리
+                          ← 32 frames → 16 tokens로 압축
+
+Stage 4 (continuous):     Structured memory update
+                          ← Scene graph(object, event, causal link) 갱신
+
+Stage 5 (on query/trigger): LLM reasoning + generation
+                          ← Speculative two-tier (Nano draft + Pro verify)
+</code></pre>
+<p>핵심은 <strong>stage별 latency budget이 명시적으로 분리</strong>되어 있다는 것이다. Stage 1은 무조건 1ms 안에 끝나야 한다. 그 안에 끝나지 못하면 frame을 drop한다. Stage 1이 'no signal'이라고 하면 Stage 2를 건너뛴다. <strong>모든 frame이 모든 stage를 통과하지 않는다.</strong></p>
+<p>이게 Mobileye가 자율주행에서 쓰는 <strong>cascade detector</strong>의 철학이고, 사실 모든 hard real-time system의 표준 패턴이다. 그런데 video LLM 분야는 아직 이걸 적극적으로 도입하지 않고 있다. 다들 '한 모델로 다 처리'를 추구하고 있다.</p>
+<p><strong>언제 cascade가 옳은가? Trade-off:</strong></p>
+<ul>
+<li>✅ 유리: 대부분의 frame이 'uninteresting' (감시 카메라, 회의 녹화)</li>
+<li>✅ 유리: Latency가 critical (telepresence, AR glasses)</li>
+<li>❌ 불리: 모든 frame이 정보적 (스포츠 하이라이트 분석)</li>
+<li>❌ 불리: Stage 2 가 'no'라고 했는데 사실 'yes'였던 경우(false negative) 의 cost가 큰 경우</li>
+</ul>
+<p>Real-time conversational VLM은 명백히 cascade가 유리하다. 사용자와 대화하는 90%의 시간 동안 '특별한 사건'은 일어나지 않는다.</p></div><div class="sb-block"><h2>핵심 통찰 ② — Chunk-level Temporal Encoder (Frame-by-frame은 미친 짓이다)</h2><p>현재 거의 모든 video LLM은 <strong>매 frame마다 CLIP/SigLIP encoder를 호출</strong>한다. 30fps 비디오면 초당 30번 encoder forward. 각 frame은 768-dim token 256개를 생성한다. 그러면 초당 7,680개의 token이 쏟아진다.</p>
+<p>그런데 잠깐, 인접 frame들은 얼마나 다른가? <strong>33ms 간격의 두 frame은 거의 동일하다.</strong> 정보적으로 redundant한 token을 매번 만들어내고 있는 거다.</p>
+<p><strong>V-JEPA-2 (Meta, 2024-2025) 같은 chunk encoder의 발상:</strong></p>
+<p>프레임 하나하나 인코딩하지 말고, <strong>1초 분량(32 frames)을 한 번에 인코딩</strong>해서 16개 token으로 압축. 즉:</p>
+<ul>
+<li>기존: 30 frames × 256 tokens = 7,680 tokens/sec</li>
+<li>Chunk encoder: 16 tokens/sec (480배 압축)</li>
+</ul>
+<p>그리고 놀라운 점 — <strong>정확도가 더 높다.</strong> 왜냐하면 chunk encoder는 학습 과정에서 자연스럽게 temporal context를 학습하기 때문이다. Frame-by-frame encoder는 'frame 5와 frame 6 사이에 무슨 일이 일어났는지'를 모른다. Chunk encoder는 안다.</p>
+<p><strong>더 깊은 이점 — Self-supervised pretraining:</strong></p>
+<p>V-JEPA-2는 unlabeled video로 사전학습된다. 학습 신호: '이 비디오의 미래 chunk를 latent space에서 예측하라'. 이게 가능한 이유는 자연스러운 비디오가 풍부한 self-supervision signal을 갖고 있기 때문이다.</p>
+<p>결과: <strong>labeled video 없이도 강력한 temporal representation</strong>을 얻는다. CLIP은 image-text pair가 필요하지만, V-JEPA는 raw video만 있으면 된다. 데이터 수집 비용이 훨씬 낮다.</p>
+<p><strong>2026년 6월 시점의 현실:</strong></p>
+<p>아직 production에서 V-JEPA-2를 도입한 상용 real-time VLM은 거의 없다. Gemini, GPT-4o도 CLIP/SigLIP variant에 기반한다. 이건 <strong>legacy decision</strong>이지, 옳은 결정이 아니다. 6-12개월 안에 V-JEPA-2 계열이 표준이 될 거라고 본다.</p>
+<p>그러면 자연스럽게 <strong>Stage 3 (heavy encoder)의 latency budget이 200ms → 50ms로 떨어진다.</strong> 시스템 전체의 latency가 한 단계 내려간다. 이게 architecture-level의 진짜 개선이다.</p></div><div class="sb-block"><h2>핵심 통찰 ③ — Structured Scene-Graph Memory (Token이 아닌 Symbolic Knowledge)</h2><p>Flash-VStream의 STAR memory도 결국 <strong>token cluster</strong>다. 'spatial token', 'temporal token', 'abstract token' — 이름만 다르지 다 동일한 token space의 vector들이다. 그래서 'concept-level indexing'을 못 한다.</p>
+<p>예를 들어 사용자가 '30분 전에 그 사람이 들고 있던 컵, 빨간색이었나?'라고 물으면, token-based memory는 30분치 전체 token을 다시 attention해야 한다. <strong>이건 latency 측면에서 사실상 불가능하다.</strong></p>
+<p><strong>대안: Object-centric, Event-centric Memory를 graph로</strong></p>
+<pre><code class="language-python">memory = {
+  'objects': [
+    {'id': 'person_1', 'type': 'human', 'pos': (x, y),
+     'attrs': {'shirt_color': 'blue', 'glasses': True},
+     'first_seen': 0.5, 'last_seen': 1830.2},
+    {'id': 'cup_1', 'type': 'object', 'pos': (x', y'),
+     'attrs': {'color': 'red', 'material': 'ceramic'},
+     'first_seen': 12.3, 'last_seen': 1850.1}
+  ],
+  'events': [
+    {'id': 'e_1', 'what': 'pickup',
+     'actor': 'person_1', 'target': 'cup_1',
+     'when': 1820.5, 'confidence': 0.92},
+    {'id': 'e_2', 'what': 'drink',
+     'actor': 'person_1', 'target': 'cup_1',
+     'when': 1823.1, 'confidence': 0.88}
+  ],
+  'causal_links': [
+    (e_1, e_2, 'caused_by'),  # pickup이 drink를 가능하게 함
+  ]
+}
+</code></pre>
+<p>이렇게 하면 '빨간 컵?' 질문에 대해 <strong>graph lookup 한 번이면 끝난다.</strong> O(log N) 시간에 해결. Token-based attention의 O(N) (N = 30분치 token 수)에 비해 압도적이다.</p>
+<p><strong>더 중요한 이점 — Memory가 token budget을 안 잡아먹는다.</strong></p>
+<p>LLM의 context window는 한정적이다. Token-based memory를 쓰면 30분치 video token이 context를 다 잡아먹어서 actual reasoning에 쓸 토큰이 남지 않는다. Graph는 <strong>외부에 있고, query 시점에만 관련 부분만 LLM에게 전달</strong>한다.</p>
+<p>'30분 전 빨간 컵' 질문이 오면: graph에서 cup_1 찾기 → 'color: red' 확인 → LLM에게 'Yes, the red cup at 1820s' 같은 textual fact만 전달.</p>
+<p><strong>Trade-off의 솔직한 인정:</strong></p>
+<p>Scene graph 추출 자체가 unreliable하다. 'person_1이 cup_1을 들었나?' 같은 event detection은 video understanding의 hard problem이다. Graph가 garbage in → garbage out 한다.</p>
+<p>그래서 <strong>hybrid가 답이다</strong>: graph (structured, queryable, lossy) + token cache (raw, expensive, accurate). 자주 쓰는 query는 graph로, 깊은 추론이 필요하면 token cache의 관련 부분을 token-by-token attention.</p>
+<p>이 방향은 2024 NeurIPS의 'Memory-augmented LLMs' 계열이 시작했지만, 아직 video에 적용한 사례가 없다. 누군가 첫 적용자가 되면 큰 차별점이 된다.</p></div><div class="sb-block"><h2>가장 어려운 미해결 문제 — &#x27;Timing of Speech&#x27;</h2><p>지금까지 본 architecture decisions는 다 풀 수 있다. Cascade는 엔지니어링, chunk encoder는 V-JEPA-2 활용, scene graph는 적극적 R&amp;D 투자. 시간과 자원 문제다.</p>
+<p>그런데 <strong>언제 입을 열 것인가</strong>는 진짜 어렵다.</p>
+<p>사람과 자연스러운 대화의 timing은:</p>
+<ul>
+<li>사용자가 뭔가를 보고 멈춘 순간 (gaze cue)</li>
+<li>이상한 일이 일어난 순간 (event detection)</li>
+<li>사용자가 망설이는 순간 (audio prosody — '음...')</li>
+<li>한참 침묵이 흐른 후 (context signal)</li>
+<li>사용자가 말을 끝마친 직후 vs 중간에 (interruption boundary)</li>
+</ul>
+<p>이걸 trigger로 inference를 시작해야 하는데, <strong>false positive cost가 매우 크다.</strong> 잘못 말 걸면 짜증나고, 못 알아채면 멍청해 보인다. 그리고 사람마다 선호하는 timing이 다르다.</p>
+<p><strong>제안: 별도의 'speak_now?' classifier</strong></p>
+<p>Main LLM과 독립적인 작은 model. 매 200ms마다 binary decision: 'speak now?' Input은:</p>
+<ul>
+<li>최근 5초의 video feature (Stage 2 output)</li>
+<li>최근 5초의 audio feature (prosody, VAD)</li>
+<li>사용자의 gaze direction (eye tracking 있다면)</li>
+<li>마지막 발화 이후 경과 시간</li>
+<li>최근 사용자 발화의 sentence boundary 정보</li>
+<li>Scene graph의 새로운 event 발생 여부</li>
+</ul>
+<p>Output: speak / wait / interrupt 3-class.</p>
+<p><strong>학습은 어떻게?</strong></p>
+<p>Reinforcement learning from user feedback. 사용자가:</p>
+<ul>
+<li>발화를 무시하면 → negative reward</li>
+<li>발화에 응답하면 → positive reward</li>
+<li>'shut up' 같은 명시적 negative → strong negative</li>
+<li>사용자가 결국 자기가 묻게 되면 → '우리가 먼저 말했어야 했는데' negative</li>
+</ul>
+<p>이건 사실상 <strong>personalized policy learning</strong>이다. Bob은 자주 말해주는 걸 좋아하고, Alice는 조용한 걸 선호한다. <strong>Per-user LoRA + RL fine-tuning</strong>으로 학습.</p>
+<p><strong>가장 큰 챌린지:</strong></p>
+<p>Reward sparsity. 사용자는 매번 명시적 feedback을 주지 않는다. Implicit signal(응답 여부, 응답 latency, 후속 행동)에서 reward를 추출해야 한다. 이건 RLHF에서도 어려운 부분이다.</p>
+<p><strong>왜 이걸 푸는 게 중요한가:</strong></p>
+<p>이 한 가지 문제가 풀리면, real-time VLM이 <strong>'질문에 답하는 도구'에서 '함께 보는 동반자'로 격이 달라진다.</strong> Latency나 accuracy의 marginal gain보다 훨씬 큰 가치를 만든다.</p>
+<p>2026년 6월 현재, 이 방향으로 진지하게 R&amp;D 하는 곳은 거의 없다. 모두가 '더 빠른 응답', '더 긴 context'에 매달려 있다. 진짜 차세대 시스템을 만들고 싶다면 여기에 집중해야 한다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">응급실의 트리아지(Triage) — 자원이 한정될 때 누구를 먼저 볼 것인가</div>
+      <div class="a-body"><p>응급실에 환자가 동시에 10명 도착한다. 의사 한 명, 침대 3개. 모든 환자를 똑같이 상세하게 진료할 수 없다. 그래서 응급실은 <strong>트리아지 nurse</strong>를 둔다. 환자가 도착하면 1분 안에 활력 징후만 빠르게 체크 — 호흡, 맥박, 의식. 그걸로 4-tier 분류한다: emergent(즉시), urgent(10분 내), less urgent(1시간 내), non-urgent.</p>
+<p>트리아지 nurse는 <strong>diagnosis를 안 한다.</strong> 그냥 'how urgent?'만 본다. 1분의 budget으로 가능한 게 그것뿐이다. 'emergent' 분류된 환자만 즉시 의사에게 가서 30분짜리 정밀 진료를 받는다. 'non-urgent'는 대기실에서 기다린다.</p>
+<p><strong>이게 바로 cascade architecture의 원형이다.</strong> Stage 1 (트리아지 nurse, 1분)이 Stage 2 (의사, 30분)에게 escalate할지 결정한다. 모든 환자가 의사를 만나지 않는다. 만약 모든 환자가 의사 30분 진료를 받겠다고 우기면, 응급실은 마비된다.</p>
+<p>흥미로운 점: 트리아지 nurse가 가끔 잘못 판단해서 emergent인데 less urgent로 보낼 수 있다. 이게 <strong>false negative</strong>다. 그래서 트리아지 nurse는 '의심스러우면 한 단계 위로 분류'하는 보수적 정책을 쓴다. 우리 cascade VLM도 마찬가지다 — Stage 2의 'is this interesting?' classifier는 조금 더 보수적으로 (false positive를 감수하고) 설정한다. 잘못 통과시킨 frame이 Stage 3에서 빠르게 걸러진다.</p>
+<p>Real-time VLM의 진짜 enlightenment는 이거다: <strong>'모든 frame을 똑같이 처리하지 마라. 누구를 먼저 볼지 결정하는 것이 첫 번째 일이다.'</strong></p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>Cascade architecture의 skeleton을 보여주는 코드다. 각 stage는 명시적 latency budget을 가지고, budget을 초과하면 frame을 drop하거나 escalation을 포기한다. 진짜 production system은 이것보다 훨씬 복잡하지만, <strong>'stage별 budget + escalation policy'</strong>라는 핵심 패턴은 그대로다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import asyncio, time
+from dataclasses import dataclass
+from typing import Optional
+
+@dataclass
+class Frame:
+    timestamp: float
+    image: bytes  # raw RGB or compressed
+    audio_chunk: bytes
+
+# ─── Stage 1: 1ms budget — DNN 없이 신호 처리 ───
+async def stage1_signal_check(frame: Frame) -&gt; dict:
+    &quot;&quot;&quot;Patch motion + Audio VAD. Pure signal processing.&quot;&quot;&quot;
+    start = time.perf_counter()
+    motion_score = compute_patch_motion(frame.image)        # frame-diff
+    voice_active = audio_vad(frame.audio_chunk)             # WebRTC VAD
+    elapsed_ms = (time.perf_counter() - start) * 1000
+    return {
+        &#x27;interesting&#x27;: motion_score &gt; 0.1 or voice_active,
+        &#x27;motion&#x27;: motion_score, &#x27;voice&#x27;: voice_active,
+        &#x27;budget_ok&#x27;: elapsed_ms &lt; 1.0,
+    }
+
+# ─── Stage 2: 50ms budget — Tiny encoder ───
+async def stage2_tiny_encoder(frame: Frame) -&gt; dict:
+    &quot;&quot;&quot;MobileViT (5M params). &#x27;Is this interesting?&#x27; classifier.&quot;&quot;&quot;
+    start = time.perf_counter()
+    features = await tiny_encoder.forward(frame.image)       # ~30ms on edge GPU
+    interest_score = saliency_head(features)
+    roi = extract_roi(features)
+    elapsed_ms = (time.perf_counter() - start) * 1000
+    return {
+        &#x27;escalate&#x27;: interest_score &gt; 0.5,
+        &#x27;roi&#x27;: roi,
+        &#x27;budget_ok&#x27;: elapsed_ms &lt; 50.0,
+    }
+
+# ─── Stage 3: 200ms budget — Heavy chunk encoder ───
+async def stage3_chunk_encoder(chunk_frames: list) -&gt; Optional[dict]:
+    &quot;&quot;&quot;V-JEPA-2: 32 frames → 16 tokens. Only on escalated chunks.&quot;&quot;&quot;
+    if len(chunk_frames) &lt; 16: return None  # not enough context
+    tokens = await vjepa2.encode_chunk(chunk_frames)         # ~150ms
+    scene_delta = extract_scene_changes(tokens)              # symbolic delta
+    return {&#x27;tokens&#x27;: tokens, &#x27;scene_delta&#x27;: scene_delta}
+
+# ─── Orchestrator: stage별 escalation ───
+async def cascade_pipeline(frame_stream):
+    chunk_buffer = []
+    async for frame in frame_stream:
+        s1 = await stage1_signal_check(frame)
+        if not s1[&#x27;interesting&#x27;]:
+            continue  # drop frame, no escalation
+
+        s2 = await stage2_tiny_encoder(frame)
+        if not s2[&#x27;escalate&#x27;]:
+            continue  # tiny encoder said &#x27;boring&#x27;
+
+        chunk_buffer.append(frame)
+        if len(chunk_buffer) &gt;= 32:                          # 1 second of frames
+            s3 = await stage3_chunk_encoder(chunk_buffer)
+            chunk_buffer = []
+            if s3:
+                await update_scene_graph(s3[&#x27;scene_delta&#x27;])  # Stage 4 (continuous)
+                if scene_change_significant(s3):
+                    await trigger_proactive_response(s3)     # Stage 5 (on trigger)</code></pre>
+      <div class="c-walk"><p><strong>Stage 1</strong>은 DNN 없이 frame-diff와 audio VAD만 쓴다. CPU에서 1ms 안에 끝난다. 'no motion, no voice'면 frame을 그냥 버린다. 90% 정도의 frame이 여기서 걸러진다.</p>
+<p><strong>Stage 2</strong>는 작은 vision encoder(MobileViT 5M params)로 'interesting?' 분류. 30-50ms. 'boring'이면 escalation 안 함.</p>
+<p><strong>Stage 3</strong>은 escalation된 frame들을 32-frame chunk로 모아서 V-JEPA-2로 한 번에 처리. Chunk encoder의 장점이 여기서 나온다 — frame-by-frame이 아니라 1초를 한 번에 처리하니 inference cost가 줄어든다.</p>
+<p><strong>Stage 4 (update_scene_graph)</strong>와 <strong>Stage 5 (trigger_proactive_response)</strong>는 별도 챕터의 주제다. 핵심은 모든 frame이 Stage 5까지 가지 않는다는 점이다. <strong>Stage별 budget이 명시적이고, escalation이 conditional</strong>이라는 것이 진짜 production-grade cascade의 본질이다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">이 챕터의 내용은 단순한 production 구현 능력이 아니라 **분야 전체를 보는 시야**를 평가한다. 시니어 인터뷰에서 &#x27;how would you advance this field?&#x27;라는 open-ended 질문을 받았을 때, 표면적인 답(&#x27;더 빠른 encoder&#x27;)과 본질적인 답(&#x27;cascade로 escalation policy를 재설계&#x27;)의 차이가 여기서 드러난다. Anthropic, Google DeepMind, OpenAI 같은 곳의 staff/principal level 면접에서 이런 질문이 자주 나온다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>현재 SOTA의 한계를 표면적이 아니라 **근본 원인 레벨**에서 진단할 수 있는가 (예: &#x27;느려&#x27;가 아니라 &#x27;encoder가 frame-level이라 redundant compute가 일어난다&#x27;)</li><li>Architectural decision의 **trade-off를 quantitative하게** 따질 수 있는가 (cascade가 어떤 경우 유리하고 어떤 경우 불리한지 명시할 수 있는가)</li><li>기존 패러다임의 **legacy decision과 옳은 결정**을 구분할 수 있는가 (예: CLIP은 legacy, V-JEPA가 right choice인 이유를 학습 신호 차원에서 설명)</li><li>**미해결 문제를 식별하고 학습 framework까지 제안**할 수 있는가 (timing of speech에 대해 단순히 &#x27;hard&#x27;라고 하지 않고 RL with implicit feedback이라는 학습 framework를 제시)</li><li>**&#x27;무엇을 만들지&#x27;와 &#x27;왜 만들지&#x27;를 분리**해서 사고할 수 있는가 (technical capability vs user-facing value의 구분)</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>단순히 &#x27;더 큰 모델, 더 빠른 GPU&#x27;로 모든 문제를 푸려는 태도 (architectural insight 부재)</li><li>Production system의 한계를 단순히 &#x27;engineering issue&#x27;로 치부하고 R&amp;D 방향과 분리하는 사고</li><li>&#x27;Timing of speech&#x27; 같은 user-experience 문제를 &#x27;product team 책임&#x27;으로 떠넘기는 자세 (좋은 staff engineer는 system-level과 UX-level을 잇는다)</li><li>기존 시스템(Gemini Live, GPT-4o Realtime)을 무비판적으로 따라하려는 태도 — 어떤 부분이 legacy이고 어떤 부분이 옳은지 구분 못 함</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>현재 production real-time VLM의 한 가지 큰 한계를 골라서, 그것의 근본 원인을 진단하고 해결책을 제안하시오. &#x27;latency&#x27; 같은 표면적 답은 받지 않습니다.</li><li>Frame-level encoder와 chunk-level encoder의 trade-off를 정량적으로 비교하시오. Throughput, accuracy, training data requirement, deployment cost 차원에서.</li><li>&#x27;언제 발화할지&#x27; 결정하는 classifier를 학습한다고 가정하자. Reward signal을 어떻게 설계하겠는가? Implicit signal에서 reward를 추출하는 방법을 구체적으로 제시하시오.</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> **Familiar**: &#x27;Gemini Live는 빠르고 GPT-4o Realtime은 자연스럽다&#x27;를 아는 수준. SOTA 시스템들의 marketing-facing description을 외운 상태.
+
+**Mastery**: 각 시스템의 architectural decision을 분해해서, 어떤 결정이 옳고 어떤 결정이 legacy인지 판별할 수 있다. 한계의 근본 원인을 진단하고, 그것을 풀기 위한 architectural alternative를 first principles에서 제안할 수 있다. 자신만의 &#x27;next-gen system&#x27;을 명확하게 그려낼 수 있다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>현재 SOTA의 4가지 진짜 한계</h3><p>이해 깊이 부족, 발화 timing 미숙, encoder bottleneck, multimodal late fusion. 표면적 &#x27;latency 문제&#x27;가 아니다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>Cascade Architecture가 옳다</h3><p>단일 거대 모델이 아니라 1ms → 50ms → 200ms로 stage별 budget을 두고 escalation. 인간 시각 시스템(superior colliculus → visual cortex → frontal lobe)의 구조와 일치.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>Chunk Encoder는 frame Encoder를 대체한다</h3><p>V-JEPA-2 계열로 32 frames → 16 tokens (480배 압축). 정확도도 더 높음 (temporal context 자연 학습).</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>Memory는 token이 아니라 graph로</h3><p>Object-centric + event-centric scene graph. O(log N) lookup, token budget 소비 없음. Token cache는 보조.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>Speculative + Idle Prediction</h3><p>On-device Nano로 draft, server Pro로 verify. 사용자가 물을 질문을 미리 예측해서 generation. Perceived latency를 actual latency보다 작게.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>Timing of Speech가 가장 어렵다</h3><p>별도 &#x27;speak_now?&#x27; classifier + per-user LoRA + RL with implicit feedback. 풀리면 &#x27;tool&#x27;에서 &#x27;companion&#x27;으로 격이 바뀐다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>Legacy vs Right Choice를 구분하라</h3><p>Gemini, GPT-4o가 CLIP을 쓴다고 그게 옳은 결정이 아니다. V-JEPA-2가 더 옳다. 시스템을 분해하고 비판적으로 보는 시야.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>분야 전체를 보는 시야가 차세대를 만든다</h3><p>Marginal improvement(더 빠른 응답, 더 긴 context)에 매달리지 않고, system-level architectural insight + UX-level user value를 잇는 사고가 진짜 도약을 만든다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-10.html">← Production Deployment &amp; Monitoring</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <span></span>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+</body></html>
