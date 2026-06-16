@@ -14,7 +14,7 @@ export interface Chapter {
   topics?: string[];
   learningGoals?: string[];
   overview?: string;
-  sections?: { title: string; content: string }[];
+  sections?: { title: string; content: string; figures?: { src: string; caption: string; label?: string; arxivId?: string }[] }[];
   analogy?: { title: string; content: string };
   codeExample?: { language?: string; intro?: string; code?: string; walkthrough?: string };
   industryEvaluation?: {
