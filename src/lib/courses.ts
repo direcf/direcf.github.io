@@ -2,6 +2,7 @@ import ep from "../data/courses/engineering-philosophy.json";
 import sa from "../data/courses/system-architecture.json";
 import vc from "../data/courses/video-codec.json";
 import jw from "../data/courses/jepa-world-models.json";
+import { marked } from "marked";
 
 export interface Chapter {
   number: number;
@@ -53,21 +54,14 @@ export function fmtChapterNo(n: number, total: number) {
   return `CHAPTER ${String(n).padStart(2, "0")} OF ${String(total).padStart(2, "0")}`;
 }
 
-// minimal markdown for prose: **bold** and `code`
+// inline markdown: bold, code, italic — no block wrapping
 export function md(input: string): string {
   if (!input) return "";
-  return input
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/`([^`]+)`/g, "<code>$1</code>");
+  return marked.parseInline(input) as string;
 }
 
-// split prose into HTML paragraphs (handles \n\n)
+// full markdown: paragraphs, tables, lists, code blocks, etc.
 export function paragraphs(text: string): string {
   if (!text) return "";
-  const blocks = text.split(/\n\n+/).map((b) => b.trim()).filter(Boolean);
-  return blocks.map((b) => `<p>${md(b)}</p>`).join("\n");
+  return marked.parse(text) as string;
 }
