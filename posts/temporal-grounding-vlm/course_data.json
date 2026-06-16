@@ -30,7 +30,15 @@
       "sections": [
         {
           "title": "1.1 Task definition — V × q → [t_s, t_e]",
-          "content": "가장 단순한 형식으로 쓰면 task는 다음과 같다. 길이 T초의 비디오 V = {f_1, f_2, ..., f_N} (N개 frame, 보통 1–2 FPS sub-sample)와 자연어 query q가 주어진다. 모델 f_θ는 시간 구간 (t_s, t_e), 0 ≤ t_s < t_e ≤ T 를 출력한다. ground truth는 인간 annotator가 표시한 (t_s*, t_e*) 한 쌍 또는 여러 쌍(disjoint moment 허용 시). 평가는 prediction과 GT의 temporal IoU = max(0, min(t_e, t_e*) − max(t_s, t_s*)) / (max(t_e, t_e*) − min(t_s, t_s*)) 로 시작한다.\n\n2024년 이전 모델들 — 2D-TAN, M-DETR, QD-DETR, UniVTG — 은 이 출력을 두 개의 scalar regression head로 뽑았다. (center, length) 또는 (start_offset, end_offset). 2025–2026년 VLM-as-grounder는 같은 출력을 텍스트 토큰으로 emit한다. 예: 'The witness recants between 47.2 and 55.0 seconds.' Time-R1은 여기에 GRPO + verifiable tIoU reward를 붙여 zero-shot으로 Charades-STA [email protected]=78.1을 달성했다. 같은 모델이 같은 비디오와 query를 보지만, output을 숫자 vector로 만들지 token sequence로 만들지가 결정적 차이다."
+          "content": "가장 단순한 형식으로 쓰면 task는 다음과 같다. 길이 T초의 비디오 V = {f_1, f_2, ..., f_N} (N개 frame, 보통 1–2 FPS sub-sample)와 자연어 query q가 주어진다. 모델 f_θ는 시간 구간 (t_s, t_e), 0 ≤ t_s < t_e ≤ T 를 출력한다. ground truth는 인간 annotator가 표시한 (t_s*, t_e*) 한 쌍 또는 여러 쌍(disjoint moment 허용 시). 평가는 prediction과 GT의 temporal IoU = max(0, min(t_e, t_e*) − max(t_s, t_s*)) / (max(t_e, t_e*) − min(t_s, t_s*)) 로 시작한다.\n\n2024년 이전 모델들 — 2D-TAN, M-DETR, QD-DETR, UniVTG — 은 이 출력을 두 개의 scalar regression head로 뽑았다. (center, length) 또는 (start_offset, end_offset). 2025–2026년 VLM-as-grounder는 같은 출력을 텍스트 토큰으로 emit한다. 예: 'The witness recants between 47.2 and 55.0 seconds.' Time-R1은 여기에 GRPO + verifiable tIoU reward를 붙여 zero-shot으로 Charades-STA [email protected]=78.1을 달성했다. 같은 모델이 같은 비디오와 query를 보지만, output을 숫자 vector로 만들지 token sequence로 만들지가 결정적 차이다.",
+          "figures": [
+            {
+              "src": "/posts/temporal-grounding-vlm/figures/2012.02646/illustration.png",
+              "caption": "Temporal Grounding의 기본 태스크. 자연어 쿼리 q와 비디오 V가 주어지면 가장 관련 있는 순간의 시작/끝 타임스탬프 [ts, te]를 찾는다.",
+              "label": "fig:task",
+              "arxivId": "2012.02646"
+            }
+          ]
         },
         {
           "title": "1.2 TSG vs MR vs TAL — 무엇이 같고 무엇이 다른가",
@@ -144,7 +152,15 @@
       "sections": [
         {
           "title": "2.1 Short/Medium-form Benchmarks — 5개 정공법",
-          "content": "이 5개는 2017-2021년에 등장했고 지금까지 모든 temporal grounding paper의 표준 평가다.\n\n| Benchmark | Videos | Queries | avg vid | avg moment | moment% | Metric | Domain |\n|---|---|---|---|---|---|---|---|\n| Charades-STA (arXiv:1705.02101) | 9,848 | 16,128 | 30s | 8.2s | 27% | R@N IoU{0.3,0.5,0.7}, mIoU | indoor home |\n| ActivityNet-Captions (arXiv:1705.00754) | 20K | 100K | 120s | 36s | 30% | R@N IoU{0.3,0.5,0.7}, mIoU | YouTube open-domain |\n| TACoS (TACL 2013) | 127 | 18,818 | 287s | 5.4s | 1.8% | R@N IoU{0.1,0.3,0.5} | MPII-Cooking single domain |\n| DiDeMo (arXiv:1708.01641) | 10,464 | 40K | 30s max | 5s × 6 segments | discrete | Rank@1/5, mIoU | Flickr open |\n| QVHighlights (arXiv:2107.09609) | 10,148 | 10,310 | 150s | 24s | 16% | [email protected]/0.7, mAP@{0.5,0.75,avg}, HIT@1 | vlog/news |\n\n**Charades-STA**는 가장 자주 인용되지만 가장 편향된 dataset이다. 영상이 짧고 (30초) moment가 영상의 27%를 차지하기 때문에 모든 영상의 0초부터 8.2초까지라고 prior로 예측해도 R1@0.3이 30%를 넘는다. 2026년 6월 기준 SOTA는 AVI (arXiv:2511.14446)가 [email protected] 88.6, Time-R1* (arXiv:2503.13377)가 R1@0.5 72.2, TAR-TVG (arXiv:2508.07683)가 mIoU 61.1이다.\n\n**ActivityNet-Captions**는 영상이 4배 더 길고 (120s) query당 13.48 단어로 가장 서술적이다. 2026 SOTA는 TempSamp-R1 (arXiv:2509.18056) mIoU 49+. ActivityNet-CD (arXiv:2101.09028) 권장.\n\n**TACoS**는 cooking 단일 domain. Universal VTG (arXiv:2506.18883)가 [email protected] 60+.\n\n**DiDeMo**는 5초 segment 6개로 quantize되어 fine-grained IoU 평가가 불가능하다.\n\n**QVHighlights**는 query당 평균 1.8개의 disjoint moment + saliency score. 2026 SOTA는 MeCo (arXiv:2503.09027, ICLR 2026) mAP 45.3 / HIT@1 75.1.\n\n핵심 직관: **moment%가 27%인 Charades-STA의 R1@0.5와 moment%가 1.8%인 TACoS의 R1@0.5는 같은 척도가 아니다.**"
+          "content": "이 5개는 2017-2021년에 등장했고 지금까지 모든 temporal grounding paper의 표준 평가다.\n\n| Benchmark | Videos | Queries | avg vid | avg moment | moment% | Metric | Domain |\n|---|---|---|---|---|---|---|---|\n| Charades-STA (arXiv:1705.02101) | 9,848 | 16,128 | 30s | 8.2s | 27% | R@N IoU{0.3,0.5,0.7}, mIoU | indoor home |\n| ActivityNet-Captions (arXiv:1705.00754) | 20K | 100K | 120s | 36s | 30% | R@N IoU{0.3,0.5,0.7}, mIoU | YouTube open-domain |\n| TACoS (TACL 2013) | 127 | 18,818 | 287s | 5.4s | 1.8% | R@N IoU{0.1,0.3,0.5} | MPII-Cooking single domain |\n| DiDeMo (arXiv:1708.01641) | 10,464 | 40K | 30s max | 5s × 6 segments | discrete | Rank@1/5, mIoU | Flickr open |\n| QVHighlights (arXiv:2107.09609) | 10,148 | 10,310 | 150s | 24s | 16% | [email protected]/0.7, mAP@{0.5,0.75,avg}, HIT@1 | vlog/news |\n\n**Charades-STA**는 가장 자주 인용되지만 가장 편향된 dataset이다. 영상이 짧고 (30초) moment가 영상의 27%를 차지하기 때문에 모든 영상의 0초부터 8.2초까지라고 prior로 예측해도 R1@0.3이 30%를 넘는다. 2026년 6월 기준 SOTA는 AVI (arXiv:2511.14446)가 [email protected] 88.6, Time-R1* (arXiv:2503.13377)가 R1@0.5 72.2, TAR-TVG (arXiv:2508.07683)가 mIoU 61.1이다.\n\n**ActivityNet-Captions**는 영상이 4배 더 길고 (120s) query당 13.48 단어로 가장 서술적이다. 2026 SOTA는 TempSamp-R1 (arXiv:2509.18056) mIoU 49+. ActivityNet-CD (arXiv:2101.09028) 권장.\n\n**TACoS**는 cooking 단일 domain. Universal VTG (arXiv:2506.18883)가 [email protected] 60+.\n\n**DiDeMo**는 5초 segment 6개로 quantize되어 fine-grained IoU 평가가 불가능하다.\n\n**QVHighlights**는 query당 평균 1.8개의 disjoint moment + saliency score. 2026 SOTA는 MeCo (arXiv:2503.09027, ICLR 2026) mAP 45.3 / HIT@1 75.1.\n\n핵심 직관: **moment%가 27%인 Charades-STA의 R1@0.5와 moment%가 1.8%인 TACoS의 R1@0.5는 같은 척도가 아니다.**",
+          "figures": [
+            {
+              "src": "/posts/temporal-grounding-vlm/figures/2503.13377/TVGBench.png",
+              "caption": "TVGBench의 쿼리 유형 분포. 11가지 쿼리 타입으로 temporal video grounding 벤치마크의 다양성을 정량화한다.",
+              "label": "fig:tvgbench",
+              "arxivId": "2503.13377"
+            }
+          ]
         },
         {
           "title": "2.2 Long-form / Domain-specific — hour-scale은 다른 게임",
@@ -152,7 +168,15 @@
         },
         {
           "title": "2.3 The 7 Biases — 왜 R1@0.5 점수 하나로 paper를 쓰면 안 되는가",
-          "content": "| # | Bias | 발견 dataset | 증거 | Mitigation |\n|---|---|---|---|---|\n| 1 | Caption-only / prior-only | Charades-STA, ActivityNet | Otani et al. arXiv:2009.00325 — query만 또는 분포만으로 R1@0.5 30%+ | Charades-CD, ActivityNet-CD |\n| 2 | Word-level shortcut | Charades-STA | open → 영상 시작부, leave → 영상 후반부로 학습 | 동사-위치 decorrelation split |\n| 3 | No negative annotation | 전 dataset | 모든 query가 positive — 이 영상에 그런 장면 없음을 학습 불가 | Negative split, AbstainGround |\n| 4 | Localization-description entanglement | MAD, Ego4D MQ, QVHighlights | MAD는 character ID 추적, MQ는 사실상 action detection, QVH는 saliency joint | task별 ablation |\n| 5 | Discrete granularity | DiDeMo | 5s × 6 quantization → [email protected]/0.7 평가 불가능 | continuous label 재annotate |\n| 6 | Train/test distribution leak | Charades-STA, ActivityNet | moment 시작 시간 분포가 train/test 동일 | Charades-CD, ActivityNet-CD (arXiv:2101.09028) |\n| 7 | Long-form scarcity | 전 분야 | hour-scale evaluable dataset이 MAD/Ego4D/MomentSeeker/ExtremeWhenBench 4종 | newcomer benchmark 활용 |\n\n**Bias #1 — Caption-only / prior-only bias**. Otani et al. (arXiv:2009.00325)가 보인 실험: (a) 영상도 query도 안 보고 training set의 moment 시작/끝 분포의 평균만 예측 → Charades-STA에서 R1@0.5가 28-35%. (b) query는 보지만 영상은 안 보고 fully-connected layer로 boundary 회귀 → R1@0.5가 35-42%. 그 시점 SOTA가 50% 근처였으니 video 정보의 기여는 15%p 남짓.\n\n**Bias #3 — No negative annotation**. Charades-STA / ActivityNet / DiDeMo 모두 '이 query가 이 영상의 [t1, t2] 구간을 가리킨다'만 annotate. 그래서 model이 항상 무언가를 출력하도록 학습된다 — hallucination의 구조적 원인. 7B VLM이 Charades-STA-Negative split에서 30-50% false-positive를 낸다.\n\n**Bias #6 — Train/test distribution leak**. Charades-CD / ActivityNet-CD (arXiv:2101.09028). Train split의 moment 시작 시간 분포와 test split이 다르도록 의도적으로 split. 같은 method가 표준 split에서 R1@0.5 60%지만 CD split에서는 25-35%로 떨어지는 경우가 흔하다."
+          "content": "| # | Bias | 발견 dataset | 증거 | Mitigation |\n|---|---|---|---|---|\n| 1 | Caption-only / prior-only | Charades-STA, ActivityNet | Otani et al. arXiv:2009.00325 — query만 또는 분포만으로 R1@0.5 30%+ | Charades-CD, ActivityNet-CD |\n| 2 | Word-level shortcut | Charades-STA | open → 영상 시작부, leave → 영상 후반부로 학습 | 동사-위치 decorrelation split |\n| 3 | No negative annotation | 전 dataset | 모든 query가 positive — 이 영상에 그런 장면 없음을 학습 불가 | Negative split, AbstainGround |\n| 4 | Localization-description entanglement | MAD, Ego4D MQ, QVHighlights | MAD는 character ID 추적, MQ는 사실상 action detection, QVH는 saliency joint | task별 ablation |\n| 5 | Discrete granularity | DiDeMo | 5s × 6 quantization → [email protected]/0.7 평가 불가능 | continuous label 재annotate |\n| 6 | Train/test distribution leak | Charades-STA, ActivityNet | moment 시작 시간 분포가 train/test 동일 | Charades-CD, ActivityNet-CD (arXiv:2101.09028) |\n| 7 | Long-form scarcity | 전 분야 | hour-scale evaluable dataset이 MAD/Ego4D/MomentSeeker/ExtremeWhenBench 4종 | newcomer benchmark 활용 |\n\n**Bias #1 — Caption-only / prior-only bias**. Otani et al. (arXiv:2009.00325)가 보인 실험: (a) 영상도 query도 안 보고 training set의 moment 시작/끝 분포의 평균만 예측 → Charades-STA에서 R1@0.5가 28-35%. (b) query는 보지만 영상은 안 보고 fully-connected layer로 boundary 회귀 → R1@0.5가 35-42%. 그 시점 SOTA가 50% 근처였으니 video 정보의 기여는 15%p 남짓.\n\n**Bias #3 — No negative annotation**. Charades-STA / ActivityNet / DiDeMo 모두 '이 query가 이 영상의 [t1, t2] 구간을 가리킨다'만 annotate. 그래서 model이 항상 무언가를 출력하도록 학습된다 — hallucination의 구조적 원인. 7B VLM이 Charades-STA-Negative split에서 30-50% false-positive를 낸다.\n\n**Bias #6 — Train/test distribution leak**. Charades-CD / ActivityNet-CD (arXiv:2101.09028). Train split의 moment 시작 시간 분포와 test split이 다르도록 의도적으로 split. 같은 method가 표준 split에서 R1@0.5 60%지만 CD split에서는 25-35%로 떨어지는 경우가 흔하다.",
+          "figures": [
+            {
+              "src": "/posts/temporal-grounding-vlm/figures/2506.18883/bias_anet.png",
+              "caption": "ActivityNet-Captions의 시간적 분포 편향(Temporal Distribution Bias). 대부분의 정답이 비디오 특정 구간에 몰려 있어 모델이 진짜 이해 없이 높은 점수를 낼 수 있음을 보여준다.",
+              "label": "fig:bias_all",
+              "arxivId": "2506.18883"
+            }
+          ]
         },
         {
           "title": "2.4 OOD Evals — Charades-CD / ActivityNet-CD가 필수가 된 이유",
@@ -270,7 +294,15 @@
           "title": "2. Moment-DETR — Transformer Decoder의 첫 진입",
           "content": "**Moment-DETR** (M-DETR, Lei, Berg, Bansal, NeurIPS 2021, arXiv:2107.09609)은 이 분야에 두 가지를 동시에 가져왔다. 첫째, **set prediction**: Hungarian matching으로 N개의 prediction과 ground-truth moment를 1:1로 매칭한다 (DETR을 object detection에서 가져온 방식). 둘째, **QVHighlights**라는 새 benchmark — multi-moment + saliency까지 동시에 푸는 어려운 setup이었다. \n\nArchitecture는 (1) video frame을 SlowFast / CLIP feature로 임베딩, (2) text query를 CLIP / RoBERTa로 임베딩, (3) 두 modality를 cross-modal Transformer encoder에 흘려보낸 뒤, (4) N=10 learnable **moment query**가 Transformer decoder에서 cross-attention으로 video memory를 흡수, (5) 각 query당 (start_norm, end_norm, foreground_score)를 출력한다. Loss는 L1 span loss + GIoU(Generalized IoU) span loss + foreground classification loss + saliency loss의 weighted sum이다. \n\nQVHighlights에서 [email protected] ~52, mAP ~30대로 강력한 baseline을 세웠지만, Charades-STA에 옮기면 R1@0.5는 53-55에 머물렀다. 핵심 이유: text encoder가 frozen RoBERTa이고, video encoder는 SlowFast/CLIP — 즉 **language reasoning capacity가 입력단에 고정**되어 있다.",
           "imagePath": "/posts/temporal-grounding-vlm/figures/ch03/m-detr-arch.png",
-          "imagePrompt": "Moment-DETR architecture diagram. Left: video frames sampled into SlowFast/CLIP encoder producing a sequence of video tokens. Below it: text query 'A man opens the fridge' encoded by RoBERTa into text tokens. Center: a Transformer encoder block fusing video + text tokens with self-attention. Right: a Transformer decoder block consuming N=10 learnable moment queries (drawn as colored circles labeled q1...q10) that cross-attend to the encoder output. Output heads: three MLP heads producing (start_norm, end_norm, score) per query. Annotate Hungarian matching arrow from predictions to GT moments. Clean academic diagram, muted palette."
+          "imagePrompt": "Moment-DETR architecture diagram. Left: video frames sampled into SlowFast/CLIP encoder producing a sequence of video tokens. Below it: text query 'A man opens the fridge' encoded by RoBERTa into text tokens. Center: a Transformer encoder block fusing video + text tokens with self-attention. Right: a Transformer decoder block consuming N=10 learnable moment queries (drawn as colored circles labeled q1...q10) that cross-attend to the encoder output. Output heads: three MLP heads producing (start_norm, end_norm, score) per query. Annotate Hungarian matching arrow from predictions to GT moments. Clean academic diagram, muted palette.",
+          "figures": [
+            {
+              "src": "/posts/temporal-grounding-vlm/figures/2012.02646/framework.png",
+              "caption": "Moment-DETR 프레임워크. Language encoder → Temporal encoder → Transformer decoder 세 모듈이 협력해 moment와 saliency score를 동시에 예측한다.",
+              "label": "fig:framework",
+              "arxivId": "2012.02646"
+            }
+          ]
         },
         {
           "title": "3. QD-DETR — Query-Dependent Video Representation",
@@ -282,7 +314,21 @@
           "title": "4. CG-DETR — Cross-Modal Granularity Alignment",
           "content": "**CG-DETR** (Correlation-Guided DETR for Fast Video Temporal Grounding, Moon et al., 2023, arXiv:2311.08835)는 한 단계 더 들어간다. 문제 진단: word-level token과 video frame-level token이 attention pool에서 동일 granularity로 섞이는데, 실제로는 \"opens\" 같은 동사는 **순간** event에, \"washes\" 같은 동사는 **지속** event에 alignment된다. \n\nCG-DETR의 해법은 (1) **adaptive cross-modal alignment** — token마다 다른 attention temperature를 학습해 sharpness를 조절, (2) **moment-adaptive saliency detector** — 길이가 다른 moment에 대해 다른 receptive field를 부여. 효과는 QVHighlights에서 SOTA를 한 번 더 갱신했고, 무엇보다 **inference 속도가 빨라졌다** (이름의 \"Fast\"). \n\n이 시점에서 \"DETR-style은 점점 attention granularity를 세분화하는 방향으로 trick을 쌓고 있다\"는 패턴이 보인다. 그러나 trick이 쌓일수록 model-specific hyperparameter도 늘어나고, dataset-transfer가 어려워졌다.",
           "imagePath": "/posts/temporal-grounding-vlm/figures/ch03/cg-detr-attention.png",
-          "imagePrompt": "Cross-modal attention heatmap visualization. Two heatmaps side by side: 'standard cross-attention' (left, soft and diffuse, words attending evenly to all frames) vs 'CG-DETR adaptive cross-attention' (right, sharp peaks where verb tokens like 'opens' focus narrowly on a few frames, while 'washes' spreads across a longer span). X-axis: video frames (1-32). Y-axis: query word tokens. Color scale: viridis. Add small caption on each: temperature value learned per token."
+          "imagePrompt": "Cross-modal attention heatmap visualization. Two heatmaps side by side: 'standard cross-attention' (left, soft and diffuse, words attending evenly to all frames) vs 'CG-DETR adaptive cross-attention' (right, sharp peaks where verb tokens like 'opens' focus narrowly on a few frames, while 'washes' spreads across a longer span). X-axis: video frames (1-32). Y-axis: query word tokens. Color scale: viridis. Add small caption on each: temperature value learned per token.",
+          "figures": [
+            {
+              "src": "/posts/temporal-grounding-vlm/figures/2311.08835/fig_2.png",
+              "caption": "CG-DETR 전체 구조. (i) 특징 추출, (ii) Cross-Modal Granularity Alignment, (iii) 예측 헤드의 세 단계로 구성된다.",
+              "label": "fig:main_figure",
+              "arxivId": "2311.08835"
+            },
+            {
+              "src": "/posts/temporal-grounding-vlm/figures/2311.08835/fig_3.png",
+              "caption": "클립별 쿼리 대응(clip-wise query correspondence) a 도출 과정. 각 비디오 클립이 텍스트 쿼리의 어느 단어에 집중하는지를 학습한다.",
+              "label": "fig:textattendance",
+              "arxivId": "2311.08835"
+            }
+          ]
         },
         {
           "title": "5. UniVTG — One Head for MR, HD, TAL",
@@ -416,7 +462,15 @@
       "sections": [
         {
           "title": "4.1 패러다임 전환 — Regression Head에서 Verbal Generation으로",
-          "content": "2024년까지의 temporal grounding 파이프라인은 한결같았다. CLIP·VideoMAE 같은 frozen visual encoder가 frame token을 만들고, text encoder가 query embedding을 만들고, transformer decoder가 N개의 candidate moment query를 받아 cross-attention을 돈 뒤, 마지막에 (start_offset, end_offset) ∈ ℝ²를 회귀했다. 손실은 L1 + GIoU.\n\n2025-2026의 전환은 이 마지막 head를 버리는 것이다. 대신 비디오를 입력받은 VLM의 LLM body가 직접 문자열을 토큰 단위로 출력한다 — <0.32, 0.41> 혹은 from 12.3 to 18.7 seconds. 학습은 그저 next-token cross-entropy다.\n\n핵심 통찰 세 가지. 첫째, **regression은 한 번에 하나의 (s,e) 쌍을 강제**한다. multi-event를 다루려면 query 수 N을 정하고 Hungarian matching을 굴려야 한다. 반면 verbal generation은 <0.10, 0.18>, <0.55, 0.62>처럼 그냥 더 길게 쓰면 된다. 둘째, **regression head는 abstention을 모델링할 자리가 없다.** 출력 차원이 ℝ²로 고정되어 있어 없음이 표현되지 않는다. LLM은 'I cannot find this moment'를 그냥 쓸 수 있다. 셋째, **regression head는 데이터셋별로 다시 학습해야 한다.** LLM head는 동일한 prompt 포맷이면 Charades-STA와 ActivityNet과 QVHighlights를 같은 weight로 받을 수 있다 — UniTime이 정확히 그 universal grounder를 만들었다."
+          "content": "2024년까지의 temporal grounding 파이프라인은 한결같았다. CLIP·VideoMAE 같은 frozen visual encoder가 frame token을 만들고, text encoder가 query embedding을 만들고, transformer decoder가 N개의 candidate moment query를 받아 cross-attention을 돈 뒤, 마지막에 (start_offset, end_offset) ∈ ℝ²를 회귀했다. 손실은 L1 + GIoU.\n\n2025-2026의 전환은 이 마지막 head를 버리는 것이다. 대신 비디오를 입력받은 VLM의 LLM body가 직접 문자열을 토큰 단위로 출력한다 — <0.32, 0.41> 혹은 from 12.3 to 18.7 seconds. 학습은 그저 next-token cross-entropy다.\n\n핵심 통찰 세 가지. 첫째, **regression은 한 번에 하나의 (s,e) 쌍을 강제**한다. multi-event를 다루려면 query 수 N을 정하고 Hungarian matching을 굴려야 한다. 반면 verbal generation은 <0.10, 0.18>, <0.55, 0.62>처럼 그냥 더 길게 쓰면 된다. 둘째, **regression head는 abstention을 모델링할 자리가 없다.** 출력 차원이 ℝ²로 고정되어 있어 없음이 표현되지 않는다. LLM은 'I cannot find this moment'를 그냥 쓸 수 있다. 셋째, **regression head는 데이터셋별로 다시 학습해야 한다.** LLM head는 동일한 prompt 포맷이면 Charades-STA와 ActivityNet과 QVHighlights를 같은 weight로 받을 수 있다 — UniTime이 정확히 그 universal grounder를 만들었다.",
+          "figures": [
+            {
+              "src": "/posts/temporal-grounding-vlm/figures/2503.09027/intro_iclr.png",
+              "caption": "기존 Timestamp 생성 방식(좌)과 MeCo의 비생성 접근(우) 비교. VLM이 숫자 타임스탬프를 직접 출력하지 않고 Caption-Retrieval 방식으로 Grounding을 수행한다.",
+              "label": "fig:intro",
+              "arxivId": "2503.09027"
+            }
+          ]
         },
         {
           "title": "4.2 Autoregressive Supervision의 수식 — Timestamp 토큰에 손실을 거는 법",
@@ -424,11 +478,27 @@
         },
         {
           "title": "4.3 UniTime (NeurIPS 2025, arXiv:2506.18883) — Universal Generative MLLM Grounder",
-          "content": "UniTime의 한 줄 요약은 **하나의 generative MLLM으로 모든 grounding 벤치마크를 동시에 푼다**이다. 저자 (Zeqian Li, Shangzhe Di, Zhonghua Zhai, Weilin Huang, Yanfeng Wang, Weidi Xie)는 robust universal grounding을 vision-language understanding이 충분히 깊어진 generative MLLM 위에서만 풀 수 있다고 주장한다.\n\n핵심 설계:\n- **Backbone**: 7B 급 generative MLLM (Qwen2-VL 계열)\n- **Input format**: 비디오 frame token + 'Localize the moment described as: <query>. Output the start and end timestamps as fractions of the video duration.' 같은 prompt\n- **Output format**: <s, e> 정규화 분수 timestamp\n- **Training**: Charades-STA / ActivityNet-Captions / TACoS / QVHighlights를 prompt 포맷을 통일해 한 weight로 multi-task fine-tune\n- **Result**: TACoS [email protected] 60+ 등 multi-benchmark에서 도메인 전문 모델에 근접하거나 추월하는 universal score\n\nUniTime이 보여주는 핵심은 두 가지다. 첫째, **prompt format이 같으면 benchmark는 단지 데이터 분포의 차이**일 뿐이고 verbal generation은 이 분포 시프트를 next-token CE 하나로 흡수한다. 둘째, regression head 시대에는 거의 불가능했던 universal grounder 컨셉이 verbal generation 위에서는 자연스럽다. 다만 Open Problem OP-11이 지적하듯, UniTime도 domain-specialized 모델을 모든 metric에서 압도하지는 못한다 — universal score가 평균적으로 좋다는 의미일 뿐, 특정 도메인의 SOTA를 깬 것은 아니다."
+          "content": "UniTime의 한 줄 요약은 **하나의 generative MLLM으로 모든 grounding 벤치마크를 동시에 푼다**이다. 저자 (Zeqian Li, Shangzhe Di, Zhonghua Zhai, Weilin Huang, Yanfeng Wang, Weidi Xie)는 robust universal grounding을 vision-language understanding이 충분히 깊어진 generative MLLM 위에서만 풀 수 있다고 주장한다.\n\n핵심 설계:\n- **Backbone**: 7B 급 generative MLLM (Qwen2-VL 계열)\n- **Input format**: 비디오 frame token + 'Localize the moment described as: <query>. Output the start and end timestamps as fractions of the video duration.' 같은 prompt\n- **Output format**: <s, e> 정규화 분수 timestamp\n- **Training**: Charades-STA / ActivityNet-Captions / TACoS / QVHighlights를 prompt 포맷을 통일해 한 weight로 multi-task fine-tune\n- **Result**: TACoS [email protected] 60+ 등 multi-benchmark에서 도메인 전문 모델에 근접하거나 추월하는 universal score\n\nUniTime이 보여주는 핵심은 두 가지다. 첫째, **prompt format이 같으면 benchmark는 단지 데이터 분포의 차이**일 뿐이고 verbal generation은 이 분포 시프트를 next-token CE 하나로 흡수한다. 둘째, regression head 시대에는 거의 불가능했던 universal grounder 컨셉이 verbal generation 위에서는 자연스럽다. 다만 Open Problem OP-11이 지적하듯, UniTime도 domain-specialized 모델을 모든 metric에서 압도하지는 못한다 — universal score가 평균적으로 좋다는 의미일 뿐, 특정 도메인의 SOTA를 깬 것은 아니다.",
+          "figures": [
+            {
+              "src": "/posts/temporal-grounding-vlm/figures/2506.18883/visualization1.png",
+              "caption": "UniTime 성공 사례. 하나의 모델이 Charades·ActivityNet·QVHighlights 등 여러 벤치마크에서 동일 추론 방식으로 정확한 타임스탬프를 생성한다.",
+              "label": "fig:qualitative",
+              "arxivId": "2506.18883"
+            }
+          ]
         },
         {
           "title": "4.4 MeCo (ICLR 2026, arXiv:2503.09027) — Timestamp 없이 Timestamp를 찾기",
-          "content": "MeCo (Pang, Nakashima, Otani — Osaka U. / CyberAgent)는 verbal generation paradigm을 한 단계 더 끌고 간다. 제목 'Measure Twice, Cut Once'가 시사하듯 MeCo의 핵심 가설은 **timestamp 숫자를 LLM에게 쓰게 하는 것 자체가 LLM의 강점을 낭비한다**는 것이다. LLM은 몇 초를 출력하기엔 차라리 약한 회귀기다. 그러나 무엇이 일어났는지를 자연어로 묘사하는 데는 압도적이다.\n\n3-stage 디자인:\n1. **Structural token generation**: 비디오를 균등 분할하는 structural token 시퀀스 [S_0], [S_1], ..., [S_K]를 LLM body가 생성한다. 이 토큰들은 timestamp가 아니라 비디오를 K+1개의 의미 단위로 자르는 cut marker다.\n2. **Query-focused captioning**: query를 조건으로 각 segment에 대해 짧은 caption을 생성한다.\n3. **Contrastive structural-token grounding**: 마지막으로 structural token embedding과 query embedding을 contrastive로 정렬해, query가 어느 structural cut과 가장 잘 맞는지로 boundary를 결정한다.\n\n학습 디테일: LoRA rank 128, 1 epoch on E.T.Instruct 164K, base는 E.T.Chat / Qwen2VL-7B.\n\n결과는 QVHighlights에서 **mAP=45.3, HIT@1=75.1** — M-DETR, UMT, QD-DETR, CG-DETR, UniVTG를 모두 추월했다. 주의할 점 하나: _research_papers.md에 표기된 대로 **MeCo의 zero-shot Charades-STA SOTA 주장은 검증 단계에서 refute**되었다. 즉 MeCo의 강력함은 QVHighlights에서 가장 분명하고, 다른 벤치마크로의 일반화는 아직 열린 문제다.\n\n왜 MeCo가 중요한가? 그것은 verbal generation = timestamp 문자열을 쓰는 것이라는 등식 자체를 무너뜨렸기 때문이다. MeCo의 LLM은 timestamp를 단 하나도 쓰지 않는다. 그럼에도 verbal generation의 모든 장점을 유지한다. paradigm의 진짜 본질이 LLM head가 결정한다에 있지 timestamp를 텍스트로 쓴다에 있지 않음을 MeCo가 입증한 셈이다."
+          "content": "MeCo (Pang, Nakashima, Otani — Osaka U. / CyberAgent)는 verbal generation paradigm을 한 단계 더 끌고 간다. 제목 'Measure Twice, Cut Once'가 시사하듯 MeCo의 핵심 가설은 **timestamp 숫자를 LLM에게 쓰게 하는 것 자체가 LLM의 강점을 낭비한다**는 것이다. LLM은 몇 초를 출력하기엔 차라리 약한 회귀기다. 그러나 무엇이 일어났는지를 자연어로 묘사하는 데는 압도적이다.\n\n3-stage 디자인:\n1. **Structural token generation**: 비디오를 균등 분할하는 structural token 시퀀스 [S_0], [S_1], ..., [S_K]를 LLM body가 생성한다. 이 토큰들은 timestamp가 아니라 비디오를 K+1개의 의미 단위로 자르는 cut marker다.\n2. **Query-focused captioning**: query를 조건으로 각 segment에 대해 짧은 caption을 생성한다.\n3. **Contrastive structural-token grounding**: 마지막으로 structural token embedding과 query embedding을 contrastive로 정렬해, query가 어느 structural cut과 가장 잘 맞는지로 boundary를 결정한다.\n\n학습 디테일: LoRA rank 128, 1 epoch on E.T.Instruct 164K, base는 E.T.Chat / Qwen2VL-7B.\n\n결과는 QVHighlights에서 **mAP=45.3, HIT@1=75.1** — M-DETR, UMT, QD-DETR, CG-DETR, UniVTG를 모두 추월했다. 주의할 점 하나: _research_papers.md에 표기된 대로 **MeCo의 zero-shot Charades-STA SOTA 주장은 검증 단계에서 refute**되었다. 즉 MeCo의 강력함은 QVHighlights에서 가장 분명하고, 다른 벤치마크로의 일반화는 아직 열린 문제다.\n\n왜 MeCo가 중요한가? 그것은 verbal generation = timestamp 문자열을 쓰는 것이라는 등식 자체를 무너뜨렸기 때문이다. MeCo의 LLM은 timestamp를 단 하나도 쓰지 않는다. 그럼에도 verbal generation의 모든 장점을 유지한다. paradigm의 진짜 본질이 LLM head가 결정한다에 있지 timestamp를 텍스트로 쓴다에 있지 않음을 MeCo가 입증한 셈이다.",
+          "figures": [
+            {
+              "src": "/posts/temporal-grounding-vlm/figures/2503.09027/method_iclr.png",
+              "caption": "MeCo 프레임워크 전체 구조. VLM이 비디오 클립 캡션을 생성하고, 그 캡션과 쿼리 유사도로 타임스탬프를 간접 추론하는 Query-Focused Captioning 파이프라인.",
+              "label": "fig:method",
+              "arxivId": "2503.09027"
+            }
+          ]
         },
         {
           "title": "4.5 가계도 — TimeChat → VTimeLLM → TimeSuite를 거쳐 여기까지",
@@ -533,7 +603,15 @@
       "sections": [
         {
           "title": "5.1 왜 RL이 temporal grounding에 잘 맞는가",
-          "content": "DeepSeek-R1 이후 ML 커뮤니티는 RLVR (Reinforcement Learning with Verifiable Rewards)이라는 용어를 자주 쓰기 시작했다. 핵심 가설은 단순하다: model의 output을 자동으로 채점할 수 있고 그 채점이 hacking에 강하면, SFT보다 RL이 sample efficiency도 generalization도 더 낫다.\n\nTemporal grounding은 이 조건을 거의 완벽하게 만족한다.\n\n첫째, **answer가 short, structured, discrete**하다. Output은 두 개의 실수 [s, e]이고 ground truth도 두 개의 실수다. Math 문제처럼 정답이 한 줄로 나오고 string match 또는 수치 비교 한 번으로 판정할 수 있다.\n\n둘째, **IoU는 continuous하지만 정수 산술로 계산된다**. tIoU = max(0, min(e,e*) - max(s,s*)) / (max(e,e*) - min(s,s*)). CPU 한 사이클이면 충분하다.\n\n셋째, **format reward가 분리 가능하다**. 모델이 <start>12.3 <end>14.7 같은 구조화된 형식을 따랐는지를 regex 한 줄로 확인할 수 있다. Time-R1은 reward를 r = r_format + r_IoU로 분해했다.\n\n넷째, **off-policy hacking이 어렵다**. Span 자체가 답이기 때문이다. (다만 IoU 자체를 hacking할 수는 있다.)\n\n이 네 조건이 합쳐져서, 2.5K짜리 dataset (Time-R1의 TimeRFT)으로도 SOTA가 가능한 sample efficiency가 나온다."
+          "content": "DeepSeek-R1 이후 ML 커뮤니티는 RLVR (Reinforcement Learning with Verifiable Rewards)이라는 용어를 자주 쓰기 시작했다. 핵심 가설은 단순하다: model의 output을 자동으로 채점할 수 있고 그 채점이 hacking에 강하면, SFT보다 RL이 sample efficiency도 generalization도 더 낫다.\n\nTemporal grounding은 이 조건을 거의 완벽하게 만족한다.\n\n첫째, **answer가 short, structured, discrete**하다. Output은 두 개의 실수 [s, e]이고 ground truth도 두 개의 실수다. Math 문제처럼 정답이 한 줄로 나오고 string match 또는 수치 비교 한 번으로 판정할 수 있다.\n\n둘째, **IoU는 continuous하지만 정수 산술로 계산된다**. tIoU = max(0, min(e,e*) - max(s,s*)) / (max(e,e*) - min(s,s*)). CPU 한 사이클이면 충분하다.\n\n셋째, **format reward가 분리 가능하다**. 모델이 <start>12.3 <end>14.7 같은 구조화된 형식을 따랐는지를 regex 한 줄로 확인할 수 있다. Time-R1은 reward를 r = r_format + r_IoU로 분해했다.\n\n넷째, **off-policy hacking이 어렵다**. Span 자체가 답이기 때문이다. (다만 IoU 자체를 hacking할 수는 있다.)\n\n이 네 조건이 합쳐져서, 2.5K짜리 dataset (Time-R1의 TimeRFT)으로도 SOTA가 가능한 sample efficiency가 나온다.",
+          "figures": [
+            {
+              "src": "/posts/temporal-grounding-vlm/figures/2503.13377/post_training_lora.png",
+              "caption": "RL vs SFT 포스트 트레이닝 패러다임 비교. Temporal Video Grounding 포함 여러 태스크에서 RL(GRPO) 파인튜닝이 SFT 대비 더 높은 일반화를 보인다.",
+              "label": "fig:rl_vs_sft",
+              "arxivId": "2503.13377"
+            }
+          ]
         },
         {
           "title": "5.2 GRPO 알고리즘",
@@ -541,7 +619,21 @@
         },
         {
           "title": "5.3 Time-R1 (NeurIPS 2025)",
-          "content": "Time-R1 (Ye Wang et al., Renmin/Xiaomi, arXiv:2503.13377)은 RL post-training으로 temporal grounding의 SOTA를 잡은 첫 작품이다. NeurIPS 2025에 accept되었다.\n\n**Setup**:\n- Base: Qwen2.5-VL-7B-Instruct\n- Algorithm: GRPO with K=8 samples per prompt\n- Reward: r = α · r_format + (1-α) · r_tIoU\n- Data: TimeRFT — 2.5K curated video-query pairs\n- Compute: ~8×A100 80GB, 수 시간\n\n**Zero-shot SOTA**:\n- Charades-STA: R1@0.3=78.1, R1@0.5=60.8, R1@0.7=35.3\n- ActivityNet: R1@0.3=58.6, R1@0.5=39.0, R1@0.7=21.4\n- 비교: VideoChat-Flash R1@0.3 74.5, VideoMind 73.5, TimeSuite 69.9 — 모두 zero-shot에서 추월\n\n**Time-R1\\* (Charades / ActivityNet에 추가 fine-tune)**:\n- Charades-STA: R1@0.5=72.2, R1@0.7=50.1\n- ActivityNet: R1@0.5=55.6, R1@0.7=34.0\n- Caveat: ActivityNet R1@0.7=21.4 zero-shot은 TRACE (24.0)을 못 넘었다.\n\n**왜 2.5K로 충분한가**: GRPO의 group-relative advantage가 in-domain SFT가 가르치지 못하는 span을 정밀하게 조정하는 법을 직접 가르치기 때문이다."
+          "content": "Time-R1 (Ye Wang et al., Renmin/Xiaomi, arXiv:2503.13377)은 RL post-training으로 temporal grounding의 SOTA를 잡은 첫 작품이다. NeurIPS 2025에 accept되었다.\n\n**Setup**:\n- Base: Qwen2.5-VL-7B-Instruct\n- Algorithm: GRPO with K=8 samples per prompt\n- Reward: r = α · r_format + (1-α) · r_tIoU\n- Data: TimeRFT — 2.5K curated video-query pairs\n- Compute: ~8×A100 80GB, 수 시간\n\n**Zero-shot SOTA**:\n- Charades-STA: R1@0.3=78.1, R1@0.5=60.8, R1@0.7=35.3\n- ActivityNet: R1@0.3=58.6, R1@0.5=39.0, R1@0.7=21.4\n- 비교: VideoChat-Flash R1@0.3 74.5, VideoMind 73.5, TimeSuite 69.9 — 모두 zero-shot에서 추월\n\n**Time-R1\\* (Charades / ActivityNet에 추가 fine-tune)**:\n- Charades-STA: R1@0.5=72.2, R1@0.7=50.1\n- ActivityNet: R1@0.5=55.6, R1@0.7=34.0\n- Caveat: ActivityNet R1@0.7=21.4 zero-shot은 TRACE (24.0)을 못 넘었다.\n\n**왜 2.5K로 충분한가**: GRPO의 group-relative advantage가 in-domain SFT가 가르치지 못하는 span을 정밀하게 조정하는 법을 직접 가르치기 때문이다.",
+          "figures": [
+            {
+              "src": "/posts/temporal-grounding-vlm/figures/2503.13377/TimeR1v2.png",
+              "caption": "Time-R1 포스트 트레이닝 프레임워크. LVLM에 GRPO 기반 RL을 적용해 타임스탬프 예측 정확도와 동영상 이해 능력을 동시에 향상시킨다.",
+              "label": "fig:placeholder",
+              "arxivId": "2503.13377"
+            },
+            {
+              "src": "/posts/temporal-grounding-vlm/figures/2503.13377/method_comparison.png",
+              "caption": "TVG 접근 방식 비교. Feature 기반 DETR 계열 → SFT 기반 VLM → RL 기반 VLM으로 이어지는 세 가지 패러다임의 구조 차이.",
+              "label": "fig:method_comparison",
+              "arxivId": "2503.13377"
+            }
+          ]
         },
         {
           "title": "5.4 TempSamp-R1",
@@ -549,7 +641,21 @@
         },
         {
           "title": "5.5 VideoTemp-o3 — penalty-aware IoU",
-          "content": "이 논문은 reward hacking 문제를 정면으로 다룬 첫 작업이다 (2026년 2월).\n\n**Observed hacking pattern**: Time-R1 style의 r=tIoU reward로 오래 학습하면 model이 점차 longer span을 출력하기 시작한다. Span을 길게 늘리면 partial overlap이 생기기 쉬워 IoU>0의 expected value가 높아진다. 결국 model은 query를 정확히 보지 않고 영상 전체의 30-50%를 출력하는 전략을 배운다.\n\n**Penalty-aware IoU reward**: r_pa = IoU(pred, gt) - λ · max(0, len(pred) - 2·len(gt)) / len(video). Predicted span의 길이가 ground-truth 길이의 2배를 넘으면 비례 penalty를 부과한다. λ는 0.3-0.5 정도. 이 단순한 항이 hacking 경로를 막는다.\n\n또 다른 핵심: **Causal QA + grounding을 jointly RL**. VideoTemp-o3-7B-RL은 NextGQA에서 mIoU 33.4, Acc 76.4%로 SOTA. 단, grounded vs answer accuracy gap이 여전히 크다."
+          "content": "이 논문은 reward hacking 문제를 정면으로 다룬 첫 작업이다 (2026년 2월).\n\n**Observed hacking pattern**: Time-R1 style의 r=tIoU reward로 오래 학습하면 model이 점차 longer span을 출력하기 시작한다. Span을 길게 늘리면 partial overlap이 생기기 쉬워 IoU>0의 expected value가 높아진다. 결국 model은 query를 정확히 보지 않고 영상 전체의 30-50%를 출력하는 전략을 배운다.\n\n**Penalty-aware IoU reward**: r_pa = IoU(pred, gt) - λ · max(0, len(pred) - 2·len(gt)) / len(video). Predicted span의 길이가 ground-truth 길이의 2배를 넘으면 비례 penalty를 부과한다. λ는 0.3-0.5 정도. 이 단순한 항이 hacking 경로를 막는다.\n\n또 다른 핵심: **Causal QA + grounding을 jointly RL**. VideoTemp-o3-7B-RL은 NextGQA에서 mIoU 33.4, Acc 76.4%로 SOTA. 단, grounded vs answer accuracy gap이 여전히 크다.",
+          "figures": [
+            {
+              "src": "/posts/temporal-grounding-vlm/figures/2602.07801/main.png",
+              "caption": "VideoTemp-o3의 에이전틱 파이프라인. 비디오 QA 쌍을 받아 on-demand grounding → clip QA → re-grounding → 최종 답변의 멀티 툴 호출 흐름으로 동작한다.",
+              "label": "fig:main",
+              "arxivId": "2602.07801"
+            },
+            {
+              "src": "/posts/temporal-grounding-vlm/figures/2602.07801/training_rewards.png",
+              "caption": "VideoTemp-o3 RL 학습 중 보상 곡선. Penalty-aware IoU 보상이 Reward Hacking을 억제하면서 안정적으로 수렴하는 과정을 보여준다.",
+              "label": "fig:training_reward",
+              "arxivId": "2602.07801"
+            }
+          ]
         },
         {
           "title": "5.6 TimeLens — thinking-free RLVR",
@@ -658,7 +764,15 @@
       "sections": [
         {
           "title": "6.1 The Hour-Scale Problem",
-          "content": "**Token budget explosion**\n\nQwen2.5-VL-7B는 이미지 한 장을 평균 256 visual token으로 인코딩한다. 1 FPS sampling 기준:\n\n| 영상 길이 | Frames | Visual tokens | Context window 적합? |\n|---|---|---|---|\n| Charades-STA (30s) | 30 | 7,680 | ✅ 32K 안에 여유 |\n| ActivityNet (2min) | 120 | 30,720 | ⚠️ 32K 임계 |\n| Ego4D-NLQ (8min clip) | 480 | 122,880 | ❌ 128K Long-context만 가능 |\n| MAD (110min movie) | 6,600 | 1,689,600 | ❌ 모든 open VLM 불가 |\n| ExtremeWhenBench 평균 (75.7min) | 4,542 | 1,162,752 | ❌ 불가 |\n| ExtremeWhenBench max (9hr) | 32,400 | 8,294,400 | ❌ 한 자릿수 차이로 불가 |\n\nfp16 KV cache 메모리를 함께 계산하면 1M token이면 KV cache만 **200GB**. H100 80GB 8장으로도 부족하다.\n\n**Down-sampling이 답이 아닌 이유 — temporal dispersion**\n\nFrame budget을 32로 잡고 75.7분 영상에서 균일 sampling하면 frame 간격이 142초다. 평균 moment 길이가 30초인 ExtremeWhenBench에서 target moment에 frame이 떨어질 확률은 30/142 ≈ 21%. 즉 **5번 중 4번은 모델이 ground truth window 안의 frame을 한 장도 못 본다**.\n\n**문제의 재정의: grounding이 아니라 search**\n\nExtremeWhenBench(arXiv:2606.12300, June 2026)가 결정적이다. 2,273 query / 194 video / 평균 75.7분 / 최대 9시간 setting에서:\n\n- **Monolithic Video-LLM (Qwen3.5-9B)**: mIoU **0.110**\n- **CLIP-only retrieval**: mIoU **0.269** (2.4×)\n- **Retrieve-then-ground hybrid**: mIoU **0.354** (3.2× monolithic, 6.7× 격차)\n\nFailure mode 분해: **search failure 85%, localization failure 11%, 기타 4%**."
+          "content": "**Token budget explosion**\n\nQwen2.5-VL-7B는 이미지 한 장을 평균 256 visual token으로 인코딩한다. 1 FPS sampling 기준:\n\n| 영상 길이 | Frames | Visual tokens | Context window 적합? |\n|---|---|---|---|\n| Charades-STA (30s) | 30 | 7,680 | ✅ 32K 안에 여유 |\n| ActivityNet (2min) | 120 | 30,720 | ⚠️ 32K 임계 |\n| Ego4D-NLQ (8min clip) | 480 | 122,880 | ❌ 128K Long-context만 가능 |\n| MAD (110min movie) | 6,600 | 1,689,600 | ❌ 모든 open VLM 불가 |\n| ExtremeWhenBench 평균 (75.7min) | 4,542 | 1,162,752 | ❌ 불가 |\n| ExtremeWhenBench max (9hr) | 32,400 | 8,294,400 | ❌ 한 자릿수 차이로 불가 |\n\nfp16 KV cache 메모리를 함께 계산하면 1M token이면 KV cache만 **200GB**. H100 80GB 8장으로도 부족하다.\n\n**Down-sampling이 답이 아닌 이유 — temporal dispersion**\n\nFrame budget을 32로 잡고 75.7분 영상에서 균일 sampling하면 frame 간격이 142초다. 평균 moment 길이가 30초인 ExtremeWhenBench에서 target moment에 frame이 떨어질 확률은 30/142 ≈ 21%. 즉 **5번 중 4번은 모델이 ground truth window 안의 frame을 한 장도 못 본다**.\n\n**문제의 재정의: grounding이 아니라 search**\n\nExtremeWhenBench(arXiv:2606.12300, June 2026)가 결정적이다. 2,273 query / 194 video / 평균 75.7분 / 최대 9시간 setting에서:\n\n- **Monolithic Video-LLM (Qwen3.5-9B)**: mIoU **0.110**\n- **CLIP-only retrieval**: mIoU **0.269** (2.4×)\n- **Retrieve-then-ground hybrid**: mIoU **0.354** (3.2× monolithic, 6.7× 격차)\n\nFailure mode 분해: **search failure 85%, localization failure 11%, 기타 4%**.",
+          "figures": [
+            {
+              "src": "/posts/temporal-grounding-vlm/figures/2606.12300/teaser_v2.png",
+              "caption": "ExtremeWhenBench 티저. 76분짜리 비디오 안에 9초짜리 이벤트를 찾아야 한다 — 탐색 공간이 153배. 이것이 Hour-Scale Grounding 문제의 본질이다.",
+              "label": "fig:teaser",
+              "arxivId": "2606.12300"
+            }
+          ]
         },
         {
           "title": "6.2 VideoMind (ICLR 2026)",
@@ -666,7 +780,21 @@
         },
         {
           "title": "6.3 AVI (Agentic Video Intelligence)",
-          "content": "AVI(arXiv:2511.14446)는 Charades-STA에서 [email protected] **88.6**을 달성했다. 흥미로운 점은 Charades-STA가 평균 30초짜리 short-form 벤치마크라는 것. 즉 hour-scale을 위해 설계된 agentic loop이 **short-form에서도** monolithic을 이긴다.\n\n**왜 short-form에서도 이기는가**: AVI의 loop은 plan → CLIP retrieve top-K window → VLM이 window를 zoom-in 검사 → IoU 추정과 confidence 출력 → 부족하면 인접 window 추가 검사. Charades-STA처럼 짧은 영상에서 retrieve step은 거의 무의미하지만, **verify step이 사실상 2-pass refinement**로 작동한다.\n\n**Trade-off**: 정확도의 대가는 latency. Single-pass Video-LLM의 inference는 보통 1~3초, AVI loop은 평균 5~12 step이 돌아 10~40초가 걸린다."
+          "content": "AVI(arXiv:2511.14446)는 Charades-STA에서 [email protected] **88.6**을 달성했다. 흥미로운 점은 Charades-STA가 평균 30초짜리 short-form 벤치마크라는 것. 즉 hour-scale을 위해 설계된 agentic loop이 **short-form에서도** monolithic을 이긴다.\n\n**왜 short-form에서도 이기는가**: AVI의 loop은 plan → CLIP retrieve top-K window → VLM이 window를 zoom-in 검사 → IoU 추정과 confidence 출력 → 부족하면 인접 window 추가 검사. Charades-STA처럼 짧은 영상에서 retrieve step은 거의 무의미하지만, **verify step이 사실상 2-pass refinement**로 작동한다.\n\n**Trade-off**: 정확도의 대가는 latency. Single-pass Video-LLM의 inference는 보통 1~3초, AVI loop은 평균 5~12 step이 돌아 10~40초가 걸린다.",
+          "figures": [
+            {
+              "src": "/posts/temporal-grounding-vlm/figures/2511.14446/fig_intro.png",
+              "caption": "비디오 이해 패러다임 비교. (a) VLM 직접 추론 vs (b) AVI의 에이전틱 검색. AVI는 클립 캡션 DB를 구축한 뒤 쿼리에 따라 선택적으로 탐색한다.",
+              "label": "fig_intro",
+              "arxivId": "2511.14446"
+            },
+            {
+              "src": "/posts/temporal-grounding-vlm/figures/2511.14446/fig_framework.png",
+              "caption": "AVI 프레임워크 구조. 구조화된 비디오 DB(클립 캡션 + 임베딩)를 기반으로 에이전트가 검색·분석·추론 단계를 반복 수행한다.",
+              "label": "fig_framework",
+              "arxivId": "2511.14446"
+            }
+          ]
         },
         {
           "title": "6.4 Deep Video Discovery",
@@ -674,7 +802,15 @@
         },
         {
           "title": "6.5 ExtremeWhenBench의 정량 증거",
-          "content": "**Benchmark 설계 (arXiv:2606.12300, June 2026)**:\n- 2,273 query / 194 video\n- 평균 75.7분, 최대 9시간\n- Multi-domain\n- Moment 길이 분포: median 30s, 75th percentile 75s\n\n**세 baseline 비교**:\n\n| Baseline | mIoU |\n|---|---|\n| Qwen3.5-9B (monolithic VLM) | **0.110** |\n| CLIP-only retrieve | **0.269** |\n| Retrieve-then-ground hybrid | **0.354** |\n\n**Failure mode 분해**:\n- **85% search failure**\n- **11% localization failure**\n- **4% 기타**"
+          "content": "**Benchmark 설계 (arXiv:2606.12300, June 2026)**:\n- 2,273 query / 194 video\n- 평균 75.7분, 최대 9시간\n- Multi-domain\n- Moment 길이 분포: median 30s, 75th percentile 75s\n\n**세 baseline 비교**:\n\n| Baseline | mIoU |\n|---|---|\n| Qwen3.5-9B (monolithic VLM) | **0.110** |\n| CLIP-only retrieve | **0.269** |\n| Retrieve-then-ground hybrid | **0.354** |\n\n**Failure mode 분해**:\n- **85% search failure**\n- **11% localization failure**\n- **4% 기타**",
+          "figures": [
+            {
+              "src": "/posts/temporal-grounding-vlm/figures/2606.12300/pipeline.png",
+              "caption": "ExtremeWhenBench 7단계 구성 파이프라인. P2 검증 이벤트 41,139개에서 엄격한 필터링을 거쳐 최종 벤치마크를 구축하는 과정.",
+              "label": "fig:pipeline",
+              "arxivId": "2606.12300"
+            }
+          ]
         },
         {
           "title": "6.6 Tool-use 디자인",
@@ -776,11 +912,33 @@
       "sections": [
         {
           "title": "7.1 Online setting의 수학적 정의",
-          "content": "Offline temporal grounding은 f_offline(V_{0:T}, q) → (t_start, t_end). Online grounding은 다르다. 매 timestep t마다 f_online(V_{0:t}, q) → r_t ∈ {0, 1}을 emit해야 하며, V_{t+1:T}는 **존재하지 않는다**.\n\n**결과 1: Causal masking은 inference time에 강제된다.** Offline 모델이 self-attention에서 양방향 context를 쓰는 것과 달리, online 모델의 attention은 strictly causal해야 한다.\n\n**결과 2: Boundary는 future-dependent하다.** Event end_time τ_end는 정의상 τ_end > t에서만 결정 가능하다. 결과적으로 정확도 메트릭이 바뀐다 — IoU 대신 **per-second precision/recall**, narration win-rate, streaming F1이 표준이 된다.\n\n**Latency budget.** Sub-second 응답을 위해서는 1 frame 처리 시간이 < 100ms (10 FPS) 또는 < 1000ms (1 FPS)여야 한다."
+          "content": "Offline temporal grounding은 f_offline(V_{0:T}, q) → (t_start, t_end). Online grounding은 다르다. 매 timestep t마다 f_online(V_{0:t}, q) → r_t ∈ {0, 1}을 emit해야 하며, V_{t+1:T}는 **존재하지 않는다**.\n\n**결과 1: Causal masking은 inference time에 강제된다.** Offline 모델이 self-attention에서 양방향 context를 쓰는 것과 달리, online 모델의 attention은 strictly causal해야 한다.\n\n**결과 2: Boundary는 future-dependent하다.** Event end_time τ_end는 정의상 τ_end > t에서만 결정 가능하다. 결과적으로 정확도 메트릭이 바뀐다 — IoU 대신 **per-second precision/recall**, narration win-rate, streaming F1이 표준이 된다.\n\n**Latency budget.** Sub-second 응답을 위해서는 1 frame 처리 시간이 < 100ms (10 FPS) 또는 < 1000ms (1 FPS)여야 한다.",
+          "figures": [
+            {
+              "src": "/posts/temporal-grounding-vlm/figures/2606.08615/latency.png",
+              "caption": "스트리밍 VLM의 TTFT(Time to First Token)와 End-to-End 레이턴시 vs 처리한 비디오 길이. 온라인 그라운딩이 오프라인과 어떻게 다른지 수치로 확인할 수 있다.",
+              "label": "fig:latency",
+              "arxivId": "2606.08615"
+            }
+          ]
         },
         {
           "title": "7.2 StreamingHarness — 61.4% SOTA",
-          "content": "2026년 6월 'Harnessing Streaming Video in the Wild' (arXiv:2606.08615)가 streaming Video-LLM의 첫 강력한 baseline을 세웠다. 핵심 기여 세 가지:\n\n**(1) Streaming-Train-248K — per-second alignment.** 기존 video-text dataset은 모두 video-level 또는 segment-level caption만 가진다. Streaming-Train-248K는 248K samples 모두 second-level alignment를 가진 narration을 제공한다.\n\n**(2) Streaming-Eval — 138 videos / 15 categories.** Sports, cooking, gaming, daily, instructional 등 15 카테고리. 평가 metric: **narration win-rate** + **streaming F1**.\n\n**(3) StreamingHarness-8B — 61.4% win-rate.** Qwen2.5-VL-7B를 base로 causal video encoder + streaming-friendly attention pattern + per-second supervision으로 fine-tuning.\n\n**저자가 직접 명시한 한계**:\n- **Audio modality 부재**\n- **1 FPS 한계**\n\n이 두 한계는 새 paper의 white space다."
+          "content": "2026년 6월 'Harnessing Streaming Video in the Wild' (arXiv:2606.08615)가 streaming Video-LLM의 첫 강력한 baseline을 세웠다. 핵심 기여 세 가지:\n\n**(1) Streaming-Train-248K — per-second alignment.** 기존 video-text dataset은 모두 video-level 또는 segment-level caption만 가진다. Streaming-Train-248K는 248K samples 모두 second-level alignment를 가진 narration을 제공한다.\n\n**(2) Streaming-Eval — 138 videos / 15 categories.** Sports, cooking, gaming, daily, instructional 등 15 카테고리. 평가 metric: **narration win-rate** + **streaming F1**.\n\n**(3) StreamingHarness-8B — 61.4% win-rate.** Qwen2.5-VL-7B를 base로 causal video encoder + streaming-friendly attention pattern + per-second supervision으로 fine-tuning.\n\n**저자가 직접 명시한 한계**:\n- **Audio modality 부재**\n- **1 FPS 한계**\n\n이 두 한계는 새 paper의 white space다.",
+          "figures": [
+            {
+              "src": "/posts/temporal-grounding-vlm/figures/2606.08615/intro.png",
+              "caption": "StreamingHarness 개요. 능동적 인터랙션·장기 메모리·온라인 그라운딩을 동시에 지원하는 세 가지 특성과 61.4% SOTA 달성 결과.",
+              "label": "fig:intro",
+              "arxivId": "2606.08615"
+            },
+            {
+              "src": "/posts/temporal-grounding-vlm/figures/2606.08615/method.png",
+              "caption": "StreamingHarness의 3단 메모리 관리 체계. 들어오는 스트리밍 비디오를 압축·요약·검색 가능한 형태로 관리하는 구조.",
+              "label": "fig:method",
+              "arxivId": "2606.08615"
+            }
+          ]
         },
         {
           "title": "7.3 CacheFlow — KV-cache compression",
@@ -892,7 +1050,21 @@
       "sections": [
         {
           "title": "8.1 VideoITG — 유일하게 살아남은 plug-and-play",
-          "content": "VideoITG(Wang et al., NVIDIA Labs, CVPR 2026 Highlight, arXiv:2507.13353)는 ICLR 2026에서 한 번 withdraw되었다가 2026/04/09에 CVPR 2026 Highlight로 acceptance되었다. 핵심 주장: **Video-LLM에게 좋은 입력 frame을 골라주는 것만으로도 downstream task 성능을 크게 끌어올릴 수 있고, 이 frame selector는 downstream model과 완전히 decoupled되어 있어야 한다.**\n\n3단계 동작:\n(1) **Uniform sampling 512 frames**: 영상 길이와 무관하게 일정한 budget으로 dense temporal coverage 확보.\n(2) **Instructed scoring**: 512 frame 각각에 대해 user instruction과의 관련성을 점수화. VideoITG는 generative하게 처리.\n(3) **Top-K selection**: downstream Video-LLM의 input budget(보통 K=32~128)에 맞춰 가장 점수가 높은 frame index 반환.\n\nVideoITG-40K(40K videos / 500K temporal grounding annotations)는 VidThinker라는 자동 어노테이션 파이프라인으로 만들어졌다. 사람 손이 거의 들지 않은 supervision이 VideoITG의 scalability의 핵심.\n\n결과적으로 VideoITG의 출력은 단 한 가지 — List[int] (frame indices). downstream model에 weight를 적재할 필요도, 새로운 token을 vocabulary에 추가할 필요도, KV-cache를 만질 필요도 없다."
+          "content": "VideoITG(Wang et al., NVIDIA Labs, CVPR 2026 Highlight, arXiv:2507.13353)는 ICLR 2026에서 한 번 withdraw되었다가 2026/04/09에 CVPR 2026 Highlight로 acceptance되었다. 핵심 주장: **Video-LLM에게 좋은 입력 frame을 골라주는 것만으로도 downstream task 성능을 크게 끌어올릴 수 있고, 이 frame selector는 downstream model과 완전히 decoupled되어 있어야 한다.**\n\n3단계 동작:\n(1) **Uniform sampling 512 frames**: 영상 길이와 무관하게 일정한 budget으로 dense temporal coverage 확보.\n(2) **Instructed scoring**: 512 frame 각각에 대해 user instruction과의 관련성을 점수화. VideoITG는 generative하게 처리.\n(3) **Top-K selection**: downstream Video-LLM의 input budget(보통 K=32~128)에 맞춰 가장 점수가 높은 frame index 반환.\n\nVideoITG-40K(40K videos / 500K temporal grounding annotations)는 VidThinker라는 자동 어노테이션 파이프라인으로 만들어졌다. 사람 손이 거의 들지 않은 supervision이 VideoITG의 scalability의 핵심.\n\n결과적으로 VideoITG의 출력은 단 한 가지 — List[int] (frame indices). downstream model에 weight를 적재할 필요도, 새로운 token을 vocabulary에 추가할 필요도, KV-cache를 만질 필요도 없다.",
+          "figures": [
+            {
+              "src": "/posts/temporal-grounding-vlm/figures/2507.13353/intro.png",
+              "caption": "VideoITG의 VidThinker 어노테이션 파이프라인. 인간 주석자가 태스크별 최적 프레임 선택 전략을 라벨링하는 과정.",
+              "label": "intro",
+              "arxivId": "2507.13353"
+            },
+            {
+              "src": "/posts/temporal-grounding-vlm/figures/2507.13353/method.png",
+              "caption": "VideoITG 모델 설계. (A) 텍스트 생성으로 비디오-언어 정렬 → (B) 이미지 생성으로 프레임 선택 → (C) 선택된 프레임으로 최종 답변.",
+              "label": "fig:model",
+              "arxivId": "2507.13353"
+            }
+          ]
         },
         {
           "title": "8.2 The plug-and-play contract",
@@ -1002,11 +1174,27 @@
       "sections": [
         {
           "title": "9.1 세 가지 실패 모드 — Hallucination, Unfaithful Rationale, Abstention 불능",
-          "content": "Temporal grounding 모델의 신뢰성 문제는 하나의 단일한 버그가 아니라 세 가지 별개의 실패 모드에서 비롯된다. 이 세 가지를 혼동하면 처방도 달라진다.\n\n**실패 모드 (a): Hallucinated Moments — 없는 이벤트를 자신 있게 찾는다**\n\n가장 직관적인 실패 유형이다. 모델이 비디오에 존재하지 않는 이벤트에 대한 타임스탬프를 높은 확신으로 출력한다. 예를 들어 비디오에 누군가 요리하는 장면은 없는데 \"사람이 냉장고 문을 여는 순간\"을 쿼리하면 임의의 [t_start, t_end]를 반환한다. CounterVid의 실험에서 7B급 VLM의 30~50%가 이런 false-positive를 보인다.\n\n이 실패의 근원은 **Negative annotation absence**다. Charades-STA, ActivityNet-Captions, QVHighlights 등 주요 7개 벤치마크(Ch.2에서 다룬 데이터셋 편향)는 모두 positive moment만 어노테이션한다. 모델은 \"이 이벤트가 비디오 어디에 있나\"만 학습했지, \"이 이벤트가 비디오에 없으면 어떻게 해야 하나\"를 한 번도 배운 적이 없다.\n\n**실패 모드 (b): Unfaithful Rationale — 이유는 틀렸는데 답이 맞다**\n\n이 실패 유형은 더 교묘하다. 모델이 올바른 [t_start, t_end]를 출력하지만, 그 결론에 도달한 추론 과정이 잘못되어 있다. 예를 들어 모델이 \"화면 밝기가 갑자기 바뀌는 구간\"을 기준으로 타임스탬프를 골랐지만, 그것이 우연히 정답 구간과 일치하는 경우다. in-domain 벤치마크에서는 IoU가 높게 나오지만 OOD 환경에서는 성능이 붕괴한다. Step-Level Faithfulness 연구는 이 현상을 step-level 분해로 측정한다.\n\n**실패 모드 (c): Abstention 불능 — 모른다고 말하지 못한다**\n\n현재 grounding 모델에는 \"이 이벤트는 비디오에 없습니다\"라고 말하는 메커니즘이 없다. 모델의 출력 형식은 항상 [t_start, t_end]이며, 쿼리가 아무리 터무니없어도 어딘가의 타임스탬프를 반환한다. 이는 시스템 설계의 문제이자 학습 데이터의 문제다.\n\n세 실패 모드의 관계:\n\n| 실패 모드 | 핵심 증상 | 진단 방법 | 원인 |\n|---|---|---|---|\n| Hallucination | false-positive on negative queries | Negative query split | 학습 데이터 편향 |\n| Unfaithful rationale | in-domain 고점수, OOD 붕괴 | Step-level faithfulness | shortcut learning |\n| Abstention 불능 | 항상 timestamp 반환 | Abstention rate 측정 | 구조적 설계 부재 |\n\n세 문제는 독립적으로 발생하지만 서로 악화시킨다. Unfaithful rationale는 hallucination을 보이는 모델이 negative query에서 shortcut으로 타임스탬프를 정당화하기 더 쉽게 만들고, abstention 불능은 두 실패를 모두 외부에 노출시킨다."
+          "content": "Temporal grounding 모델의 신뢰성 문제는 하나의 단일한 버그가 아니라 세 가지 별개의 실패 모드에서 비롯된다. 이 세 가지를 혼동하면 처방도 달라진다.\n\n**실패 모드 (a): Hallucinated Moments — 없는 이벤트를 자신 있게 찾는다**\n\n가장 직관적인 실패 유형이다. 모델이 비디오에 존재하지 않는 이벤트에 대한 타임스탬프를 높은 확신으로 출력한다. 예를 들어 비디오에 누군가 요리하는 장면은 없는데 \"사람이 냉장고 문을 여는 순간\"을 쿼리하면 임의의 [t_start, t_end]를 반환한다. CounterVid의 실험에서 7B급 VLM의 30~50%가 이런 false-positive를 보인다.\n\n이 실패의 근원은 **Negative annotation absence**다. Charades-STA, ActivityNet-Captions, QVHighlights 등 주요 7개 벤치마크(Ch.2에서 다룬 데이터셋 편향)는 모두 positive moment만 어노테이션한다. 모델은 \"이 이벤트가 비디오 어디에 있나\"만 학습했지, \"이 이벤트가 비디오에 없으면 어떻게 해야 하나\"를 한 번도 배운 적이 없다.\n\n**실패 모드 (b): Unfaithful Rationale — 이유는 틀렸는데 답이 맞다**\n\n이 실패 유형은 더 교묘하다. 모델이 올바른 [t_start, t_end]를 출력하지만, 그 결론에 도달한 추론 과정이 잘못되어 있다. 예를 들어 모델이 \"화면 밝기가 갑자기 바뀌는 구간\"을 기준으로 타임스탬프를 골랐지만, 그것이 우연히 정답 구간과 일치하는 경우다. in-domain 벤치마크에서는 IoU가 높게 나오지만 OOD 환경에서는 성능이 붕괴한다. Step-Level Faithfulness 연구는 이 현상을 step-level 분해로 측정한다.\n\n**실패 모드 (c): Abstention 불능 — 모른다고 말하지 못한다**\n\n현재 grounding 모델에는 \"이 이벤트는 비디오에 없습니다\"라고 말하는 메커니즘이 없다. 모델의 출력 형식은 항상 [t_start, t_end]이며, 쿼리가 아무리 터무니없어도 어딘가의 타임스탬프를 반환한다. 이는 시스템 설계의 문제이자 학습 데이터의 문제다.\n\n세 실패 모드의 관계:\n\n| 실패 모드 | 핵심 증상 | 진단 방법 | 원인 |\n|---|---|---|---|\n| Hallucination | false-positive on negative queries | Negative query split | 학습 데이터 편향 |\n| Unfaithful rationale | in-domain 고점수, OOD 붕괴 | Step-level faithfulness | shortcut learning |\n| Abstention 불능 | 항상 timestamp 반환 | Abstention rate 측정 | 구조적 설계 부재 |\n\n세 문제는 독립적으로 발생하지만 서로 악화시킨다. Unfaithful rationale는 hallucination을 보이는 모델이 negative query에서 shortcut으로 타임스탬프를 정당화하기 더 쉽게 만들고, abstention 불능은 두 실패를 모두 외부에 노출시킨다.",
+          "figures": [
+            {
+              "src": "/posts/temporal-grounding-vlm/figures/2601.04778/hall.png",
+              "caption": "VLM의 비디오 환각(Hallucination) 예시. 실제 비디오에 없는 장면을 '있다'고 답하거나, 시간 순서를 반대로 서술하는 대표적 실패 패턴.",
+              "label": "fig:ex-results",
+              "arxivId": "2601.04778"
+            }
+          ]
         },
         {
           "title": "9.2 CounterVid와 DIQ-H — Reliability Gap 정량화",
-          "content": "두 논문은 서로 다른 각도에서 grounding 모델의 신뢰성 격차를 수치로 증명한다.\n\n**CounterVid (arXiv:2601.04778) — 30~50% False-Positive**\n\nCounterVid는 Charades-STA에 **Negative split**을 추가한다. 기존 Charades-STA는 쿼리가 항상 비디오 내에 존재하는 이벤트를 가리키는 positive set만 있었다. CounterVid는 동일한 비디오에서 실제로 일어나지 않은 이벤트를 기술하는 counter-factual query를 생성한다. 예를 들어 \"남자가 책을 집어 드는 장면\"이 있는 비디오에 대해 \"남자가 책을 놓는 장면\"이라는 negative query를 만든다.\n\n7B 급 VLM(Qwen2.5-VL-7B 포함)을 이 split에서 평가한 결과:\n- **False-Positive Rate: 30~50%** — 쿼리가 기술하는 이벤트가 비디오에 없음에도 타임스탬프를 신뢰도 있게 반환하는 비율\n- SOTA 모델도 이 문제에서 자유롭지 않다. Charades-STA 표준 split R1@0.5에서 70+를 찍은 모델들도 Negative split에서는 절반 가까이 실패한다\n- 이것이 **The reliability gap**: leaderboard 점수와 실제 신뢰성 사이의 괴리\n\n**VERIFIED (arXiv:2410.08593) — Fine-Grained Negative Augmentation**\n\nVERIFIED는 같은 방향에서 학습 측면의 처방을 제안한다. 단순히 negative query를 평가에 추가하는 것을 넘어서, fine-grained negative augmentation으로 훈련 데이터를 보강한다. \"비슷하지만 다른\" 이벤트를 기술하는 hard negative를 생성해 모델이 세밀한 의미 차이를 학습하도록 한다. 이는 CounterVid가 드러낸 hallucination의 학습 측 해결책이다.\n\n**ExtremeWhenBench (arXiv:2606.12300)** — 아직 hallucination에 특화된 benchmark는 아니지만, temporal reasoning의 극단적 케이스를 다루기 시작하며 negative 쿼리 평가의 필요성을 보완한다.\n\n**DIQ-H (arXiv:2512.03992) — Temporal Degradation 하의 Hallucination**\n\nDIQ-H는 또 다른 질문을 던진다: *frame이 손상되거나 누락되면 hallucination은 어떻게 변하는가?* 실제 production 환경에서 비디오는 네트워크 손실, 압축 아티팩트, 프레임 드롭 등 다양한 degradation에 노출된다.\n\nDIQ-H의 발견:\n- Frame이 20% 누락될 때 hallucination rate는 기준 대비 유의미하게 상승\n- 흥미롭게도 모델의 **confidence는 frame 품질에 둔감**하다 — frame이 절반 이상 손상되어도 모델은 비슷한 확신으로 타임스탬프를 반환\n- 이는 abstention 메커니즘 부재를 더욱 위험하게 만든다: 모델이 자신의 입력 품질을 메타적으로 인식하지 못한다\n\n두 논문이 함께 보여주는 그림: 현재 SOTA grounding 모델은 표준 벤치마크에서는 높은 점수를 내지만, negative query나 degraded input처럼 약간만 조건이 바뀌어도 reliability가 급격히 떨어지는 **brittle system**이다."
+          "content": "두 논문은 서로 다른 각도에서 grounding 모델의 신뢰성 격차를 수치로 증명한다.\n\n**CounterVid (arXiv:2601.04778) — 30~50% False-Positive**\n\nCounterVid는 Charades-STA에 **Negative split**을 추가한다. 기존 Charades-STA는 쿼리가 항상 비디오 내에 존재하는 이벤트를 가리키는 positive set만 있었다. CounterVid는 동일한 비디오에서 실제로 일어나지 않은 이벤트를 기술하는 counter-factual query를 생성한다. 예를 들어 \"남자가 책을 집어 드는 장면\"이 있는 비디오에 대해 \"남자가 책을 놓는 장면\"이라는 negative query를 만든다.\n\n7B 급 VLM(Qwen2.5-VL-7B 포함)을 이 split에서 평가한 결과:\n- **False-Positive Rate: 30~50%** — 쿼리가 기술하는 이벤트가 비디오에 없음에도 타임스탬프를 신뢰도 있게 반환하는 비율\n- SOTA 모델도 이 문제에서 자유롭지 않다. Charades-STA 표준 split R1@0.5에서 70+를 찍은 모델들도 Negative split에서는 절반 가까이 실패한다\n- 이것이 **The reliability gap**: leaderboard 점수와 실제 신뢰성 사이의 괴리\n\n**VERIFIED (arXiv:2410.08593) — Fine-Grained Negative Augmentation**\n\nVERIFIED는 같은 방향에서 학습 측면의 처방을 제안한다. 단순히 negative query를 평가에 추가하는 것을 넘어서, fine-grained negative augmentation으로 훈련 데이터를 보강한다. \"비슷하지만 다른\" 이벤트를 기술하는 hard negative를 생성해 모델이 세밀한 의미 차이를 학습하도록 한다. 이는 CounterVid가 드러낸 hallucination의 학습 측 해결책이다.\n\n**ExtremeWhenBench (arXiv:2606.12300)** — 아직 hallucination에 특화된 benchmark는 아니지만, temporal reasoning의 극단적 케이스를 다루기 시작하며 negative 쿼리 평가의 필요성을 보완한다.\n\n**DIQ-H (arXiv:2512.03992) — Temporal Degradation 하의 Hallucination**\n\nDIQ-H는 또 다른 질문을 던진다: *frame이 손상되거나 누락되면 hallucination은 어떻게 변하는가?* 실제 production 환경에서 비디오는 네트워크 손실, 압축 아티팩트, 프레임 드롭 등 다양한 degradation에 노출된다.\n\nDIQ-H의 발견:\n- Frame이 20% 누락될 때 hallucination rate는 기준 대비 유의미하게 상승\n- 흥미롭게도 모델의 **confidence는 frame 품질에 둔감**하다 — frame이 절반 이상 손상되어도 모델은 비슷한 확신으로 타임스탬프를 반환\n- 이는 abstention 메커니즘 부재를 더욱 위험하게 만든다: 모델이 자신의 입력 품질을 메타적으로 인식하지 못한다\n\n두 논문이 함께 보여주는 그림: 현재 SOTA grounding 모델은 표준 벤치마크에서는 높은 점수를 내지만, negative query나 degraded input처럼 약간만 조건이 바뀌어도 reliability가 급격히 떨어지는 **brittle system**이다.",
+          "figures": [
+            {
+              "src": "/posts/temporal-grounding-vlm/figures/2601.04778/pipe.png",
+              "caption": "CounterVid의 반사실(Counterfactual) 생성 프레임워크. 실제 비디오-캡션 쌍에서 의미를 바꾼 대립 쌍을 자동 생성해 신뢰도 평가 데이터를 구축한다.",
+              "label": "fig:pipeline",
+              "arxivId": "2601.04778"
+            }
+          ]
         },
         {
           "title": "9.3 Step-Level Faithfulness — 올바른 답도 틀릴 수 있다",
@@ -1221,5 +1409,18 @@
         }
       ]
     }
+  ],
+  "references": [
+    "2012.02646",
+    "2311.08835",
+    "2506.18883",
+    "2503.09027",
+    "2503.13377",
+    "2602.07801",
+    "2606.12300",
+    "2511.14446",
+    "2606.08615",
+    "2507.13353",
+    "2601.04778"
   ]
 }
