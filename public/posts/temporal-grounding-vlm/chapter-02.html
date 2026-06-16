@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch2: Benchmark Landscape &amp; 7 Biases — Temporal Grounding for Video VLMs (2026) — direcf</title>
+  <meta name="description" content="Temporal grounding 벤치마크는 Charades-STA 30초짜리부터 ExtremeWhenBench 9시간짜리까지 시간 척도가 1,000배 차이가 난다. 같은 task 이름을 달고 있어도 측정하는 능력이 완전히 다르며, 7가지 known bias (caption-only prior, word shortcut, negative annotation 부재, localization-description entanglement, discrete granularity, train/test leak, long-form scarcity) 때문에 in-domain 점수만 보면 진짜 grounding이 아니라 dataset hack을 측정하는 결과가 된다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/multimodal-ai">Temporal Grounding for Video VLMs (2026)</a><span class="sep">›</span>
+        <strong>Ch02 Benchmark Landscape &amp; 7 Biases</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 02 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">📏</div>
+      <h1 class="chapter-title">Benchmark Landscape &amp; 7 Biases</h1>
+      <div class="chapter-title-kr">벤치마크 지형도와 7가지 bias</div>
+      <div class="chapter-tldr">Temporal grounding 벤치마크는 Charades-STA 30초짜리부터 ExtremeWhenBench 9시간짜리까지 시간 척도가 1,000배 차이가 난다. 같은 task 이름을 달고 있어도 측정하는 능력이 완전히 다르며, 7가지 known bias (caption-only prior, word shortcut, negative annotation 부재, localization-description entanglement, discrete granularity, train/test leak, long-form scarcity) 때문에 in-domain 점수만 보면 진짜 grounding이 아니라 dataset hack을 측정하는 결과가 된다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-02.png" alt="Chapter 2 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 2 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>11개 주요 벤치마크의 video length, moment length, annotation style을 표로 외워서 paper 읽을 때 바로 매핑할 수 있다</li><li>Otani et al.의 prior-only baseline 실험을 재현할 수 있고 왜 어떤 dataset에서는 30%+ R1@0.5를 video 없이도 얻는지 설명할 수 있다</li><li>7가지 bias 각각이 어떤 dataset에서 처음 발견되었고 어떤 mitigation이 제안되었는지 안다</li><li>연구 방향에 맞춰 정확한 벤치마크 조합을 고를 수 있다</li><li>2026 newcomer (ExtremeWhenBench, TimeBlind, EgoExo-Con, Streaming-Eval)가 기존과 어떤 capability를 다르게 측정하는지 구분한다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>Chapter 1에서 task 정의를 끝냈으니 이제 누구 점수가 더 높은가를 정직하게 판단할 도구가 필요하다. Temporal grounding 분야는 2017년 Charades-STA / ActivityNet-Captions / DiDeMo 세 dataset이 동시에 나오면서 시작되었고, 이후 9년 동안 11개 이상의 주요 벤치마크가 추가되며 시간 척도, domain, annotation modality가 모두 다른 방향으로 분화되었다. 가장 중요한 분기점은 2020년 Otani et al. (arXiv:2009.00325)의 prior-only baseline 논문이다 — 영상을 전혀 보지 않고 query만 보거나 심지어 query도 보지 않고 학습된 moment 위치 분포만으로 예측해도 Charades-STA에서 30%+ R1@0.5가 나온다는 결과는 그 전 3년간 발표된 모든 SOTA paper가 실제로는 grounding이 아니라 dataset prior를 학습하고 있었음을 폭로했다. 이 chapter는 (a) 11개 벤치마크의 정량적 spec과 2026년 6월 기준 SOTA, (b) Otani et al.이 발견한 첫 번째 bias를 포함한 7가지 known hack, (c) Charades-CD / ActivityNet-CD (arXiv:2101.09028) 같은 OOD split이 왜 필수가 되었는지, 그리고 (d) ExtremeWhenBench / TimeBlind / EgoExo-Con / Streaming-Eval 같은 2026 newcomer가 기존 벤치마크의 어떤 빈자리를 채우려 하는지를 다룬다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>2.1 Short/Medium-form Benchmarks — 5개 정공법</h2><p>이 5개는 2017-2021년에 등장했고 지금까지 모든 temporal grounding paper의 표준 평가다.</p>
+<table>
+<thead>
+<tr>
+<th>Benchmark</th>
+<th>Videos</th>
+<th>Queries</th>
+<th>avg vid</th>
+<th>avg moment</th>
+<th>moment%</th>
+<th>Metric</th>
+<th>Domain</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Charades-STA (arXiv:1705.02101)</td>
+<td>9,848</td>
+<td>16,128</td>
+<td>30s</td>
+<td>8.2s</td>
+<td>27%</td>
+<td>R@N IoU{0.3,0.5,0.7}, mIoU</td>
+<td>indoor home</td>
+</tr>
+<tr>
+<td>ActivityNet-Captions (arXiv:1705.00754)</td>
+<td>20K</td>
+<td>100K</td>
+<td>120s</td>
+<td>36s</td>
+<td>30%</td>
+<td>R@N IoU{0.3,0.5,0.7}, mIoU</td>
+<td>YouTube open-domain</td>
+</tr>
+<tr>
+<td>TACoS (TACL 2013)</td>
+<td>127</td>
+<td>18,818</td>
+<td>287s</td>
+<td>5.4s</td>
+<td>1.8%</td>
+<td>R@N IoU{0.1,0.3,0.5}</td>
+<td>MPII-Cooking single domain</td>
+</tr>
+<tr>
+<td>DiDeMo (arXiv:1708.01641)</td>
+<td>10,464</td>
+<td>40K</td>
+<td>30s max</td>
+<td>5s × 6 segments</td>
+<td>discrete</td>
+<td>Rank@1/5, mIoU</td>
+<td>Flickr open</td>
+</tr>
+<tr>
+<td>QVHighlights (arXiv:2107.09609)</td>
+<td>10,148</td>
+<td>10,310</td>
+<td>150s</td>
+<td>24s</td>
+<td>16%</td>
+<td>[email protected]/0.7, mAP@{0.5,0.75,avg}, HIT@1</td>
+<td>vlog/news</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Charades-STA</strong>는 가장 자주 인용되지만 가장 편향된 dataset이다. 영상이 짧고 (30초) moment가 영상의 27%를 차지하기 때문에 모든 영상의 0초부터 8.2초까지라고 prior로 예측해도 R1@0.3이 30%를 넘는다. 2026년 6월 기준 SOTA는 AVI (arXiv:2511.14446)가 [email protected] 88.6, Time-R1* (arXiv:2503.13377)가 R1@0.5 72.2, TAR-TVG (arXiv:2508.07683)가 mIoU 61.1이다.</p>
+<p><strong>ActivityNet-Captions</strong>는 영상이 4배 더 길고 (120s) query당 13.48 단어로 가장 서술적이다. 2026 SOTA는 TempSamp-R1 (arXiv:2509.18056) mIoU 49+. ActivityNet-CD (arXiv:2101.09028) 권장.</p>
+<p><strong>TACoS</strong>는 cooking 단일 domain. Universal VTG (arXiv:2506.18883)가 [email protected] 60+.</p>
+<p><strong>DiDeMo</strong>는 5초 segment 6개로 quantize되어 fine-grained IoU 평가가 불가능하다.</p>
+<p><strong>QVHighlights</strong>는 query당 평균 1.8개의 disjoint moment + saliency score. 2026 SOTA는 MeCo (arXiv:2503.09027, ICLR 2026) mAP 45.3 / HIT@1 75.1.</p>
+<p>핵심 직관: <strong>moment%가 27%인 Charades-STA의 R1@0.5와 moment%가 1.8%인 TACoS의 R1@0.5는 같은 척도가 아니다.</strong></p></div><div class="sb-block"><h2>2.2 Long-form / Domain-specific — hour-scale은 다른 게임</h2><p>30초-150초짜리 short-form에서 잘 작동하는 method가 30분-9시간짜리에 그대로 적용되지 않는다.</p>
+<table>
+<thead>
+<tr>
+<th>Benchmark</th>
+<th>Hours</th>
+<th>avg vid</th>
+<th>avg moment</th>
+<th>moment%</th>
+<th>특수성</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>MAD (arXiv:2112.00431)</td>
+<td>1,200+</td>
+<td>110 min</td>
+<td>4.1s</td>
+<td>0.06%</td>
+<td>audio description ASR, raw video 비공개</td>
+</tr>
+<tr>
+<td>Ego4D NLQ (arXiv:2110.07058)</td>
+<td>227</td>
+<td>8.2 min</td>
+<td>10.5s</td>
+<td>~2%</td>
+<td>egocentric, 13 query templates</td>
+</tr>
+<tr>
+<td>Ego4D MQ</td>
+<td>326</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>110 action class TAL</td>
+</tr>
+<tr>
+<td>HiREST (arXiv:2303.16406)</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>hierarchical video→moment→step→caption</td>
+</tr>
+<tr>
+<td>MomentSeeker (arXiv:2502.12558)</td>
+<td>—</td>
+<td>1,200s+, max 7,108s</td>
+<td>—</td>
+<td>—</td>
+<td>multi-modal query</td>
+</tr>
+<tr>
+<td>ExtremeWhenBench (arXiv:2606.12300)</td>
+<td>—</td>
+<td>75.7 min, max 9 hr</td>
+<td>—</td>
+<td>—</td>
+<td>search-problem reformulation</td>
+</tr>
+</tbody>
+</table>
+<p><strong>MAD</strong>는 movie 도메인 0.06% moment 비율로 가장 극단적인 needle-in-haystack. Raw video 비공개. 2026 SOTA는 Multi-Scale Contrastive (arXiv:2412.07157)가 CONE 대비 [email protected] +3.58.</p>
+<p><strong>Ego4D NLQ</strong>는 egocentric 1인칭 영상. Hand Trajectory Fusion (arXiv:2606.02962, 2026.06)이 [email protected] +2.54.</p>
+<p><strong>MomentSeeker</strong>는 평균 1,200초+ 최대 7,108초 (≈2시간), text + image-query + video-conditioned query.</p>
+<p><strong>ExtremeWhenBench</strong> (arXiv:2606.12300, 2026.06)는 결정적인 paradigm shift: 2,273 query / 194 video / 평균 75.7분 / 최대 9시간. Qwen3.5-9B Video-LLM mIoU <strong>0.110</strong> vs CLIP-only retrieval <strong>0.269</strong> vs Retrieve-then-ground hybrid <strong>0.354</strong>. <strong>85% 실패는 search failure, 11%만 localization failure</strong>. 이 한 결과가 hour-scale grounding은 search 문제다라는 chapter 6의 thesis를 정량적으로 입증한다.</p></div><div class="sb-block"><h2>2.3 The 7 Biases — 왜 R1@0.5 점수 하나로 paper를 쓰면 안 되는가</h2><table>
+<thead>
+<tr>
+<th>#</th>
+<th>Bias</th>
+<th>발견 dataset</th>
+<th>증거</th>
+<th>Mitigation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Caption-only / prior-only</td>
+<td>Charades-STA, ActivityNet</td>
+<td>Otani et al. arXiv:2009.00325 — query만 또는 분포만으로 R1@0.5 30%+</td>
+<td>Charades-CD, ActivityNet-CD</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Word-level shortcut</td>
+<td>Charades-STA</td>
+<td>open → 영상 시작부, leave → 영상 후반부로 학습</td>
+<td>동사-위치 decorrelation split</td>
+</tr>
+<tr>
+<td>3</td>
+<td>No negative annotation</td>
+<td>전 dataset</td>
+<td>모든 query가 positive — 이 영상에 그런 장면 없음을 학습 불가</td>
+<td>Negative split, AbstainGround</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Localization-description entanglement</td>
+<td>MAD, Ego4D MQ, QVHighlights</td>
+<td>MAD는 character ID 추적, MQ는 사실상 action detection, QVH는 saliency joint</td>
+<td>task별 ablation</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Discrete granularity</td>
+<td>DiDeMo</td>
+<td>5s × 6 quantization → [email protected]/0.7 평가 불가능</td>
+<td>continuous label 재annotate</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Train/test distribution leak</td>
+<td>Charades-STA, ActivityNet</td>
+<td>moment 시작 시간 분포가 train/test 동일</td>
+<td>Charades-CD, ActivityNet-CD (arXiv:2101.09028)</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Long-form scarcity</td>
+<td>전 분야</td>
+<td>hour-scale evaluable dataset이 MAD/Ego4D/MomentSeeker/ExtremeWhenBench 4종</td>
+<td>newcomer benchmark 활용</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Bias #1 — Caption-only / prior-only bias</strong>. Otani et al. (arXiv:2009.00325)가 보인 실험: (a) 영상도 query도 안 보고 training set의 moment 시작/끝 분포의 평균만 예측 → Charades-STA에서 R1@0.5가 28-35%. (b) query는 보지만 영상은 안 보고 fully-connected layer로 boundary 회귀 → R1@0.5가 35-42%. 그 시점 SOTA가 50% 근처였으니 video 정보의 기여는 15%p 남짓.</p>
+<p><strong>Bias #3 — No negative annotation</strong>. Charades-STA / ActivityNet / DiDeMo 모두 '이 query가 이 영상의 [t1, t2] 구간을 가리킨다'만 annotate. 그래서 model이 항상 무언가를 출력하도록 학습된다 — hallucination의 구조적 원인. 7B VLM이 Charades-STA-Negative split에서 30-50% false-positive를 낸다.</p>
+<p><strong>Bias #6 — Train/test distribution leak</strong>. Charades-CD / ActivityNet-CD (arXiv:2101.09028). Train split의 moment 시작 시간 분포와 test split이 다르도록 의도적으로 split. 같은 method가 표준 split에서 R1@0.5 60%지만 CD split에서는 25-35%로 떨어지는 경우가 흔하다.</p></div><div class="sb-block"><h2>2.4 OOD Evals — Charades-CD / ActivityNet-CD가 필수가 된 이유</h2><p>Yuan et al. (arXiv:2101.09028)이 제안한 Changing Distribution split은 Bias #1과 #6을 동시에 공격하는 가장 직접적인 도구다. train split에서 앞쪽 30%에 집중된 moment를 test에서는 중간/뒤쪽으로 옮긴다.</p>
+<ul>
+<li>표준 Charades-STA test split: R1@0.5 60%</li>
+<li>Charades-CD test (out-of-distribution): R1@0.5 30-40%</li>
+</ul>
+<p>이 격차가 model이 video를 보는 능력 vs. position prior를 외운 능력의 비율이다. 2026년 review에서는 reviewer가 거의 항상 CD split 결과 있나요?를 묻는다.</p>
+<p>실용적 조언: 새 method를 평가할 때 4개 split을 모두 보고하라.
+1. Charades-STA standard
+2. Charades-CD (OOD)
+3. ActivityNet-Captions standard
+4. ActivityNet-CD</p></div><div class="sb-block"><h2>2.5 2026 Newcomers</h2><table>
+<thead>
+<tr>
+<th>Benchmark</th>
+<th>출시</th>
+<th>arXiv</th>
+<th>측정 능력</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ExtremeWhenBench</td>
+<td>2026.06</td>
+<td>2606.12300</td>
+<td>hour-scale search</td>
+</tr>
+<tr>
+<td>Streaming-Eval</td>
+<td>2026.06</td>
+<td>2606.08615</td>
+<td>online sub-second latency</td>
+</tr>
+<tr>
+<td>TimeBlind</td>
+<td>2026.02</td>
+<td>2602.00288</td>
+<td>Allen-13-relation compositional</td>
+</tr>
+<tr>
+<td>EgoExo-Con</td>
+<td>2025.10</td>
+<td>2510.26113</td>
+<td>view transfer</td>
+</tr>
+<tr>
+<td>ToG-Bench</td>
+<td>2025.12</td>
+<td>2512.03666</td>
+<td>egocentric STVG</td>
+</tr>
+<tr>
+<td>DIQ-H</td>
+<td>2025.12</td>
+<td>2512.03992</td>
+<td>hallucination under degradation</td>
+</tr>
+</tbody>
+</table>
+<p>2026년 paper writing 가이드라인: 적어도 newcomer 1개를 포함하는 것이 이 paper가 2026년 문제를 알고 있다는 신호를 준다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">Yelp / Michelin / Zagat — 같은 맛집 점수가 아니다</div>
+      <div class="a-body"><p>Yelp 별점, Michelin 별, Zagat 30점 만점은 모두 식당이 얼마나 좋은가를 측정한다고 광고한다. 하지만 실제로 평가하는 것은 완전히 다르다 — Yelp는 대중적 만족도와 가성비, Michelin은 요리 기술의 절대적 우수성, Zagat은 food/decor/service의 가중합.</p>
+<p>Temporal grounding 벤치마크도 정확히 같다. Charades-STA가 Yelp — 30초 영상에 28-35% R1@0.5가 prior만으로 나오는 대중적 척도. MAD가 Michelin — 110분 movie에서 4.1초 (0.06%) needle-in-haystack. QVHighlights가 Zagat — boundary IoU + saliency + HIT@1 가중합. ExtremeWhenBench는 2026년 새로 생긴 진짜 미식 평론 — 9시간 영상에서 monolithic VLM mIoU 0.110, 기존 SOTA를 모두 0점에 가깝게 만든다.</p>
+<p>Paper writing 시사점: 우리 method가 Charades-STA에서 R1@0.5 75% 주장은 우리 식당이 Yelp 5.0과 동치다. 좋은 신호지만 어떤 종류의 좋음인지 모른다. 2026년 reviewer는 진짜 grounding 능력을 주장하려면 최소 3개 다른 척도 — short-form 1개 + long-form 1개 + OOD/compositional 1개 — 에서 일관된 성능을 요구한다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>Otani et al. (arXiv:2009.00325)의 prior-only baseline을 재현한다. 영상도 query도 보지 않고 training set의 moment 위치 분포 평균만으로 모든 test sample에 예측.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import numpy as np
+from dataclasses import dataclass
+
+@dataclass
+class Sample:
+    video_id: str
+    duration: float
+    query: str
+    start: float
+    end: float
+
+def iou(pred, gt):
+    inter = max(0.0, min(pred[1], gt[1]) - max(pred[0], gt[0]))
+    union = max(pred[1], gt[1]) - min(pred[0], gt[0])
+    return inter / union if union &gt; 0 else 0.0
+
+def prior_only_predict(train_samples, test_samples):
+    s_norm = np.array([s.start / s.duration for s in train_samples])
+    e_norm = np.array([s.end / s.duration for s in train_samples])
+    mu_s, mu_e = s_norm.mean(), e_norm.mean()
+    return [(mu_s * t.duration, mu_e * t.duration) for t in test_samples]
+
+def recall_at_iou(preds, gts, threshold):
+    hits = sum(iou(p, (g.start, g.end)) &gt;= threshold for p, g in zip(preds, gts))
+    return hits / len(gts)
+
+rng = np.random.default_rng(42)
+def synth(n):
+    out = []
+    for i in range(n):
+        dur = 30.0
+        s = float(np.clip(rng.exponential(scale=5.0), 0, 20))
+        e = float(min(s + rng.normal(8.2, 2.0), dur))
+        out.append(Sample(f&quot;v{i}&quot;, dur, &quot;a person opens a door&quot;, s, e))
+    return out
+
+train = synth(12_408)
+test = synth(3_720)
+preds = prior_only_predict(train, test)
+for th in [0.3, 0.5, 0.7]:
+    r = recall_at_iou(preds, test, th)
+    print(f&quot;prior-only [email protected]{int(th*10)} = {r*100:.1f}%&quot;)</code></pre>
+      <div class="c-walk"><p>prior_only_predict 함수가 핵심이다. (a) 모든 training sample의 moment를 start_norm = start/duration으로 정규화. (b) 평균 (mu_s, mu_e) 계산. (c) test의 각 영상 duration에 곱해 예측. <strong>영상도 query도 한 번도 보지 않는다.</strong> Synthetic data가 Charades-STA의 통계를 흉내내므로 R1@0.3은 보통 35-45%, R1@0.5는 25-35%. 2018-2019년 SOTA가 R1@0.5 50% 근처였으니 video 정보가 추가한 기여는 15-25%p 정도. 실전 연습: train만 exponential, test는 uniform으로 바꿔서 다시 돌려보면 R1@0.5가 5-10%로 곤두박질친다 — 이게 Charades-CD가 OOD split으로 측정하려는 격차다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">Senior video-VLM 엔지니어와 junior를 가르는 가장 빠른 질문은 어느 벤치마크가 어떤 bias를 가지고 있나요?다. Junior는 우리 method가 Charades-STA SOTA를 자랑하고, senior는 어떤 split? CD도 봤어? long-form 1개 더 해봤어?를 묻는다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>11개 주요 벤치마크의 video length, moment %, metric을 외워서 즉시 매핑할 수 있는가</li><li>Otani et al. (arXiv:2009.00325)의 prior-only baseline을 재현한 적 있는가</li><li>CD split을 알고 있고 자신의 method 평가에 포함시키는가</li><li>Long-form benchmark 중 최소 2개에 대해 raw video / feature 가용성을 정확히 알고 있는가</li><li>2026 newcomer가 어떤 빈자리를 채우는지 설명할 수 있는가</li><li>연구 방향에 맞는 벤치마크 조합을 즉석에서 추천할 수 있는가</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>Charades-STA SOTA 하나로 method 일반화 주장</li><li>CD split을 들어본 적 없음</li><li>DiDeMo의 5초 quantization 한계를 모름</li><li>ExtremeWhenBench의 85% search failure finding을 모름</li><li>MAD의 raw video 비공개 사실을 모르고 video encoder 새로 학습하겠다고 plan</li><li>Otani et al. 논문을 모르고 prior-only 실험을 trivial하다고 평가절하</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>Q1. Charades-STA R1@0.5 78%, 기존 SOTA보다 +2.0%p 높습니다라는 paper에 어떤 추가 실험 4개를 요구하겠는가? 각각이 어떤 bias를 공격하는가? (정답 골자: Charades-CD, ActivityNet+CD, long-form (MAD or ExtremeWhenBench), Negative split.)</li><li>Q2. hour-scale egocentric streaming grounding 방향의 새 paper. 어떤 벤치마크 조합을 짜겠는가? (정답 골자: Ego4D NLQ + EgoExo-Con + Streaming-Eval + ExtremeWhenBench, 선택적으로 Charades-STA.)</li><li>Q3. RL post-training으로 Charades-STA R1@0.5 +5.0%p 향상 결과가 왜 Charades-CD 없이는 신뢰하기 어려운가? (정답 골자: verifiable IoU reward가 video evidence + position prior 둘 다 강화하고, standard split에서는 구분 불가. CD split에서 prior-강화 경로의 향상은 0에 가깝게 떨어진다.)</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> Familiar: 11개 벤치마크 이름과 SOTA 점수를 외운다. Charades-STA가 짧고 ActivityNet이 길다 수준. Mastery: paper 읽을 때 +2%p를 보면 자동으로 (a) moment%가 27%라 prior로 30%+ 가능, (b) CD split 없으면 +2%p는 prior 강화일 수 있음, (c) long-form 검증 필요, (d) negative split hallucination rate 검증 필요라는 4가지 의심을 떠올린다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>같은 R1@0.5가 같은 능력이 아니다</h3><p>Charades-STA의 moment%는 27%, TACoS는 1.8%, MAD는 0.06%다. random baseline이 100배 이상 차이 나므로 절대 점수만으로 비교 불가능.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>Otani et al. (arXiv:2009.00325)의 prior-only baseline</h3><p>영상도 query도 보지 않고 training set moment 위치 평균만 예측해도 Charades-STA R1@0.5가 28-35%. video 정보의 기여는 15-25%p에 불과했다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>7가지 known bias</h3><p>(1) caption-only/prior-only, (2) word-level shortcut, (3) no negative annotation, (4) localization-description entanglement, (5) discrete granularity, (6) train/test temporal distribution leak, (7) long-form scarcity.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>Charades-CD / ActivityNet-CD (arXiv:2101.09028)는 2026 paper의 사실상 필수 평가</h3><p>표준 split SOTA가 CD에서 25-35%p 떨어지는 경우가 흔하다 — 이 격차가 진짜 video 이해 능력의 정량적 측정값.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>Hour-scale은 regression이 아니라 search 문제다</h3><p>ExtremeWhenBench: Qwen3.5-9B mIoU 0.110 vs CLIP 0.269 vs retrieve-then-ground 0.354. 85% failure는 search failure.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>Long-form benchmark는 raw video 가용성을 확인하라</h3><p>MAD는 raw video 비공개. Ego4D는 license 처리 수 주. ExtremeWhenBench, MomentSeeker는 접근 용이.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>2026 newcomer 4종은 각자 다른 빈자리</h3><p>ExtremeWhenBench (hour-scale search), Streaming-Eval (online latency), TimeBlind (compositional), EgoExo-Con (view transfer).</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>Paper writing 요건: 최소 (short + long + OOD) 3축 평가</h3><p>Single benchmark SOTA는 review를 통과하지 못한다. short-form 1개 + long-form 1개 + 방향별 specialized 1개.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-01.html">← What is Temporal Grounding</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-03.html">Pre-VLM Foundations — The DETR Era →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+</body></html>

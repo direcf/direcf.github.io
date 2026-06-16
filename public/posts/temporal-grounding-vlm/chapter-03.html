@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch3: Pre-VLM Foundations — The DETR Era — Temporal Grounding for Video VLMs (2026) — direcf</title>
+  <meta name="description" content="2024년 이전 temporal grounding SOTA는 두 계열로 수렴했다. (1) 2D-TAN 계열의 proposal-grid + ranking head 방식, (2) Moment-DETR로 시작해 QD-DETR / CG-DETR / UniVTG로 진화한 set-prediction Transformer 계열. 두 흐름 모두 Charades-STA R1@0.5 ~60 부근에서 plateau를 만났고, 그 원인은 language understanding이 frozen encoder에 묶여 있고 head가 span regression이라는 닫힌 출력 공간을 갖는다는 구조적 한계였다. 이 ceiling이 곧 chapter 4의 &quot;VLM이 timestamp를 verbal generation으로 직접 출력&quot;이라는 패러다임 전환의 동기다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/multimodal-ai">Temporal Grounding for Video VLMs (2026)</a><span class="sep">›</span>
+        <strong>Ch03 Pre-VLM Foundations — The DETR Era</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 03 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🏛️</div>
+      <h1 class="chapter-title">Pre-VLM Foundations — The DETR Era</h1>
+      <div class="chapter-title-kr">Pre-VLM 시대 — 2D-TAN부터 DETR까지</div>
+      <div class="chapter-tldr">2024년 이전 temporal grounding SOTA는 두 계열로 수렴했다. (1) 2D-TAN 계열의 proposal-grid + ranking head 방식, (2) Moment-DETR로 시작해 QD-DETR / CG-DETR / UniVTG로 진화한 set-prediction Transformer 계열. 두 흐름 모두 Charades-STA R1@0.5 ~60 부근에서 plateau를 만났고, 그 원인은 language understanding이 frozen encoder에 묶여 있고 head가 span regression이라는 닫힌 출력 공간을 갖는다는 구조적 한계였다. 이 ceiling이 곧 chapter 4의 &quot;VLM이 timestamp를 verbal generation으로 직접 출력&quot;이라는 패러다임 전환의 동기다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-03.png" alt="Chapter 3 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 3 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">7 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>2D-TAN의 proposal grid가 어떻게 enumeration cost를 trade-off로 정확도를 얻는지 설명할 수 있다</li><li>Moment-DETR의 N개 learnable moment query와 set-prediction Hungarian matching의 구조를 도식화할 수 있다</li><li>QD-DETR / CG-DETR가 왜 &quot;query-dependent&quot; video representation을 강조했는지를 ablation 관점에서 정당화할 수 있다</li><li>UniVTG가 MR / HD / TAL을 한 head로 통일하는 방식과 그 한계를 비교할 수 있다</li><li>span regression head + frozen text encoder가 R1@0.5 ~60에서 멈춘 정량적 이유를 세 가지 이상 들 수 있다</li><li>compositional / negative / OOD 시나리오에서 DETR-style이 왜 brittle한지를 chapter 4의 generative 접근과 대비할 수 있다</li><li>edge inference나 latency-bound 환경에서 DETR-style을 여전히 채택해야 하는 조건을 식별할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>Chapter 2에서 우리는 benchmark의 7가지 bias가 어떻게 temporal grounding evaluation을 왜곡하는지 보았다. 이 chapter는 한 발 더 뒤로 가서, 그 benchmark들 위에서 2020-2023년 SOTA를 점령했던 "pre-VLM" 모델 가족을 해부한다. 핵심 메시지는 단순하다 — <strong>두 흐름이 같은 ceiling에 부딪혔다</strong>. 첫 흐름은 Zhang et al. (AAAI 2020)의 2D-TAN으로 시작한 proposal-grid 계열로, 가능한 모든 (start, end) 쌍을 2D map 위에 enumerate하고 ranking head가 score를 매기는 방식이다. 두 번째 흐름은 Lei et al. (NeurIPS 2021)의 Moment-DETR으로 시작해 QD-DETR (CVPR 2023), CG-DETR (2023), UniVTG (ICCV 2023)로 이어진 DETR-style set prediction이다. 후자는 N개의 learnable moment query가 cross-attention으로 video feature를 흡수해 (start, end, score)를 직접 출력한다. 이 chapter에서 우리는 (1) 두 흐름의 architecture와 핵심 trick, (2) 그들의 loss landscape — span L1, GIoU, Hungarian matching, set prediction, (3) Charades-STA R1@0.5 ~60에서 plateau가 생긴 정량적 이유, (4) 그리고 왜 chapter 4의 generative VLM이 이 ceiling을 뚫었는지를 본다. 마지막에는 30-45줄짜리 simplified M-DETR decoder를 PyTorch로 직접 구현해, learnable query → cross-attention → span MLP head라는 핵심 ingredient를 코드로 확인한다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>1. 2D-TAN 가족 — Proposal Grid의 황금기</h2><p>Zhang, Sun, Jing, Zhou (AAAI 2020)의 <strong>2D-TAN</strong> (Learning 2D Temporal Adjacent Networks for Moment Localization with Natural Language, arXiv:1912.03590)은 단순하지만 강력한 아이디어다. 비디오를 N개 clip으로 자른 뒤 N×N 2D map의 (i, j) 셀에 "i부터 j까지의 moment" candidate를 채운다. 상삼각만 valid (i ≤ j). 각 셀은 query embedding과 fuse된 뒤 stack of 2D conv를 거쳐 score를 받는다. 즉 <strong>enumeration + ranking</strong>이다. 학습 시 ground-truth와 IoU가 높은 셀에 high score를 회귀시키는 IoU regression loss를 쓴다. 장점은 (1) 가능한 모든 길이의 moment를 cover, (2) adjacent cell 간 2D conv로 contextual relation을 직접 모델링한다는 점이다. </p>
+<p>후속작 <strong>MS-2D-TAN</strong> (Multi-Scale 2D Temporal Adjacent Networks, TPAMI 2021, arXiv:2012.02646)은 길이 스펙트럼을 stride가 다른 multi-scale 2D map들로 분리해서, 짧은 moment와 긴 moment가 같은 grid 해상도를 공유하지 않도록 했다. 이 family의 SOTA는 Charades-STA에서 R1@0.5 ~46-50, ActivityNet R1@0.5 ~44-46이었다. </p>
+<p><strong>핵심 한계</strong>: (a) N×N 셀 enumeration cost가 video length에 quadratic하다 — 1시간짜리 video에는 사실상 불가능하다. (b) score는 IoU regression이지만 ranking 자체는 cross-modal 의미 정합에 약하다. (c) frozen GloVe / BERT text encoder는 "the man washes the dish after he opens the tap" 같은 compositional query를 그대로 묶음 embedding으로 처리한다 — 즉 temporal 순서 정보를 잃는다. 이 세 약점이 다음에 등장할 DETR 계열의 motivation이 된다.</p></div><div class="sb-block"><h2>2. Moment-DETR — Transformer Decoder의 첫 진입</h2><p><strong>Moment-DETR</strong> (M-DETR, Lei, Berg, Bansal, NeurIPS 2021, arXiv:2107.09609)은 이 분야에 두 가지를 동시에 가져왔다. 첫째, <strong>set prediction</strong>: Hungarian matching으로 N개의 prediction과 ground-truth moment를 1:1로 매칭한다 (DETR을 object detection에서 가져온 방식). 둘째, <strong>QVHighlights</strong>라는 새 benchmark — multi-moment + saliency까지 동시에 푸는 어려운 setup이었다. </p>
+<p>Architecture는 (1) video frame을 SlowFast / CLIP feature로 임베딩, (2) text query를 CLIP / RoBERTa로 임베딩, (3) 두 modality를 cross-modal Transformer encoder에 흘려보낸 뒤, (4) N=10 learnable <strong>moment query</strong>가 Transformer decoder에서 cross-attention으로 video memory를 흡수, (5) 각 query당 (start_norm, end_norm, foreground_score)를 출력한다. Loss는 L1 span loss + GIoU(Generalized IoU) span loss + foreground classification loss + saliency loss의 weighted sum이다. </p>
+<p>QVHighlights에서 [email protected] ~52, mAP ~30대로 강력한 baseline을 세웠지만, Charades-STA에 옮기면 R1@0.5는 53-55에 머물렀다. 핵심 이유: text encoder가 frozen RoBERTa이고, video encoder는 SlowFast/CLIP — 즉 <strong>language reasoning capacity가 입력단에 고정</strong>되어 있다.</p></div><div class="sb-block"><h2>3. QD-DETR — Query-Dependent Video Representation</h2><p><strong>QD-DETR</strong> (Moon et al., CVPR 2023, arXiv:2303.13874)의 진단은 날카로웠다. Moment-DETR을 ablation해보니, <strong>text query를 랜덤 noise로 바꿔도 성능이 거의 떨어지지 않았다</strong> — 즉 model이 video prior만 가지고 답을 거의 다 내고 있었다 (Otani et al.의 "caption-only bias" 진단과 같은 결의 발견). </p>
+<p>QD-DETR의 대응은 query를 <strong>decoder query뿐 아니라 encoder의 video feature에까지 의존시키는 것</strong>이었다. 구체적으로 (1) cross-attentive encoder를 도입해 video token이 text token에 cross-attend하도록 강제, (2) negative-pair learning을 추가해 mis-matched (video, query) 쌍을 명시적으로 떼어놓는다. </p>
+<p>결과: QVHighlights mAP를 5-7%p 끌어올렸고 Charades-STA R1@0.5도 57-58까지 올렸다. 하지만 흥미로운 점은 <strong>여전히 R1@0.5 ~60 벽</strong>을 깨지 못했다는 것. 즉 query-dependent video representation은 "video가 query를 무시하던 병"을 고쳤지만, output space가 여전히 (start, end, score)의 span regression이기 때문에 ceiling은 그대로였다.</p></div><div class="sb-block"><h2>4. CG-DETR — Cross-Modal Granularity Alignment</h2><p><strong>CG-DETR</strong> (Correlation-Guided DETR for Fast Video Temporal Grounding, Moon et al., 2023, arXiv:2311.08835)는 한 단계 더 들어간다. 문제 진단: word-level token과 video frame-level token이 attention pool에서 동일 granularity로 섞이는데, 실제로는 "opens" 같은 동사는 <strong>순간</strong> event에, "washes" 같은 동사는 <strong>지속</strong> event에 alignment된다. </p>
+<p>CG-DETR의 해법은 (1) <strong>adaptive cross-modal alignment</strong> — token마다 다른 attention temperature를 학습해 sharpness를 조절, (2) <strong>moment-adaptive saliency detector</strong> — 길이가 다른 moment에 대해 다른 receptive field를 부여. 효과는 QVHighlights에서 SOTA를 한 번 더 갱신했고, 무엇보다 <strong>inference 속도가 빨라졌다</strong> (이름의 "Fast"). </p>
+<p>이 시점에서 "DETR-style은 점점 attention granularity를 세분화하는 방향으로 trick을 쌓고 있다"는 패턴이 보인다. 그러나 trick이 쌓일수록 model-specific hyperparameter도 늘어나고, dataset-transfer가 어려워졌다.</p></div><div class="sb-block"><h2>5. UniVTG — One Head for MR, HD, TAL</h2><p><strong>UniVTG</strong> (Towards Unified Video-Language Temporal Grounding, Lin et al., ICCV 2023, arXiv:2307.16715)은 또 다른 각도로 진화했다. 그동안 (a) Moment Retrieval (MR), (b) Highlight Detection (HD), (c) Temporal Action Localization (TAL)이 각각 다른 head로 풀렸는데, UniVTG는 세 task를 한 head로 통일했다. </p>
+<p>핵심 design: 모든 task를 <strong>per-frame (foreground_prob, offset_to_start, offset_to_end) triplet</strong> 출력으로 통일한다. (1) MR은 query-conditioned foreground, (2) HD는 saliency score, (3) TAL은 action class-conditioned foreground로 reduction된다. Large-scale pretraining (Ego4D narration + VideoCC + InternVid에 가까운 weak text-video pair)을 통해 zero-shot transfer까지 봤다. </p>
+<p>성과: 5개 benchmark cross-task SOTA — Charades-STA R1@0.5 ~58, QVHighlights mAP ~38-40. UniVTG의 의의는 "여러 task를 한 architecture로 푸는 통일적 view"를 처음 보여줬다는 점이며, 그게 곧 chapter 4의 <strong>VLM이 모든 timestamp task를 token generation으로 통합</strong>한다는 발상의 직접적 전조였다.</p></div><div class="sb-block"><h2>6. Loss Landscape — Span L1, GIoU, Set Prediction</h2><p>DETR 계열 전체에서 reused되는 loss 조합을 정리하자. Prediction은 N개 moment query의 (start_norm_i, end_norm_i, score_i)이고, ground-truth는 M개 ground-truth span. </p>
+<p><strong>Hungarian matching</strong>: cost matrix C ∈ R^{N×M}을 두고 (1-σ(score_pred)) + λ_L1·|span_pred - span_gt|_1 + λ_giou·(1 - GIoU(span_pred, span_gt))의 weighted sum으로 cost를 정의, scipy.optimize.linear_sum_assignment로 1:1 매칭. </p>
+<p><strong>Span L1 loss</strong>: 매칭된 쌍에 대해 |start_pred - start_gt| + |end_pred - end_gt|. Simple하지만 scale-invariant하지 않다 — 30초 비디오에서 1초 오차와 60초 비디오에서 1초 오차가 같은 cost. </p>
+<p><strong>Generalized IoU (GIoU) loss</strong>: GIoU = IoU - |C \ (A ∪ B)| / |C|, where C는 두 span을 모두 포함하는 최소 enclosing span. 1 - GIoU를 loss로 사용해 IoU=0인 경우에도 gradient가 흐른다 — 이게 vanilla IoU loss 대비 핵심 advantage. </p>
+<p><strong>Foreground classification loss</strong>: σ(score)에 binary CE. 매칭되지 않은 query는 negative class. </p>
+<p>이 조합이 만들어내는 <strong>ceiling</strong>의 정량적 원인: (a) L1과 GIoU 모두 <em>span boundary</em>가 정답에 sharp하게 정의된다고 가정하지만, 실제 annotation은 1-2초의 boundary noise를 갖는다 (Charades-STA의 annotation guideline 자체가 ~1s tolerance). (b) Hungarian matching은 N개 query 중 정확히 M개만 positive라는 가정인데 multi-moment query에서 disjoint moment 수를 model이 미리 알기 어렵다. (c) frozen text encoder는 query의 compositional structure ("A then B" vs "A and B")를 같은 sentence embedding으로 매핑해버린다. 이 세 가지가 결합해 Charades-STA R1@0.5 ~60에서 모든 DETR-variant가 멈췄다.</p></div><div class="sb-block"><h2>7. The R1@0.5 ~60 Ceiling — Why It Held</h2><p>2021-2023 사이 십여 개 paper가 같은 plateau에서 멈춘 데는 reproducible한 이유가 있다. </p>
+<p><strong>Failure mode 1 — Compositional query</strong>: "the man opens the fridge then closes it"에서 "opens"와 "closes"는 서로 다른 시각 event를 가리키지만, frozen RoBERTa는 두 동사를 같은 sentence 평균 embedding으로 압축한다. Model은 두 event 중 더 visually salient한 것 하나에 fit한다. </p>
+<p><strong>Failure mode 2 — Negative query ("the man does NOT open the fridge")</strong>: DETR head는 "foreground exists" classifier뿐 abstention head가 없다. Foreground confidence를 강제로 낮추는 학습 신호 자체가 dataset에 없다. Charades-STA-Negative 같은 split을 쓰면 7B-scale VLM조차 30-50% false-positive를 낸다 (chapter 9 참고). </p>
+<p><strong>Failure mode 3 — Long video</strong>: 1시간 video에서 (start_norm, end_norm)이 [0, 1]에 normalize되면 1초 단위 boundary precision은 normalized 0.0003 수준 — L1/GIoU의 gradient가 사실상 사라진다. </p>
+<p><strong>Failure mode 4 — Annotation noise</strong>: Charades-STA boundary annotation은 ~1초 noise를 갖는다 — R1@0.5 (8초 평균 moment의 50% IoU)는 ~4초 정확도 요구 — annotation noise floor와 model precision floor가 같은 수준에서 만난다. </p>
+<p>네 failure mode 모두 더 큰 model + 더 많은 trick으로는 풀리지 않는다. <strong>architecture의 output space가 (start, end, score) closed form</strong>인 한, 한정된 ceiling이다.</p></div><div class="sb-block"><h2>8. When to Still Use DETR-Style in 2026</h2><p>DETR 계열을 박물관 유물로만 볼 일은 아니다. 2026년 실무에서 여전히 합리적인 선택지가 있다. </p>
+<p><strong>Use case 1 — Edge inference</strong>: QD-DETR / CG-DETR variant는 50-200M parameter scale에서 동작한다. 7B VLM은 mobile / IoT에서 거의 불가능하다. 비디오 frame이 이미 추출되고 fixed text query template이 정해진 시나리오 (e.g., 보안 카메라의 "a person enters the room" detection)에서는 DETR-style이 latency / power 면에서 압도적이다. </p>
+<p><strong>Use case 2 — Low-resource fine-tuning</strong>: 1K 미만 annotated sample만 있는 domain (industrial inspection, medical video)에서는 7B LLM의 timestamp token tuning이 catastrophic forgetting + 데이터 부족 양면에서 위험하다. UniVTG-style head를 frozen video backbone 위에 갈아끼우는 게 종종 더 견고하다. </p>
+<p><strong>Use case 3 — Real-time saliency for QVHighlights-like dataset</strong>: highlight + moment 동시 출력이 필요한 production 환경 (스포츠 클립 자동 생성)에서 SMORE / SG-DETR 같은 DETR variant가 여전히 QVHighlights 상위권을 유지한다 (avg mAP +4%p 수준, chapter 2 SOTA 표 참고). </p>
+<p><strong>Use case 4 — Latency-bounded streaming</strong>: streaming first-token latency가 200ms 미만이어야 하면 VLM autoregressive decoding이 부적합. DETR head는 single forward pass라 latency가 deterministic하다. </p>
+<p>실무 결정 기준: (a) query template이 fixed인가, (b) 비디오 길이가 5분 이내인가, (c) annotation budget이 10K 이상인가 — 셋 중 둘 이상이 yes면 DETR-style이 여전히 first-pick. 아니면 chapter 4 이후의 VLM-as-grounder로 가는 게 맞다.</p></div><div class="sb-block"><h2>9. Forward Reference — Why Generation Broke the Ceiling</h2><p>이 chapter의 마지막 줄은 의도적으로 cliff hanger다. <strong>R1@0.5 ~60 ceiling을 깬 것은 더 큰 DETR이 아니라, output space의 변형</strong>이었다. </p>
+<p>VLM-as-grounder (chapter 4) — UniTime, MeCo, TimeChat, VTimeLLM — 는 (start, end) span을 회귀하지 않는다. 대신 <strong>timestamp를 문자열 token으로 생성</strong>한다. 예: "<TIME>4.2</TIME> to <TIME>11.8</TIME>". 이게 왜 ceiling을 깼는가? </p>
+<p>(1) <strong>Output space가 open</strong>: discrete token vocabulary 위에서 sampling하므로 multi-moment, no-moment (abstention), descriptive ("around 5s") 모두 같은 head로 표현 가능. </p>
+<p>(2) <strong>Language reasoning capacity가 7B+ LLM</strong>: frozen RoBERTa의 60M parameter 대신 Qwen2.5-VL-7B의 in-context reasoning이 "opens then closes" 같은 compositional query를 실제 분해. </p>
+<p>(3) <strong>Pretrain transfer</strong>: 수십억 token의 web-scale text-video pretraining에서 얻은 prior가 zero-shot에 잔존. M-DETR은 zero-shot 거의 불가능했다. </p>
+<p>(4) <strong>RL fine-tuning이 가능</strong>: GRPO + verifiable tIoU reward가 token generation에서 자연스럽게 정의된다 (chapter 5). </p>
+<p>Time-R1이 Charades-STA R1@0.5를 60→72.2로, AVI가 [email protected]을 88.6으로 끌어올린 게 같은 이유다. 다음 chapter에서 우리는 이 verbal generation paradigm을 architecture / training / failure mode 측면에서 본다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">옛날 TV 채널 vs Netflix 추천</div>
+      <div class="a-body"><p>2010년대 TV는 채널 번호와 편성표로 작동했다. 7번 채널은 9시에 뉴스, 11시에 드라마. 시청자가 원하는 건 "오늘 저녁 뭐 보지" 같은 의도였지만, 시스템은 미리 정해진 슬롯에 미리 정해진 포맷의 콘텐츠만 제공할 수 있었다. 화면에 띄울 수 있는 후보는 채널 가이드의 격자 안에 갇혀 있었다.</p>
+<p>2D-TAN의 N×N proposal grid가 정확히 그 채널 가이드다. 가능한 모든 (start, end) 슬롯이 미리 enumerate되어 있고, ranking head가 그중 하나를 고른다. DETR-style은 채널 가이드를 더 똑똑하게 만든 버전이다 — "오늘 시청자가 뭘 좋아할지" 추론은 좀 더 잘 하지만, 출력은 여전히 (start, end, score)의 정해진 칸이다.</p>
+<p>Netflix는 다른 종류의 시스템이다. "오늘 저녁 액션 뭐 있어?"를 자연어로 받고, 자유롭게 후보를 생성하고, 시청 패턴을 보고 다시 ranking한다. 출력 공간이 <em>열려</em> 있다. VLM-as-grounder가 timestamp를 token으로 <em>생성</em>하는 게 같은 변화다. 그래서 chapter 4 이후의 model들은 "채널 가이드의 어느 칸인가"가 아니라 "어떤 timestamp 문자열을 출력할까"를 푼다.</p>
+<p>중요한 건 채널 가이드가 <em>나쁘다</em>는 게 아니다. 정해진 슬롯이 비즈니스에 맞는 경우 (보안 카메라의 고정된 query, 스포츠 하이라이트의 fixed format)에는 여전히 효율적이다. 그러나 사용자가 "the man does not open the fridge" 같은 negative query, "A then B then C" 같은 compositional query, 1시간짜리 video에서의 search query를 던질 때, 채널 가이드의 격자는 표현력 자체가 부족하다. 출력 공간을 <em>언어</em>로 바꾸는 게 그 표현력 ceiling을 푸는 유일한 길이었다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>Moment-DETR의 핵심 ingredient — N개 learnable moment query가 video memory에 cross-attend해 (start, end, score) span을 출력하는 구조 — 를 PyTorch 30여 줄로 재현한다. Batch size 2, video sequence length 32, hidden dim 128, N=10 query, single decoder layer로 단순화했지만 실제 M-DETR의 forward pass shape는 동일하다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+class SimplifiedMomentDETR(nn.Module):
+    &quot;&quot;&quot;Minimal M-DETR-style decoder. video_dim=text_dim=d_model for clarity.&quot;&quot;&quot;
+    def __init__(self, d_model=128, n_heads=4, n_queries=10):
+        super().__init__()
+        self.n_queries = n_queries
+        # N learnable moment queries (DETR&#x27;s signature trick)
+        self.moment_queries = nn.Embedding(n_queries, d_model)
+        # Cross-modal encoder: text token attends to video tokens and vice-versa
+        self.cross_modal_attn = nn.MultiheadAttention(d_model, n_heads, batch_first=True)
+        # Decoder: queries cross-attend to fused video memory
+        self.decoder_cross_attn = nn.MultiheadAttention(d_model, n_heads, batch_first=True)
+        self.decoder_ffn = nn.Sequential(
+            nn.Linear(d_model, d_model * 4), nn.ReLU(),
+            nn.Linear(d_model * 4, d_model),
+        )
+        self.norm1 = nn.LayerNorm(d_model)
+        self.norm2 = nn.LayerNorm(d_model)
+        # Heads: span (start, end) regression + foreground score
+        self.span_head = nn.Linear(d_model, 2)   # (start_norm, end_norm) in [0,1]
+        self.score_head = nn.Linear(d_model, 1)  # foreground logit
+
+    def forward(self, video_feats, text_feats):
+        # video_feats: (B, T_v, d), text_feats: (B, T_t, d)
+        B = video_feats.size(0)
+        # 1) Fuse text into video memory (QD-DETR-style query dependence)
+        fused, _ = self.cross_modal_attn(
+            query=video_feats, key=text_feats, value=text_feats,
+        )
+        memory = self.norm1(video_feats + fused)  # (B, T_v, d)
+        # 2) Expand N moment queries across batch
+        q = self.moment_queries.weight.unsqueeze(0).expand(B, -1, -1)  # (B, N, d)
+        # 3) Decoder cross-attention: queries attend to fused video memory
+        attn_out, _ = self.decoder_cross_attn(query=q, key=memory, value=memory)
+        q = self.norm2(q + attn_out)
+        q = q + self.decoder_ffn(q)
+        # 4) Heads
+        spans = self.span_head(q).sigmoid()      # (B, N, 2), normalized to [0,1]
+        scores = self.score_head(q).squeeze(-1)  # (B, N)
+        # Enforce start &lt;= end by sorting along last dim
+        start = spans.min(dim=-1).values
+        end = spans.max(dim=-1).values
+        return torch.stack([start, end], dim=-1), scores
+
+if __name__ == &quot;__main__&quot;:
+    torch.manual_seed(0)
+    model = SimplifiedMomentDETR(d_model=128, n_heads=4, n_queries=10)
+    video = torch.randn(2, 32, 128)  # batch=2, 32 video tokens
+    text = torch.randn(2, 16, 128)   # 16 text tokens
+    spans, scores = model(video, text)
+    print(&quot;spans:&quot;, spans.shape, &quot;scores:&quot;, scores.shape)
+    print(&quot;sample span 0:&quot;, spans[0, 0].tolist(), &quot;score:&quot;, scores[0, 0].item())
+</code></pre>
+      <div class="c-walk"><p>이 코드의 4단계를 따라가면 DETR-style의 본질이 그대로 보인다. (1) <code>moment_queries = nn.Embedding(N, d)</code> — N개의 learnable vector는 "slot" 역할. 각 slot이 한 moment를 책임진다. 학습 후 query마다 다른 길이 / 위치 patten에 특화된다. (2) <code>cross_modal_attn(query=video, key=text)</code> — QD-DETR이 강조한 query-dependent fusion. Text token이 value로, video token이 query로 들어가 video memory가 text-conditioned로 갱신된다. 이 한 줄을 빼면 (즉 vanilla M-DETR로 돌아가면) text를 거의 무시하는 baseline이 된다. (3) <code>decoder_cross_attn(query=q, key=memory, value=memory)</code> — N개 slot이 fused video memory에서 자신에게 필요한 정보를 pull. Hungarian matching loss를 결합하면 slot마다 서로 다른 ground-truth moment를 책임지도록 학습이 emerge한다. (4) 두 head — <code>span_head</code>은 (start_norm, end_norm)을 sigmoid로 [0,1] 정규화하고, <code>score_head</code>은 foreground 확률 logit을 출력. 마지막의 <code>start = spans.min(...)</code>, <code>end = spans.max(...)</code>는 swap 방지 trick. </p>
+<p>실제 학습 시 추가로 필요한 것: (a) <code>scipy.optimize.linear_sum_assignment</code>로 Hungarian matching, (b) L1 span loss + GIoU loss + BCE score loss의 weighted sum, (c) saliency head (QVHighlights용). 실 production code (Moment-DETR github)는 약 500줄이지만, 여기 보인 30줄이 그 핵심 forward pass다. 이 코드를 chapter 4의 "timestamp token을 LLM에서 생성" 코드와 직접 비교해보면, output space가 <em>수치 vector → 문자열 token</em>으로 어떻게 바뀌는지가 한눈에 보인다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">산업에서 temporal grounding 후보자를 인터뷰할 때 &quot;DETR 계열을 알고만 있는지&quot;와 &quot;왜 그것이 멈추었는지를 구조적으로 설명할 수 있는지&quot;는 다른 신호다. 후자는 곧 chapter 4 이후의 paradigm shift를 이해한다는 뜻이고, 동시에 (DETR-style을 *오늘 production에 채택해야 할 때를 판단할 수 있다*는) practical sense까지 본다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>왜 Charades-STA R1@0.5가 ~60에서 멈추었는지를 architecture (output space), loss (annotation noise vs precision floor), data (compositional / negative absence) 세 layer로 분해 설명할 수 있는가</li><li>Hungarian matching + L1 + GIoU 조합 각각이 왜 필요한지, 한 component를 빼면 어떤 failure mode가 생기는지 예시로 답할 수 있는가</li><li>QD-DETR의 &quot;query를 noise로 바꿔도 성능 안 떨어진다&quot; 진단을 자기 코드에서 ablation으로 검증할 수 있는가</li><li>edge / low-resource / fixed-template 시나리오에서 DETR-style을 여전히 선택할 합리적 기준을 명시할 수 있는가</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>&quot;DETR 계열은 오래된 거라 안 쓴다&quot;라고 단정 — production sense 없음</li><li>L1 loss와 GIoU loss를 같은 것으로 취급 (gradient flow 차이를 모름)</li><li>Moment-DETR과 DETR (object detection)의 차이를 N moment query 외에 설명하지 못함 — set prediction 개념 부재</li><li>R1@0.5 plateau를 &quot;data가 부족했기 때문&quot;으로만 환원 — output space 제약을 보지 못함</li><li>MS-2D-TAN의 multi-scale design이 왜 도입되었는지 설명 못함 (short vs long moment 분리 동기)</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>{&#x27;question&#x27;: &#x27;Charades-STA에서 R1@0.5가 ~60에서 plateau된 이유를 두 가지 이상의 구조적 요인으로 설명해보세요. &quot;더 큰 model&quot;이 답이 안 되는 이유까지 포함해서.&#x27;, &#x27;whatToLookFor&#x27;: &#x27;강한 답: (1) output space가 (start, end, score) closed form — multi-moment, no-moment, descriptive 표현 불가, (2) frozen text encoder가 compositional query (&quot;A then B&quot;)의 순서 정보를 잃음, (3) span L1/GIoU loss가 1초 단위 boundary noise (annotation floor) 수준에서 더 이상 신호 못 줌, (4) negative annotation 부재로 abstention head를 학습할 신호 없음. 약한 답: &quot;data가 부족했다&quot;, &quot;model이 작았다&quot;. 추가 점수: Time-R1이 60→72.2를 어떻게 깼는지 — output space를 token generation으로 바꾸고 RL reward로 fine-tune했다는 점을 forward reference.&#x27;}</li><li>{&#x27;question&#x27;: &#x27;Moment-DETR의 loss 조합은 span L1 + GIoU + foreground BCE + Hungarian matching입니다. 각 component를 *왜* 그 자리에 둬야 하는지, 하나 빼면 어떤 failure가 발생할지 답해보세요.&#x27;, &#x27;whatToLookFor&#x27;: &#x27;강한 답: (a) L1만 쓰면 IoU=0에서도 일관된 gradient지만 scale-invariant하지 않다 (긴 video에서 small relative error가 큰 cost로 안 잡힘); (b) GIoU만 쓰면 매우 distant span에서 gradient가 약해 매칭 초기에 학습이 stall; (c) foreground BCE 없으면 N query 모두 foreground로 fit하려 듦 — false positive 폭증; (d) Hungarian matching 없으면 N query가 같은 ground-truth로 collapse (mode collapse). 강한 후보는 한 component를 빼는 ablation을 실제로 돌려본 경험을 인용한다.&#x27;}</li><li>{&#x27;question&#x27;: &#x27;오늘 2026년에 DETR-style temporal grounding을 production에서 채택해야 하는 시나리오 한 개와, 절대 채택하면 안 되는 시나리오 한 개를 각각 들어보세요.&#x27;, &#x27;whatToLookFor&#x27;: &#x27;강한 답 (채택): 보안 카메라의 fixed query template (&quot;a person enters&quot;) + edge device + sub-200ms latency 요구 — VLM autoregressive decoding이 불가능, QD-DETR 50-200M parameter scale이 적합. 또는 sports highlight 자동 생성 — QVHighlights-style moment + saliency 동시 필요, SMORE/SG-DETR가 여전히 SOTA. 강한 답 (피해야): hour-scale video search (ExtremeWhenBench 시나리오) — DETR의 N×N proposal이나 N query 모두 quadratic / fixed-N으로 explode, retrieve-then-ground hybrid나 agentic search가 6.7× 성능 우위 (mIoU 0.110 → 0.354). 약한 답: &quot;옛날 거라 안 씀&quot; / &quot;VLM이 무조건 낫다&quot; 같은 단정.&#x27;}</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> Familiar 수준은 &quot;M-DETR이 DETR을 video moment retrieval에 가져온 paper다&quot; 정도까지 설명한다. Mastery 수준은 (1) M-DETR → QD-DETR → CG-DETR → UniVTG의 *진화 동기*를 ablation 단위로 추적할 수 있고 (query-blindness → adaptive granularity → unified head), (2) R1@0.5 ~60 plateau를 architecture/loss/data 세 layer로 분해해 *왜 더 큰 DETR로는 못 깬다*고 정량 추론할 수 있고, (3) 2026년 production decision tree (edge / fixed template / latency budget)에서 DETR-style을 *언제 골라야 하는지* 명확한 기준을 제시할 수 있다. Mastery는 또한 chapter 4의 verbal generation paradigm이 이 ceiling을 *왜 깼는지*를 output space 변형 (closed numerical → open vocabulary) 차원에서 한 줄로 요약할 수 있다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>두 흐름, 같은 ceiling</h3><p>2D-TAN 계열의 proposal grid와 M-DETR / QD-DETR / CG-DETR / UniVTG의 DETR set prediction은 architecture가 다르지만 둘 다 Charades-STA R1@0.5 ~60 부근에서 멈추었다. 원인은 model 크기가 아니라 output space 자체가 (start, end, score)에 닫혀 있다는 점이다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>Moment-DETR이 가져온 두 가지</h3><p>Lei et al. (NeurIPS 2021)의 M-DETR은 (a) N개 learnable moment query + Hungarian matching이라는 set-prediction view, (b) QVHighlights라는 multi-moment + saliency joint benchmark를 동시에 가져왔다. 이 두 contribution이 이후 3년의 DETR-variant 모두의 출발점이 됐다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>QD-DETR의 진단이 핵심</h3><p>Moon et al. (CVPR 2023)의 ablation에서 &quot;text query를 noise로 바꿔도 성능 안 떨어진다&quot;는 관찰이 caption-only bias의 architectural 사촌이다. Query-dependent video representation으로 이를 해결했지만, ceiling 자체는 그대로였다 — 즉 query-blindness는 하나의 증상이고 진짜 병은 output space 제약이었다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>UniVTG = pre-VLM의 정점</h3><p>Lin et al. (ICCV 2023)의 UniVTG는 MR / HD / TAL을 per-frame (fg, offset_start, offset_end) triplet head 하나로 통일했고 large-scale weak pretraining까지 도입했다. &quot;여러 task를 한 architecture로&quot;라는 발상은 곧 chapter 4의 &quot;여러 task를 한 token vocabulary로&quot; generalization의 직접적 전조다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>Loss는 죄가 없다</h3><p>Hungarian matching + L1 + GIoU + BCE 조합은 잘 작동한다 — 다만 (a) annotation noise floor (~1초) 이하의 precision을 요구하면 gradient가 사라지고, (b) compositional / negative / multi-moment 시나리오에서 표현력 자체가 부족하다. Loss를 더 다듬어도 깨지지 않는 ceiling이다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>DETR-style은 박물관 유물이 아니다</h3><p>Edge inference (50-200M parameter scale), fixed query template, sub-200ms latency, 10K 미만 annotation 시나리오에서는 QD-DETR / CG-DETR / SG-DETR이 2026년에도 여전히 first-pick이다. &quot;VLM이 무조건 낫다&quot;는 false dichotomy — production decision은 use case에 따라 갈린다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>Output space 변형이 ceiling을 깼다</h3><p>Time-R1 (Charades-STA R1@0.5 72.2), AVI ([email protected] 88.6)가 ~60 plateau를 깬 공통 분모는 더 큰 model이 아니라 *output을 numerical span에서 timestamp string token으로 바꾼* 점이다. Open vocabulary는 multi-moment, abstention, descriptive 표현을 모두 한 head로 자연스럽게 처리한다. Chapter 4의 verbal generation paradigm이 정확히 이 변환이다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>Forward reference — 왜 다음 chapter가 chapter 4인가</h3><p>이 chapter는 pre-VLM 시대를 *완결된 시대*로 닫는다. Chapter 4는 같은 task를 timestamp token generation으로 재정의한다. 두 chapter를 같이 읽으면 paradigm shift가 &quot;data가 더 많아져서&quot;나 &quot;transformer가 더 커져서&quot;가 아니라 *task output space의 정의*가 바뀐 결과임이 분명해진다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-02.html">← Benchmark Landscape &amp; 7 Biases</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-04.html">VLM-as-Grounder — Timestamp Generation →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+</body></html>

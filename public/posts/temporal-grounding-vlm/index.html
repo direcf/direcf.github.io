@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Temporal Grounding for Video VLMs (2026) — direcf</title>
+  <meta name="description" content="Temporal Grounding이 2024년까지 DETR 기반 boundary regression이었다면, 2025-2026년에는 VLM이 timestamp를 직접 emit하는 생성 문제로 재정의되었다. Time-R1(NeurIPS 2025), VideoMind(ICLR 2026), MeCo(ICLR 2026), VideoITG(CVPR 2026 Highlight), TimeLens(CVPR 2026) 6편의 2026 핵심 논문과 12개 신규 paper 아이디어·데이터 조사까지.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a>
+        <span class="sep">›</span>
+        <strong>Temporal Grounding for Video VLMs (2026)</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="../../index.html#/category/multimodal-ai">← 목록으로</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="syl-hero">
+        <div class="kicker">📚 Coursework</div>
+        <h1>Temporal Grounding for Video VLMs (2026)</h1>
+        <p class="sub">Temporal Grounding이 2024년까지 DETR 기반 boundary regression이었다면, 2025-2026년에는 VLM이 timestamp를 직접 emit하는 생성 문제로 재정의되었다. Time-R1(NeurIPS 2025), VideoMind(ICLR 2026), MeCo(ICLR 2026), VideoITG(CVPR 2026 Highlight), TimeLens(CVPR 2026) 6편의 2026 핵심 논문과 12개 신규 paper 아이디어·데이터 조사까지.</p>
+        <div class="badges">
+          <span class="badge">고급</span>
+          <span class="badge">10 chapters</span>
+          <span class="badge">Python</span>
+        </div>
+      </div>
+      <div class="section-div"><h2>커리큘럼</h2><span class="meta">10 chapters</span></div>
+      <div class="ch-list"><a href="chapter-01.html" class="ch-row">
+      <div class="ch-num">CH<br>01</div>
+      <div class="ch-body">
+        <div class="ch-title"><span class="emoji">🎯</span>What is Temporal Grounding</div>
+        <div class="ch-kr">Temporal Grounding 이란 무엇인가</div>
+        <div class="ch-tldr">Temporal Grounding은 비디오 V와 자연어 query q가 주어졌을 때, q가 묘사하는 사건의 시간 구간 [t_start, t_end]를 찾는 task다. 2024년까지 proposal/DETR 기반의 boundary regression 문제였다면, 2025–2026년에는 VLM이 timestamp를 token으로 직접 emit하는 verbal generation 문제로 재정의되었다. Time-R1(arXiv:2503.13377)이 zero-shot으로 Charades-STA [email protected]=78.1을 찍어 SFT baseline인 VideoChat-Flash 74.5를 넘은 사건이 이 패러다임 전환의 상징이다.</div>
+        <div class="ch-tags"><span class="ch-tag">Task family — TSG vs MR vs TAL</span><span class="ch-tag">Formal problem definition (V, q → [t_s, t_e])</span><span class="ch-tag">Eval metrics: R@N@IoU, mIoU, mAP, HIT@1</span></div>
+      </div>
+    </a><a href="chapter-02.html" class="ch-row">
+      <div class="ch-num">CH<br>02</div>
+      <div class="ch-body">
+        <div class="ch-title"><span class="emoji">📏</span>Benchmark Landscape &amp; 7 Biases</div>
+        <div class="ch-kr">벤치마크 지형도와 7가지 bias</div>
+        <div class="ch-tldr">Temporal grounding 벤치마크는 Charades-STA 30초짜리부터 ExtremeWhenBench 9시간짜리까지 시간 척도가 1,000배 차이가 난다. 같은 task 이름을 달고 있어도 측정하는 능력이 완전히 다르며, 7가지 known bias (caption-only prior, word shortcut, negative annotation 부재, localization-description entanglement, discrete granularity, train/test leak, long-form scarcity) 때문에 in-domain 점수만 보면 진짜 grounding이 아니라 dataset hack을 측정하는 결과가 된다.</div>
+        <div class="ch-tags"><span class="ch-tag">11 benchmarks landscape</span><span class="ch-tag">SOTA scores per benchmark 2026-06</span><span class="ch-tag">Otani et al. prior-only baseline</span></div>
+      </div>
+    </a><a href="chapter-03.html" class="ch-row">
+      <div class="ch-num">CH<br>03</div>
+      <div class="ch-body">
+        <div class="ch-title"><span class="emoji">🏛️</span>Pre-VLM Foundations — The DETR Era</div>
+        <div class="ch-kr">Pre-VLM 시대 — 2D-TAN부터 DETR까지</div>
+        <div class="ch-tldr">2024년 이전 temporal grounding SOTA는 두 계열로 수렴했다. (1) 2D-TAN 계열의 proposal-grid + ranking head 방식, (2) Moment-DETR로 시작해 QD-DETR / CG-DETR / UniVTG로 진화한 set-prediction Transformer 계열. 두 흐름 모두 Charades-STA R1@0.5 ~60 부근에서 plateau를 만났고, 그 원인은 language understanding이 frozen encoder에 묶여 있고 head가 span regression이라는 닫힌 출력 공간을 갖는다는 구조적 한계였다. 이 ceiling이 곧 chapter 4의 &quot;VLM이 timestamp를 verbal generation으로 직접 출력&quot;이라는 패러다임 전환의 동기다.</div>
+        <div class="ch-tags"><span class="ch-tag">2D-TAN / MS-2D-TAN proposal-based grounding</span><span class="ch-tag">Moment-DETR (M-DETR) — Transformer decoder의 첫 진입</span><span class="ch-tag">QD-DETR query-dependent video representation</span></div>
+      </div>
+    </a><a href="chapter-04.html" class="ch-row">
+      <div class="ch-num">CH<br>04</div>
+      <div class="ch-body">
+        <div class="ch-title"><span class="emoji">🧠</span>VLM-as-Grounder — Timestamp Generation</div>
+        <div class="ch-kr">VLM-as-Grounder — Timestamp를 직접 emit하는 시대</div>
+        <div class="ch-tldr">2025년을 기점으로 temporal grounding은 boundary regression 문제에서 timestamp를 텍스트 토큰으로 emit하는 generation 문제로 재정의되었다. UniTime (NeurIPS 2025, arXiv:2506.18883)은 하나의 generative MLLM으로 Charades-STA / ActivityNet / TACoS / QVHighlights를 동시에 잡았고, MeCo (ICLR 2026, arXiv:2503.09027)는 timestamp를 직접 쓰지 않고 structural token + contrastive grounding으로 QVHighlights에서 mAP=45.3 / HIT@1=75.1을 찍어 M-DETR, UMT, QD-DETR, CG-DETR, UniVTG를 모두 추월했다.</div>
+        <div class="ch-tags"><span class="ch-tag">Verbal timestamp generation paradigm</span><span class="ch-tag">UniTime (NeurIPS 2025) — universal generative MLLM grounder</span><span class="ch-tag">MeCo (ICLR 2026) — timestamp-free semantic-oriented approach</span></div>
+      </div>
+    </a><a href="chapter-05.html" class="ch-row">
+      <div class="ch-num">CH<br>05</div>
+      <div class="ch-body">
+        <div class="ch-title"><span class="emoji">🎮</span>RL Fine-tuning Era — Time-R1, TempSamp-R1, VideoTemp-o3, TimeLens</div>
+        <div class="ch-kr">RL Fine-tuning 시대 — GRPO와 verifiable rewards</div>
+        <div class="ch-tldr">2025년 하반기부터 temporal grounding의 SOTA는 SFT가 아니라 GRPO 기반 RL post-training이 잡았다. Time-R1 (NeurIPS 2025, arXiv:2503.13377)이 Qwen2.5-VL-7B를 단 2.5K의 TimeRFT 데이터로 RL fine-tune하여 zero-shot Charades-STA R1@0.5=60.8을 달성, VideoChat-Flash·VideoMind·TimeSuite 같은 대규모 SFT baseline들을 한 번에 추월했다. 핵심 무기는 tIoU + format reward라는 verifiable reward — LLM-judge가 아니라 정수 계산 한 줄로 정답을 채점할 수 있다는 점이 RL을 가능하게 했다. 그러나 IoU 한 가지만 최대화하면 model은 semantic alignment를 버리고 boundary length를 키우는 reward hacking을 학습한다. VideoTemp-o3 (arXiv:2602.07801)의 penalty-aware IoU와 TimeLens (CVPR 2026)의 thinking-free RLVR이 이 함정에 대응하는 두 가지 설계 패턴이다.</div>
+        <div class="ch-tags"><span class="ch-tag">왜 RL이 grounding에 잘 맞는가 — IoU는 verifiable, discrete, cheap한 reward</span><span class="ch-tag">GRPO 알고리즘과 PPO와의 차이</span><span class="ch-tag">Time-R1 (NeurIPS 2025)</span></div>
+      </div>
+    </a><a href="chapter-06.html" class="ch-row">
+      <div class="ch-num">CH<br>06</div>
+      <div class="ch-body">
+        <div class="ch-title"><span class="emoji">🕵️</span>Agentic Search for Long-Form Grounding</div>
+        <div class="ch-kr">Agentic Search — 한 시간 영상에서 moment 찾기</div>
+        <div class="ch-tldr">한 시간짜리 영상에서 30초 moment를 찾는 일은 더 이상 grounding 문제가 아니라 **search 문제**다. ExtremeWhenBench(arXiv:2606.12300)는 monolithic Video-LLM이 mIoU 0.110, CLIP retrieval만 써도 0.269, retrieve-then-ground hybrid가 0.354로 6.7× 격차가 난다는 것을 보였고, 실패의 **85%가 search, 11%만 localization**임을 정량화했다. 이 챕터는 hour-scale에서 single-pass VLM이 왜 무너지는지, VideoMind(ICLR 2026)의 Chain-of-LoRA, AVI(arXiv:2511.14446)의 agentic loop, Deep Video Discovery(arXiv:2505.18079)의 retrieve-zoom-verify 패턴이 각각 어떻게 이 문제를 풀어내는지를 다룬다.</div>
+        <div class="ch-tags"><span class="ch-tag">Hour-scale grounding의 token budget 폭발</span><span class="ch-tag">Temporal dispersion</span><span class="ch-tag">VideoMind (ICLR 2026): Chain-of-LoRA 4-role agent</span></div>
+      </div>
+    </a><a href="chapter-07.html" class="ch-row">
+      <div class="ch-num">CH<br>07</div>
+      <div class="ch-body">
+        <div class="ch-title"><span class="emoji">📡</span>Streaming + Online Grounding</div>
+        <div class="ch-kr">Streaming + Online Grounding — 미래 frame 없이 결정하기</div>
+        <div class="ch-tldr">2026년 6월 StreamingHarness (arXiv:2606.08615)가 narration win-rate 61.4%로 streaming SOTA를 갈아치웠지만, 이는 **vision-only / 1 FPS / causal**이라는 세 가지 제약 위에 세워진 숫자다. 같은 시기 등장한 CacheFlow (arXiv:2511.13644)의 KV-cache 압축, LiveVLM (arXiv:2505.15269)의 live architecture와 함께, online grounding은 offline 모델을 빠르게가 아니라 lookahead 없이 decision per second라는 본질적으로 다른 문제로 재정의되었다.</div>
+        <div class="ch-tags"><span class="ch-tag">Online setting의 수학적 정의</span><span class="ch-tag">StreamingHarness — 61.4% narration win-rate</span><span class="ch-tag">CacheFlow — KV-cache compression</span></div>
+      </div>
+    </a><a href="chapter-08.html" class="ch-row">
+      <div class="ch-num">CH<br>08</div>
+      <div class="ch-body">
+        <div class="ch-title"><span class="emoji">🔌</span>Plug-and-Play: VideoITG and the Empty Field</div>
+        <div class="ch-kr">Plug-and-Play의 빈 자리 — VideoITG는 왜 유일한가</div>
+        <div class="ch-tldr">2026년 주요 6편의 temporal grounding 논문 중에서 downstream Video-LLM에 손을 대지 않고도 동작하는 진짜 plug-and-play는 VideoITG(NVIDIA, CVPR 2026 Highlight, arXiv:2507.13353) 단 하나다. VideoITG는 512 frame을 uniform sampling 후 instruction-conditioned scoring으로 Top-K를 골라 임의의 Video-LLM에 그대로 넘기는 frame selector 모듈이며, VideoITG-40K와 VidThinker 자동 어노테이션 파이프라인 위에서 학습되었다. 반면 VideoMind, MeCo, Time-R1, UniTime, TimeLens는 모두 base model을 fine-tune해야 한다.</div>
+        <div class="ch-tags"><span class="ch-tag">VideoITG (CVPR 2026 Highlight) 아키텍처와 VidThinker 파이프라인</span><span class="ch-tag">Plug-and-play 인터페이스 계약</span><span class="ch-tag">왜 VideoMind·MeCo·Time-R1·UniTime·TimeLens는 fine-tuning을 요구하는가</span></div>
+      </div>
+    </a><a href="chapter-09.html" class="ch-row">
+      <div class="ch-num">CH<br>09</div>
+      <div class="ch-body">
+        <div class="ch-title"><span class="emoji">🛡️</span>Trust: Hallucination, Faithfulness, Abstention</div>
+        <div class="ch-kr">신뢰할 수 없는 Grounder — Hallucination·Faithfulness·Abstention</div>
+        <div class="ch-tldr">Charades-STA R1@0.5 기준 70점을 넘는 SOTA grounding 모델이 존재하지 않는 이벤트에 대한 쿼리에서 30~50%의 false-positive hallucination을 보인다는 사실이 CounterVid와 DIQ-H를 통해 밝혀졌다. Step-Level Faithfulness 연구는 in-domain 정확도보다 추론 과정의 faithfulness 점수가 OOD 일반화를 더 잘 예측함을 증명하며, VideoTemp-o3의 penalty-aware IoU는 RL reward hacking 문제를 해결해 NextGQA mIoU 33.4, Acc 76.4%를 달성했다. 신뢰할 수 있는 temporal grounding 시스템을 위해서는 벤치마크·학습·평가 세 축 모두에서 hallucination을 정면으로 다루는 근본적인 재설계가 필요하다.</div>
+        <div class="ch-tags"><span class="ch-tag">세 가지 실패 모드: hallucination·unfaithful rationale·abstention 불능</span><span class="ch-tag">CounterVid와 DIQ-H — reliability gap 정량화</span><span class="ch-tag">Step-Level Faithfulness — 올바른 답도 틀릴 수 있다</span></div>
+      </div>
+    </a><a href="chapter-10.html" class="ch-row">
+      <div class="ch-num">CH<br>10</div>
+      <div class="ch-body">
+        <div class="ch-title"><span class="emoji">🚀</span>Novel Research Directions — 12 Paper Ideas + Data + Feasibility</div>
+        <div class="ch-kr">새 논문을 어디에 쓸 것인가 — 12개 아이디어·데이터·Feasibility</div>
+        <div class="ch-tldr">2026년 Temporal Grounding 연구의 white space는 크게 네 클러스터로 나뉜다: Hour-scale &amp; Streaming, Trust &amp; Reliability, Compositional &amp; Causal, Low-cost Annotation &amp; Ego. 각 클러스터마다 신규 벤치마크(ExtremeWhenBench, Streaming-Train-248K 등)가 방금 공개된 덕분에 baseline 부재라는 가장 강력한 reviewer 반론이 사라졌다. 12개 아이디어의 compute·novelty·reviewer risk를 정량화한 feasibility scorer를 통해 어느 아이디어부터 착수할지 우선순위를 잡을 수 있다.</div>
+        <div class="ch-tags"><span class="ch-tag">2026 white space 지도 — 12개 open problem과 그 배경</span><span class="ch-tag">Hour-scale &amp; Streaming: StreamGround, RetGround-Agent, MemGround</span><span class="ch-tag">Trust &amp; Reliability: AbstainGround, FaithGround</span></div>
+      </div>
+    </a></div>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+</body></html>

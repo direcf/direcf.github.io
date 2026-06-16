@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch6: Agentic Search for Long-Form Grounding — Temporal Grounding for Video VLMs (2026) — direcf</title>
+  <meta name="description" content="한 시간짜리 영상에서 30초 moment를 찾는 일은 더 이상 grounding 문제가 아니라 **search 문제**다. ExtremeWhenBench(arXiv:2606.12300)는 monolithic Video-LLM이 mIoU 0.110, CLIP retrieval만 써도 0.269, retrieve-then-ground hybrid가 0.354로 6.7× 격차가 난다는 것을 보였고, 실패의 **85%가 search, 11%만 localization**임을 정량화했다. 이 챕터는 hour-scale에서 single-pass VLM이 왜 무너지는지, VideoMind(ICLR 2026)의 Chain-of-LoRA, AVI(arXiv:2511.14446)의 agentic loop, Deep Video Discovery(arXiv:2505.18079)의 retrieve-zoom-verify 패턴이 각각 어떻게 이 문제를 풀어내는지를 다룬다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/multimodal-ai">Temporal Grounding for Video VLMs (2026)</a><span class="sep">›</span>
+        <strong>Ch06 Agentic Search for Long-Form Grounding</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 06 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🕵️</div>
+      <h1 class="chapter-title">Agentic Search for Long-Form Grounding</h1>
+      <div class="chapter-title-kr">Agentic Search — 한 시간 영상에서 moment 찾기</div>
+      <div class="chapter-tldr">한 시간짜리 영상에서 30초 moment를 찾는 일은 더 이상 grounding 문제가 아니라 **search 문제**다. ExtremeWhenBench(arXiv:2606.12300)는 monolithic Video-LLM이 mIoU 0.110, CLIP retrieval만 써도 0.269, retrieve-then-ground hybrid가 0.354로 6.7× 격차가 난다는 것을 보였고, 실패의 **85%가 search, 11%만 localization**임을 정량화했다. 이 챕터는 hour-scale에서 single-pass VLM이 왜 무너지는지, VideoMind(ICLR 2026)의 Chain-of-LoRA, AVI(arXiv:2511.14446)의 agentic loop, Deep Video Discovery(arXiv:2505.18079)의 retrieve-zoom-verify 패턴이 각각 어떻게 이 문제를 풀어내는지를 다룬다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-06.png" alt="Chapter 6 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 6 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">7 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>Hour-scale에서 token budget이 어떻게 폭발하며, 왜 frame downsampling으로 풀 수 없는지 설명할 수 있다</li><li>ExtremeWhenBench의 세 baseline의 의미를 해석하고 search vs localization을 구별할 수 있다</li><li>VideoMind의 Chain-of-LoRA 4-role 구조가 왜 LoRA adapter 분리를 선택했는지 설명할 수 있다</li><li>AVI의 agentic loop이 어떻게 Charades-STA에서도 88.6 [email protected]을 달성하는지 분석할 수 있다</li><li>Deep Video Discovery의 retrieve → zoom → verify 3-stage pipeline을 그릴 수 있다</li><li>직접 3-tool agent loop을 구현할 수 있다</li><li>Production에서 agentic vs single-pass를 선택하는 의사결정 기준을 가질 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>5장에서 RL post-training이 timestamp emission의 정확도를 끌어올린다는 것을 봤지만, 모두 Charades-STA(평균 30초) / ActivityNet(평균 2분) 같은 short-to-medium form 벤치마크였다. 영상이 한 시간을 넘어가면 — MAD(평균 110분), Ego4D-NLQ, 그리고 2026년 6월에 나온 ExtremeWhenBench(평균 75.7분, 최대 9시간) — 같은 모델이 <strong>6.7×</strong> 격차로 무너진다. 한 시간 영상을 1 FPS로 sampling해도 3,600 frame이고, 각 frame이 256 token이면 921,600 token이 입력으로 들어간다. Qwen2.5-VL-7B의 context window가 32K, Long-context variant가 128K인 상황에서 이건 <strong>불가능한 길이</strong>다. 그리고 frame을 강하게 down-sample하면 target moment가 한 frame도 포함되지 않을 확률이 압도적으로 높다. 즉 모델이 못 보는 게 아니라 본 적이 없는 상태다. 2026년 SOTA가 이 문제에 내놓은 답은 <strong>agentic search</strong>다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>6.1 The Hour-Scale Problem</h2><p><strong>Token budget explosion</strong></p>
+<p>Qwen2.5-VL-7B는 이미지 한 장을 평균 256 visual token으로 인코딩한다. 1 FPS sampling 기준:</p>
+<table>
+<thead>
+<tr>
+<th>영상 길이</th>
+<th>Frames</th>
+<th>Visual tokens</th>
+<th>Context window 적합?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Charades-STA (30s)</td>
+<td>30</td>
+<td>7,680</td>
+<td>✅ 32K 안에 여유</td>
+</tr>
+<tr>
+<td>ActivityNet (2min)</td>
+<td>120</td>
+<td>30,720</td>
+<td>⚠️ 32K 임계</td>
+</tr>
+<tr>
+<td>Ego4D-NLQ (8min clip)</td>
+<td>480</td>
+<td>122,880</td>
+<td>❌ 128K Long-context만 가능</td>
+</tr>
+<tr>
+<td>MAD (110min movie)</td>
+<td>6,600</td>
+<td>1,689,600</td>
+<td>❌ 모든 open VLM 불가</td>
+</tr>
+<tr>
+<td>ExtremeWhenBench 평균 (75.7min)</td>
+<td>4,542</td>
+<td>1,162,752</td>
+<td>❌ 불가</td>
+</tr>
+<tr>
+<td>ExtremeWhenBench max (9hr)</td>
+<td>32,400</td>
+<td>8,294,400</td>
+<td>❌ 한 자릿수 차이로 불가</td>
+</tr>
+</tbody>
+</table>
+<p>fp16 KV cache 메모리를 함께 계산하면 1M token이면 KV cache만 <strong>200GB</strong>. H100 80GB 8장으로도 부족하다.</p>
+<p><strong>Down-sampling이 답이 아닌 이유 — temporal dispersion</strong></p>
+<p>Frame budget을 32로 잡고 75.7분 영상에서 균일 sampling하면 frame 간격이 142초다. 평균 moment 길이가 30초인 ExtremeWhenBench에서 target moment에 frame이 떨어질 확률은 30/142 ≈ 21%. 즉 <strong>5번 중 4번은 모델이 ground truth window 안의 frame을 한 장도 못 본다</strong>.</p>
+<p><strong>문제의 재정의: grounding이 아니라 search</strong></p>
+<p>ExtremeWhenBench(arXiv:2606.12300, June 2026)가 결정적이다. 2,273 query / 194 video / 평균 75.7분 / 최대 9시간 setting에서:</p>
+<ul>
+<li><strong>Monolithic Video-LLM (Qwen3.5-9B)</strong>: mIoU <strong>0.110</strong></li>
+<li><strong>CLIP-only retrieval</strong>: mIoU <strong>0.269</strong> (2.4×)</li>
+<li><strong>Retrieve-then-ground hybrid</strong>: mIoU <strong>0.354</strong> (3.2× monolithic, 6.7× 격차)</li>
+</ul>
+<p>Failure mode 분해: <strong>search failure 85%, localization failure 11%, 기타 4%</strong>.</p></div><div class="sb-block"><h2>6.2 VideoMind (ICLR 2026)</h2><p>VideoMind(Liu et al., ICLR 2026, arXiv:2503.13444, github: yeliudev/VideoMind)는 Qwen2-VL base model 하나에 <strong>4개의 LoRA adapter</strong>를 붙이고, inference 중 task에 맞춰 swap한다. 4개 role:</p>
+<ol>
+<li><strong>Planner</strong>: query를 받아 어떤 sub-task가 필요한지 결정</li>
+<li><strong>Grounder</strong>: video + query를 받아 timestamp window를 emit</li>
+<li><strong>Verifier</strong>: grounder가 낸 window를 다시 보고 query와 일치하는지 출력</li>
+<li><strong>Answerer</strong>: verified window 안에서 최종 QA 답변 생성</li>
+</ol>
+<p><strong>왜 LoRA swap인가</strong>: Naive하게 4개 model을 띄우면 7B × 4 = 28B. VideoMind는 LoRA rank 64로 adapter 하나당 ~30M parameter, 4개 합쳐도 base 7B 대비 1.7% 추가. <strong>VRAM은 8B 한 대로 충분</strong>.</p>
+<p><strong>Eval coverage</strong>: 15 benchmark across Grounded VideoQA + Video Temporal Grounding + General VideoQA. Charades-STA에서 [email protected] 73.5(zero-shot).</p></div><div class="sb-block"><h2>6.3 AVI (Agentic Video Intelligence)</h2><p>AVI(arXiv:2511.14446)는 Charades-STA에서 [email protected] <strong>88.6</strong>을 달성했다. 흥미로운 점은 Charades-STA가 평균 30초짜리 short-form 벤치마크라는 것. 즉 hour-scale을 위해 설계된 agentic loop이 <strong>short-form에서도</strong> monolithic을 이긴다.</p>
+<p><strong>왜 short-form에서도 이기는가</strong>: AVI의 loop은 plan → CLIP retrieve top-K window → VLM이 window를 zoom-in 검사 → IoU 추정과 confidence 출력 → 부족하면 인접 window 추가 검사. Charades-STA처럼 짧은 영상에서 retrieve step은 거의 무의미하지만, <strong>verify step이 사실상 2-pass refinement</strong>로 작동한다.</p>
+<p><strong>Trade-off</strong>: 정확도의 대가는 latency. Single-pass Video-LLM의 inference는 보통 1~3초, AVI loop은 평균 5~12 step이 돌아 10~40초가 걸린다.</p></div><div class="sb-block"><h2>6.4 Deep Video Discovery</h2><p>Deep Video Discovery(arXiv:2505.18079)는 VideoMind·AVI의 implicit role을 <strong>명시적 tool</strong>로 외부화한다.</p>
+<ul>
+<li><code>coarse_retrieve(video, query, k)</code></li>
+<li><code>zoom_in(window, factor)</code></li>
+<li><code>get_frames(window, n)</code></li>
+<li><code>ask_follow_up(question)</code></li>
+</ul>
+<p><strong>3-stage pipeline</strong>:
+1. <strong>Retrieve</strong>: CLIP-based coarse search
+2. <strong>Zoom</strong>: dense sampling 적용
+3. <strong>Verify</strong>: VLM이 dense window를 보고 IoU 추정</p>
+<p><strong>왜 이 분리가 중요한가</strong>: tool API가 외부화돼 있어 — LLM agent를 GPT-4·Claude로 교체 가능, CLIP encoder만 따로 업그레이드 가능, verify VLM도 따로 교체 가능. <strong>Modularity가 production friendly</strong>.</p></div><div class="sb-block"><h2>6.5 ExtremeWhenBench의 정량 증거</h2><p><strong>Benchmark 설계 (arXiv:2606.12300, June 2026)</strong>:
+- 2,273 query / 194 video
+- 평균 75.7분, 최대 9시간
+- Multi-domain
+- Moment 길이 분포: median 30s, 75th percentile 75s</p>
+<p><strong>세 baseline 비교</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Baseline</th>
+<th>mIoU</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Qwen3.5-9B (monolithic VLM)</td>
+<td><strong>0.110</strong></td>
+</tr>
+<tr>
+<td>CLIP-only retrieve</td>
+<td><strong>0.269</strong></td>
+</tr>
+<tr>
+<td>Retrieve-then-ground hybrid</td>
+<td><strong>0.354</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Failure mode 분해</strong>:
+- <strong>85% search failure</strong>
+- <strong>11% localization failure</strong>
+- <strong>4% 기타</strong></p></div><div class="sb-block"><h2>6.6 Tool-use 디자인</h2><p><strong>최소 tool set</strong> (3개): coarse_retrieve, zoom_in, verify.</p>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>출력</th>
+<th>호출 빈도</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>coarse_retrieve(video, query, k)</code></td>
+<td>k개 candidate window</td>
+<td>보통 1번</td>
+</tr>
+<tr>
+<td><code>zoom_in(window, factor)</code></td>
+<td>dense-sampled frame list</td>
+<td>1~5번</td>
+</tr>
+<tr>
+<td><code>verify(window, query)</code></td>
+<td>(IoU 추정, confidence)</td>
+<td>3~10번</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Production 의사결정</strong>:
+- <strong>5분 미만</strong>: monolithic VLM 우세. agentic 불필요.
+- <strong>5분~30분</strong>: agentic이 정확도 +5~10%p, latency 5~10× 증가.
+- <strong>30분 이상</strong>: agentic 거의 강제. monolithic은 6.7× 격차로 무너진다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">2시간짜리 영화에서 30초 짜리 한 장면 찾기</div>
+      <div class="a-body"><p>Inception(2010)에서 Cobb이 처음 우는 장면이 어디지?를 누군가 묻는다.</p>
+<p><strong>방법 A — Naive Watch (monolithic Video-LLM)</strong>: 처음부터 끝까지 본다. 148분 영상을 빠르게 돌려본다 해도 20분 이상 걸린다. 머릿속에 운다의 정의를 계속 유지해야 한다. 한 번 본 다음에 아, 아까 그거였나? 싶어도 다시 처음부터다.</p>
+<p><strong>방법 B — Google Search 방식 (agentic search)</strong>: 먼저 <strong>챕터 목록을 본다</strong> (= coarse_retrieve). 슬픔 / 회상 / 가족 키워드가 있는 챕터 3개를 후보로 좁힌다. 그 다음 후보 챕터를 <strong>빨리감기로 본다</strong> (= zoom_in). 마지막으로 그 구간을 <strong>정상 속도로 한 번 본다</strong> (= verify).</p>
+<p>총 소요 시간 5~10분, 정답률 압도적으로 높다. 인간이 search problem을 푸는 방식이다. 2026년의 통찰은 <strong>VLM에게도 같은 구조를 강요하라</strong>는 것이다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>3-tool agent loop을 구현한다. Deep Video Discovery(arXiv:2505.18079)와 AVI(arXiv:2511.14446)의 공통 패턴이다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">from dataclasses import dataclass
+from typing import List, Tuple
+
+@dataclass
+class Window:
+    start: float
+    end: float
+    score: float = 0.0
+
+class StubLLM:
+    def clip_score(self, video, query: str, t: float) -&gt; float:
+        return 0.0
+    def vlm_verify(self, frames, query: str) -&gt; Tuple[float, float]:
+        return (0.0, 0.0)
+    def plan_next(self, state: dict) -&gt; str:
+        return &quot;verify&quot;
+
+def coarse_retrieve(llm, video, query: str, k: int, win_sec: float = 30.0) -&gt; List[Window]:
+    duration = video.duration
+    windows = [Window(t, min(t + win_sec, duration)) for t in range(0, int(duration), int(win_sec))]
+    for w in windows:
+        w.score = llm.clip_score(video, query, (w.start + w.end) / 2)
+    windows.sort(key=lambda w: w.score, reverse=True)
+    return windows[:k]
+
+def zoom_in(window: Window, factor: int = 4) -&gt; Window:
+    return Window(window.start, window.end, score=window.score * factor)
+
+def verify(llm, video, window: Window, query: str, fps: float = 4.0) -&gt; Tuple[float, float]:
+    n = max(1, int((window.end - window.start) * fps))
+    frames = video.sample(window.start, window.end, n)
+    return llm.vlm_verify(frames, query)
+
+def agent_loop(llm, video, query: str, max_steps: int = 8) -&gt; Window:
+    state = {&quot;candidates&quot;: [], &quot;verified&quot;: [], &quot;budget&quot;: max_steps}
+    state[&quot;candidates&quot;] = coarse_retrieve(llm, video, query, k=5)
+    for step in range(max_steps):
+        action = llm.plan_next(state)
+        if action == &quot;emit&quot; or not state[&quot;candidates&quot;]:
+            break
+        w = state[&quot;candidates&quot;].pop(0)
+        if action == &quot;zoom&quot;:
+            w = zoom_in(w, factor=4)
+        iou_est, conf = verify(llm, video, w, query)
+        w.score = conf
+        state[&quot;verified&quot;].append((w, iou_est, conf))
+        if conf &gt; 0.85:
+            break
+    if not state[&quot;verified&quot;]:
+        return Window(0.0, 0.0, score=0.0)
+    best = max(state[&quot;verified&quot;], key=lambda x: x[2])
+    return best[0]</code></pre>
+      <div class="c-walk"><p>coarse_retrieve는 영상 전체를 30s 단위 window로 자른 뒤 각 window 중심 frame의 CLIP-text similarity로 score. Top-K 반환. 이게 ExtremeWhenBench retrieve baseline의 0.269 mIoU를 만드는 단계. verify는 window 안에서 fps frame을 떠와 VLM에 query와 일치하는지, IoU 얼마인지를 묻는다. 이 step이 0.269 → 0.354로 끌어올린다. agent_loop은 본체로, coarse retrieve로 후보 5개 확보 → max_steps만큼 loop → planner LLM이 next action 결정 → verify confidence가 0.85 넘으면 early stop. 확장: 진짜 ExtremeWhenBench 수준을 다루려면 win_sec=30을 60~120으로, K를 10~20으로 늘린다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">Production engineering 관점에서 agentic search는 latency 5~30×를 받는 대신 hour-scale에서 6.7× 정확도를 얻는다는 비대칭 거래다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>Hour-scale에서 monolithic VLM이 무너지는 메커니즘을 token 단위로 설명할 수 있는가</li><li>ExtremeWhenBench 0.110 / 0.269 / 0.354 세 숫자의 의미를 즉답할 수 있는가</li><li>VideoMind의 Chain-of-LoRA가 왜 4-model serving보다 우월한지</li><li>Tool-use API 설계</li><li>Agentic vs single-pass 선택 기준</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>영상 길어지면 그냥 context window 키우면 되지</li><li>frame을 더 sampling하면 되지</li><li>agentic이 항상 낫다</li><li>GPT-4를 planner로 쓰면 다 해결된다</li><li>ExtremeWhenBench의 0.354가 absolute SOTA라고 착각</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>Q1. Monolithic Video-LLM의 한계 — token 단위로 풀어 설명하라. 75분 영상을 1 FPS로 sampling할 때 (a) 총 visual token 수, (b) 32 frame uniform sampling에서 평균 30초 moment에 frame이 떨어질 확률, (c) 이 두 수치가 왜 monolithic mIoU 0.110을 만드는지 설명하라.</li><li>Q2. VideoMind의 Chain-of-LoRA vs 4-model ensemble — design trade-off를 5축으로 비교하라.</li><li>Q3. 영상 길이 분포가 (90% &lt; 5분, 10% &gt; 1시간)인 user-facing search product를 설계한다. Agentic search를 90%의 짧은 영상에도 적용할 것인가, 아니면 길이 기반 router를 둘 것인가?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> Familiar: Hour-scale에서는 agentic search를 써야 한다, retrieve-zoom-verify 패턴이 있다. Mastery: ExtremeWhenBench의 세 baseline 격차를 token budget × temporal dispersion으로 분해해 설명하고, VideoMind의 Chain-of-LoRA가 4-model serving 대비 갖는 VRAM·latency·학습 분리 trade-off를 동시에 정량화하며, AVI가 short-form에서도 SOTA인 이유를 verify step이 2-pass refinement로 작동 메커니즘으로 설명하고, 자신의 product의 영상 길이 분포와 latency SLA에 맞춰 의사결정을 즉석에서 그려낸다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>Hour-scale은 grounding이 아니라 search 문제다</h3><p>ExtremeWhenBench(arXiv:2606.12300): monolithic Video-LLM mIoU 0.110, CLIP-only 0.269, retrieve-then-ground 0.354. failure의 **85%가 search**, 11%만 localization.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>Token budget × temporal dispersion이 monolithic VLM을 막는 두 벽</h3><p>75분 영상은 1.16M visual token. Frame budget을 32로 줄이면 정답 frame이 떨어질 확률 ~21%.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>VideoMind (ICLR 2026): Chain-of-LoRA</h3><p>Qwen2-VL base + 4개 LoRA adapter (planner / grounder / verifier / answerer). VRAM은 7B 한 대 분량, adapter swap은 ms 단위.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>AVI: agentic loop이 short-form도 끌어올린다</h3><p>Charades-STA [email protected] 88.6. Verify step이 사실상 2-pass refinement로 작동하므로 30초 영상에서도 single-model SOTA를 넘는다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>Deep Video Discovery: tool-use API의 외부화</h3><p>coarse_retrieve / zoom_in / verify를 명시적 tool로 노출. Modularity가 production friendly.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>Tool-use 디자인 — 3개의 최소 tool로 시작</h3><p>audio 쿼리에는 transcribe(), visual entity 쿼리에는 detect_objects(), boundary refinement에는 narrow/expand를 query-conditional하게 추가.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>Agentic vs monolithic 의사결정: 영상 길이가 router를 결정한다</h3><p>5분 미만: monolithic 우위. 5~30분: agentic +5~10%p vs 5~10× latency. 30분 이상: agentic 거의 강제.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>ExtremeWhenBench 0.354는 ceiling이 아니다</h3><p>Multi-step iteration + verifier feedback을 retrieve에 다시 넣는 closed-loop, RL-trained policy로 0.42~0.48 사정권.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-05.html">← RL Fine-tuning Era — Time-R1, TempSamp-R1, VideoTemp-o3, TimeLens</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-07.html">Streaming + Online Grounding →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+</body></html>

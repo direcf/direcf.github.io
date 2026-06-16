@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch7: Streaming + Online Grounding — Temporal Grounding for Video VLMs (2026) — direcf</title>
+  <meta name="description" content="2026년 6월 StreamingHarness (arXiv:2606.08615)가 narration win-rate 61.4%로 streaming SOTA를 갈아치웠지만, 이는 **vision-only / 1 FPS / causal**이라는 세 가지 제약 위에 세워진 숫자다. 같은 시기 등장한 CacheFlow (arXiv:2511.13644)의 KV-cache 압축, LiveVLM (arXiv:2505.15269)의 live architecture와 함께, online grounding은 offline 모델을 빠르게가 아니라 lookahead 없이 decision per second라는 본질적으로 다른 문제로 재정의되었다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/multimodal-ai">Temporal Grounding for Video VLMs (2026)</a><span class="sep">›</span>
+        <strong>Ch07 Streaming + Online Grounding</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 07 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">📡</div>
+      <h1 class="chapter-title">Streaming + Online Grounding</h1>
+      <div class="chapter-title-kr">Streaming + Online Grounding — 미래 frame 없이 결정하기</div>
+      <div class="chapter-tldr">2026년 6월 StreamingHarness (arXiv:2606.08615)가 narration win-rate 61.4%로 streaming SOTA를 갈아치웠지만, 이는 **vision-only / 1 FPS / causal**이라는 세 가지 제약 위에 세워진 숫자다. 같은 시기 등장한 CacheFlow (arXiv:2511.13644)의 KV-cache 압축, LiveVLM (arXiv:2505.15269)의 live architecture와 함께, online grounding은 offline 모델을 빠르게가 아니라 lookahead 없이 decision per second라는 본질적으로 다른 문제로 재정의되었다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-07.png" alt="Chapter 7 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 7 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">6 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>Online grounding과 offline grounding의 정의 차이를 정확히 구분</li><li>StreamingHarness의 Streaming-Train-248K가 왜 per-second alignment이어야 했는지 설명</li><li>CacheFlow의 query-conditioned KV importance가 sliding window와 어떻게 다른지 구현</li><li>Audio modality가 왜 implicit lookahead 역할을 하는지 논증</li><li>KV 압축률과 boundary precision의 Pareto curve를 측정</li><li>Abstain head를 도입할 때의 trade-off를 설명</li></ul>
+      </div>
+
+      <div class="sb-block"><p>Chapter 6까지 다룬 모든 grounder는 <strong>offline assumption</strong> 위에서 작동했다. 그러나 2026년 라이브 스트리밍, 보안 카메라, AR glasses, 자율주행 perception은 모두 정반대의 setting을 요구한다: <strong>at time t, frames 0..t만 사용 가능</strong>하며 매 초 지금 이 순간이 query와 관련 있는가를 emit해야 한다. 2026년 6월 발표된 StreamingHarness가 첫 강력한 baseline을 만들었고, 같은 시기 CacheFlow는 hour-scale streaming의 memory bottleneck을 KV-cache 압축으로 풀었고, LiveVLM은 live architecture의 retention design을 제시했다. 그러나 세 논문 모두 동일한 한계를 공유한다: vision-only, 1 FPS, future-blind. StreamingHarness 저자는 직접 future work에 audio integration과 1 FPS 한계를 명시했다 — 이것이 다음 12개월의 white space다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>7.1 Online setting의 수학적 정의</h2><p>Offline temporal grounding은 f_offline(V_{0:T}, q) → (t_start, t_end). Online grounding은 다르다. 매 timestep t마다 f_online(V_{0:t}, q) → r_t ∈ {0, 1}을 emit해야 하며, V_{t+1:T}는 <strong>존재하지 않는다</strong>.</p>
+<p><strong>결과 1: Causal masking은 inference time에 강제된다.</strong> Offline 모델이 self-attention에서 양방향 context를 쓰는 것과 달리, online 모델의 attention은 strictly causal해야 한다.</p>
+<p><strong>결과 2: Boundary는 future-dependent하다.</strong> Event end_time τ_end는 정의상 τ_end &gt; t에서만 결정 가능하다. 결과적으로 정확도 메트릭이 바뀐다 — IoU 대신 <strong>per-second precision/recall</strong>, narration win-rate, streaming F1이 표준이 된다.</p>
+<p><strong>Latency budget.</strong> Sub-second 응답을 위해서는 1 frame 처리 시간이 &lt; 100ms (10 FPS) 또는 &lt; 1000ms (1 FPS)여야 한다.</p></div><div class="sb-block"><h2>7.2 StreamingHarness — 61.4% SOTA</h2><p>2026년 6월 'Harnessing Streaming Video in the Wild' (arXiv:2606.08615)가 streaming Video-LLM의 첫 강력한 baseline을 세웠다. 핵심 기여 세 가지:</p>
+<p><strong>(1) Streaming-Train-248K — per-second alignment.</strong> 기존 video-text dataset은 모두 video-level 또는 segment-level caption만 가진다. Streaming-Train-248K는 248K samples 모두 second-level alignment를 가진 narration을 제공한다.</p>
+<p><strong>(2) Streaming-Eval — 138 videos / 15 categories.</strong> Sports, cooking, gaming, daily, instructional 등 15 카테고리. 평가 metric: <strong>narration win-rate</strong> + <strong>streaming F1</strong>.</p>
+<p><strong>(3) StreamingHarness-8B — 61.4% win-rate.</strong> Qwen2.5-VL-7B를 base로 causal video encoder + streaming-friendly attention pattern + per-second supervision으로 fine-tuning.</p>
+<p><strong>저자가 직접 명시한 한계</strong>:
+- <strong>Audio modality 부재</strong>
+- <strong>1 FPS 한계</strong></p>
+<p>이 두 한계는 새 paper의 white space다.</p></div><div class="sb-block"><h2>7.3 CacheFlow — KV-cache compression</h2><p>Streaming에서 t가 커질수록 KV-cache는 선형으로 증가한다. 1 FPS × 1시간 = 3,600 frame, 각 frame당 ~256 tokens라면 ~920K KV entries. 7B 모델에서 ~470GB. GPU 한 대로는 불가능. CacheFlow (arXiv:2511.13644)는 <strong>query-conditioned KV 압축</strong>으로 푼다.</p>
+<p><strong>Naive sliding window의 실패 모드.</strong> Recent K seconds만 유지는 long-distance dependency를 깬다.</p>
+<p><strong>CacheFlow의 핵심: query-conditioned importance score.</strong> 각 cached KV entry에 대해 현재 query embedding과의 cosine similarity로 importance를 계산하고, top-p%만 retain. 결과: 920K → ~50K (18× 압축)에서도 mIoU 손실 &lt; 3%.</p>
+<p><strong>구현 detail</strong>:
+- <em>Periodic compression</em>: 매 N frame마다
+- <em>Layer-wise budget</em>: 하위 layer는 spatial detail, 상위 layer는 semantic abstract
+- <em>Query-blind fallback</em>: query 없을 때 generic frame-level entropy</p></div><div class="sb-block"><h2>7.4 LiveVLM — retention design</h2><p>LiveVLM (arXiv:2505.15269)은 'live video VLM' 일반적 설계 원칙을 제시했다.</p>
+<p><strong>Streaming encoder.</strong> Stateless. 매 frame마다 독립적으로 (k, v, emb) 생성.</p>
+<p><strong>Retention buffer.</strong> 세 layer:
+- <em>Short-term</em> (recent 10s, full resolution)
+- <em>Mid-term</em> (10s-5min, 8× spatial pooling)
+- <em>Long-term</em> (5min+, query-conditioned summary token)</p>
+<p><strong>Decoder with abstention.</strong> LLM decoder가 query + retention buffer를 받아 per-second 답을 emit. Token vocab에 <NOT_IN_MEMORY> token이 추가되어, retention buffer가 query에 필요한 정보를 가지지 않을 때 hallucinate하는 대신 abstain.</p>
+<p><strong>Trade-off Pareto</strong>:
+- Buffer ≤ 100s: F1 0.45, latency 80ms/frame
+- Buffer ≤ 600s: F1 0.61, latency 180ms/frame
+- Buffer ≤ 3,600s: F1 0.64, latency 720ms/frame (sub-second 위반)</p></div><div class="sb-block"><h2>7.5 The audio gap</h2><p>Vision-only 1 FPS streaming의 가장 큰 미해결 문제는 audio다.</p>
+<p><strong>Reason 1 — Audio is implicit lookahead.</strong> 시각적으로는 goal이 들어가는 순간이 frame t에 보이지만, 청각적 cue (관중 함성의 crescendo, 해설자의 GOAL!)는 t-2초부터 시작된다. Audio가 vision에 대한 1-2초 implicit lookahead 역할.</p>
+<p><strong>Reason 2 — Audio has sub-second granularity natively.</strong> 1 FPS vision은 1초 한 frame이지만, audio는 16kHz × 1초 = 16,000 samples. Whisper-style audio encoder는 native하게 sub-second event를 capture.</p>
+<p><strong>Reason 3 — Fast-paced domain은 audio-rich.</strong> Sports, gaming, music, conversation은 모두 audio가 정보 밀도의 절반 이상.</p>
+<p><strong>왜 아직 안 됐는가</strong>: (a) Streaming-Train-248K는 video+text aligned지만 audio token alignment는 없음. (b) Qwen2.5-VL base가 audio input을 받지 못함. (c) Causal audio cross-attention layer 추가 시 KV-cache 재설계 필요.</p>
+<p>Idea 1 (StreamGround)이 노리는 white space다.</p></div><div class="sb-block"><h2>7.6 Memory + retention design</h2><p><strong>Component A — Query-conditioned importance.</strong> CacheFlow의 핵심.</p>
+<p><strong>Component B — Time-decayed prior.</strong> Importance score에 (1) recency bonus exp(-λ·age)와 (2) frequency bonus를 곱한다.</p>
+<p><strong>Component C — Abstain head.</strong> Retention buffer가 query를 satisfy하지 못할 때 모델은 hallucinate or abstain. LiveVLM의 <NOT_IN_MEMORY> token이 그 답.</p>
+<p><strong>Trade-off: abstain vs IoU reward.</strong> RL fine-tuning 시 IoU reward는 boundary를 어쨌든 emit하라고 압박하고, abstain reward는 모를 땐 abstain하라고 압박한다. 단순 IoU reward로 train된 streaming model은 abstain head가 collapse되어 always-emit으로 회귀한다.</p>
+<p><strong>구현 시 주의점.</strong> Per-second emission이라는 setting 자체가 false-positive risk를 키운다 — 3,600 frame × 5% FP rate = 180개 false event/시간.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">Live 스포츠 캐스터 vs 영화 평론가</div>
+      <div class="a-body"><p>영화 평론가는 영화 전체를 보고 나서 Act 2의 전환점이 47분 12초였다고 말한다. 그는 마지막 장면을 알기 때문에 시작점을 거꾸로 짚을 수 있다 — 이것이 offline grounder다.</p>
+<p>반대로 라이브 스포츠 캐스터는 다르다. 골이 들어가기 0.3초 전에 GOAL!을 외쳐야 한다. 그러나 그는 미래를 모른다. 그가 의존하는 것은 (1) 직전 몇 초의 짧은 working memory, (2) 경기 초반부터 누적된 long-term memory, 그리고 (3) audio cue — 관중의 함성이 vision보다 빨리 신호를 준다.</p>
+<p>StreamingHarness, CacheFlow, LiveVLM의 architecture가 정확히 이 캐스터의 인지 모델이다. 그리고 2026년의 가장 큰 미해결 문제 — audio modality 부재 — 는 캐스터에게서 청각을 빼앗는 것과 같다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>Online grounding loop의 minimal skeleton. 매 초 frame을 받아 (a) sliding window 위에서 is current moment query-relevant?을 score하고, (b) 매 N초마다 query-conditioned KV-cache compression을 수행한다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import torch
+import torch.nn.functional as F
+from collections import deque
+
+class OnlineGrounder:
+    def __init__(self, vlm, encoder, max_buffer=600, compress_every=30,
+                 retain_ratio=0.2, abstain_threshold=0.35):
+        self.vlm = vlm
+        self.encoder = encoder
+        self.buffer = deque()
+        self.max_buffer = max_buffer
+        self.compress_every = compress_every
+        self.retain_ratio = retain_ratio
+        self.abstain_threshold = abstain_threshold
+        self.t = 0
+
+    def encode_frame(self, frame, query_emb):
+        k, v, emb = self.encoder(frame)
+        self.buffer.append((self.t, k, v, emb))
+
+    def score_current(self, query_emb):
+        recent = [b[3] for b in list(self.buffer)[-10:]]
+        if not recent:
+            return 0.0, True
+        window = torch.stack(recent).mean(0, keepdim=True)
+        rel_logit, abstain_logit = self.vlm.stream_step(
+            query=query_emb, window=window,
+            kv_cache=[(b[1], b[2]) for b in self.buffer],
+        )
+        rel = torch.sigmoid(rel_logit).item()
+        abstain = torch.sigmoid(abstain_logit).item() &gt; self.abstain_threshold
+        return rel, abstain
+
+    def compress_kv(self, query_emb):
+        keys = torch.cat([b[1] for b in self.buffer], dim=0)
+        sims = F.cosine_similarity(keys, query_emb, dim=-1)
+        ages = torch.tensor([self.t - b[0] for b in self.buffer]).float()
+        recency = torch.exp(-0.01 * ages)
+        importance = sims * recency
+        k = max(1, int(len(self.buffer) * self.retain_ratio))
+        top_idx = importance.topk(k).indices.tolist()
+        self.buffer = deque([self.buffer[i] for i in sorted(top_idx)])
+
+    def step(self, frame, query_emb):
+        self.encode_frame(frame, query_emb)
+        rel, abstain = self.score_current(query_emb)
+        if self.t &gt; 0 and self.t % self.compress_every == 0:
+            self.compress_kv(query_emb)
+        while len(self.buffer) &gt; self.max_buffer:
+            self.buffer.popleft()
+        self.t += 1
+        return {&#x27;t&#x27;: self.t, &#x27;relevance&#x27;: rel, &#x27;abstain&#x27;: abstain}</code></pre>
+      <div class="c-walk"><p>encoder는 <strong>stateless</strong>다. 매 frame마다 독립적으로 (k, v, emb) 생성. score_current는 두 가지를 emit한다: relevance score와 abstain flag. compress_kv는 CacheFlow의 핵심을 압축. step은 매 초 호출되는 진입점. Compress를 매 frame마다 하지 않는 이유는 compression 자체가 GPU compute를 먹기 때문. 무엇이 빠져 있나: Audio encoder, omni-modal cross-attention. 이 skeleton에 audio path를 추가하는 것이 Chapter 10 Idea 1 (StreamGround)의 출발점이다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">Streaming은 production deployment 측면에서 offline보다 한 단계 더 엄격하다 — 정확도만이 아니라 latency, memory ceiling, false-positive rate, abstain calibration이 동시에 평가된다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>Online setting의 정의와 causal masking의 inference-time 강제</li><li>StreamingHarness의 narration win-rate vs streaming F1의 차이</li><li>CacheFlow의 query-conditioned KV importance</li><li>1 FPS vision-only 시스템이 fast-paced domain에서 무너지는 이유 — audio implicit lookahead</li><li>Abstain head를 도입할 때의 IoU reward와의 충돌 해결</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>Offline 모델을 inference 시 frame을 잘라 넣으면 streaming</li><li>Sliding window만 언급하고 query-conditioned retention을 모름</li><li>Audio modality 부재를 engineering issue라고 일축</li><li>Abstain head를 softmax confidence threshold와 동일시</li><li>Per-second FP rate × 3,600 = 시간당 alert 수의 user-facing impact를 계산하지 않음</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>Q1 (Causal vs future-dependent boundary). Online grounder는 매 초 event boundary 결정을 emit해야 하는데, event의 end_time τ_end는 정의상 t &gt; τ_end에서만 확인 가능하다. 이 fundamental tension을 어떻게 해소하는가?</li><li>Q2 (Audio가 왜 close the gap). StreamingHarness 저자는 audio integration을 future work로 명시했다. Audio modality가 단순히 extra signal이 아니라 causal model에 implicit lookahead를 주는 이유를 설명하라.</li><li>Q3 (KV 압축 vs boundary precision). CacheFlow는 920K KV → 50K (18×) 압축에서 mIoU 손실 &lt; 3%를 보고한다. Ablation을 설계해서 Pareto curve를 측정한다면 어떤 metric을 primary로 보고할 것인가?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> Familiar: StreamingHarness/CacheFlow/LiveVLM 이름과 headline 숫자를 알고 online setting이 offline과 다르다는 것을 일반론으로 설명. Mastery: (1) causal masking이 training-time strategy임을 알고 distribution shift를 다룰 수 있고, (2) query-conditioned KV retention의 importance score 정의와 time-decay prior balance를 직접 구현 가능하며, (3) audio integration이 왜 engineering work가 아니라 base model + dataset + cross-attention budget의 stack-wide 변경을 요구하는지 설명할 수 있다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>Online grounding은 offline의 fast version이 아니다</h3><p>f(V_{0:t}, q) → r_t per second 라는 정의 자체가 causal masking을 training time에 강제하고, boundary를 future-dependent하게 만들고, 새 metric을 요구한다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>StreamingHarness (arXiv:2606.08615)가 streaming SOTA의 출발점</h3><p>narration win-rate 61.4%, Streaming-Train-248K, Streaming-Eval. 저자가 vision-only / 1 FPS 한계를 future work로 명시 — 다음 12개월 white space.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>CacheFlow (arXiv:2511.13644)의 핵심은 query-conditioned KV retention</h3><p>각 KV entry에 query similarity × recency decay 기반 importance를 부여해 top-p% retain. 920K → 50K (18× 압축)에서 mIoU 손실 &lt; 3%.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>LiveVLM (arXiv:2505.15269)의 3-tier retention과 abstain head</h3><p>Short-term + mid-term + long-term의 layered memory + &lt;NOT_IN_MEMORY&gt; abstain token.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>Audio modality는 streaming의 implicit lookahead</h3><p>Audio cue는 vision event보다 1-2초 먼저 도착. Causal vision-only 모델이 absorb할 수 없는 information.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>1 FPS 한계는 dataset과 base model의 stack-wide 제약</h3><p>Streaming-Train-248K이 per-second alignment까지만 제공하고, Qwen2.5-VL base가 sub-second token을 생성하지 않는다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>Abstain head는 streaming의 user-facing safety feature</h3><p>Per-second emission이 3,600 frame/시간 × FP rate로 직결되기 때문에, don&#x27;t know를 명시적 token으로 학습시키지 않으면 시스템 신뢰도가 무너진다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>다음 white space는 audio + sub-second + abstain calibration의 교집합</h3><p>StreamGround (Chapter 10 Idea 1)이 노리는 지점 — Streaming-Train-248K + AudioSet narration joint training, omni-modal base, causal audio cross-attention, abstain head with penalty-aware reward.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-06.html">← Agentic Search for Long-Form Grounding</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-08.html">Plug-and-Play: VideoITG and the Empty Field →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+</body></html>
