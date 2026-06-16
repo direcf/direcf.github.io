@@ -6,6 +6,7 @@
   <title>Ch2: Streaming Input Pipeline — Real-time Video LLM — direcf</title>
   <meta name="description" content="들어오는 video stream을 모델까지 전달하는 input pipeline은 backpressure, frame ordering, drop policy를 명시적으로 설계해야 하는 시스템 문제다.">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
   <style>
 :root {
   --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
@@ -114,6 +115,10 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 .sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
 .sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
 .sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
 
 /* analogy */
 .analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
@@ -187,6 +192,9 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
   .ie-grid{grid-template-columns:1fr}
   .chapter-nav{flex-direction:column}
 }
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
 </style>
 </head>
 <body>
@@ -294,10 +302,18 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 <p><strong>threading</strong>: I/O와 일부 CPU work를 동시 수행. Python GIL 때문에 CPU bound는 진정한 병렬이 안 됨. 하지만 <code>torch</code> 같은 라이브러리는 내부에서 GIL을 release하므로 GPU inference는 thread 1개에 맡기고 나머지는 다른 thread에서 동작 가능. 장점: 학습 곡선 낮음. 단점: shared state debugging이 어렵다.</p>
 <p><strong>multiprocessing</strong>: Process 분리, 진정한 병렬. 장점: GIL 회피, crash isolation. 단점: IPC 비용 — frame을 process 간 전달하려면 serialize/deserialize. <code>multiprocessing.shared_memory</code> (Python 3.8+)로 zero-copy 가능하지만 까다롭다.</p>
 <p>Real-time video LLM의 표준 architecture (현재 production 패턴):
-- <strong>Capture process</strong>: 카메라/RTSP 수신, 디코딩, GPU 업로드. Multiprocessing의 별도 process로 격리. crash 시 main이 살아남음.
-- <strong>Inference process</strong> (또는 main): GPU에 올라온 tensor를 받아 모델 inference. asyncio 또는 threading.
-- <strong>IPC</strong>: <code>multiprocessing.shared_memory</code> + circular buffer로 frame pointer만 전달.
-- <strong>Logging/metric</strong>: 또 다른 background thread, queue로 비동기 dispatch.</p>
+- <strong>Capture process</strong>: 카메라/RTSP 수신, 디코딩, GPU 업로드. Multiprocessing의 별도 process로 격리. crash 시 main이 살아남음.</p>
+<ul>
+<li>
+<p><strong>Inference process</strong> (또는 main): GPU에 올라온 tensor를 받아 모델 inference. asyncio 또는 threading.</p>
+</li>
+<li>
+<p><strong>IPC</strong>: <code>multiprocessing.shared_memory</code> + circular buffer로 frame pointer만 전달.</p>
+</li>
+<li>
+<p><strong>Logging/metric</strong>: 또 다른 background thread, queue로 비동기 dispatch.</p>
+</li>
+</ul>
 <p>시니어 시그널: 후보자가 '왜 multiprocessing을 쓰는가?'에 대해 'crash isolation + GIL bypass' 두 가지 모두 답할 수 있는가. 'GIL 때문'만 답하면 multiprocessing의 진짜 가치 (capture가 죽어도 inference가 살아남음)를 놓치고 있는 것.</p></div>
       <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
     <div class="analogy-card">
@@ -388,4 +404,7 @@ class FrameRing:
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
 </body></html>

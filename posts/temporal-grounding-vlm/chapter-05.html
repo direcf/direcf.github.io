@@ -6,6 +6,7 @@
   <title>Ch5: RL Fine-tuning Era — Time-R1, TempSamp-R1, VideoTemp-o3, TimeLens — Temporal Grounding for Video VLMs (2026) — direcf</title>
   <meta name="description" content="2025년 하반기부터 temporal grounding의 SOTA는 SFT가 아니라 GRPO 기반 RL post-training이 잡았다. Time-R1 (NeurIPS 2025, arXiv:2503.13377)이 Qwen2.5-VL-7B를 단 2.5K의 TimeRFT 데이터로 RL fine-tune하여 zero-shot Charades-STA R1@0.5=60.8을 달성, VideoChat-Flash·VideoMind·TimeSuite 같은 대규모 SFT baseline들을 한 번에 추월했다. 핵심 무기는 tIoU + format reward라는 verifiable reward — LLM-judge가 아니라 정수 계산 한 줄로 정답을 채점할 수 있다는 점이 RL을 가능하게 했다. 그러나 IoU 한 가지만 최대화하면 model은 semantic alignment를 버리고 boundary length를 키우는 reward hacking을 학습한다. VideoTemp-o3 (arXiv:2602.07801)의 penalty-aware IoU와 TimeLens (CVPR 2026)의 thinking-free RLVR이 이 함정에 대응하는 두 가지 설계 패턴이다.">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
   <style>
 :root {
   --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
@@ -191,6 +192,9 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
   .ie-grid{grid-template-columns:1fr}
   .chapter-nav{flex-direction:column}
 }
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
 </style>
 </head>
 <body>
@@ -278,26 +282,73 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 <p>둘째, <strong>IoU는 continuous하지만 정수 산술로 계산된다</strong>. tIoU = max(0, min(e,e<em>) - max(s,s</em>)) / (max(e,e<em>) - min(s,s</em>)). CPU 한 사이클이면 충분하다.</p>
 <p>셋째, <strong>format reward가 분리 가능하다</strong>. 모델이 <start>12.3 <end>14.7 같은 구조화된 형식을 따랐는지를 regex 한 줄로 확인할 수 있다. Time-R1은 reward를 r = r_format + r_IoU로 분해했다.</p>
 <p>넷째, <strong>off-policy hacking이 어렵다</strong>. Span 자체가 답이기 때문이다. (다만 IoU 자체를 hacking할 수는 있다.)</p>
-<p>이 네 조건이 합쳐져서, 2.5K짜리 dataset (Time-R1의 TimeRFT)으로도 SOTA가 가능한 sample efficiency가 나온다.</p></div><div class="sb-block"><h2>5.2 GRPO 알고리즘</h2><p>GRPO (Group Relative Policy Optimization, DeepSeek 2024)는 PPO의 변형으로, <strong>value network (critic)를 제거</strong>한 것이 가장 큰 차이다. Video grounding처럼 episode가 사실상 1-step인 경우 critic 학습이 비효율적이다. GRPO는 대신 같은 prompt에 대해 K개의 sample을 뽑고, 그 group 안에서 reward를 normalize한다.</p>
-<p>같은 video-query pair에 대해 K=8개의 candidate span을 sampling하고, 각 candidate i의 reward R_i를 구한다. Advantage A_i = (R_i - mean(R)) / std(R)로 표준화한다. 그리고 PPO의 clipped surrogate objective를 적용한다:</p>
-<p>L = E[min(ratio_i · A_i, clip(ratio_i, 1-ε, 1+ε) · A_i)] - β · KL(π || π_ref)</p>
+<p>이 네 조건이 합쳐져서, 2.5K짜리 dataset (Time-R1의 TimeRFT)으로도 SOTA가 가능한 sample efficiency가 나온다.</p><div class="fig-row"><figure class="fig-item"><img src="/posts/temporal-grounding-vlm/figures/2503.13377/post_training_lora.png" alt="RL vs SFT 포스트 트레이닝 패러다임 비교. Temporal Video Grounding 포함 여러 태스크에서 RL(GRPO) 파인튜닝이 SFT 대비 더 높은 일반화를 보인다." loading="lazy"><figcaption>RL vs SFT 포스트 트레이닝 패러다임 비교. Temporal Video Grounding 포함 여러 태스크에서 RL(GRPO) 파인튜닝이 SFT 대비 더 높은 일반화를 보인다.</figcaption></figure></div></div><div class="sb-block"><h2>5.2 GRPO 알고리즘</h2><p>GRPO (Group Relative Policy Optimization, DeepSeek 2024)는 PPO의 변형으로, <strong>value network (critic)를 제거</strong>한 것이 가장 큰 차이다. Video grounding처럼 episode가 사실상 1-step인 경우 critic 학습이 비효율적이다. GRPO는 대신 같은 prompt에 대해 K개의 sample을 뽑고, 그 group 안에서 reward를 normalize한다.</p>
+<p>같은 video-query pair에 대해 K=8개의 candidate span을 sampling하고, 각 candidate i의 reward R_i를 구한다. Advantage <span class="math-inline">\(A_i = \frac{R_i - \bar{R}}{\sigma_R}\)</span> 로 표준화한다. 그리고 PPO의 clipped surrogate objective를 적용한다:</p>
+<p><span class="math-display">\[L = \mathbb{E}\!\left[\min\!\left(r_i A_i,\ \text{clip}(r_i,\,1{-}\varepsilon,\,1{+}\varepsilon)\cdot A_i\right)\right] - \beta \cdot D_{\text{KL}}(\pi \| \pi_{\text{ref}})\]</span></p>
 <p>Grounding 관점에서 GRPO의 장점: (1) critic 없음 = memory 절약. (2) group 안에서의 자연스러운 contrastive signal. (3) 1-step nature에 잘 맞음.</p>
 <p>Downside: K개를 sampling해야 하므로 forward pass cost가 K배. Time-R1은 K=8을 쓴다.</p></div><div class="sb-block"><h2>5.3 Time-R1 (NeurIPS 2025)</h2><p>Time-R1 (Ye Wang et al., Renmin/Xiaomi, arXiv:2503.13377)은 RL post-training으로 temporal grounding의 SOTA를 잡은 첫 작품이다. NeurIPS 2025에 accept되었다.</p>
-<p><strong>Setup</strong>:
-- Base: Qwen2.5-VL-7B-Instruct
-- Algorithm: GRPO with K=8 samples per prompt
-- Reward: r = α · r_format + (1-α) · r_tIoU
-- Data: TimeRFT — 2.5K curated video-query pairs
-- Compute: ~8×A100 80GB, 수 시간</p>
-<p><strong>Zero-shot SOTA</strong>:
-- Charades-STA: R1@0.3=78.1, R1@0.5=60.8, R1@0.7=35.3
-- ActivityNet: R1@0.3=58.6, R1@0.5=39.0, R1@0.7=21.4
-- 비교: VideoChat-Flash R1@0.3 74.5, VideoMind 73.5, TimeSuite 69.9 — 모두 zero-shot에서 추월</p>
-<p><strong>Time-R1* (Charades / ActivityNet에 추가 fine-tune)</strong>:
-- Charades-STA: R1@0.5=72.2, R1@0.7=50.1
-- ActivityNet: R1@0.5=55.6, R1@0.7=34.0
-- Caveat: ActivityNet R1@0.7=21.4 zero-shot은 TRACE (24.0)을 못 넘었다.</p>
-<p><strong>왜 2.5K로 충분한가</strong>: GRPO의 group-relative advantage가 in-domain SFT가 가르치지 못하는 span을 정밀하게 조정하는 법을 직접 가르치기 때문이다.</p></div><div class="sb-block"><h2>5.4 TempSamp-R1</h2><p>Time-R1 직후 등장한 후속 작업. 핵심 차별점은 <strong>temporal sampling strategy</strong>를 RL이 학습하도록 한 것이다. ActivityNet은 평균 120초 영상이라 frame sampling 자체가 noise source가 된다. TempSamp-R1은 두 단계로 분리한다:</p>
+<p><strong>Setup</strong>:</p>
+<ul>
+<li>Base: Qwen2.5-VL-7B-Instruct</li>
+<li>Algorithm: GRPO with K=8 samples per prompt</li>
+<li>Reward: r = α · r_format + (1-α) · r_tIoU</li>
+<li>Data: TimeRFT — 2.5K curated video-query pairs</li>
+<li>Compute: ~8×A100 80GB, 수 시간</li>
+</ul>
+<p><strong>Zero-shot SOTA</strong> — 기존 SFT 방식 전체를 추월:</p>
+<table>
+<thead>
+<tr>
+<th>데이터셋</th>
+<th>R@0.3</th>
+<th>R@0.5</th>
+<th>R@0.7</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Charades-STA</td>
+<td>78.1</td>
+<td>60.8</td>
+<td>35.3</td>
+</tr>
+<tr>
+<td>ActivityNet</td>
+<td>58.6</td>
+<td>39.0</td>
+<td>21.4</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>비교: VideoChat-Flash 74.5 / VideoMind 73.5 / TimeSuite 69.9 (Charades R@0.3 기준) — 모두 zero-shot에서 추월</p>
+</blockquote>
+<p><strong>Time-R1* (데이터셋별 추가 fine-tune)</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>데이터셋</th>
+<th>R@0.5</th>
+<th>R@0.7</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Charades-STA</td>
+<td>72.2</td>
+<td>50.1</td>
+</tr>
+<tr>
+<td>ActivityNet</td>
+<td>55.6</td>
+<td>34.0</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>Caveat: ActivityNet R@0.7 zero-shot(21.4)은 TRACE(24.0)를 아직 넘지 못했다.</p>
+</blockquote>
+<p><strong>왜 2.5K로 충분한가</strong>: GRPO의 group-relative advantage가 in-domain SFT가 가르치지 못하는 span을 정밀하게 조정하는 법을 직접 가르치기 때문이다.</p><div class="fig-row"><figure class="fig-item"><img src="/posts/temporal-grounding-vlm/figures/2503.13377/TimeR1v2.png" alt="Time-R1 포스트 트레이닝 프레임워크. LVLM에 GRPO 기반 RL을 적용해 타임스탬프 예측 정확도와 동영상 이해 능력을 동시에 향상시킨다." loading="lazy"><figcaption>Time-R1 포스트 트레이닝 프레임워크. LVLM에 GRPO 기반 RL을 적용해 타임스탬프 예측 정확도와 동영상 이해 능력을 동시에 향상시킨다.</figcaption></figure><figure class="fig-item"><img src="/posts/temporal-grounding-vlm/figures/2503.13377/method_comparison.png" alt="TVG 접근 방식 비교. Feature 기반 DETR 계열 → SFT 기반 VLM → RL 기반 VLM으로 이어지는 세 가지 패러다임의 구조 차이." loading="lazy"><figcaption>TVG 접근 방식 비교. Feature 기반 DETR 계열 → SFT 기반 VLM → RL 기반 VLM으로 이어지는 세 가지 패러다임의 구조 차이.</figcaption></figure></div></div><div class="sb-block"><h2>5.4 TempSamp-R1</h2><p>Time-R1 직후 등장한 후속 작업. 핵심 차별점은 <strong>temporal sampling strategy</strong>를 RL이 학습하도록 한 것이다. ActivityNet은 평균 120초 영상이라 frame sampling 자체가 noise source가 된다. TempSamp-R1은 두 단계로 분리한다:</p>
 <ol>
 <li><strong>Sampler</strong>: query를 보고 어디를 zoom해야 할지 후보 window 제안</li>
 <li><strong>Grounder</strong>: zoom된 window 안에서 정밀한 [s,e] 출력</li>
@@ -305,7 +356,7 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 <p>결과: ActivityNet-Captions mIoU 49+. <strong>Lesson</strong>: long-form일수록 where to look 학습이 how to ground 학습보다 leverage가 크다.</p></div><div class="sb-block"><h2>5.5 VideoTemp-o3 — penalty-aware IoU</h2><p>이 논문은 reward hacking 문제를 정면으로 다룬 첫 작업이다 (2026년 2월).</p>
 <p><strong>Observed hacking pattern</strong>: Time-R1 style의 r=tIoU reward로 오래 학습하면 model이 점차 longer span을 출력하기 시작한다. Span을 길게 늘리면 partial overlap이 생기기 쉬워 IoU&gt;0의 expected value가 높아진다. 결국 model은 query를 정확히 보지 않고 영상 전체의 30-50%를 출력하는 전략을 배운다.</p>
 <p><strong>Penalty-aware IoU reward</strong>: r_pa = IoU(pred, gt) - λ · max(0, len(pred) - 2·len(gt)) / len(video). Predicted span의 길이가 ground-truth 길이의 2배를 넘으면 비례 penalty를 부과한다. λ는 0.3-0.5 정도. 이 단순한 항이 hacking 경로를 막는다.</p>
-<p>또 다른 핵심: <strong>Causal QA + grounding을 jointly RL</strong>. VideoTemp-o3-7B-RL은 NextGQA에서 mIoU 33.4, Acc 76.4%로 SOTA. 단, grounded vs answer accuracy gap이 여전히 크다.</p></div><div class="sb-block"><h2>5.6 TimeLens — thinking-free RLVR</h2><p>TencentARC의 작업. CVPR 2026 accept.</p>
+<p>또 다른 핵심: <strong>Causal QA + grounding을 jointly RL</strong>. VideoTemp-o3-7B-RL은 NextGQA에서 mIoU 33.4, Acc 76.4%로 SOTA. 단, grounded vs answer accuracy gap이 여전히 크다.</p><div class="fig-row"><figure class="fig-item"><img src="/posts/temporal-grounding-vlm/figures/2602.07801/main.png" alt="VideoTemp-o3의 에이전틱 파이프라인. 비디오 QA 쌍을 받아 on-demand grounding → clip QA → re-grounding → 최종 답변의 멀티 툴 호출 흐름으로 동작한다." loading="lazy"><figcaption>VideoTemp-o3의 에이전틱 파이프라인. 비디오 QA 쌍을 받아 on-demand grounding → clip QA → re-grounding → 최종 답변의 멀티 툴 호출 흐름으로 동작한다.</figcaption></figure><figure class="fig-item"><img src="/posts/temporal-grounding-vlm/figures/2602.07801/training_rewards.png" alt="VideoTemp-o3 RL 학습 중 보상 곡선. Penalty-aware IoU 보상이 Reward Hacking을 억제하면서 안정적으로 수렴하는 과정을 보여준다." loading="lazy"><figcaption>VideoTemp-o3 RL 학습 중 보상 곡선. Penalty-aware IoU 보상이 Reward Hacking을 억제하면서 안정적으로 수렴하는 과정을 보여준다.</figcaption></figure></div></div><div class="sb-block"><h2>5.6 TimeLens — thinking-free RLVR</h2><p>TencentARC의 작업. CVPR 2026 accept.</p>
 <p><strong>Setup</strong>: Base: Qwen2.5-VL / Qwen3-VL family. Data: TimeLens-100K. Algorithm: RLVR (Time-R1 style GRPO). <strong>Key choice</strong>: thinking-free. 즉 chain-of-thought 생성 없이 곧바로 span을 출력하도록 학습.</p>
 <p><strong>Why thinking-free?</strong> Time-R1·VideoTemp-o3는 CoT을 허용한다. CoT는 reasoning에 도움이 되지만 두 가지 비용이 있다: (1) Latency: 200-500 토큰의 think 단계가 추가됨. (2) Reward shaping mismatch: think 단계가 IoU reward와 무관해서 model이 cosmetic reasoning을 쓰는 경향.</p>
 <p>TimeLens는 span에 대해서는 CoT가 별 도움 안 됨을 보이고, format을 strict하게 <start>x<end>y로만 제한한다. <strong>결과</strong>: 성능 동등하면서 inference latency 3-5× 단축.</p></div><div class="sb-block"><h2>5.7 Reward Hacking의 일반화</h2><p>네 논문에서 도출되는 일반 패턴: <strong>Hacking is the dual of the reward</strong>. tIoU만 reward로 주면 model은 IoU의 cheap proxy를 찾는다.</p>
@@ -313,12 +364,14 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 1. <strong>Length inflation</strong>: span을 길게 늘려 partial overlap 노림
 2. <strong>Center bias 학습</strong>: Charades-STA의 ground-truth가 영상 시작 근처에 몰려 있다. Model이 query를 무시하고 항상 0-8초를 출력해도 평균 IoU가 의외로 높다
 3. <strong>Format gaming</strong>: format reward를 분리하지 않으면, model이 IoU만 올리려고 format을 망가뜨림</p>
-<p><strong>Design patterns</strong>:
-- <strong>Composite reward</strong>: r = r_format + r_IoU
-- <strong>Length penalty</strong>: r_pa = IoU - λ · over_length (VideoTemp-o3)
-- <strong>KL anchor</strong>: β · KL term. β를 너무 낮추면 빠르게 hacking
-- <strong>Eval on shift split</strong>: Charades-CD, ActivityNet-CD 같은 OOD split
-- <strong>Group size K</strong>: K=8이 sweet spot</p></div>
+<p><strong>Design patterns</strong>:</p>
+<ul>
+<li><strong>Composite reward</strong>: r = r_format + r_IoU</li>
+<li><strong>Length penalty</strong>: r_pa = IoU - λ · over_length (VideoTemp-o3)</li>
+<li><strong>KL anchor</strong>: β · KL term. β를 너무 낮추면 빠르게 hacking</li>
+<li><strong>Eval on shift split</strong>: Charades-CD, ActivityNet-CD 같은 OOD split</li>
+<li><strong>Group size K</strong>: K=8이 sweet spot</li>
+</ul></div>
       <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
     <div class="analogy-card">
       <div class="a-head">Analogy</div>
@@ -419,4 +472,7 @@ def grpo_step(policy, ref_policy, prompts, gts, video_lens, optim, K=8, eps=0.2,
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
 </body></html>

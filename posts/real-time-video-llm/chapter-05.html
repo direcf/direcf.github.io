@@ -6,6 +6,7 @@
   <title>Ch5: Visual Encoder Optimization — Real-time Video LLM — direcf</title>
   <meta name="description" content="Real-time video LLM에서 vision encoder는 latency budget의 30-60%를 잡아먹는 hotspot — token reduction, quantization, micro-batching 같은 최적화가 &#x27;encoder의 force-fit&#x27; 문제를 &#x27;체계적 budget allocation&#x27; 문제로 바꾼다.">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
   <style>
 :root {
   --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
@@ -114,6 +115,10 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 .sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
 .sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
 .sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
 
 /* analogy */
 .analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
@@ -187,6 +192,9 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
   .ie-grid{grid-template-columns:1fr}
   .chapter-nav{flex-direction:column}
 }
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
 </style>
 </head>
 <body>
@@ -296,10 +304,18 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 <p><strong>TensorRT</strong>: NVIDIA GPU 전용. PyTorch model → ONNX → TensorRT engine 변환. Kernel fusion, memory planning, precision optimization. ViT-L/14 기준 PyTorch FP16 8ms → TensorRT FP16 4ms (50% 감소). TensorRT의 가장 큰 win은 <strong>launch overhead 제거</strong> — small batch에서 큰 차이.</p>
 <p><strong>ONNX Runtime</strong>: cross-platform (CPU, GPU, mobile NPU). TensorRT만큼 빠르지는 않지만 portability가 강점. Edge device에서 표준.</p>
 <p><strong>Quantization</strong>: weight/activation을 lower precision으로. ViT에서는:
-- <strong>FP32 → FP16</strong>: 거의 손실 없이 ~2x speedup. 기본.
-- <strong>FP16 → INT8</strong>: 추가 ~2x speedup, quality 1-2% 손실. Production worth it.
-- <strong>INT8 → FP8</strong> (H100): 더 빠르고 INT8보다 quality 좋음. H100/H200 GPU에서 가능.
-- <strong>INT4</strong>: 5-10% quality 손실. ViT에서는 아직 risky.</p>
+- <strong>FP32 → FP16</strong>: 거의 손실 없이 ~2x speedup. 기본.</p>
+<ul>
+<li>
+<p><strong>FP16 → INT8</strong>: 추가 ~2x speedup, quality 1-2% 손실. Production worth it.</p>
+</li>
+<li>
+<p><strong>INT8 → FP8</strong> (H100): 더 빠르고 INT8보다 quality 좋음. H100/H200 GPU에서 가능.</p>
+</li>
+<li>
+<p><strong>INT4</strong>: 5-10% quality 손실. ViT에서는 아직 risky.</p>
+</li>
+</ul>
 <p><strong>Post-training quantization (PTQ)</strong>: 학습된 모델을 calibration data만으로 quantize. 빠르고 간단. CLIP에 대해 INT8 PTQ는 zero-shot ImageNet ~1% 손실로 잘 작동.</p>
 <p><strong>Quantization-aware training (QAT)</strong>: 학습 중 quantization을 simulate. 더 적은 quality 손실. CLIP을 처음부터 QAT로 학습한 variant가 INT8에서 손실 0.5%.</p>
 <p><strong>Flash Attention</strong> (Dao et al., 2022): attention 자체의 memory access 패턴 최적화. ViT-L에서 ~30% latency 감소. PyTorch 2.x에서 <code>F.scaled_dot_product_attention</code>이 자동 사용.</p>
@@ -421,4 +437,7 @@ class StreamingEncoder:
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
 </body></html>

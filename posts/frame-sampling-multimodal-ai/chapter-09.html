@@ -6,6 +6,7 @@
   <title>Ch9: Plug-and-Play Architecture Design — Frame Sampling for Multimodal AI — direcf</title>
   <meta name="description" content="Video-LLM 파이프라인은 6단계(input → decode → sample → encode → token-reduce → LLM)로 분해되며, sampler는 SOTA 교체가 가장 빈번한 swap point다. `Sampler.select(...) -&gt; List[int]` 계약을 ABI로 고정하면, AKS·BOLT·Frame-Voyager·M-LLM을 encoder·LLM 재학습 없이 feature flag로 갈아끼울 수 있다. vLLM-Omni의 disaggregated serving과 Twelve Labs Embed API 스타일 frame-feature cache가 이 모듈식 설계의 production 레퍼런스다.">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
   <style>
 :root {
   --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
@@ -114,6 +115,10 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 .sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
 .sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
 .sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
 
 /* analogy */
 .analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
@@ -187,6 +192,9 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
   .ie-grid{grid-template-columns:1fr}
   .chapter-nav{flex-direction:column}
 }
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
 </style>
 </head>
 <body>
@@ -321,10 +329,18 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 </table>
 <p>실수 패턴: 많은 초기 코드베이스가 stage (3)와 (4)를 한 함수에 묶어 <code>sample_and_encode()</code>로 노출한다. 이러면 sampler를 바꿀 때마다 encoder caller도 손대야 한다. <em>boundary가 코드 경계</em>가 아니라 <em>함수 시그니처 경계</em>여야 plug-and-play가 가능하다.</p>
 <p>실제 production stack 매핑:
-- <strong>Decode</strong>: Decord는 numpy zero-copy로 빠르지만 H.265 일부 코덱에서 PyAV로 fallback. NVIDIA stack에서는 NVDEC + DALI.
-- <strong>Encode</strong>: open-weights는 SigLIP-SO400M / CLIP-ViT-L/14, managed는 Twelve Labs Marengo 3.0 multi-vector.
-- <strong>Token-Reduce</strong>: VideoChat-Flash HiCo (1/50 비율), NVILA scale-then-compress, FastVID dynamic density.
-- <strong>LLM</strong>: vLLM 0.x continuous batching, paged KV cache.</p></div><div class="sb-block"><h2>2. The Sampler.select() Contract — Why Return Indices, Not Frames</h2><p>단 하나의 ABI 결정이 이 장의 핵심이다.</p>
+- <strong>Decode</strong>: Decord는 numpy zero-copy로 빠르지만 H.265 일부 코덱에서 PyAV로 fallback. NVIDIA stack에서는 NVDEC + DALI.</p>
+<ul>
+<li>
+<p><strong>Encode</strong>: open-weights는 SigLIP-SO400M / CLIP-ViT-L/14, managed는 Twelve Labs Marengo 3.0 multi-vector.</p>
+</li>
+<li>
+<p><strong>Token-Reduce</strong>: VideoChat-Flash HiCo (1/50 비율), NVILA scale-then-compress, FastVID dynamic density.</p>
+</li>
+<li>
+<p><strong>LLM</strong>: vLLM 0.x continuous batching, paged KV cache.</p>
+</li>
+</ul></div><div class="sb-block"><h2>2. The Sampler.select() Contract — Why Return Indices, Not Frames</h2><p>단 하나의 ABI 결정이 이 장의 핵심이다.</p>
 <pre><code class="language-python">def select(
     video: VideoHandle,           # 디코드 핸들 (lazy, frame 자체는 미반환)
     query: str | None,            # query-aware sampler용; uniform은 무시
@@ -367,9 +383,15 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 value = Tensor[T_at_fps, D_v]  (per-frame embedding, fp16)
 </code></pre>
 <p>세 차원 모두 invalidation 의미를 갖는다:
-- <code>video_id</code>: 명백.
-- <code>fps</code>: 다른 fps로 디코딩하면 다른 프레임 집합. 1fps와 2fps embedding은 <em>섞어 쓰면 안 된다</em>.
-- <code>encoder_model_id</code>: SigLIP과 CLIP은 다른 vector space. embedding은 모델 교체 시 모두 무효.</p>
+- <code>video_id</code>: 명백.</p>
+<ul>
+<li>
+<p><code>fps</code>: 다른 fps로 디코딩하면 다른 프레임 집합. 1fps와 2fps embedding은 <em>섞어 쓰면 안 된다</em>.</p>
+</li>
+<li>
+<p><code>encoder_model_id</code>: SigLIP과 CLIP은 다른 vector space. embedding은 모델 교체 시 모두 무효.</p>
+</li>
+</ul>
 <p><strong>invalidation 전략 세 가지:</strong></p>
 <p>1) <strong>Content-addressed</strong>. <code>sha256(video_bytes)</code>를 video_id로 쓰면 같은 컨텐츠 re-upload는 자동 cache hit. 비용 절감 큼.</p>
 <p>2) <strong>TTL + encoder version pinning</strong>. encoder를 SigLIP-v1 → SigLIP-v2로 올릴 때 <em>기존 cache는 그대로 두고</em> 새 key namespace 시작. dual-read 기간을 두고 점진 마이그레이션. 한 번에 무효화하면 GPU re-encode 폭주.</p>
@@ -422,10 +444,18 @@ flag를 <code>uniform</code>으로 되돌리면 즉시 baseline 복귀. encoder�
       <div class="a-body"><p>노트북에 USB-C 포트가 있으면 모니터, 외장 SSD, 도크, 오디오 인터페이스, 충전기, 어떤 기기든 꽂힌다. 노트북 제조사는 <em>다음에 어떤 주변기기가 나올지 모른다</em>. 하지만 USB-C가 전압·데이터·alt-mode를 표준으로 못박아 뒀기 때문에 미래의 모니터도 <em>과거의 노트북</em>에 꽂힌다.</p>
 <p><code>Sampler.select(video, query, budget, scenes) -&gt; List[int]</code>는 video pipeline의 USB-C다.</p>
 <ul>
-<li><strong>물리 핀 = 시그니처</strong>: 인덱스 list 반환, query는 optional, budget은 frame 수. 이 5개 핀.</li>
-<li><strong>alt-mode = 옵션 메타데이터</strong>: scenes를 받으면 쓰고, 안 받으면 자체 fallback. monitor에 DisplayPort alt-mode가 옵션인 것과 같다.</li>
-<li><strong>케이블 두께 = 호출 비용</strong>: indices만 다니므로 RPC 경계로 보내도 KB. USB-C에서 100W power도, 40Gbps Thunderbolt도 같은 모양 케이블로 흐르는 것과 같다.</li>
-<li><strong>chipset 호환성 = encoder/LLM 독립성</strong>: 새 sampler(2026 FOCUS)가 나와도 노트북 본체(encoder + LLM)를 바꿀 필요 없다. 그냥 꽂는다.</li>
+<li>
+<p><strong>물리 핀 = 시그니처</strong>: 인덱스 list 반환, query는 optional, budget은 frame 수. 이 5개 핀.</p>
+</li>
+<li>
+<p><strong>alt-mode = 옵션 메타데이터</strong>: scenes를 받으면 쓰고, 안 받으면 자체 fallback. monitor에 DisplayPort alt-mode가 옵션인 것과 같다.</p>
+</li>
+<li>
+<p><strong>케이블 두께 = 호출 비용</strong>: indices만 다니므로 RPC 경계로 보내도 KB. USB-C에서 100W power도, 40Gbps Thunderbolt도 같은 모양 케이블로 흐르는 것과 같다.</p>
+</li>
+<li>
+<p><strong>chipset 호환성 = encoder/LLM 독립성</strong>: 새 sampler(2026 FOCUS)가 나와도 노트북 본체(encoder + LLM)를 바꿀 필요 없다. 그냥 꽂는다.</p>
+</li>
 </ul>
 <p>USB-C 이전 세계를 기억하라 — Mini-USB, Micro-USB, Apple 30-pin, Lightning, 각각 다른 케이블. 그게 sampling 코드의 default 상태다: 매 sampler마다 caller가 자기 어댑터를 짠다. plug-and-play 아키텍처는 <em>그 어댑터를 한 번 더 들여다보지 않는 것</em>이 목표다.</p></div>
     </div>
@@ -554,4 +584,7 @@ def run_pipeline(video: VideoHandle, query: str, sampler: Sampler,
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
 </body></html>

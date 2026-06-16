@@ -6,6 +6,7 @@
   <title>Ch6: Agentic Search for Long-Form Grounding — Temporal Grounding for Video VLMs (2026) — direcf</title>
   <meta name="description" content="한 시간짜리 영상에서 30초 moment를 찾는 일은 더 이상 grounding 문제가 아니라 **search 문제**다. ExtremeWhenBench(arXiv:2606.12300)는 monolithic Video-LLM이 mIoU 0.110, CLIP retrieval만 써도 0.269, retrieve-then-ground hybrid가 0.354로 6.7× 격차가 난다는 것을 보였고, 실패의 **85%가 search, 11%만 localization**임을 정량화했다. 이 챕터는 hour-scale에서 single-pass VLM이 왜 무너지는지, VideoMind(ICLR 2026)의 Chain-of-LoRA, AVI(arXiv:2511.14446)의 agentic loop, Deep Video Discovery(arXiv:2505.18079)의 retrieve-zoom-verify 패턴이 각각 어떻게 이 문제를 풀어내는지를 다룬다.">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
   <style>
 :root {
   --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
@@ -191,6 +192,9 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
   .ie-grid{grid-template-columns:1fr}
   .chapter-nav{flex-direction:column}
 }
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
 </style>
 </head>
 <body>
@@ -332,7 +336,7 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 <li><strong>CLIP-only retrieval</strong>: mIoU <strong>0.269</strong> (2.4×)</li>
 <li><strong>Retrieve-then-ground hybrid</strong>: mIoU <strong>0.354</strong> (3.2× monolithic, 6.7× 격차)</li>
 </ul>
-<p>Failure mode 분해: <strong>search failure 85%, localization failure 11%, 기타 4%</strong>.</p></div><div class="sb-block"><h2>6.2 VideoMind (ICLR 2026)</h2><p>VideoMind(Liu et al., ICLR 2026, arXiv:2503.13444, github: yeliudev/VideoMind)는 Qwen2-VL base model 하나에 <strong>4개의 LoRA adapter</strong>를 붙이고, inference 중 task에 맞춰 swap한다. 4개 role:</p>
+<p>Failure mode 분해: <strong>search failure 85%, localization failure 11%, 기타 4%</strong>.</p><div class="fig-row"><figure class="fig-item"><img src="/posts/temporal-grounding-vlm/figures/2606.12300/teaser_v2.png" alt="ExtremeWhenBench 티저. 76분짜리 비디오 안에 9초짜리 이벤트를 찾아야 한다 — 탐색 공간이 153배. 이것이 Hour-Scale Grounding 문제의 본질이다." loading="lazy"><figcaption>ExtremeWhenBench 티저. 76분짜리 비디오 안에 9초짜리 이벤트를 찾아야 한다 — 탐색 공간이 153배. 이것이 Hour-Scale Grounding 문제의 본질이다.</figcaption></figure></div></div><div class="sb-block"><h2>6.2 VideoMind (ICLR 2026)</h2><p>VideoMind(Liu et al., ICLR 2026, arXiv:2503.13444, github: yeliudev/VideoMind)는 Qwen2-VL base model 하나에 <strong>4개의 LoRA adapter</strong>를 붙이고, inference 중 task에 맞춰 swap한다. 4개 role:</p>
 <ol>
 <li><strong>Planner</strong>: query를 받아 어떤 sub-task가 필요한지 결정</li>
 <li><strong>Grounder</strong>: video + query를 받아 timestamp window를 emit</li>
@@ -342,22 +346,26 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 <p><strong>왜 LoRA swap인가</strong>: Naive하게 4개 model을 띄우면 7B × 4 = 28B. VideoMind는 LoRA rank 64로 adapter 하나당 ~30M parameter, 4개 합쳐도 base 7B 대비 1.7% 추가. <strong>VRAM은 8B 한 대로 충분</strong>.</p>
 <p><strong>Eval coverage</strong>: 15 benchmark across Grounded VideoQA + Video Temporal Grounding + General VideoQA. Charades-STA에서 [email protected] 73.5(zero-shot).</p></div><div class="sb-block"><h2>6.3 AVI (Agentic Video Intelligence)</h2><p>AVI(arXiv:2511.14446)는 Charades-STA에서 [email protected] <strong>88.6</strong>을 달성했다. 흥미로운 점은 Charades-STA가 평균 30초짜리 short-form 벤치마크라는 것. 즉 hour-scale을 위해 설계된 agentic loop이 <strong>short-form에서도</strong> monolithic을 이긴다.</p>
 <p><strong>왜 short-form에서도 이기는가</strong>: AVI의 loop은 plan → CLIP retrieve top-K window → VLM이 window를 zoom-in 검사 → IoU 추정과 confidence 출력 → 부족하면 인접 window 추가 검사. Charades-STA처럼 짧은 영상에서 retrieve step은 거의 무의미하지만, <strong>verify step이 사실상 2-pass refinement</strong>로 작동한다.</p>
-<p><strong>Trade-off</strong>: 정확도의 대가는 latency. Single-pass Video-LLM의 inference는 보통 1~3초, AVI loop은 평균 5~12 step이 돌아 10~40초가 걸린다.</p></div><div class="sb-block"><h2>6.4 Deep Video Discovery</h2><p>Deep Video Discovery(arXiv:2505.18079)는 VideoMind·AVI의 implicit role을 <strong>명시적 tool</strong>로 외부화한다.</p>
+<p><strong>Trade-off</strong>: 정확도의 대가는 latency. Single-pass Video-LLM의 inference는 보통 1~3초, AVI loop은 평균 5~12 step이 돌아 10~40초가 걸린다.</p><div class="fig-row"><figure class="fig-item"><img src="/posts/temporal-grounding-vlm/figures/2511.14446/fig_intro.png" alt="비디오 이해 패러다임 비교. (a) VLM 직접 추론 vs (b) AVI의 에이전틱 검색. AVI는 클립 캡션 DB를 구축한 뒤 쿼리에 따라 선택적으로 탐색한다." loading="lazy"><figcaption>비디오 이해 패러다임 비교. (a) VLM 직접 추론 vs (b) AVI의 에이전틱 검색. AVI는 클립 캡션 DB를 구축한 뒤 쿼리에 따라 선택적으로 탐색한다.</figcaption></figure><figure class="fig-item"><img src="/posts/temporal-grounding-vlm/figures/2511.14446/fig_framework.png" alt="AVI 프레임워크 구조. 구조화된 비디오 DB(클립 캡션 + 임베딩)를 기반으로 에이전트가 검색·분석·추론 단계를 반복 수행한다." loading="lazy"><figcaption>AVI 프레임워크 구조. 구조화된 비디오 DB(클립 캡션 + 임베딩)를 기반으로 에이전트가 검색·분석·추론 단계를 반복 수행한다.</figcaption></figure></div></div><div class="sb-block"><h2>6.4 Deep Video Discovery</h2><p>Deep Video Discovery(arXiv:2505.18079)는 VideoMind·AVI의 implicit role을 <strong>명시적 tool</strong>로 외부화한다.</p>
 <ul>
 <li><code>coarse_retrieve(video, query, k)</code></li>
 <li><code>zoom_in(window, factor)</code></li>
 <li><code>get_frames(window, n)</code></li>
 <li><code>ask_follow_up(question)</code></li>
 </ul>
-<p><strong>3-stage pipeline</strong>:
-1. <strong>Retrieve</strong>: CLIP-based coarse search
-2. <strong>Zoom</strong>: dense sampling 적용
-3. <strong>Verify</strong>: VLM이 dense window를 보고 IoU 추정</p>
-<p><strong>왜 이 분리가 중요한가</strong>: tool API가 외부화돼 있어 — LLM agent를 GPT-4·Claude로 교체 가능, CLIP encoder만 따로 업그레이드 가능, verify VLM도 따로 교체 가능. <strong>Modularity가 production friendly</strong>.</p></div><div class="sb-block"><h2>6.5 ExtremeWhenBench의 정량 증거</h2><p><strong>Benchmark 설계 (arXiv:2606.12300, June 2026)</strong>:
-- 2,273 query / 194 video
-- 평균 75.7분, 최대 9시간
-- Multi-domain
-- Moment 길이 분포: median 30s, 75th percentile 75s</p>
+<p><strong>3-stage pipeline</strong>:</p>
+<ol>
+<li><strong>Retrieve</strong>: CLIP-based coarse search</li>
+<li><strong>Zoom</strong>: dense sampling 적용</li>
+<li><strong>Verify</strong>: VLM이 dense window를 보고 IoU 추정</li>
+</ol>
+<p><strong>왜 이 분리가 중요한가</strong>: tool API가 외부화돼 있어 — LLM agent를 GPT-4·Claude로 교체 가능, CLIP encoder만 따로 업그레이드 가능, verify VLM도 따로 교체 가능. <strong>Modularity가 production friendly</strong>.</p></div><div class="sb-block"><h2>6.5 ExtremeWhenBench의 정량 증거</h2><p><strong>Benchmark 설계 (arXiv:2606.12300, June 2026)</strong>:</p>
+<ul>
+<li>2,273 query / 194 video</li>
+<li>평균 75.7분, 최대 9시간</li>
+<li>Multi-domain</li>
+<li>Moment 길이 분포: median 30s, 75th percentile 75s</li>
+</ul>
 <p><strong>세 baseline 비교</strong>:</p>
 <table>
 <thead>
@@ -381,10 +389,12 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 </tr>
 </tbody>
 </table>
-<p><strong>Failure mode 분해</strong>:
-- <strong>85% search failure</strong>
-- <strong>11% localization failure</strong>
-- <strong>4% 기타</strong></p></div><div class="sb-block"><h2>6.6 Tool-use 디자인</h2><p><strong>최소 tool set</strong> (3개): coarse_retrieve, zoom_in, verify.</p>
+<p><strong>Failure mode 분해</strong>:</p>
+<ul>
+<li><strong>85% search failure</strong></li>
+<li><strong>11% localization failure</strong></li>
+<li><strong>4% 기타</strong></li>
+</ul><div class="fig-row"><figure class="fig-item"><img src="/posts/temporal-grounding-vlm/figures/2606.12300/pipeline.png" alt="ExtremeWhenBench 7단계 구성 파이프라인. P2 검증 이벤트 41,139개에서 엄격한 필터링을 거쳐 최종 벤치마크를 구축하는 과정." loading="lazy"><figcaption>ExtremeWhenBench 7단계 구성 파이프라인. P2 검증 이벤트 41,139개에서 엄격한 필터링을 거쳐 최종 벤치마크를 구축하는 과정.</figcaption></figure></div></div><div class="sb-block"><h2>6.6 Tool-use 디자인</h2><p><strong>최소 tool set</strong> (3개): coarse_retrieve, zoom_in, verify.</p>
 <table>
 <thead>
 <tr>
@@ -411,10 +421,18 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 </tr>
 </tbody>
 </table>
-<p><strong>Production 의사결정</strong>:
-- <strong>5분 미만</strong>: monolithic VLM 우세. agentic 불필요.
-- <strong>5분~30분</strong>: agentic이 정확도 +5~10%p, latency 5~10× 증가.
-- <strong>30분 이상</strong>: agentic 거의 강제. monolithic은 6.7× 격차로 무너진다.</p></div>
+<p><strong>Production 의사결정</strong>:</p>
+<ul>
+<li>
+<p><strong>5분 미만</strong>: monolithic VLM 우세. agentic 불필요.</p>
+</li>
+<li>
+<p><strong>5분~30분</strong>: agentic이 정확도 +5~10%p, latency 5~10× 증가.</p>
+</li>
+<li>
+<p><strong>30분 이상</strong>: agentic 거의 강제. monolithic은 6.7× 격차로 무너진다.</p>
+</li>
+</ul></div>
       <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
     <div class="analogy-card">
       <div class="a-head">Analogy</div>
@@ -518,4 +536,7 @@ def agent_loop(llm, video, query: str, max_steps: int = 8) -&gt; Window:
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
 </body></html>

@@ -6,6 +6,7 @@
   <title>Ch4: VLM-as-Grounder — Timestamp Generation — Temporal Grounding for Video VLMs (2026) — direcf</title>
   <meta name="description" content="2025년을 기점으로 temporal grounding은 boundary regression 문제에서 timestamp를 텍스트 토큰으로 emit하는 generation 문제로 재정의되었다. UniTime (NeurIPS 2025, arXiv:2506.18883)은 하나의 generative MLLM으로 Charades-STA / ActivityNet / TACoS / QVHighlights를 동시에 잡았고, MeCo (ICLR 2026, arXiv:2503.09027)는 timestamp를 직접 쓰지 않고 structural token + contrastive grounding으로 QVHighlights에서 mAP=45.3 / HIT@1=75.1을 찍어 M-DETR, UMT, QD-DETR, CG-DETR, UniVTG를 모두 추월했다.">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
   <style>
 :root {
   --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
@@ -191,6 +192,9 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
   .ie-grid{grid-template-columns:1fr}
   .chapter-nav{flex-direction:column}
 }
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
 </style>
 </head>
 <body>
@@ -274,7 +278,7 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 
       <div class="sb-block"><p>Chapter 3에서 본 DETR 계열은 모두 (1) 비디오를 frozen encoder로 인코딩, (2) text를 cross-attention으로 주입, (3) 마지막 단에 regression head 두 개(start, end)를 달아 IoU loss로 학습했다. 이 구조는 단일 moment에서는 강력하지만 (a) 멀티-이벤트가 등장하면 query 수를 정해야 하고, (b) 해당 moment가 비디오에 없다를 모델링하기 어렵고, (c) cross-benchmark transfer가 거의 안 된다. 2025-2026년의 전환은 이 head를 통째로 들어내고 LLM head 자체가 timestamp 문자열을 토큰으로 뱉도록 바꿨다. UniTime (NeurIPS 2025, arXiv:2506.18883)은 universal grounder를 만들었고, MeCo (ICLR 2026, arXiv:2503.09027)는 한 발 더 나아가 timestamp 자체를 emit하지 않고 structural token을 생성한 다음 contrastive matching으로 boundary를 결정하는 timestamp-free 변형으로 QVHighlights mAP=45.3 / HIT@1=75.1을 기록했다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>4.1 패러다임 전환 — Regression Head에서 Verbal Generation으로</h2><p>2024년까지의 temporal grounding 파이프라인은 한결같았다. CLIP·VideoMAE 같은 frozen visual encoder가 frame token을 만들고, text encoder가 query embedding을 만들고, transformer decoder가 N개의 candidate moment query를 받아 cross-attention을 돈 뒤, 마지막에 (start_offset, end_offset) ∈ ℝ²를 회귀했다. 손실은 L1 + GIoU.</p>
 <p>2025-2026의 전환은 이 마지막 head를 버리는 것이다. 대신 비디오를 입력받은 VLM의 LLM body가 직접 문자열을 토큰 단위로 출력한다 — &lt;0.32, 0.41&gt; 혹은 from 12.3 to 18.7 seconds. 학습은 그저 next-token cross-entropy다.</p>
-<p>핵심 통찰 세 가지. 첫째, <strong>regression은 한 번에 하나의 (s,e) 쌍을 강제</strong>한다. multi-event를 다루려면 query 수 N을 정하고 Hungarian matching을 굴려야 한다. 반면 verbal generation은 &lt;0.10, 0.18&gt;, &lt;0.55, 0.62&gt;처럼 그냥 더 길게 쓰면 된다. 둘째, <strong>regression head는 abstention을 모델링할 자리가 없다.</strong> 출력 차원이 ℝ²로 고정되어 있어 없음이 표현되지 않는다. LLM은 'I cannot find this moment'를 그냥 쓸 수 있다. 셋째, <strong>regression head는 데이터셋별로 다시 학습해야 한다.</strong> LLM head는 동일한 prompt 포맷이면 Charades-STA와 ActivityNet과 QVHighlights를 같은 weight로 받을 수 있다 — UniTime이 정확히 그 universal grounder를 만들었다.</p></div><div class="sb-block"><h2>4.2 Autoregressive Supervision의 수식 — Timestamp 토큰에 손실을 거는 법</h2><p>Regression의 학습 신호는 |ŝ - s<em>| + GIoU(ŝê, s</em>e*). Verbal generation의 학습 신호는 어디에 걸리는가? 답은 단순하다: timestamp를 구성하는 토큰들의 next-token cross-entropy.</p>
+<p>핵심 통찰 세 가지. 첫째, <strong>regression은 한 번에 하나의 (s,e) 쌍을 강제</strong>한다. multi-event를 다루려면 query 수 N을 정하고 Hungarian matching을 굴려야 한다. 반면 verbal generation은 &lt;0.10, 0.18&gt;, &lt;0.55, 0.62&gt;처럼 그냥 더 길게 쓰면 된다. 둘째, <strong>regression head는 abstention을 모델링할 자리가 없다.</strong> 출력 차원이 ℝ²로 고정되어 있어 없음이 표현되지 않는다. LLM은 'I cannot find this moment'를 그냥 쓸 수 있다. 셋째, <strong>regression head는 데이터셋별로 다시 학습해야 한다.</strong> LLM head는 동일한 prompt 포맷이면 Charades-STA와 ActivityNet과 QVHighlights를 같은 weight로 받을 수 있다 — UniTime이 정확히 그 universal grounder를 만들었다.</p><div class="fig-row"><figure class="fig-item"><img src="/posts/temporal-grounding-vlm/figures/2503.09027/intro_iclr.png" alt="기존 Timestamp 생성 방식(좌)과 MeCo의 비생성 접근(우) 비교. VLM이 숫자 타임스탬프를 직접 출력하지 않고 Caption-Retrieval 방식으로 Grounding을 수행한다." loading="lazy"><figcaption>기존 Timestamp 생성 방식(좌)과 MeCo의 비생성 접근(우) 비교. VLM이 숫자 타임스탬프를 직접 출력하지 않고 Caption-Retrieval 방식으로 Grounding을 수행한다.</figcaption></figure></div></div><div class="sb-block"><h2>4.2 Autoregressive Supervision의 수식 — Timestamp 토큰에 손실을 거는 법</h2><p>Regression의 학습 신호는 |ŝ - s<em>| + GIoU(ŝê, s</em>e*). Verbal generation의 학습 신호는 어디에 걸리는가? 답은 단순하다: timestamp를 구성하는 토큰들의 next-token cross-entropy.</p>
 <p>예를 들어 target이 'The moment is &lt;0.45, 0.62&gt;.'라고 하자. Tokenizer가 이를 여러 토큰으로 쪼갠다고 가정하면, 학습 시점에는 모든 토큰에 대해 표준 LM loss를 건다: L = -Σ_t log p(y_t | y_&lt;t, video, query).</p>
 <p>실전에서는 <strong>timestamp 토큰만 weighted</strong>하거나 prompt prefix는 loss에서 마스킹하는 식으로 변형한다. 중요한 디테일은 <strong>timestamp가 어떤 토큰 시퀀스로 잘리는가</strong>다. Qwen2-VL의 BPE tokenizer는 0.45를 ['0', '.', '45']로 자른다. 즉 모델은 정수부와 소수부를 순차적으로 결정한다. 이게 의외로 잘 동작한다 — 위계적 결정 구조가 자연스럽게 생긴다.</p>
 <p>하지만 함정도 있다. (a) 연속 실수의 BPE 분할은 vocab에 운 좋게 들어있는 숫자열에만 1-token이 된다. (b) <strong>continuous-string approach vs discrete-bin approach</strong> 트레이드오프. 일부 후속 연구는 [TIME_0], [TIME_1], ..., [TIME_99] 같은 special token vocabulary를 미리 박아 두고 분할 일관성을 강제한다. UniTime은 연속 문자열 쪽이고, MeCo는 한 발 더 나아가 timestamp를 아예 안 쓰는 structural token 쪽이다.</p></div><div class="sb-block"><h2>4.3 UniTime (NeurIPS 2025, arXiv:2506.18883) — Universal Generative MLLM Grounder</h2><p>UniTime의 한 줄 요약은 <strong>하나의 generative MLLM으로 모든 grounding 벤치마크를 동시에 푼다</strong>이다. 저자 (Zeqian Li, Shangzhe Di, Zhonghua Zhai, Weilin Huang, Yanfeng Wang, Weidi Xie)는 robust universal grounding을 vision-language understanding이 충분히 깊어진 generative MLLM 위에서만 풀 수 있다고 주장한다.</p>
@@ -284,26 +288,48 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 - <strong>Output format</strong>: <s, e> 정규화 분수 timestamp
 - <strong>Training</strong>: Charades-STA / ActivityNet-Captions / TACoS / QVHighlights를 prompt 포맷을 통일해 한 weight로 multi-task fine-tune
 - <strong>Result</strong>: TACoS [email protected] 60+ 등 multi-benchmark에서 도메인 전문 모델에 근접하거나 추월하는 universal score</p>
-<p>UniTime이 보여주는 핵심은 두 가지다. 첫째, <strong>prompt format이 같으면 benchmark는 단지 데이터 분포의 차이</strong>일 뿐이고 verbal generation은 이 분포 시프트를 next-token CE 하나로 흡수한다. 둘째, regression head 시대에는 거의 불가능했던 universal grounder 컨셉이 verbal generation 위에서는 자연스럽다. 다만 Open Problem OP-11이 지적하듯, UniTime도 domain-specialized 모델을 모든 metric에서 압도하지는 못한다 — universal score가 평균적으로 좋다는 의미일 뿐, 특정 도메인의 SOTA를 깬 것은 아니다.</p></div><div class="sb-block"><h2>4.4 MeCo (ICLR 2026, arXiv:2503.09027) — Timestamp 없이 Timestamp를 찾기</h2><p>MeCo (Pang, Nakashima, Otani — Osaka U. / CyberAgent)는 verbal generation paradigm을 한 단계 더 끌고 간다. 제목 'Measure Twice, Cut Once'가 시사하듯 MeCo의 핵심 가설은 <strong>timestamp 숫자를 LLM에게 쓰게 하는 것 자체가 LLM의 강점을 낭비한다</strong>는 것이다. LLM은 몇 초를 출력하기엔 차라리 약한 회귀기다. 그러나 무엇이 일어났는지를 자연어로 묘사하는 데는 압도적이다.</p>
+<p>UniTime이 보여주는 핵심은 두 가지다. 첫째, <strong>prompt format이 같으면 benchmark는 단지 데이터 분포의 차이</strong>일 뿐이고 verbal generation은 이 분포 시프트를 next-token CE 하나로 흡수한다. 둘째, regression head 시대에는 거의 불가능했던 universal grounder 컨셉이 verbal generation 위에서는 자연스럽다. 다만 Open Problem OP-11이 지적하듯, UniTime도 domain-specialized 모델을 모든 metric에서 압도하지는 못한다 — universal score가 평균적으로 좋다는 의미일 뿐, 특정 도메인의 SOTA를 깬 것은 아니다.</p><div class="fig-row"><figure class="fig-item"><img src="/posts/temporal-grounding-vlm/figures/2506.18883/visualization1.png" alt="UniTime 성공 사례. 하나의 모델이 Charades·ActivityNet·QVHighlights 등 여러 벤치마크에서 동일 추론 방식으로 정확한 타임스탬프를 생성한다." loading="lazy"><figcaption>UniTime 성공 사례. 하나의 모델이 Charades·ActivityNet·QVHighlights 등 여러 벤치마크에서 동일 추론 방식으로 정확한 타임스탬프를 생성한다.</figcaption></figure></div></div><div class="sb-block"><h2>4.4 MeCo (ICLR 2026, arXiv:2503.09027) — Timestamp 없이 Timestamp를 찾기</h2><p>MeCo (Pang, Nakashima, Otani — Osaka U. / CyberAgent)는 verbal generation paradigm을 한 단계 더 끌고 간다. 제목 'Measure Twice, Cut Once'가 시사하듯 MeCo의 핵심 가설은 <strong>timestamp 숫자를 LLM에게 쓰게 하는 것 자체가 LLM의 강점을 낭비한다</strong>는 것이다. LLM은 몇 초를 출력하기엔 차라리 약한 회귀기다. 그러나 무엇이 일어났는지를 자연어로 묘사하는 데는 압도적이다.</p>
 <p>3-stage 디자인:
-1. <strong>Structural token generation</strong>: 비디오를 균등 분할하는 structural token 시퀀스 [S_0], [S_1], ..., [S_K]를 LLM body가 생성한다. 이 토큰들은 timestamp가 아니라 비디오를 K+1개의 의미 단위로 자르는 cut marker다.
-2. <strong>Query-focused captioning</strong>: query를 조건으로 각 segment에 대해 짧은 caption을 생성한다.
-3. <strong>Contrastive structural-token grounding</strong>: 마지막으로 structural token embedding과 query embedding을 contrastive로 정렬해, query가 어느 structural cut과 가장 잘 맞는지로 boundary를 결정한다.</p>
+1. <strong>Structural token generation</strong>: 비디오를 균등 분할하는 structural token 시퀀스 [S_0], [S_1], ..., [S_K]를 LLM body가 생성한다. 이 토큰들은 timestamp가 아니라 비디오를 K+1개의 의미 단위로 자르는 cut marker다.</p>
+<ol start="2">
+<li>
+<p><strong>Query-focused captioning</strong>: query를 조건으로 각 segment에 대해 짧은 caption을 생성한다.</p>
+</li>
+<li>
+<p><strong>Contrastive structural-token grounding</strong>: 마지막으로 structural token embedding과 query embedding을 contrastive로 정렬해, query가 어느 structural cut과 가장 잘 맞는지로 boundary를 결정한다.</p>
+</li>
+</ol>
 <p>학습 디테일: LoRA rank 128, 1 epoch on E.T.Instruct 164K, base는 E.T.Chat / Qwen2VL-7B.</p>
 <p>결과는 QVHighlights에서 <strong>mAP=45.3, HIT@1=75.1</strong> — M-DETR, UMT, QD-DETR, CG-DETR, UniVTG를 모두 추월했다. 주의할 점 하나: _research_papers.md에 표기된 대로 <strong>MeCo의 zero-shot Charades-STA SOTA 주장은 검증 단계에서 refute</strong>되었다. 즉 MeCo의 강력함은 QVHighlights에서 가장 분명하고, 다른 벤치마크로의 일반화는 아직 열린 문제다.</p>
-<p>왜 MeCo가 중요한가? 그것은 verbal generation = timestamp 문자열을 쓰는 것이라는 등식 자체를 무너뜨렸기 때문이다. MeCo의 LLM은 timestamp를 단 하나도 쓰지 않는다. 그럼에도 verbal generation의 모든 장점을 유지한다. paradigm의 진짜 본질이 LLM head가 결정한다에 있지 timestamp를 텍스트로 쓴다에 있지 않음을 MeCo가 입증한 셈이다.</p></div><div class="sb-block"><h2>4.5 가계도 — TimeChat → VTimeLLM → TimeSuite를 거쳐 여기까지</h2><p>UniTime과 MeCo는 갑자기 나타난 게 아니다. 2023-2024년의 다음 chain이 길을 닦았다.</p>
+<p>왜 MeCo가 중요한가? 그것은 verbal generation = timestamp 문자열을 쓰는 것이라는 등식 자체를 무너뜨렸기 때문이다. MeCo의 LLM은 timestamp를 단 하나도 쓰지 않는다. 그럼에도 verbal generation의 모든 장점을 유지한다. paradigm의 진짜 본질이 LLM head가 결정한다에 있지 timestamp를 텍스트로 쓴다에 있지 않음을 MeCo가 입증한 셈이다.</p><div class="fig-row"><figure class="fig-item"><img src="/posts/temporal-grounding-vlm/figures/2503.09027/method_iclr.png" alt="MeCo 프레임워크 전체 구조. VLM이 비디오 클립 캡션을 생성하고, 그 캡션과 쿼리 유사도로 타임스탬프를 간접 추론하는 Query-Focused Captioning 파이프라인." loading="lazy"><figcaption>MeCo 프레임워크 전체 구조. VLM이 비디오 클립 캡션을 생성하고, 그 캡션과 쿼리 유사도로 타임스탬프를 간접 추론하는 Query-Focused Captioning 파이프라인.</figcaption></figure></div></div><div class="sb-block"><h2>4.5 가계도 — TimeChat → VTimeLLM → TimeSuite를 거쳐 여기까지</h2><p>UniTime과 MeCo는 갑자기 나타난 게 아니다. 2023-2024년의 다음 chain이 길을 닦았다.</p>
 <ul>
-<li><strong>TimeChat</strong>: 비디오 frame을 LLM에 넣어 timestamp 문자열을 생성하는 패러다임의 초기 사례. 'Output the timestamp ...' prompt template을 본격적으로 도입.</li>
-<li><strong>VTimeLLM</strong>: 3-stage curriculum (feature alignment → boundary-aware tuning → instruction tuning). 'When does X happen?'에 'X happens from t1 to t2'로 답하는 형식을 standardize.</li>
-<li><strong>TimeSuite (arXiv:2410.19702)</strong>: TimePro 데이터셋 + temporal grounded captioning + temporal adaptive position encoding으로 verbal generation의 정밀도를 한 단계 끌어올림. Time-R1의 baseline 표에서 TimeSuite는 Charades-STA R1@0.3 69.9로 등장.</li>
+<li>
+<p><strong>TimeChat</strong>: 비디오 frame을 LLM에 넣어 timestamp 문자열을 생성하는 패러다임의 초기 사례. 'Output the timestamp ...' prompt template을 본격적으로 도입.</p>
+</li>
+<li>
+<p><strong>VTimeLLM</strong>: 3-stage curriculum (feature alignment → boundary-aware tuning → instruction tuning). 'When does X happen?'에 'X happens from t1 to t2'로 답하는 형식을 standardize.</p>
+</li>
+<li>
+<p><strong>TimeSuite (arXiv:2410.19702)</strong>: TimePro 데이터셋 + temporal grounded captioning + temporal adaptive position encoding으로 verbal generation의 정밀도를 한 단계 끌어올림. Time-R1의 baseline 표에서 TimeSuite는 Charades-STA R1@0.3 69.9로 등장.</p>
+</li>
 </ul>
 <p>UniTime은 이 chain의 universal branch, MeCo는 timestamp-free / structural branch에 해당한다. 같은 verbal generation paradigm의 두 가지 진화 방향이라고 보면 된다.</p>
 <p>주의해야 할 zoom-out: 이 chain은 Chapter 5의 RL post-training (Time-R1, TempSamp-R1, VideoTemp-o3, TimeLens)로 직접 이어진다. RL은 verbal generation 위에서만 작동한다 — regression head는 verifiable reward를 받을 token이 없기 때문이다. 즉 Chapter 4의 paradigm shift가 없었다면 Chapter 5의 GRPO 시대도 없다.</p></div><div class="sb-block"><h2>4.6 왜 Verbal Generation이 이기는가 — 다섯 가지 결정적 우위</h2><ol>
-<li><strong>Compositional reasoning via LLM</strong>: query가 'after the person turns off the light but before they sit down'처럼 복합적일 때, regression head는 query embedding 한 벡터를 cross-attention으로 흡수할 뿐이다. LLM head는 query를 읽고 추론한 다음 timestamp를 쓴다.</li>
-<li><strong>Multi-event 자연 지원</strong>: &lt;0.10, 0.18&gt;, &lt;0.55, 0.62&gt;를 그냥 더 쓰면 된다. QVHighlights처럼 평균 1.8개의 disjoint moment가 있는 벤치마크에서 regression은 Hungarian matching이 필요하지만 verbal generation은 시퀀스 연장으로 해결한다.</li>
-<li><strong>Abstention 가능성</strong> (아직 드물지만 구조적으로 가능): regression head ∈ ℝ²는 none을 표현할 차원이 없다. LLM head는 'no such moment exists in this video' 토큰을 그냥 쓸 수 있다.</li>
-<li><strong>Cross-benchmark transfer</strong>: prompt format이 같으면 weight 하나로 여러 데이터셋을 받는다. UniTime의 universal grounder가 이 우위를 직접 입증한다.</li>
-<li><strong>RL과의 자연스러운 결합</strong>: token-level reward (tIoU + format reward)가 verifiable하다. Time-R1의 GRPO 학습은 verbal generation 위에서만 작동한다.</li>
+<li>
+<p><strong>Compositional reasoning via LLM</strong>: query가 'after the person turns off the light but before they sit down'처럼 복합적일 때, regression head는 query embedding 한 벡터를 cross-attention으로 흡수할 뿐이다. LLM head는 query를 읽고 추론한 다음 timestamp를 쓴다.</p>
+</li>
+<li>
+<p><strong>Multi-event 자연 지원</strong>: &lt;0.10, 0.18&gt;, &lt;0.55, 0.62&gt;를 그냥 더 쓰면 된다. QVHighlights처럼 평균 1.8개의 disjoint moment가 있는 벤치마크에서 regression은 Hungarian matching이 필요하지만 verbal generation은 시퀀스 연장으로 해결한다.</p>
+</li>
+<li>
+<p><strong>Abstention 가능성</strong> (아직 드물지만 구조적으로 가능): regression head ∈ ℝ²는 none을 표현할 차원이 없다. LLM head는 'no such moment exists in this video' 토큰을 그냥 쓸 수 있다.</p>
+</li>
+<li>
+<p><strong>Cross-benchmark transfer</strong>: prompt format이 같으면 weight 하나로 여러 데이터셋을 받는다. UniTime의 universal grounder가 이 우위를 직접 입증한다.</p>
+</li>
+<li>
+<p><strong>RL과의 자연스러운 결합</strong>: token-level reward (tIoU + format reward)가 verifiable하다. Time-R1의 GRPO 학습은 verbal generation 위에서만 작동한다.</p>
+</li>
 </ol>
 <p>남은 함정도 명확하다 — hallucination (OP-7), search failure at hour scale (OP-1), reward hacking (OP-12). 이 셋은 paradigm의 비용이고, Chapter 6-9에서 차례로 정리한다.</p></div>
       <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
@@ -395,4 +421,7 @@ for span in [(0.45, 0.62), (0.46, 0.63), (0.456, 0.621)]:
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
 </body></html>

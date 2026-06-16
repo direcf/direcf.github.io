@@ -6,6 +6,7 @@
   <title>Ch8: Commercial Reality — Gemini, Twelve Labs, OpenAI/Anthropic, Open-source — Frame Sampling for Multimodal AI — direcf</title>
   <meta name="description" content="2년간 연구 SOTA(AKS, BOLT, GenS, Frame-Voyager, Q-Frame, AdaRD-Key, FOCUS)가 query-aware adaptive sampler로 ~93% frame 감축에서 동등 정확도를 입증했지만, 2026년 6월 현재 상용 video-LLM API는 단 하나도 그것을 default로 채택하지 않았다. Gemini 2.5 Pro는 1 fps, Qwen2.5-VL은 2 fps, InternVL은 uniform 16-32, LLaVA-Video는 uniform 64. Twelve Labs만 dense multi-vector indexing으로 다른 길을 가지만, 그것조차 inference time이 아닌 index time에 비용이 amortize되기 때문이다. 이 chapter는 그 갭이 왜 경제적으로 합리적인지를 정직하게 설명한다.">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
   <style>
 :root {
   --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
@@ -114,6 +115,10 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 .sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
 .sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
 .sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
 
 /* analogy */
 .analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
@@ -187,6 +192,9 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
   .ie-grid{grid-template-columns:1fr}
   .chapter-nav{flex-direction:column}
 }
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
 </style>
 </head>
 <body>
@@ -340,16 +348,28 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 </tbody>
 </table>
 <p>공통 패턴이 명확하다:
-- <strong>누구도 query-aware adaptive sampling을 default로 두지 않는다.</strong> AKS, BOLT, Q-Frame이 plug-in으로 쓸 수 있게 만들어졌음에도 불구하고.
-- <strong>fps-based이든 uniform-N이든 결정적이다.</strong> 같은 input에 대해 같은 frame이 뽑힌다.
-- <strong>Frame cap이 있다.</strong> 64~768. Cap을 넘으면 uniform downsample.
-- <strong>Sampling 정책은 model card / config의 한 줄.</strong> Algorithm이 아니라 number.</p>
+- <strong>누구도 query-aware adaptive sampling을 default로 두지 않는다.</strong> AKS, BOLT, Q-Frame이 plug-in으로 쓸 수 있게 만들어졌음에도 불구하고.</p>
+<ul>
+<li>
+<p><strong>fps-based이든 uniform-N이든 결정적이다.</strong> 같은 input에 대해 같은 frame이 뽑힌다.</p>
+</li>
+<li>
+<p><strong>Frame cap이 있다.</strong> 64~768. Cap을 넘으면 uniform downsample.</p>
+</li>
+<li>
+<p><strong>Sampling 정책은 model card / config의 한 줄.</strong> Algorithm이 아니라 number.</p>
+</li>
+</ul>
 <p>이는 우연이 아니다. 이 model들의 training data 자체가 uniform sampling으로 만들어진 frame sequence를 input으로 받은 supervision으로 학습되었다. Inference time에 갑자기 AKS로 sampling 분포를 바꾸면 train-test distribution mismatch가 발생하고, 일부 benchmark에서는 오히려 성능이 떨어진다. 즉, <strong>uniform은 단순한 default가 아니라 model의 trained behavior와 결합된 default</strong>다.</p></div><div class="sb-block"><h2>5. Retrieval exception — Mixpeek과 index-time amortization</h2><p>위 패턴에서 명시적으로 벗어나는 곳이 있다. <strong>Mixpeek</strong>은 PySceneDetect 기반 shot detection으로 chunk를 만들고, 각 chunk에 vuse-generic-v1 embedding + transcript + face recognition + OCR을 entity-level로 입힌다. 이건 uniform이 아니다 — content-aware adaptive segmentation이다.</p>
 <p>Twelve Labs도 같은 결을 따른다. 6초 chunk가 uniform처럼 보이지만 그들의 indexing pipeline은 multi-modal joint encoding을 매 chunk에 수행한다 — Gemini의 single visual encoder pass보다 훨씬 무겁다.</p>
 <p><strong>왜 retrieval 시스템만 이게 가능한가?</strong> Cost amortization 때문이다.</p>
 <ul>
-<li><strong>Inference-time (Gemini, Qwen, LLaVA)</strong>: 사용자 query 1회 = sampling 1회 + LLM forward 1회. 매 query마다 sampling cost를 지불한다. Cheap한 uniform이 이긴다.</li>
-<li><strong>Index-time (Twelve Labs, Mixpeek)</strong>: video 등록 1회 = sampling/encoding 1회 + query는 vector search로 cheap. 한번 비싸게 sampling을 해두면 1,000번의 query가 그것을 공유한다.</li>
+<li>
+<p><strong>Inference-time (Gemini, Qwen, LLaVA)</strong>: 사용자 query 1회 = sampling 1회 + LLM forward 1회. 매 query마다 sampling cost를 지불한다. Cheap한 uniform이 이긴다.</p>
+</li>
+<li>
+<p><strong>Index-time (Twelve Labs, Mixpeek)</strong>: video 등록 1회 = sampling/encoding 1회 + query는 vector search로 cheap. 한번 비싸게 sampling을 해두면 1,000번의 query가 그것을 공유한다.</p>
+</li>
 </ul>
 <p>수치적으로, video 1시간에 AKS-style query-aware sampling을 적용하는 데 5초가 더 걸린다 치자. Inference 시스템에서는 사용자 latency에 5초가 더해진다 (각 query마다). Index 시스템에서는 등록 1회에 5초가 더해지고 query latency는 그대로 (~100ms vector search)다. 1,000개 query면 inference는 5,000초 누적, index는 5초 누적.</p>
 <p><strong>이것이 commercial reality의 핵심 분기점이다.</strong> Adaptive/fancy sampling을 쓰고 싶다면 시스템을 retrieval로 설계해야 한다. Inference-time generative QA를 한다면 uniform이 거의 항상 이긴다 — 적어도 default로는.</p></div><div class="sb-block"><h2>6. 갭이 영구히 존재하는 이유</h2><p>이 chapter의 thesis는 단순하다 — <strong>연구 SOTA와 production의 갭은 일시적 lag이 아니라 구조적이다.</strong> Production engineer가 uniform을 고르는 이유는 게으르거나 무지해서가 아니라, 다음 6가지 properties가 어떤 정확도 향상보다 비싸기 때문이다.</p>
@@ -381,10 +401,18 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
       <div class="a-body"><p>가설: 잘 만든 fresh patty가 frozen patty보다 분명히 맛있다. 미슐랭 셰프가 매장에 있다면 손님 만족도가 올라간다. 그런데 왜 McDonald's, Burger King, In-N-Out 같은 글로벌 체인은 여전히 frozen 또는 표준화된 patty를 쓰는가?</p>
 <p>답은 <strong>consistency + cost + ops simplicity</strong>가 per-burger 맛 최대화보다 비싸기 때문이다.</p>
 <ul>
-<li>Frozen patty는 grain, weight, fat ratio, cook time이 결정적이다. 도쿄 매장과 마이애미 매장이 같은 맛.</li>
-<li>매시간 patty quality variance가 0에 가깝다. CFO가 단가를 정확히 quote할 수 있다.</li>
-<li>Fryer/grill을 표준 시간에 맞춰 운영할 수 있다. 셰프가 없어도 된다.</li>
-<li>실패 모드가 알려져 있다 — frozen patty가 dry해지는 조건을 30년간 모았다.</li>
+<li>
+<p>Frozen patty는 grain, weight, fat ratio, cook time이 결정적이다. 도쿄 매장과 마이애미 매장이 같은 맛.</p>
+</li>
+<li>
+<p>매시간 patty quality variance가 0에 가깝다. CFO가 단가를 정확히 quote할 수 있다.</p>
+</li>
+<li>
+<p>Fryer/grill을 표준 시간에 맞춰 운영할 수 있다. 셰프가 없어도 된다.</p>
+</li>
+<li>
+<p>실패 모드가 알려져 있다 — frozen patty가 dry해지는 조건을 30년간 모았다.</p>
+</li>
 </ul>
 <p>반면 fresh patty는 (a) 매일 fat ratio가 흔들리고, (b) 매 매장의 grill master skill에 의존하고, (c) supply chain이 흔들리면 즉시 무너지고, (d) 새로운 실패 모드가 매주 발견된다.</p>
 <p>결과적으로 글로벌 체인은 'patty 맛'이라는 하나의 metric을 포기하는 대신 'predictable, scalable, debuggable burger'를 얻는다.</p>
@@ -453,11 +481,21 @@ for fps in [0.5, 1.0, 2.0]:
 <p><strong><code>video_metadata=types.VideoMetadata(fps=fps)</code></strong> — Google이 노출한 sampling control은 <strong>이것 하나뿐</strong>이다. AKS/BOLT처럼 query-conditioning을 하고 싶다면 client에서 직접 frame을 골라 image part로 보내야 한다.</p>
 </li>
 <li>
-<p><strong>fps=0.5, 1, 2의 trade-off</strong>:
-   - fps=0.5: 30분 video → visual 약 232K tokens, $0.225. 강의처럼 prompt-aware sampling이 약한 use case에 적합.
-   - fps=1 (default): visual 약 464K tokens, $0.45. 일반 narration/dialogue에 충분.
-   - fps=2: visual 약 928K tokens, $0.90. 1M context의 거의 절반을 시각 token이 차지한다. Sports/action용.</p>
+<p><strong>fps=0.5, 1, 2의 trade-off</strong>:</p>
 </li>
+</ol>
+<ul>
+<li>
+<p>fps=0.5: 30분 video → visual 약 232K tokens, $0.225. 강의처럼 prompt-aware sampling이 약한 use case에 적합.</p>
+</li>
+<li>
+<p>fps=1 (default): visual 약 464K tokens, $0.45. 일반 narration/dialogue에 충분.</p>
+</li>
+<li>
+<p>fps=2: visual 약 928K tokens, $0.90. 1M context의 거의 절반을 시각 token이 차지한다. Sports/action용.</p>
+</li>
+</ul>
+<ol start="3">
 <li>
 <p><strong>Cost envelope이 fps에 거의 선형</strong>이다. Adaptive sampler가 fps를 동적으로 조정해주면 좋겠지만, Gemini는 그것을 user가 결정하게 둔다 — 그게 가장 predictable하기 때문이다.</p>
 </li>
@@ -505,4 +543,7 @@ for fps in [0.5, 1.0, 2.0]:
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
 </body></html>

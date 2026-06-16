@@ -6,6 +6,7 @@
   <title>Ch8: Plug-and-Play: VideoITG and the Empty Field — Temporal Grounding for Video VLMs (2026) — direcf</title>
   <meta name="description" content="2026년 주요 6편의 temporal grounding 논문 중에서 downstream Video-LLM에 손을 대지 않고도 동작하는 진짜 plug-and-play는 VideoITG(NVIDIA, CVPR 2026 Highlight, arXiv:2507.13353) 단 하나다. VideoITG는 512 frame을 uniform sampling 후 instruction-conditioned scoring으로 Top-K를 골라 임의의 Video-LLM에 그대로 넘기는 frame selector 모듈이며, VideoITG-40K와 VidThinker 자동 어노테이션 파이프라인 위에서 학습되었다. 반면 VideoMind, MeCo, Time-R1, UniTime, TimeLens는 모두 base model을 fine-tune해야 한다.">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
   <style>
 :root {
   --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
@@ -191,6 +192,9 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
   .ie-grid{grid-template-columns:1fr}
   .chapter-nav{flex-direction:column}
 }
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
 </style>
 </head>
 <body>
@@ -278,7 +282,7 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 (2) <strong>Instructed scoring</strong>: 512 frame 각각에 대해 user instruction과의 관련성을 점수화. VideoITG는 generative하게 처리.
 (3) <strong>Top-K selection</strong>: downstream Video-LLM의 input budget(보통 K=32~128)에 맞춰 가장 점수가 높은 frame index 반환.</p>
 <p>VideoITG-40K(40K videos / 500K temporal grounding annotations)는 VidThinker라는 자동 어노테이션 파이프라인으로 만들어졌다. 사람 손이 거의 들지 않은 supervision이 VideoITG의 scalability의 핵심.</p>
-<p>결과적으로 VideoITG의 출력은 단 한 가지 — List[int] (frame indices). downstream model에 weight를 적재할 필요도, 새로운 token을 vocabulary에 추가할 필요도, KV-cache를 만질 필요도 없다.</p></div><div class="sb-block"><h2>8.2 The plug-and-play contract</h2><pre><code>select(video: VideoFrames, instruction: str, k: int) -&gt; List[int]
+<p>결과적으로 VideoITG의 출력은 단 한 가지 — List[int] (frame indices). downstream model에 weight를 적재할 필요도, 새로운 token을 vocabulary에 추가할 필요도, KV-cache를 만질 필요도 없다.</p><div class="fig-row"><figure class="fig-item"><img src="/posts/temporal-grounding-vlm/figures/2507.13353/intro.png" alt="VideoITG의 VidThinker 어노테이션 파이프라인. 인간 주석자가 태스크별 최적 프레임 선택 전략을 라벨링하는 과정." loading="lazy"><figcaption>VideoITG의 VidThinker 어노테이션 파이프라인. 인간 주석자가 태스크별 최적 프레임 선택 전략을 라벨링하는 과정.</figcaption></figure><figure class="fig-item"><img src="/posts/temporal-grounding-vlm/figures/2507.13353/method.png" alt="VideoITG 모델 설계. (A) 텍스트 생성으로 비디오-언어 정렬 → (B) 이미지 생성으로 프레임 선택 → (C) 선택된 프레임으로 최종 답변." loading="lazy"><figcaption>VideoITG 모델 설계. (A) 텍스트 생성으로 비디오-언어 정렬 → (B) 이미지 생성으로 프레임 선택 → (C) 선택된 프레임으로 최종 답변.</figcaption></figure></div></div><div class="sb-block"><h2>8.2 The plug-and-play contract</h2><pre><code>select(video: VideoFrames, instruction: str, k: int) -&gt; List[int]
 </code></pre>
 <p>세 가지 invariant:</p>
 <p><strong>(a) Output stability</strong>: 반환값은 항상 frame index list여야 한다. logits, embeddings, timestamp token 같은 model-specific 표현은 안 된다.</p>
@@ -286,12 +290,24 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 <p><strong>(c) Instruction-only conditioning</strong>: scorer는 user instruction과 frame visual content만 입력으로 받는다.</p>
 <p>이 세 조건이 모두 성립할 때, plug-and-play module은 downstream Video-LLM을 Qwen2.5-VL-7B에서 LLaVA-Video-72B로, 또 GPT-5V로 바꾸어도 그대로 살아남는다. 마치 USB-C dongle처럼.</p>
 <p>이 contract의 진짜 비용: scorer 자체의 정확도다. scorer가 틀린 frame을 고르면 downstream은 그 실수를 보정할 방법이 없다.</p></div><div class="sb-block"><h2>8.3 왜 나머지 5편은 fine-tuning을 선택했는가</h2><p>VideoMind, MeCo, Time-R1, UniTime, TimeLens — 모두 base model fine-tune이 필수다.</p>
-<p><strong>Architectural necessity</strong>:
-- <strong>Time-R1</strong>: GRPO + verifiable tIoU reward로 Qwen2.5-VL-7B를 post-training. RL signal은 본질적으로 model의 policy에 박혀야 학습된다.
-- <strong>MeCo</strong>: timestamp-free에 도달하기 위해 structural token을 vocabulary에 추가하고 query-focused captioning + contrastive grounding head를 도입.
-- <strong>VideoMind</strong>: 4-role Chain-of-LoRA로 같은 base에 다른 LoRA를 갈아끼운다.
-- <strong>UniTime</strong>: generative MLLM이 timestamp token을 직접 emit. 이 token은 vocabulary에 들어가 있어야 한다.
-- <strong>TimeLens</strong>: RLVR로 Qwen2.5-VL/Qwen3-VL을 TimeLens-100K 위에서 학습.</p>
+<p><strong>Architectural necessity</strong>:</p>
+<ul>
+<li>
+<p><strong>Time-R1</strong>: GRPO + verifiable tIoU reward로 Qwen2.5-VL-7B를 post-training. RL signal은 본질적으로 model의 policy에 박혀야 학습된다.</p>
+</li>
+<li>
+<p><strong>MeCo</strong>: timestamp-free에 도달하기 위해 structural token을 vocabulary에 추가하고 query-focused captioning + contrastive grounding head를 도입.</p>
+</li>
+<li>
+<p><strong>VideoMind</strong>: 4-role Chain-of-LoRA로 같은 base에 다른 LoRA를 갈아끼운다.</p>
+</li>
+<li>
+<p><strong>UniTime</strong>: generative MLLM이 timestamp token을 직접 emit. 이 token은 vocabulary에 들어가 있어야 한다.</p>
+</li>
+<li>
+<p><strong>TimeLens</strong>: RLVR로 Qwen2.5-VL/Qwen3-VL을 TimeLens-100K 위에서 학습.</p>
+</li>
+</ul>
 <p><strong>Evaluation incentive</strong>: SOTA leaderboard는 best score를 본다. Charades-STA R1@0.5에서 Time-R1*은 72.2를 찍었는데, plug-and-play로는 score ceiling이 base Video-LLM에 묶인다. Reviewer는 새 method가 SOTA를 깰 것을 요구하고, 이 압력이 fine-tuning으로 연구를 끌어당긴다.</p>
 <p>VideoITG의 희소성은 우연이 아니다 — 2026 grounding 연구의 <em>경제구조</em>가 fine-tuning을 보상하도록 설계되어 있다.</p></div><div class="sb-block"><h2>8.4 Trade-off: score ceiling vs deployment freedom</h2><table>
 <thead>
@@ -327,19 +343,27 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 <p><strong>Score ceiling이 base에 묶인다</strong>: VideoITG가 perfect frame을 골라줘도, downstream Qwen2.5-VL이 그 32개 frame을 못 푸는 query라면 끝이다. Time-R1은 같은 32 frame을 받더라도 reward 기반으로 timestamp emission policy 자체를 개선한 model이므로, frame이 다소 noisy해도 답을 끌어낼 수 있다.</p>
 <p><strong>Model swap의 가치</strong>: production에서 Video-LLM은 6개월마다 한 번씩 갈아끼워야 한다. Time-R1은 처음부터 GRPO 학습을 다시 돌려야 한다. VideoITG는 그날 저녁에 inference pipeline의 base 교체 한 줄로 끝난다.</p>
 <p><strong>Failure mode의 차이</strong>: VideoITG의 실수는 frame index list에 박혀 있어 디버그 가능. Time-R1의 reward hacking은 weight 안에 있어 retraining 외에는 손쓸 수 없다.</p></div><div class="sb-block"><h2>8.5 Production decision tree</h2><p><strong>Q1. Downstream Video-LLM을 6개월 안에 갈아끼울 가능성이 있는가?</strong>
-- Yes → VideoITG.
-- No → Q2로.</p>
+- Yes → VideoITG.</p>
+<ul>
+<li>No → Q2로.</li>
+</ul>
 <p><strong>Q2. Charades-STA R1@0.5 기준 70+ 같은 SOTA score가 KPI인가?</strong>
-- 70+ KPI → Time-R1 또는 TimeLens.
-- reasonably good KPI → VideoITG.</p>
+- 70+ KPI → Time-R1 또는 TimeLens.</p>
+<ul>
+<li>reasonably good KPI → VideoITG.</li>
+</ul>
 <p><strong>Q3. Fine-tuning infra(8×H100 2-3주)를 운영할 수 있는가?</strong>
-- 가능 → Time-R1 검토.
-- 불가 → VideoITG.</p>
-<p><strong>구체 시나리오</strong>:
-- <em>Startup, 4명 team, base 6개월마다 교체, KPI는 user satisfaction</em>: VideoITG
-- <em>FAANG production search, base 동결, leaderboard에서 +1%p가 비즈니스에 의미 있음</em>: Time-R1
-- <em>Academia, paper 목표</em>: integrated method
-- <em>Embedded device, base는 on-device Qwen2.5-VL-3B로 고정</em>: VideoITG</p></div><div class="sb-block"><h2>8.6 Plug-and-play의 미래</h2><p><strong>(1) Query-aware frame budget allocation.</strong> 현재 VideoITG는 fixed K. 그러나 counting query는 K=64가 필요하고, single-event localization은 K=8로 충분. interface는 <code>select(video, instruction, max_k) -&gt; List[int]</code>로 확장.</p>
+- 가능 → Time-R1 검토.</p>
+<ul>
+<li>불가 → VideoITG.</li>
+</ul>
+<p><strong>구체 시나리오</strong>:</p>
+<ul>
+<li><em>Startup, 4명 team, base 6개월마다 교체, KPI는 user satisfaction</em>: VideoITG</li>
+<li><em>FAANG production search, base 동결, leaderboard에서 +1%p가 비즈니스에 의미 있음</em>: Time-R1</li>
+<li><em>Academia, paper 목표</em>: integrated method</li>
+<li><em>Embedded device, base는 on-device Qwen2.5-VL-3B로 고정</em>: VideoITG</li>
+</ul></div><div class="sb-block"><h2>8.6 Plug-and-play의 미래</h2><p><strong>(1) Query-aware frame budget allocation.</strong> 현재 VideoITG는 fixed K. 그러나 counting query는 K=64가 필요하고, single-event localization은 K=8로 충분. interface는 <code>select(video, instruction, max_k) -&gt; List[int]</code>로 확장.</p>
 <p><strong>(2) Multi-resolution per frame.</strong> 32 frame을 모두 같은 해상도로 보낼 필요는 없다. 가장 중요한 5 frame은 1024×1024로, 나머지는 448×448로. interface: <code>select(video, instruction, token_budget) -&gt; List[Tuple[int, Resolution]]</code>.</p>
 <p><strong>(3) Streaming compatibility.</strong> VideoITG의 현재 가정은 video 전체가 미리 있다. streaming에서는 frame이 실시간으로 들어온다. sliding window 위에서 incremental Top-K를 유지하는 plug-and-play scorer가 다음 큰 white space.</p>
 <p>핵심 invariant만 지키면 contract는 더 풍부해질 수 있다.</p></div>
@@ -430,4 +454,7 @@ selector = VideoITGSelector(scorer=stub_scorer)
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
 </body></html>
