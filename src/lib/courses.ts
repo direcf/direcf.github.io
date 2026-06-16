@@ -3,6 +3,7 @@ import sa from "../data/courses/system-architecture.json";
 import vc from "../data/courses/video-codec.json";
 import jw from "../data/courses/jepa-world-models.json";
 import { marked } from "marked";
+import katex from "katex";
 
 export interface Chapter {
   number: number;
@@ -60,8 +61,42 @@ export function md(input: string): string {
   return marked.parseInline(input) as string;
 }
 
-// full markdown: paragraphs, tables, lists, code blocks, etc.
+function renderMath(text: string): { result: string; slots: string[] } {
+  const slots: string[] = [];
+  const placeholder = (i: number) => `\x00MATH${i}\x00`;
+
+  // block math $$...$$
+  let result = text.replace(/\$\$([\s\S]+?)\$\$/g, (_, expr) => {
+    const html = katex.renderToString(expr.trim(), { displayMode: true, throwOnError: false });
+    slots.push(html);
+    return placeholder(slots.length - 1);
+  });
+
+  // inline math $...$  (not $$)
+  result = result.replace(/\$([^$\n]+?)\$/g, (_, expr) => {
+    const html = katex.renderToString(expr.trim(), { displayMode: false, throwOnError: false });
+    slots.push(html);
+    return placeholder(slots.length - 1);
+  });
+
+  return { result, slots };
+}
+
+function restoreMath(html: string, slots: string[]): string {
+  return html.replace(/\x00MATH(\d+)\x00/g, (_, i) => slots[parseInt(i)]);
+}
+
+// Insert paragraph breaks before "**Term** = ..." definition-list patterns
+function splitDefinitions(text: string): string {
+  // Only applies when multiple bold-term definitions run together in one block
+  return text.replace(/([.。])\s+(\*\*[^*\n]+\*\*\s*[=—:])/g, "$1\n\n$2");
+}
+
+// full markdown: paragraphs, tables, lists, code blocks, math, auto-links
 export function paragraphs(text: string): string {
   if (!text) return "";
-  return marked.parse(text) as string;
+  const { result: mathReplaced, slots } = renderMath(text);
+  const withBreaks = splitDefinitions(mathReplaced);
+  const html = marked.parse(withBreaks) as string;
+  return restoreMath(html, slots);
 }
