@@ -3,6 +3,7 @@ import sa from "../data/courses/system-architecture.json";
 import vc from "../data/courses/video-codec.json";
 import jw from "../data/courses/jepa-world-models.json";
 import ak from "../data/courses/ai-agents-knowledge-work.json";
+import he from "../data/courses/harness-engineering.json";
 import { marked } from "marked";
 import katex from "katex";
 
@@ -47,6 +48,7 @@ export const COURSES: Record<string, Course> = {
   "video-codec":               vc as Course,
   "jepa-world-models":         jw as Course,
   "ai-agents-knowledge-work":  ak as Course,
+  "harness-engineering":       he as Course,
 };
 
 export function chapterSlug(n: number) {
