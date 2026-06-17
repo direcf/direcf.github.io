@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch3: Video Foundation Models — Wan, Cosmos, DiT — World-Action Models — direcf</title>
+  <meta name="description" content="DiT 기반 비디오 생성 모델이 어떻게 동작하는지, 왜 이들이 WAM의 강력한 백본이 되는지 이해한다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/multimodal-ai">World-Action Models</a><span class="sep">›</span>
+        <strong>Ch03 Video Foundation Models — Wan, Cosmos, DiT</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 03 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🎬</div>
+      <h1 class="chapter-title">Video Foundation Models — Wan, Cosmos, DiT</h1>
+      <div class="chapter-title-kr">비디오 파운데이션 모델 — Wan, Cosmos, DiT</div>
+      <div class="chapter-tldr">DiT 기반 비디오 생성 모델이 어떻게 동작하는지, 왜 이들이 WAM의 강력한 백본이 되는지 이해한다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-03.png" alt="Chapter 3 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 3 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>확산 모델(Diffusion Model)의 핵심 원리를 설명할 수 있다</li><li>DiT가 U-Net 기반 확산 모델보다 나은 이유를 이해한다</li><li>Wan과 Cosmos의 주요 특징을 비교할 수 있다</li><li>비디오 모델의 시간적 일관성이 로봇에 왜 중요한지 설명한다</li><li>오픈소스 비디오 백본이 WAM 연구를 어떻게 가속했는지 이해한다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>WAM이 가능해진 가장 결정적인 이유는 강력한 오픈소스 비디오 생성 모델의 등장이다. 2024~2025년, DiT(Diffusion Transformer) 기반의 Wan, Cosmos 같은 모델들이 공개되면서 연구자들은 수백 ZFLOPs를 들여 비디오 모델을 처음부터 학습할 필요 없이, 이미 물리 세계의 역학을 이해한 백본 위에서 로봇 데이터만으로 파인튜닝할 수 있게 됐다.</p>
+<p>이 챕터에서는 비디오 생성 모델의 핵심 기술인 <strong>확산 모델</strong>과 <strong>DiT(Diffusion Transformer)</strong>를 기초부터 설명하고, Wan과 Cosmos의 특징을 비교한다. 비디오 모델이 단순히 "멋진 영상을 만드는 것"을 넘어 어떻게 시간적·물리적 인과 관계를 인코딩하는지에 집중한다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>확산 모델 기초 — 노이즈에서 현실을 복원하는 법</h2><p><strong>확산 모델(Diffusion Model)</strong>은 두 단계로 동작한다.</p>
+<p><strong>전진 과정(Forward Process)</strong>: 실제 이미지/비디오에 가우시안 노이즈를 조금씩 더해 <span class="math-inline">\(T\)</span> 스텝 후 완전한 노이즈로 만든다:</p>
+<p><span class="math-display">\[q(x_t | x_{t-1}) = \mathcal{N}(x_t;\ \sqrt{1-\beta_t}\,x_{t-1},\ \beta_t I)\]</span></p>
+<p><strong>역방향 과정(Reverse Process)</strong>: 신경망 <span class="math-inline">\(\epsilon_\theta\)</span>가 노이즈에서 점진적으로 원본 데이터를 복원한다. 학습 목표:</p>
+<p><span class="math-display">\[\mathcal{L} = \mathbb{E}_{t,x_0,\epsilon}\left[\|\epsilon - \epsilon_\theta(x_t, t)\|^2\right]\]</span></p>
+<p>비디오 생성에서는 모든 프레임에 동일하게 노이즈를 더하고, 역방향 과정에서 시공간적으로 일관된 영상을 복원한다. 핵심 직관: 모델은 "원본이 얼마나 노이즈를 먹었는가"를 예측하는 작업을 통해 데이터 분포를 학습한다.</p></div><div class="sb-block"><h2>DiT — Transformer가 확산 모델에 오다</h2><p>초기 확산 모델은 <strong>U-Net</strong> 구조를 사용했다. CNN 기반 인코더-디코더로, 지역적 패턴을 잘 잡지만 장거리 의존성에 약했다.</p>
+<p><strong>DiT(Diffusion Transformer)</strong>는 U-Net을 Transformer로 대체한 것이다(Peebles &amp; Xie, 2023). 이미지를 패치로 분할하고 Self-Attention으로 전역적 관계를 모델링한다.</p>
+<p>비디오 DiT에서는 시간 축이 추가된다:
+- <strong>공간 어텐션(Spatial Attention)</strong>: 각 프레임 내 패치 간 관계
+- <strong>시간 어텐션(Temporal Attention)</strong>: 동일 위치의 시간적 변화
+- <strong>3D 풀 어텐션</strong>: Wan 등에서 사용, 공간+시간을 함께 처리</p>
+<table>
+<thead>
+<tr>
+<th>기준</th>
+<th>U-Net 기반</th>
+<th>DiT 기반</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>장거리 의존성</td>
+<td>약함</td>
+<td>강함 (어텐션)</td>
+</tr>
+<tr>
+<td>스케일링 법칙</td>
+<td>불명확</td>
+<td>LLM처럼 명확</td>
+</tr>
+<tr>
+<td>비디오 확장</td>
+<td>복잡</td>
+<td>시간 토큰 추가로 자연스러움</td>
+</tr>
+</tbody>
+</table>
+<p>스케일링 법칙이 LLM과 유사하다는 점이 핵심이다 — 더 큰 모델, 더 많은 데이터일수록 예측 가능하게 성능이 향상된다.</p></div><div class="sb-block"><h2>Wan과 Cosmos — 오픈소스 비디오 백본의 등장</h2><p><strong>Wan(通义万象)</strong>은 Alibaba가 공개한 오픈소스 비디오 생성 모델이다. 14B 파라미터 버전이 DreamZero의 WAM 백본으로 사용된다. 3D Full Attention 구조로 시공간 일관성이 높고, 물체 물리 특성(탄성, 마찰 등)을 암묵적으로 인코딩한다는 보고가 있다. Wan 2.2-5B 버전은 LingBot-VA에서 16k 시간의 크로스-에뮬레이션 사전학습에 사용됐다.</p>
+<p><strong>Cosmos</strong>는 NVIDIA가 공개한 비디오 파운데이션 모델로 로봇·자율주행 응용에 특화됐다. Cosmos Policy는 행동을 합성 잠재 프레임(synthetic latent frame)으로 인코딩하는 독특한 방식을 쓴다.</p>
+<p>두 모델의 공통점:
+- DiT 기반 3D 확산 모델
+- 오픈 가중치 (fine-tuning 가능)
+- 수십~수백 PB의 비디오 데이터로 사전학습
+- 텍스트 조건부 생성 지원</p>
+<p>이 모델들이 공개되기 전, WAM 연구는 비디오 사전학습 비용 때문에 소수 기관만 할 수 있었다.</p></div><div class="sb-block"><h2>비디오 모델이 로봇에 유용한 이유</h2><p>비디오 생성 모델이 로봇에 특히 유용한 이유는 <strong>시간적 일관성(temporal consistency)</strong> 때문이다. 좋은 비디오 모델은 프레임 간에 물체의 위치·모양·상태가 물리 법칙에 맞게 변해야 한다. 이 제약을 학습하면서 모델은 자연스럽게 접촉 역학, 중력, 관성 같은 물리 규칙을 인코딩하게 된다.</p>
+<p>또한 인터넷 비디오에는 <strong>의도적 인간 행동</strong>이 풍부하게 담겨 있다. 요리·조립·수리 영상에서 손이 움직이는 방식은 목표 지향적이다.</p>
+<p><strong>Veo 3.1 제로샷 실험</strong>이 이를 잘 보여준다. NVIDIA 아티클에서 언급된 이 실험에서, 로보틱스 파인튜닝 없이 순수 비디오 모델을 실제 DROID 작업에 적용했을 때 그럴듯한 로봇 동작과 작업 시퀀스를 생성했다. 그리퍼가 다른 손으로 변하는 아티팩트가 있었지만, 비디오 사전학습이 이미 상당한 물리 지식을 담고 있음을 시사한다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">조각가의 제거 과정</div>
+      <div class="a-body"><p>확산 모델의 역방향 과정은 조각가가 대리석을 깎는 것과 비슷하다. 미켈란젤로는 "천사는 원래 돌 안에 있었다. 나는 불필요한 부분만 제거했다"고 말했다. 확산 모델도 마찬가지다 — 순수한 노이즈(아무 형태도 없는 대리석 덩어리) 안에서 조금씩 불필요한 노이즈를 제거해 최종 이미지/비디오를 드러낸다.</p>
+<p>DiT의 역할은 "어디를 깎아야 하는지를 아는 마스터 조각가"다. U-Net 기반 이전 방식이 망치와 정으로 국소적으로 작업했다면, DiT는 전체 조각을 한 번에 보면서(Self-Attention) 균형 잡힌 결정을 내린다.</p>
+<p>비디오 생성에서는 이 과정이 공간(2D)뿐만 아니라 시간(1D)에도 동시에 적용된다. 각 프레임이 물리적으로 일관된 시퀀스를 이루도록 3D 전체를 동시에 "조각"하는 것이다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>확산 모델의 역방향 샘플링 과정을 단순화해 구현해보자. 노이즈에서 시작해 점진적으로 정제하는 핵심 루프를 보여준다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import torch
+import torch.nn as nn
+
+class SimpleDiT(nn.Module):
+    &quot;&quot;&quot;초소형 DiT: 실제는 수십억 파라미터지만 구조만 표현&quot;&quot;&quot;
+    def __init__(self, patch_dim=64, num_heads=8, depth=4):
+        super().__init__()
+        self.transformer = nn.TransformerEncoder(
+            nn.TransformerEncoderLayer(
+                d_model=patch_dim, nhead=num_heads,
+                dim_feedforward=patch_dim*4, batch_first=True
+            ),
+            num_layers=depth
+        )
+        # 타임스텝 임베딩: 확산 스텝 t를 조건으로 주입
+        self.time_embed = nn.Sequential(
+            nn.Linear(1, patch_dim), nn.SiLU(), nn.Linear(patch_dim, patch_dim)
+        )
+        self.out = nn.Linear(patch_dim, patch_dim)
+
+    def forward(self, x_noisy, t):
+        &quot;&quot;&quot;
+        x_noisy: (B, T*H*W, patch_dim) 시공간 패치 시퀀스
+        t: (B, 1) 정규화된 타임스텝 (0~1)
+        &quot;&quot;&quot;
+        t_emb = self.time_embed(t).unsqueeze(1)  # (B, 1, D)
+        x = x_noisy + t_emb                      # 타임스텝 조건 주입
+        x = self.transformer(x)
+        return self.out(x)                        # 예측 노이즈
+
+
+def ddim_sample(model, shape, num_steps=20, device=&#x27;cpu&#x27;):
+    &quot;&quot;&quot;DDIM 샘플링: 적은 스텝으로 고품질 생성&quot;&quot;&quot;
+    x = torch.randn(*shape, device=device)  # 순수 노이즈에서 시작
+    timesteps = torch.linspace(1.0, 0.0, num_steps + 1)[:-1]
+
+    for t in timesteps:
+        t_batch = torch.full((shape[0], 1), t.item(), device=device)
+        with torch.no_grad():
+            eps = model(x, t_batch)          # 예측 노이즈
+        alpha = 1 - t.item()
+        x = (x - (1 - alpha)**0.5 * eps) / max(alpha**0.5, 1e-6)
+
+    return x  # 최종 생성된 잠재 표현
+
+
+model = SimpleDiT()
+latent = ddim_sample(model, shape=(1, 64, 64))  # 16프레임×4패치, dim=64
+print(f&#x27;생성된 잠재 shape: {latent.shape}&#x27;)</code></pre>
+      <div class="c-walk"><p><code>SimpleDiT</code>는 시공간 패치를 Transformer로 처리한다. 실제 Wan/Cosmos에서는 이 패치가 비디오의 3D VAE 압축 결과다. <code>ddim_sample()</code>은 <span class="math-inline">\(t=1\)</span>(순수 노이즈)에서 <span class="math-inline">\(t=0\)</span>(깨끗한 샘플)까지 점진적으로 노이즈를 제거한다. WAM 파인튜닝에서는 이 생성 과정을 "로봇 팔이 움직이는 비디오"에 조건화한다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">비디오 생성 모델은 로봇 AI 외에도 영화 제작, 자율주행 시뮬레이션, 게임 NPC 등 다양한 분야에 적용된다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>DiT vs U-Net의 실질적 차이(스케일링, 전역 어텐션)를 설명할 수 있는가</li><li>확산 모델의 샘플링 속도 문제와 개선 방법(DDIM, consistency model)을 아는가</li><li>Wan과 Cosmos를 직접 써보거나 파인튜닝해본 경험이 있는가</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>확산 모델을 GAN과 혼동하는 것</li><li>DiT가 단순히 &#x27;더 좋은 U-Net&#x27;이라고만 설명하고 스케일링 법칙 관점을 언급하지 않는 것</li><li>비디오 모델의 추론 비용(수십 초~수 분)을 모르는 것</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>확산 모델에서 DDIM 샘플링이 DDPM보다 빠른 이유는 무엇인가요?</li><li>비디오 DiT에서 시간 어텐션과 공간 어텐션을 분리하는 것과 3D 풀 어텐션의 트레이드오프는 무엇인가요?</li><li>Wan 모델을 로봇 제어용으로 파인튜닝할 때 어떤 데이터 형식이 필요한가요?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> **친숙한 수준**: 확산 모델이 노이즈를 점진적으로 제거해 샘플을 생성한다고 설명할 수 있다. **마스터 수준**: 플로우 매칭이 확산 모델과 어떻게 다른지, 비디오 VAE의 시공간 압축이 DiT 입력 시퀀스 길이에 어떤 영향을 미치는지, CFG(Classifier-Free Guidance)가 텍스트-비디오 생성에서 어떻게 쓰이는지를 설명할 수 있다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>확산 = 노이즈 제거</h3><p>노이즈를 점진적으로 더하고(forward) 예측으로 제거하는(reverse) 두 단계로 동작한다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>DiT의 핵심 장점</h3><p>Transformer의 전역 어텐션 + LLM과 유사한 스케일링 법칙.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>Wan = 오픈소스 WAM 백본</h3><p>Alibaba의 14B 비디오 모델, DreamZero·LingBot-VA의 핵심 컴포넌트.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>Cosmos = 물리 특화</h3><p>NVIDIA가 로봇·자율주행용으로 설계, Cosmos Policy의 기반.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>시간적 일관성이 핵심</h3><p>비디오 모델의 시공간 일관성 학습이 물리 역학 인코딩의 근거.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>오픈소스가 판을 바꿨다</h3><p>파인튜닝만으로 WAM 구축이 가능해져 소규모 연구팀도 참여 가능해졌다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-02.html">← World Models — How AI Imagines the Future</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-04.html">VLA Models — From Language to Direct Action →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>
