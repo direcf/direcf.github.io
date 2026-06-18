@@ -6,6 +6,7 @@ import ak from "../data/courses/ai-agents-knowledge-work.json";
 import he from "../data/courses/harness-engineering.json";
 import wam from "../data/courses/world-action-models.json";
 import ccs from "../data/courses/claude-code-skills-guide.json";
+import mds from "../data/courses/multimodal-data-systems.json";
 import { marked } from "marked";
 import katex from "katex";
 
@@ -53,6 +54,7 @@ export const COURSES: Record<string, Course> = {
   "ai-agents-knowledge-work":  ak as Course,
   "harness-engineering":       he as Course,
   "world-action-models":       wam as Course,
+  "multimodal-data-systems":   mds as Course,
 };
 
 export function chapterSlug(n: number) {
