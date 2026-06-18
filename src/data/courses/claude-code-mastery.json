@@ -1,0 +1,721 @@
+{
+  "topic": "Claude Code Mastery",
+  "topicKr": "Claude Code 완전 정복",
+  "topicSlug": "claude-code-mastery",
+  "categorySlug": "ai-engineering",
+  "level": "intermediate",
+  "codeLanguage": "Python",
+  "description": "Karpathy의 65줄 CLAUDE.md가 왜 22만 GitHub star를 받았는지부터 — CLAUDE.md 로딩 원리, Hooks 시스템, Skills/슬래시 커맨드, Multi-agent 오케스트레이션까지. 해외 고수들이 실제로 쓰는 세팅과 워크플로우를 분해해 당신만의 AI 개발 환경을 완성한다.",
+  "chapters": [
+    {
+      "number": 1,
+      "emoji": "🎯",
+      "title": "Why CLAUDE.md? The Anatomy of an AI Instruction File",
+      "titleKr": "왜 CLAUDE.md인가 — AI 지시 파일의 해부학",
+      "tldr": "모든 AI 에이전트 실패의 근원은 컨텍스트 부재다 — CLAUDE.md는 그 컨텍스트를 구조화하는 가장 강력한 단일 도구다.",
+      "topics": ["컨텍스트 주입 원리", "AI 에이전트 실패 패턴 4가지", "CLAUDE.md의 작동 메커니즘", "왜 지금 이 파일이 중요한가"],
+      "learningGoals": [
+        "AI 에이전트가 왜 실패하는지 근본 원인을 설명할 수 있다",
+        "CLAUDE.md가 Claude Code의 컨텍스트 윈도우에 어떻게 주입되는지 이해한다",
+        "첫 번째 CLAUDE.md를 처음부터 작성할 수 있다",
+        "좋은 CLAUDE.md와 나쁜 CLAUDE.md의 차이를 구분한다",
+        "지시 파일이 팀 생산성에 미치는 정량적 영향을 안다"
+      ],
+      "overview": "2026년 초, Andrej Karpathy는 X(트위터)에 짧은 포스트를 올렸다. 자신의 코딩 패턴이 바뀌었다는 것 — 80%가 직접 코딩하고 20%가 AI를 보조 도구로 쓰던 방식에서, 이제는 80%가 에이전트 주도 코딩이고 자신은 검토자 역할을 한다는 것이었다. 그는 동시에 이 전환 과정에서 겪은 네 가지 반복적인 AI 실패 패턴도 공유했다.\n\n그 다음 날, 개발자 Forrest Chang이 그 네 가지 패턴을 65줄짜리 CLAUDE.md 파일로 정제해 GitHub에 올렸다. 결과는 폭발적이었다 — 개인 계정과 조직 미러 합산 22만 개가 넘는 star를 기록하며 GitHub 역사상 가장 빠르게 성장한 저장소 중 하나가 되었다.\n\n이 현상은 단순한 유행이 아니다. CLAUDE.md라는 파일이 해결하는 문제는 실제로 존재하고, 그 문제는 매일 개발자들을 좌절시키고 있다. AI가 틀린 가정을 하고 코드를 만들어내거나, 요청하지 않은 기능을 추가하거나, 관련 없는 코드를 '개선'하거나, '완료'라고 말하면서 실제로 작동하는지 확인하지 않는 경험 — 이 모든 것이 하나의 파일로 극적으로 개선된다.",
+      "sections": [
+        {
+          "title": "컨텍스트 주입이란 무엇인가",
+          "content": "Claude Code가 실행될 때, Claude 모델은 빈 상태로 시작하지 않는다. 시스템 프롬프트, 사용자 지시, 현재 파일 내용, 그리고 CLAUDE.md 파일들 — 이 모든 것이 **컨텍스트 윈도우**라는 거대한 텍스트 버퍼에 순서대로 주입된다. Claude는 이 버퍼 전체를 한 번에 읽고 응답을 생성한다.\n\n**CLAUDE.md** = 이 컨텍스트 버퍼에 자동으로 주입되는 개발자 작성 지시 파일.\n\n핵심은 이렇다: Claude는 당신의 프로젝트에 대해 아무것도 모른다. 당신 팀의 코딩 규칙, 피해야 할 패턴, 선호하는 테스트 전략, 절대로 건드리면 안 되는 파일 — 이 모든 것을 Claude는 당신이 가르쳐주지 않으면 알 수 없다. CLAUDE.md는 그 교육의 도구다.\n\nAnthropic 내부 데이터에 따르면, 잘 구성된 CLAUDE.md를 가진 팀은 그렇지 않은 팀보다 태스크를 **40% 빠르게** 완료한다. 이유는 단순하다 — 같은 실수를 반복하지 않기 때문이다."
+        },
+        {
+          "title": "4가지 AI 에이전트 실패 패턴",
+          "content": "Karpathy가 명명한 네 가지 패턴은 전 세계 개발자들이 '맞아 바로 이거야'라고 반응한 공통 경험이다.\n\n**패턴 1: Silent Assumptions (침묵하는 가정)** — AI가 모호한 요청에서 한 가지 해석을 선택하고, 선택했다는 사실조차 말하지 않는다. 개발자는 엉뚱한 방향으로 구현된 코드를 받고 나서야 오해가 있었음을 알게 된다.\n\n**패턴 2: Code Hypertrophy (코드 비대화)** — 요청한 기능 외에 '있으면 좋을 것 같은' 추상화, 에러 핸들링, 설정 옵션들이 스스로 추가된다. 50줄로 해결할 수 있는 것을 200줄로 만들어낸다.\n\n**패턴 3: Collateral Damage (부수 피해)** — 요청받지 않은 주변 코드를 '개선'하거나, 형식을 맞추거나, 리팩토링한다. 실제로 요청한 변경과 관련 없는 diff가 리뷰를 어렵게 만든다.\n\n**패턴 4: Unverifiable Success (검증 불가 성공)** — '완료했습니다'라고 말하지만, 실제로 작동하는지 확인하는 기준을 정의하지 않았다. '잘 작동하게 해주세요'는 성공 기준이 아니다.\n\n이 네 패턴은 모두 같은 근원을 가진다 — **컨텍스트의 부재**. Claude는 당신이 원하는 것, 원하지 않는 것, 성공이 무엇을 의미하는지를 가르쳐주지 않으면 스스로 추론해서 채운다."
+        },
+        {
+          "title": "CLAUDE.md가 컨텍스트 윈도우에 주입되는 방식",
+          "content": "Claude Code가 세션을 시작할 때 파일을 로드하는 순서는 정확하게 정의되어 있다.\n\n1. **시스템 프롬프트** — Anthropic이 Claude Code에 내장한 기본 지시들\n2. **글로벌 CLAUDE.md** (`~/.claude/CLAUDE.md`) — 모든 프로젝트에 적용되는 개인 규칙\n3. **프로젝트 CLAUDE.md** (`.claude/CLAUDE.md` 또는 루트 `CLAUDE.md`) — 이 저장소에만 적용되는 팀 규칙\n4. **로컬 CLAUDE.md** (`.claude/CLAUDE.md.local`) — gitignore된 개인 오버라이드\n5. **서브디렉토리 CLAUDE.md** — Claude가 해당 경로의 파일에 접근할 때 지연 로드됨\n\n중요한 것은 **우선순위**다. 더 구체적인 파일이 더 일반적인 파일을 오버라이드한다. 프로젝트 CLAUDE.md의 규칙이 글로벌 CLAUDE.md와 충돌하면, 프로젝트 규칙이 이긴다.\n\n또 하나의 핵심 특성: **서브디렉토리 CLAUDE.md는 세션 시작 시 로드되지 않는다**. Claude의 도구가 실제로 그 경로의 파일에 접근할 때 비로소 로드된다. 따라서 중요한 규칙은 서브디렉토리가 아닌 루트 레벨에 두어야 한다."
+        },
+        {
+          "title": "첫 CLAUDE.md 작성 — 무엇을 담아야 하는가",
+          "content": "좋은 CLAUDE.md는 세 가지 질문에 답한다: **이 프로젝트가 무엇인가? 무엇을 해야 하는가? 무엇을 절대로 하지 말아야 하는가?**\n\n가장 임팩트 높은 단일 패턴은 **Negative Constraints (부정적 제약)** 목록이다:\n\n```markdown\n## 하지 말아야 할 것들\n- default export 사용 금지\n- schema.prisma를 직접 수정하지 말 것\n- `any` 타입 추가 금지\n- console.log를 프로덕션 코드에 남기지 말 것\n- 마이그레이션 파일을 내가 확인하기 전에 생성하지 말 것\n```\n\n이 목록이 강력한 이유는, 금지 규칙 하나가 특정 오류 범주 전체를 예방하기 때문이다. 또한 Claude는 '해야 할 것' 목록보다 '하지 말아야 할 것' 목록에 더 신뢰성 높게 순응한다.\n\n두 번째로 중요한 패턴은 **검증 스텝 명시**다:\n\n```markdown\n## 변경 후 반드시 실행할 것\n- npm test\n- npm run typecheck\n- 둘 중 하나라도 실패하면 완료를 선언하기 전에 수정할 것\n```\n\n`/init` 커맨드를 사용하면 현재 프로젝트 구조를 분석해 초안을 자동 생성해준다. 이것을 시작점으로 삼아 정제하는 것이 가장 빠른 접근법이다."
+        }
+      ],
+      "analogy": {
+        "title": "새 팀원에게 주는 온보딩 문서",
+        "content": "당신이 새로운 팀원을 채용했다고 상상해보자. 그는 훌륭한 개발자다 — 언어를 알고, 패턴을 이해하고, 빠르게 코드를 작성한다. 하지만 첫날 아무 지시 없이 바로 프로덕션 태스크를 맡기면 어떻게 될까?\n\n그는 자신의 경험에서 좋다고 배운 패턴을 적용할 것이다. 기존 팀의 규칙이 아니라 자신이 훈련받은 방식대로. 아마도 좋은 코드를 작성할 것이다 — 하지만 당신이 원하는 방식의 코드가 아닐 수 있다.\n\nClaude는 정확히 이 새 팀원과 같다. 온보딩 문서 없이 바로 투입된 탁월한 개발자. CLAUDE.md는 그 온보딩 문서다. '우리 팀은 이렇게 합니다', '이 파일들은 절대 건드리지 마세요', '완료의 정의는 테스트 통과입니다' — 이것들을 한 번 써두면 Claude는 매번 물어보지 않는다.\n\n가장 좋은 온보딩 문서가 팀의 암묵지를 명문화하듯, 가장 좋은 CLAUDE.md는 '당연히 알겠지'라고 생각해서 말 안 한 것들을 명시적으로 적는다."
+      },
+      "codeExample": {
+        "language": "markdown",
+        "intro": "실제로 사용되는 프로덕션 CLAUDE.md의 구조를 보여주는 예제다. 각 섹션이 어떤 역할을 하는지, 왜 이 순서로 작성하는지 주목하라.",
+        "code": "# CLAUDE.md — MyApp 프로젝트 규칙\n\n## 프로젝트 개요\nMyApp은 Next.js 14 + TypeScript + PostgreSQL 기반 SaaS다.\nAPI: /api/* (Next.js API Routes), DB: Prisma ORM.\n\n## 절대 하지 말아야 할 것 (Do NOT)\n- `any` 타입 사용 금지 — 타입 에러는 항상 제대로 해결할 것\n- default export 금지 — 모든 export는 named export 사용\n- `schema.prisma` 직접 수정 금지 — 반드시 나에게 먼저 물어볼 것\n- `console.log` 프로덕션 코드에 남기기 금지\n- 요청하지 않은 리팩토링 금지 — 관련 없는 코드는 건드리지 말 것\n\n## 코드 스타일\n- 컨벤션 참조: src/utils/validators.ts:1-30 (canonical pattern)\n- 에러 처리: src/lib/errors.ts의 AppError 클래스 사용\n- API 응답: src/lib/api-response.ts 패턴 따를 것\n\n## 변경 후 반드시 실행\n1. npm run typecheck → 타입 에러 0개 확인\n2. npm test → 테스트 통과 확인\n3. 둘 중 하나라도 실패하면 완료 선언 전 수정할 것\n\n## 모호할 때\n- 여러 해석이 가능하면 구현 전에 먼저 물어볼 것\n- 더 간단한 방법이 있으면 말해줄 것 (구현 전에)",
+        "walkthrough": "맨 위에 프로젝트 개요를 두는 이유는 Claude가 파일을 위에서 아래로 읽으며 초반 내용에 더 집중하기 때문이다. 'Do NOT' 섹션을 두 번째에 배치한 것도 같은 이유다 — 가장 중요한 제약을 빨리 확인시킨다. 코드 스타일 섹션에서 실제 파일 경로와 라인 번호를 참조하는 것은 코드 스니펫을 직접 넣는 것보다 낫다 — 스니펫은 코드가 변경되면 stale해지지만, 파일 참조는 항상 최신이다."
+      },
+      "industryEvaluation": {
+        "overview": "시니어 엔지니어들은 CLAUDE.md의 품질을 팀의 AI 성숙도 지표로 본다. 잘 관리된 CLAUDE.md는 팀이 AI와 얼마나 오래, 체계적으로 협력해왔는지를 보여준다.",
+        "whatEngineersLookFor": [
+          "Do NOT 리스트의 구체성 — 'bad code 쓰지 말 것' 같은 모호한 규칙은 의미 없음",
+          "팀 전체가 기여하고 있는지 (git blame으로 단일 작성자인지 확인)",
+          "최근에 업데이트되었는지 — 오래된 CLAUDE.md는 없는 것만 못함",
+          "검증 스텝이 구체적으로 명시되어 있는지"
+        ],
+        "redFlags": [
+          "CLAUDE.md가 없는 프로젝트 — AI를 진지하게 활용하지 않는 신호",
+          "모든 항목이 긍정적 지시만 있고 부정적 제약이 없는 경우",
+          "코드 스니펫을 직접 포함하는 경우 — stale해질 가능성이 높음",
+          "너무 길어서 실제로 관리되지 않는 경우"
+        ],
+        "interviewQuestions": [
+          "팀의 CLAUDE.md에 있는 규칙 중 실제 사고에서 배운 것이 있나요?",
+          "Do NOT 항목을 추가하게 된 구체적인 사건이 있었나요?",
+          "서브디렉토리 CLAUDE.md와 루트 CLAUDE.md를 어떻게 분리해서 사용하시나요?"
+        ],
+        "masteryVsFamiliar": "단순히 아는 수준: CLAUDE.md가 프로젝트에 존재한다. 마스터 수준: AI가 잘못된 행동을 할 때마다 CLAUDE.md에 규칙을 추가하는 피드백 루프가 자동으로 작동하고, 팀 전체가 이 파일을 살아있는 문서로 관리한다."
+      },
+      "keyTakeaways": [
+        {"title": "컨텍스트가 모든 것이다", "content": "AI 에이전트 실패의 95%는 모델 한계가 아니라 컨텍스트 부재다. CLAUDE.md는 그 컨텍스트를 구조화하는 도구다."},
+        {"title": "부정적 제약이 가장 강력하다", "content": "Do NOT 목록 하나가 특정 오류 범주 전체를 예방한다. 긍정적 지시보다 부정적 제약이 Claude에게 더 신뢰성 높게 작동한다."},
+        {"title": "검증 기준을 명시하라", "content": "'완료'의 정의를 항상 포함하라. 테스트 통과, 타입체크 성공 — 구체적인 기준 없이는 Claude가 스스로 판단한다."},
+        {"title": "파일 참조 > 코드 스니펫", "content": "CLAUDE.md에 코드를 직접 붙여넣지 마라. src/utils/helpers.ts:1-30 같은 파일 참조가 항상 최신 상태를 유지한다."},
+        {"title": "/init으로 시작하라", "content": "`/init` 커맨드가 현재 프로젝트 구조를 분석해 초안을 만들어준다. 이것을 기점으로 팀의 암묵지를 추가하라."},
+        {"title": "실수가 생기면 즉시 추가하라", "content": "Claude가 잘못된 행동을 할 때마다 CLAUDE.md에 규칙을 추가하라. 이 피드백 루프가 시간이 지날수록 강력한 팀 도구를 만든다."},
+        {"title": "팀 문서로 관리하라", "content": "CLAUDE.md를 git에 커밋하고 팀 전체가 기여하게 하라. 한 사람의 파일이 아닌 팀의 집단 지식이 되어야 한다."}
+      ]
+    },
+    {
+      "number": 2,
+      "emoji": "🔬",
+      "title": "Dissecting Karpathy's 65-Line CLAUDE.md",
+      "titleKr": "Karpathy의 65줄 해부 — 22만 star의 비밀",
+      "tldr": "65줄로 AI의 4대 실패 패턴을 모두 막는 방법 — 각 줄이 왜 그 자리에 있는지 분해한다.",
+      "topics": ["Karpathy의 4원칙 전문 분석", "Think Before Coding", "Simplicity First", "Surgical Changes", "Goal-Driven Execution"],
+      "learningGoals": [
+        "Karpathy CLAUDE.md의 4가지 섹션이 각각 어떤 실패 패턴을 막는지 설명할 수 있다",
+        "각 원칙을 자신의 프로젝트에 적용하는 방법을 안다",
+        "Senior Engineer Test와 Traceability Test를 이해하고 활용한다",
+        "이 파일이 22만 star를 받은 심리적, 기술적 이유를 분석한다",
+        "원칙을 프로젝트별로 커스터마이즈하는 방법을 안다"
+      ],
+      "overview": "Karpathy CLAUDE.md의 전문을 처음 읽으면 놀라울 정도로 단순해 보인다. 화려한 프롬프트 엔지니어링 기법도 없고, 복잡한 조건 분기도 없다. 단지 네 개의 섹션, 명확한 지시들, 그리고 각 원칙의 자가 테스트 방법.\n\n이 단순함이 바로 핵심이다. CLAUDE.md는 Claude가 읽는 문서인 동시에 인간 개발자도 읽고 이해할 수 있어야 한다. 복잡한 파일은 관리되지 않는다. 관리되지 않는 CLAUDE.md는 없는 것만 못하다.\n\n그러나 이 65줄 안에는 수개월의 실패 경험이 압축되어 있다. 각 규칙은 구체적인 사고에서 나왔다 — 'AI가 이런 짓을 해서 PR이 엉망이 됐다'는 경험이 하나의 줄로 결정화된 것이다. 이 챕터에서는 그 65줄을 한 줄씩 분해하고, 각 선택의 이유를 이해한다.",
+      "sections": [
+        {
+          "title": "섹션 1: Think Before Coding — 가정을 드러내라",
+          "content": "첫 번째 섹션의 핵심 명령은 두 단어다: **Don't assume.** 그리고 바로 이어서: **Don't hide confusion.**\n\n이 두 문장이 AI 에이전트의 가장 흔한 실패를 막는다. AI는 모호한 지시를 받았을 때 가장 그럴듯한 해석을 선택하고 구현을 시작한다. 사용자에게 물어보는 것보다 그게 더 '도움이 되는' 행동처럼 느껴지기 때문이다. 하지만 틀린 방향으로 구현된 200줄의 코드는 애초에 아무것도 안 한 것보다 훨씬 나쁘다.\n\n```markdown\n## 1. Think Before Coding\n\nBefore implementing:\n- State your assumptions explicitly. If uncertain, ask.\n- If multiple interpretations exist, present them - don't pick silently.\n- If a simpler approach exists, say so. Push back when warranted.\n- If something is unclear, stop. Name what's confusing. Ask.\n```\n\n'Push back when warranted'는 특히 중요하다. Claude에게 반박할 권한을 명시적으로 주는 것이다. 이 줄이 없으면 Claude는 비효율적인 접근법도 그냥 구현해버린다. 이 줄이 있으면 '더 간단한 방법이 있는데요'라고 먼저 말한다.\n\n자가 테스트 질문: 구현 전에 명시적으로 가정을 드러냈는가? 불분명한 게 있으면 이름을 붙여서 물어봤는가?"
+        },
+        {
+          "title": "섹션 2: Simplicity First — 코드 비대화와의 전쟁",
+          "content": "두 번째 섹션은 AI의 가장 흔한 죄악과 싸운다 — 요청하지 않은 것을 추가하는 습관.\n\n```markdown\n## 2. Simplicity First\n\n- No features beyond what was asked.\n- No abstractions for single-use code.\n- No \"flexibility\" or \"configurability\" that wasn't requested.\n- No error handling for impossible scenarios.\n- If you write 200 lines and it could be 50, rewrite it.\n\nAsk yourself: \"Would a senior engineer say this is overcomplicated?\" If yes, simplify.\n```\n\n마지막 두 줄이 특히 천재적이다. 'Senior Engineer Test'는 Claude에게 자가 검증 메커니즘을 준다. Claude는 코드를 작성한 후 스스로 시니어 엔지니어의 관점에서 평가해야 한다. 이것은 외부 검토를 내부화한 것이다.\n\n'If you write 200 lines and it could be 50, rewrite it'은 더 나아간다 — 한 번에 최소한으로 쓰는 게 아니라, 너무 많이 썼다면 **다시 쓰라**는 명령이다. 이 명령이 없으면 Claude는 일단 쓴 코드를 유지하려는 경향이 있다."
+        },
+        {
+          "title": "섹션 3: Surgical Changes — 부수 피해 방지",
+          "content": "세 번째 섹션은 매우 구체적인 메타포를 사용한다 — 'Surgical'. 외과 수술처럼 정확히 필요한 부분만 건드리라는 것이다.\n\n```markdown\n## 3. Surgical Changes\n\nWhen editing existing code:\n- Don't \"improve\" adjacent code, comments, or formatting.\n- Don't refactor things that aren't broken.\n- Match existing style, even if you'd do it differently.\n\nWhen your changes create orphans:\n- Remove imports/variables/functions that YOUR changes made unused.\n- Don't remove pre-existing dead code unless asked.\n\nThe test: Every changed line should trace directly to the user's request.\n```\n\n마지막 줄 **Traceability Test**가 핵심이다: 변경된 모든 줄이 사용자의 요청으로 직접 추적될 수 있어야 한다. 이 테스트가 명시되면, Claude는 PR에 들어가는 모든 변경에 대해 '왜 이 줄이 필요한가'를 스스로 검증해야 한다.\n\n'Match existing style, even if you'd do it differently'는 미묘하지만 중요하다. Claude에게는 자신의 선호가 있다. 이 줄이 없으면 Claude는 기존 코드를 자신의 스타일로 맞추려 한다. 이 줄이 있으면 그러지 않는다."
+        },
+        {
+          "title": "섹션 4: Goal-Driven Execution — 검증 가능한 성공 기준",
+          "content": "마지막 섹션은 가장 야심찬 변환을 요구한다 — 모든 태스크를 **검증 가능한 목표**로 바꾸는 것.\n\n```markdown\n## 4. Goal-Driven Execution\n\nTransform tasks into verifiable goals:\n- \"Add validation\" → \"Write tests for invalid inputs, then make them pass\"\n- \"Fix the bug\" → \"Write a test that reproduces it, then make it pass\"\n- \"Refactor X\" → \"Ensure tests pass before and after\"\n\nFor multi-step tasks, state a brief plan:\n1. [Step] → verify: [check]\n2. [Step] → verify: [check]\n```\n\n이 변환이 강력한 이유는, 검증 단계를 구현 단계와 분리하기 때문이다. '검증'이 명시적으로 있으면 Claude는 '완료'를 선언하기 전에 실제로 검증한다. 없으면 구현이 끝나는 것이 곧 완료다.\n\n멀티스텝 태스크를 위한 플랜 템플릿도 포함되어 있다. 각 스텝에 대응하는 검증 체크가 붙어있어, 루프를 독립적으로 돌릴 수 있다. 이것이 '약한 기준(make it work)'과 '강한 기준(test passes)' 사이의 차이다."
+        },
+        {
+          "title": "22만 Star의 비밀 — 왜 이 파일이 공명했는가",
+          "content": "이 파일이 기록적인 속도로 퍼진 데는 기술적 이유와 심리적 이유가 함께 작용했다.\n\n**기술적 이유**: 파일이 해결하는 네 가지 실패 패턴은 실재하고 측정 가능하다. 각 섹션 끝의 자가 테스트(Senior Engineer Test, Traceability Test)는 Claude가 실제로 따를 수 있는 구체적인 기준을 제공한다. 규칙이 아니라 **기준**이다.\n\n**심리적 이유**: 이 파일은 프롬프트 엔지니어링처럼 느껴지지 않는다. 새 팀원에게 주는 온보딩 문서처럼 느껴진다. 개발자들은 이것을 읽고 '나도 이게 필요했어'라고 즉각 인식한다. 공유하기 쉽고, 커스터마이즈하기 쉽고, 팀원에게 설명하기 쉽다.\n\n**Tradeoff 고지**: 파일 첫 줄에 있는 이 문장도 중요하다 — *'These guidelines bias toward caution over speed. For trivial tasks, use judgment.'* 이 솔직함이 신뢰를 만든다. '항상 이렇게 하라'가 아니라 '이 트레이드오프를 알고 쓰라'고 말하는 것이다."
+        }
+      ],
+      "analogy": {
+        "title": "체스 그랜드마스터의 오프닝 북",
+        "content": "체스 그랜드마스터들은 수천 개의 오프닝 라인을 암기한다. 하지만 그들이 정말로 배우는 것은 특정 수열이 아니라, **그 수열이 만들어내는 포지션의 원칙**이다. 왜 이 말을 여기에 두어야 하는가? 왜 이 교환은 손해처럼 보여도 유리한가?\n\nKarpathy의 65줄은 그 오프닝 북과 같다. 각 규칙은 단순한 '이렇게 해'가 아니라, 그 배후의 원칙을 담고 있다. 'Don't assume'은 단지 물어보라는 게 아니다 — 모호함을 명시적으로 만들라는 원칙이다. 'Every changed line should trace directly to the user's request'는 단지 적게 바꾸라는 게 아니다 — 인과관계를 추적 가능하게 유지하라는 원칙이다.\n\n그랜드마스터가 오프닝 북을 넘어서는 순간은 규칙을 외울 때가 아니라 원칙을 이해할 때다. 마찬가지로, 이 파일을 그냥 복사해서 쓰는 것과 각 줄의 이유를 이해하고 자신의 프로젝트에 맞게 변형하는 것 사이에는 큰 차이가 있다."
+      },
+      "codeExample": {
+        "language": "markdown",
+        "intro": "Karpathy의 원본 65줄 전문이다. 각 섹션의 구조와 자가 테스트 메커니즘에 주목하라.",
+        "code": "# CLAUDE.md\n\nBehavioral guidelines to reduce common LLM coding mistakes.\nMerge with project-specific instructions as needed.\n\n**Tradeoff:** These guidelines bias toward caution over speed.\nFor trivial tasks, use judgment.\n\n## 1. Think Before Coding\n\n**Don't assume. Don't hide confusion. Surface tradeoffs.**\n\nBefore implementing:\n- State your assumptions explicitly. If uncertain, ask.\n- If multiple interpretations exist, present them - don't pick silently.\n- If a simpler approach exists, say so. Push back when warranted.\n- If something is unclear, stop. Name what's confusing. Ask.\n\n## 2. Simplicity First\n\n**Minimum code that solves the problem. Nothing speculative.**\n\n- No features beyond what was asked.\n- No abstractions for single-use code.\n- No \"flexibility\" or \"configurability\" that wasn't requested.\n- No error handling for impossible scenarios.\n- If you write 200 lines and it could be 50, rewrite it.\n\nAsk yourself: \"Would a senior engineer say this is overcomplicated?\"\nIf yes, simplify.\n\n## 3. Surgical Changes\n\n**Touch only what you must. Clean up only your own mess.**\n\nWhen editing existing code:\n- Don't \"improve\" adjacent code, comments, or formatting.\n- Don't refactor things that aren't broken.\n- Match existing style, even if you'd do it differently.\n- If you notice unrelated dead code, mention it - don't delete it.\n\nWhen your changes create orphans:\n- Remove imports/variables/functions that YOUR changes made unused.\n- Don't remove pre-existing dead code unless asked.\n\nThe test: Every changed line should trace directly to the user's request.\n\n## 4. Goal-Driven Execution\n\n**Define success criteria. Loop until verified.**\n\nTransform tasks into verifiable goals:\n- \"Add validation\" → \"Write tests for invalid inputs, then make them pass\"\n- \"Fix the bug\" → \"Write a test that reproduces it, then make it pass\"\n- \"Refactor X\" → \"Ensure tests pass before and after\"\n\nFor multi-step tasks, state a brief plan:\n1. [Step] → verify: [check]\n2. [Step] → verify: [check]\n3. [Step] → verify: [check]\n\nStrong success criteria let you loop independently.\nWeak criteria (\"make it work\") require constant clarification.\n\n---\n**These guidelines are working if:** fewer unnecessary changes in diffs,\nfewer rewrites due to overcomplication, and clarifying questions come\nbefore implementation rather than after mistakes.",
+        "walkthrough": "파일 끝의 '이 가이드라인이 작동하고 있는지 확인하는 방법' 섹션을 주목하라. 이것은 단순한 마무리 문장이 아니라 메타 검증이다 — CLAUDE.md 자체가 효과가 있는지 측정하는 기준을 제공한다. diff에 불필요한 변경이 줄었는가? 과도한 복잡성으로 인한 재작성이 줄었는가? 구현 후가 아닌 전에 질문이 오는가? 이 세 지표를 추적하면 CLAUDE.md의 ROI를 실제로 측정할 수 있다."
+      },
+      "industryEvaluation": {
+        "overview": "이 파일을 진지하게 공부하는 엔지니어와 그냥 복사해서 쓰는 엔지니어의 차이는 커스터마이제이션에서 나타난다. 4원칙의 정신을 자신의 프로젝트에 맞게 변형했는가, 아니면 그대로 붙여넣었는가.",
+        "whatEngineersLookFor": [
+          "4원칙이 팀의 실제 사고 기록과 연결되어 있는지",
+          "'Senior Engineer Test'와 'Traceability Test'를 실제로 적용하고 있는지",
+          "Tradeoff 고지처럼 솔직한 한계 인정이 있는지"
+        ],
+        "redFlags": [
+          "원본 그대로 복사해서 프로젝트 특화 정보 없이 쓰는 경우",
+          "파일이 있지만 팀원들이 내용을 모르는 경우",
+          "자가 테스트 기준을 이해 없이 따라 쓰는 경우"
+        ],
+        "interviewQuestions": [
+          "Karpathy CLAUDE.md의 4원칙 중 귀하의 팀에서 가장 중요한 것은 무엇이고 왜인가요?",
+          "'Surgical Changes' 원칙을 실제 코드 리뷰에서 적용한 사례가 있나요?",
+          "'Goal-Driven Execution'에서 약한 기준과 강한 기준의 차이를 실제 태스크로 보여주세요."
+        ],
+        "masteryVsFamiliar": "단순히 아는 수준: 4원칙의 이름을 말할 수 있다. 마스터 수준: 각 원칙이 어떤 심리적, 기술적 이유로 AI에게 작동하는지 설명하고, 자신의 프로젝트에서 각 원칙을 위반한 사례와 그것을 막기 위해 CLAUDE.md에 추가한 규칙을 말할 수 있다."
+      },
+      "keyTakeaways": [
+        {"title": "65줄은 수개월의 실패를 압축한 것", "content": "각 규칙 뒤에는 구체적인 사고가 있다. 규칙을 외우기보다 그 사고를 이해하라."},
+        {"title": "자가 테스트가 핵심이다", "content": "Senior Engineer Test와 Traceability Test는 Claude에게 외부 검토를 내부화시키는 메커니즘이다."},
+        {"title": "Tradeoff를 솔직하게 고지하라", "content": "좋은 CLAUDE.md는 항상 이렇게 하라고 말하지 않는다. 트레이드오프를 인정하고 판단을 위임한다."},
+        {"title": "단순함이 관리 가능성을 만든다", "content": "이 파일이 22만 star를 받은 이유 중 하나는 팀원 누구나 읽고 이해하고 기여할 수 있기 때문이다."},
+        {"title": "복사보다 변형이 가치 있다", "content": "원본을 시작점으로 삼되, 팀의 실제 사고를 반영하도록 반드시 커스터마이즈하라."},
+        {"title": "끝의 메타 검증을 기억하라", "content": "diff 품질, 재작성 빈도, 질문 타이밍 — 이 세 지표를 추적하면 CLAUDE.md의 실제 효과를 측정할 수 있다."}
+      ]
+    },
+    {
+      "number": 3,
+      "emoji": "🗺️",
+      "title": "The Loading Architecture: How Claude Reads Your Files",
+      "titleKr": "로딩 아키텍처 — Claude는 파일들을 어떻게 읽는가",
+      "tldr": "Claude가 세션 시작 시 어떤 순서로 어떤 파일들을 로드하는지 정확히 이해하면, 규칙의 범위와 우선순위를 의도대로 설계할 수 있다.",
+      "topics": ["CLAUDE.md 3단계 로딩 계층", "지연 로딩(Lazy Loading) 메커니즘", "settings.json 우선순위 체계", "InstructionsLoaded 훅", "실전 멀티 저장소 설계"],
+      "learningGoals": [
+        "글로벌, 프로젝트, 로컬, 서브디렉토리 CLAUDE.md의 차이와 우선순위를 설명한다",
+        "서브디렉토리 CLAUDE.md가 지연 로딩되는 이유와 그 함의를 이해한다",
+        "settings.json 파일 5단계 우선순위를 정확히 안다",
+        "팀 공유 규칙과 개인 규칙을 어떻게 분리해야 하는지 설계할 수 있다",
+        "CLAUDE_CODE_ADDITIONAL_DIRECTORIES 환경 변수의 동작을 이해한다"
+      ],
+      "overview": "Claude Code가 실행되면 내부적으로 일련의 파일 로딩 시퀀스가 시작된다. 이 시퀀스의 순서와 우선순위를 이해하는 것은 단순한 호기심을 넘어 실용적인 설계 결정에 영향을 미친다. 중요한 규칙을 어디에 두어야 하는가? 팀 규칙과 개인 규칙을 어떻게 분리하는가? 특정 서브디렉토리에만 적용되는 규칙은 어디에 두는가?\n\n이 챕터는 Claude Code의 파일 로딩 메커니즘을 정밀하게 분해한다. 문서에 명시된 것과 실제 동작 사이의 미묘한 차이, 특히 '지연 로딩'의 함의를 깊이 이해하면 더 신뢰할 수 있는 설정 아키텍처를 만들 수 있다.",
+      "sections": [
+        {
+          "title": "CLAUDE.md 4계층 로딩 순서",
+          "content": "Claude Code는 세션 시작 시 다음 순서로 CLAUDE.md 파일들을 로드한다:\n\n| 계층 | 위치 | 범위 | Git 커밋 |\n|---|---|---|---|\n| **글로벌** | `~/.claude/CLAUDE.md` | 모든 프로젝트 | N/A (개인 기기) |\n| **프로젝트** | `.claude/CLAUDE.md` 또는 루트 `CLAUDE.md` | 이 저장소 | 예 (팀 공유) |\n| **로컬** | `.claude/CLAUDE.md.local` | 이 저장소 | 아니오 (gitignore) |\n| **서브디렉토리** | `any/sub/dir/CLAUDE.md` | 해당 경로 접근 시 | 선택적 |\n\n우선순위는 **구체적인 것이 일반적인 것을 오버라이드**한다. 같은 규칙이 글로벌과 프로젝트 CLAUDE.md에 충돌되게 있으면, 프로젝트 규칙이 이긴다.\n\n또한 조상 경로도 탐색된다. `~/projects/myapp/src/api/` 디렉토리에서 작업 중이라면, Claude는 `src/api/CLAUDE.md`, `src/CLAUDE.md`, `CLAUDE.md`를 순서대로 찾는다. 이 ancestor walk가 모노레포에서 유용하다 — 패키지별 규칙과 저장소 전체 규칙을 자연스럽게 계층화할 수 있다."
+        },
+        {
+          "title": "서브디렉토리의 지연 로딩 — 핵심 함정",
+          "content": "이 동작을 모르면 규칙이 작동하지 않는다고 착각할 수 있다.\n\n**서브디렉토리 CLAUDE.md는 세션 시작 시 로드되지 않는다.** Claude의 도구(Read, Edit, Write, Bash)가 해당 경로의 파일에 실제로 접근할 때 비로소 로드된다.\n\n즉:\n- `src/api/CLAUDE.md`에 있는 규칙은 세션 시작 시 없다\n- Claude가 `src/api/` 아래의 파일을 읽거나 편집할 때 로드된다\n- 그 이전에 일어난 대화나 결정에는 영향을 주지 않는다\n\n이 함의는 중요하다: **세션 초반에 영향을 주어야 하는 규칙은 루트 레벨 CLAUDE.md에 두어야 한다.** 예를 들어 '이 프로젝트에서 API 에러는 AppError 클래스를 써야 한다'는 규칙을 `src/api/CLAUDE.md`에만 두면, Claude가 API 파일을 처음 편집하기 전까지 그 규칙을 모른다.\n\n`InstructionsLoaded` 훅은 이 지연 로딩 이벤트에 반응할 수 있다 — 새로운 CLAUDE.md가 로드될 때마다 특정 동작을 트리거할 수 있다."
+        },
+        {
+          "title": "settings.json 5단계 우선순위 체계",
+          "content": "CLAUDE.md와 달리, settings.json은 훨씬 복잡한 우선순위 체계를 가진다:\n\n| 우선순위 | 위치 | 설명 |\n|---|---|---|\n| 1 (최고) | Managed/IT policy | 기업 IT 정책, 사용자가 오버라이드 불가 |\n| 2 | CLI arguments | `claude --permission-mode plan` 등 |\n| 3 | `~/.claude/settings.json` | 사용자 글로벌 설정 |\n| 4 | `.claude/settings.json` | 프로젝트 설정 (git 커밋) |\n| 5 (최저) | `.claude/settings.local.json` | 프로젝트 로컬 설정 (gitignore) |\n\n**실시간 리로드**: Claude Code는 settings 파일들을 감시(watch)하고 세션 도중 변경이 감지되면 즉시 리로드한다. 재시작 없이 설정이 반영된다. `ConfigChange` 훅이 이 리로드 이벤트에 반응할 수 있다.\n\n팀 설정의 모범 사례: 팀 전체에 적용되어야 하는 hooks와 permissions는 `.claude/settings.json`에 (git 커밋), 개인의 모델 선호나 개인 hooks는 `~/.claude/settings.json`에, 이 프로젝트에 대한 개인 오버라이드는 `.claude/settings.local.json`에 (gitignore) 넣는다."
+        },
+        {
+          "title": "추가 디렉토리와 멀티 저장소 설계",
+          "content": "단일 저장소를 넘어서는 경우 — 여러 저장소를 동시에 작업하거나, 공유 라이브러리를 참조하는 경우 — `--add-dir` 플래그를 사용해 추가 디렉토리를 Claude의 범위에 포함할 수 있다.\n\n```bash\nclaude --add-dir ~/shared-utils/\n```\n\n**중요한 gotcha**: `--add-dir`로 추가된 디렉토리의 CLAUDE.md는 기본적으로 로드되지 않는다. 환경 변수 `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1`을 설정해야 추가된 디렉토리의 CLAUDE.md도 로드된다.\n\n모노레포 설계 패턴:\n\n```\n/monorepo/\n├── CLAUDE.md              ← 전체 저장소 공통 규칙\n├── .claude/settings.json  ← 팀 설정\n├── packages/\n│   ├── api/\n│   │   └── CLAUDE.md      ← API 패키지 특화 규칙\n│   └── frontend/\n│       └── CLAUDE.md      ← 프론트엔드 특화 규칙\n└── .claude/\n    └── CLAUDE.md.local    ← 개인 설정 (gitignored)\n```\n\n이 구조에서 공통 규칙은 루트에, 패키지별 규칙은 패키지 안에. 루트 규칙이 항상 로드되고, 패키지 규칙은 해당 패키지 파일에 접근할 때 추가로 로드된다."
+        }
+      ],
+      "analogy": {
+        "title": "법률의 위계 — 헌법, 법률, 시행령",
+        "content": "법률 시스템을 생각해보자. 헌법이 있고, 그 아래에 법률이 있고, 그 아래에 시행령이 있다. 충돌이 있으면 상위 법령이 우선한다. 하지만 시행령은 법률이 다루지 않는 구체적인 사항을 규정할 수 있다.\n\nClaude Code의 설정 계층도 정확히 이와 같다. 글로벌 CLAUDE.md는 헌법이다 — 모든 프로젝트에 적용되는 기본 원칙. 프로젝트 CLAUDE.md는 법률 — 이 저장소에 특화된 규칙. 서브디렉토리 CLAUDE.md는 시행령 — 특정 모듈이나 컴포넌트에만 적용되는 세부 규정.\n\n그리고 헌법보다도 높은 곳에 기업 IT 정책(managed settings)이 있다 — 어떤 사용자도 오버라이드할 수 없는 절대적 제약. 이 계층을 이해하면, 어떤 규칙을 어느 레벨에 두어야 하는지 직관적으로 알 수 있다."
+      },
+      "codeExample": {
+        "language": "bash",
+        "intro": "실제 모노레포에서 CLAUDE.md 계층을 어떻게 설계하는지, 그리고 각 파일이 어느 시점에 로드되는지를 보여주는 예제다.",
+        "code": "# 모노레포 구조 설계\n# /workspace/myapp/\n\n# 1. 루트 CLAUDE.md — 세션 시작 시 즉시 로드\ncat > CLAUDE.md << 'EOF'\n# MyApp 공통 규칙 (모든 패키지 적용)\n\n## 절대 금지\n- any 타입 사용 금지\n- console.log 프로덕션 코드 금지\n- 직접 push to main 금지 (PR 필수)\n\n## 변경 후 반드시\n1. pnpm typecheck\n2. pnpm test\nEOF\n\n# 2. API 패키지 CLAUDE.md — api/ 파일 접근 시 지연 로드\ncat > packages/api/CLAUDE.md << 'EOF'\n# API 패키지 규칙 (루트 규칙에 추가됨)\n\n## API 특화 규칙\n- 모든 에러: AppError 클래스 사용 (src/errors.ts 참조)\n- 인증이 필요한 엔드포인트: requireAuth 미들웨어 필수\n- DB 쿼리: Prisma ORM만 사용, raw query 금지\nEOF\n\n# 3. 팀 공유 settings.json — git 커밋\ncat > .claude/settings.json << 'EOF'\n{\n  \"permissions\": {\n    \"allow\": [\"Bash(pnpm *)\", \"Bash(git status)\", \"Bash(git diff *)\"],\n    \"deny\": [\"Bash(git push --force *)\", \"Bash(rm -rf *)\"]\n  }\n}\nEOF\n\n# 4. 개인 로컬 설정 — gitignore에 추가\necho '.claude/settings.local.json' >> .gitignore\ncat > .claude/settings.local.json << 'EOF'\n{\n  \"model\": \"claude-opus-4-7\",\n  \"env\": {\n    \"ANTHROPIC_MODEL\": \"claude-opus-4-7\"\n  }\n}\nEOF\n\necho 'CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1' >> .env.local",
+        "walkthrough": "이 구조의 핵심은 각 파일이 로드되는 타이밍이다. 루트 CLAUDE.md는 항상 로드되므로 전체에 적용되어야 하는 금지 사항들이 들어간다. API 패키지 CLAUDE.md는 API 파일에 처음 접근할 때 로드되므로 API 특화 규칙이 들어간다. settings.json은 팀 공유 설정(git 커밋)이고, settings.local.json은 개인 취향(gitignore)이다."
+      },
+      "industryEvaluation": {
+        "overview": "로딩 아키텍처를 이해하는 엔지니어는 '왜 이 규칙이 작동하지 않지?'라는 질문에 스스로 답할 수 있다. 이것은 디버깅 능력이기도 하다.",
+        "whatEngineersLookFor": [
+          "팀 공유 settings.json과 개인 settings.local.json의 적절한 분리",
+          "서브디렉토리 CLAUDE.md의 지연 로딩을 고려한 규칙 배치",
+          "모노레포에서의 계층적 규칙 설계 경험"
+        ],
+        "redFlags": [
+          "중요한 규칙을 서브디렉토리 CLAUDE.md에만 두고 작동 안 한다고 혼란스러워하는 경우",
+          "settings.json을 git에 커밋하지 않아 팀원마다 다른 권한이 설정된 경우",
+          "글로벌과 프로젝트 CLAUDE.md에 중복 규칙이 많은 경우"
+        ],
+        "interviewQuestions": [
+          "서브디렉토리 CLAUDE.md의 지연 로딩이 실제 문제를 일으킨 경험이 있나요?",
+          "팀 공유 설정과 개인 설정을 어떻게 구조화하시나요?",
+          "모노레포에서 패키지별로 다른 규칙이 필요할 때 어떻게 설계하시나요?"
+        ],
+        "masteryVsFamiliar": "단순히 아는 수준: 여러 CLAUDE.md 파일이 있다는 것을 안다. 마스터 수준: 각 파일이 로드되는 정확한 타이밍을 알고, 그것을 기반으로 팀의 규칙 계층을 의도적으로 설계하며, 규칙이 예상대로 작동하지 않을 때 로딩 순서를 기반으로 디버깅할 수 있다."
+      },
+      "keyTakeaways": [
+        {"title": "4계층 로딩 순서를 외워라", "content": "글로벌 → 프로젝트 → 로컬 → 서브디렉토리(지연). 더 구체적인 것이 더 일반적인 것을 오버라이드한다."},
+        {"title": "서브디렉토리는 지연 로딩이다", "content": "세션 초반에 영향을 줘야 하는 규칙은 반드시 루트 레벨에 두어야 한다."},
+        {"title": "settings.json 5단계 체계", "content": "Managed > CLI > 사용자 global > 프로젝트 > 로컬. 팀 공유는 프로젝트에, 개인 취향은 로컬에."},
+        {"title": "실시간 리로드를 활용하라", "content": "settings.json 변경은 재시작 없이 즉시 반영된다. ConfigChange 훅으로 리로드 이벤트에 반응할 수 있다."},
+        {"title": "모노레포는 계층을 활용하라", "content": "공통 규칙은 루트에, 패키지별 규칙은 패키지 안에. Ancestor walk가 두 계층을 자동으로 합성해준다."}
+      ]
+    },
+    {
+      "number": 4,
+      "emoji": "⚡",
+      "title": "Skills & Slash Commands: Dynamic Context Injection",
+      "titleKr": "Skills & 슬래시 커맨드 — 동적 컨텍스트 주입의 기술",
+      "tldr": "SKILL.md는 CLAUDE.md의 강력한 확장이다 — 정적 규칙 대신 실시간으로 실행되는 컨텍스트를 주입하고, 팀의 반복 작업을 재사용 가능한 절차로 캡슐화한다.",
+      "topics": ["SKILL.md 구조와 13가지 프론트매터 필드", "슬래시 커맨드 이름 해석 규칙", "동적 컨텍스트 주입 (! 문법)", "번들 스킬 시스템", "스킬 자동 발견과 지연 로딩"],
+      "learningGoals": [
+        "SKILL.md의 13가지 프론트매터 필드를 알고 주요 필드를 활용한다",
+        "슬래시 커맨드 이름이 어떻게 해석되는지 경로 규칙을 이해한다",
+        "동적 컨텍스트 주입(! 문법)으로 실시간 데이터를 스킬에 포함하는 방법을 안다",
+        "팀의 반복 작업을 스킬로 캡슐화하는 설계를 할 수 있다",
+        "번들 스킬의 종류와 커스터마이즈 방법을 안다"
+      ],
+      "overview": "CLAUDE.md가 '항상 적용되는 규칙'이라면, Skills는 '필요할 때 호출하는 절차'다. 팀의 배포 절차, 코드 리뷰 체크리스트, PR 생성 워크플로우 — 이런 반복적인 작업을 SKILL.md로 정의하면 `/deploy`, `/review`, `/pr` 같은 슬래시 커맨드로 일관성 있게 실행할 수 있다.\n\nSkills의 진짜 힘은 **동적 컨텍스트 주입**에 있다. `!` 문법을 사용하면 스킬이 실행될 때 실제 쉘 명령을 실행하고 그 출력을 컨텍스트에 포함시킨다. 고정된 지시문이 아니라, 현재 상태에 반응하는 살아있는 문서가 된다.",
+      "sections": [
+        {
+          "title": "SKILL.md 구조 — 13가지 프론트매터 필드",
+          "content": "SKILL.md 파일의 기본 구조:\n\n```yaml\n---\nname: my-skill          # 표시 이름 (커맨드 이름이 아님)\ndescription: 무엇을 하는지, 언제 사용하는지\nwhen_to_use: 트리거 문구들\ndisable-model-invocation: true   # 모델이 자동 트리거 못하게\nuser-invocable: false             # /메뉴에서 숨김\nallowed-tools: Read Grep          # 이 스킬에서 허용할 도구\ndisallowed-tools: AskUserQuestion # 이 스킬에서 차단할 도구\nmodel: claude-opus-4-7            # 이 스킬용 모델 오버라이드\neffort: high                      # 노력 수준 오버라이드\ncontext: fork                     # 포크된 서브에이전트에서 실행\npaths: \"src/**/*.ts\"             # 이 경로에서만 활성화\n---\n\n## 지시사항\n!`git diff HEAD`  ← 동적 컨텍스트: 실행 시 현재 diff 주입\n```\n\n가장 중요한 필드는 `description`이다. Claude는 이 설명을 기반으로 어떤 스킬이 관련있는지 판단한다. 좋은 description은 '무엇을'과 '언제'를 모두 담는다.\n\n`context: fork`는 스킬을 메인 세션과 격리된 서브에이전트에서 실행한다. 긴 작업이나 독립적인 태스크에 유용하다."
+        },
+        {
+          "title": "슬래시 커맨드 이름 해석 규칙",
+          "content": "스킬의 커맨드 이름은 `name` 필드가 아니라 **파일 경로**에서 결정된다. 이 규칙을 이해하지 못하면 커맨드를 찾지 못한다.\n\n| 파일 위치 | 커맨드 이름 |\n|---|---|\n| `.claude/skills/deploy/SKILL.md` | `/deploy` |\n| `.claude/skills/pr/SKILL.md` | `/pr` |\n| `apps/web/.claude/skills/deploy/SKILL.md` | `/apps/web:deploy` |\n| `my-plugin/skills/review/SKILL.md` | `/my-plugin:review` |\n| `~/.claude/skills/debug/SKILL.md` | `/debug` (전역) |\n\n중첩 스킬에서 충돌이 생기면 `:` 네임스페이스로 구분된다. 플러그인 스킬은 플러그인 이름이 네임스페이스가 된다.\n\n**자동 발견 규칙**: 스킬은 현재 작업 디렉토리와 모든 조상 디렉토리의 `.claude/skills/`에서 자동 발견된다. 서브디렉토리 스킬도 CLAUDE.md와 마찬가지로 지연 로딩된다.\n\n**실시간 변경 감지**: SKILL.md 파일의 변경은 재시작 없이 즉시 반영된다."
+        },
+        {
+          "title": "동적 컨텍스트 주입 — ! 문법의 힘",
+          "content": "Skills의 가장 강력한 기능은 스킬이 실행될 때 쉘 명령을 실행하고 그 출력을 Claude의 컨텍스트에 주입하는 것이다.\n\n```markdown\n---\nname: code-review\ndescription: 현재 브랜치의 변경 사항을 리뷰한다\n---\n\n아래 변경 사항을 리뷰해주세요:\n\n!`git diff HEAD`\n\n또한 현재 테스트 상태:\n\n!`npm test --silent 2>&1 | tail -20`\n```\n\n`/code-review`를 실행하면, Claude는 `git diff HEAD`의 실제 현재 출력과 테스트 결과를 컨텍스트에 받은 상태로 리뷰를 시작한다. 오래된 스니펫이 아닌 실제 현재 상태다.\n\n이것이 CLAUDE.md의 정적 지시와 Skills의 근본적인 차이다 — Skills는 **실행 시점의 실제 데이터**를 컨텍스트에 포함할 수 있다.\n\n쉘 스크립트 블록도 지원된다:\n\n```markdown\n!```bash\necho '## 현재 브랜치:'\ngit branch --show-current\necho '## 변경된 파일:'\ngit diff --name-only HEAD\n```\n```"
+        },
+        {
+          "title": "번들 스킬과 팀 스킬 설계",
+          "content": "Claude Code에는 기본 내장 스킬들이 있다 — `/code-review`, `/debug`, `/batch`, `/loop`, `/verify`, `/run`. 이것들은 프롬프트 기반(고정 로직이 아닌 Claude의 지시)이며, 커스터마이즈할 수 없지만 참고할 수 있다.\n\n`disableBundledSkills: true` 설정으로 번들 스킬을 비활성화할 수 있다 (팀 스킬과 충돌하는 경우).\n\n**실용적인 팀 스킬 예시**:\n\n```markdown\n# .claude/skills/pr/SKILL.md\n---\nname: pr\ndescription: PR을 생성하고 팀 체크리스트를 적용한다\n---\n\n다음 단계로 PR을 생성해주세요:\n\n현재 변경 사항:\n!`git log main..HEAD --oneline`\n\n1. PR 제목: [type]: [짧은 설명] (type: feat/fix/refactor/docs)\n2. 체크리스트 확인:\n   - [ ] 테스트 추가/업데이트 완료\n   - [ ] 타입 체크 통과\n   - [ ] 보안 취약점 검토\n3. gh pr create 실행\n```\n\n팀이 이 스킬을 쓰면 모든 PR이 동일한 구조와 체크리스트를 가진다."
+        }
+      ],
+      "analogy": {
+        "title": "매크로 vs 함수",
+        "content": "프로그래밍에서 매크로와 함수를 비교해보자. 매크로는 정적으로 텍스트를 치환한다 — 호출 시점의 상태와 관계없이 항상 같은 내용으로 전개된다. 함수는 호출 시점에 인자를 받고, 실행 시점의 상태를 반영한 결과를 반환한다.\n\nCLAUDE.md는 매크로다. 항상 같은 내용이 주입된다. Skills는 함수다. `!` 문법으로 실행 시점의 상태 — 현재 git diff, 테스트 결과, 환경 변수 — 를 받아서 컨텍스트에 포함한다.\n\n이 차이가 중요한 이유는, '이 규칙은 항상 적용'인 것과 '이 작업은 현재 상태를 보고 수행'인 것을 명확하게 분리할 수 있기 때문이다. 배포 절차 스킬이 현재 배포 환경 상태를 확인하는 것은 Functions이 해야 할 일이다. 'default export 쓰지 마라'는 CLAUDE.md의 일이다."
+      },
+      "codeExample": {
+        "language": "markdown",
+        "intro": "실제 팀에서 사용할 수 있는 PR 생성 스킬의 완성된 예제다. 동적 컨텍스트 주입이 어떻게 작동하는지 주목하라.",
+        "code": "---\nname: pr-create\ndescription: >-\n  현재 브랜치의 변경사항으로 PR을 생성한다.\n  git add/commit이 완료된 후 호출하라.\nallowed-tools: Bash Read\n---\n\n# PR 생성 절차\n\n## 현재 상태 확인\n\n**브랜치:** !`git branch --show-current`\n\n**Main 대비 커밋:**\n!`git log main..HEAD --oneline`\n\n**변경된 파일:**\n!`git diff main --name-only`\n\n## 작업 순서\n\n1. 위 변경 사항을 분석해 PR 제목을 작성하라\n   - 형식: `[type]: [설명]` (feat/fix/refactor/chore/docs)\n   - 50자 이내\n\n2. PR 본문을 작성하라:\n   - ## Summary (변경 이유, 3줄 이내)\n   - ## Changes (변경 내용 bullet)\n   - ## Test Plan (어떻게 검증했는지)\n\n3. 다음 체크리스트를 확인하라:\n   - [ ] 타입체크: npm run typecheck\n   - [ ] 테스트: npm test\n   - [ ] 보안: .env 파일이 스테이징에 없는지\n\n4. 체크리스트 통과 후: gh pr create 실행\n\n**중요**: 체크리스트 실패 시 PR 생성 전에 반드시 수정할 것",
+        "walkthrough": "스킬 파일의 `!` 백틱 구문이 실행 시 실제 쉘 명령으로 교체된다. `/pr-create`를 호출하면 Claude는 현재 브랜치 이름, 실제 커밋 목록, 실제 변경 파일 목록을 받은 상태로 PR 작성을 시작한다. 매번 같은 지시를 하는 게 아니라, 현재 상태에 맞게 작동하는 것이다."
+      },
+      "industryEvaluation": {
+        "overview": "고급 Claude Code 사용자는 팀의 반복 작업 전체를 스킬로 캡슐화한다. 배포, 코드 리뷰, PR 생성, 릴리즈 노트 작성 — 이런 작업들을 스킬화하면 팀 전체의 일관성이 올라간다.",
+        "whatEngineersLookFor": [
+          "동적 컨텍스트 주입(!`)을 사용해 실제 상태를 반영하는 스킬",
+          "팀 표준 절차를 스킬로 문서화한 것",
+          "allowed-tools, disallowed-tools로 스킬의 권한을 최소화한 것"
+        ],
+        "redFlags": [
+          "정적인 지시만 있고 ! 문법을 사용하지 않는 스킬",
+          "CLAUDE.md에 있어야 할 내용을 스킬로 만든 경우 (항상 적용 vs 명시적 호출의 혼동)",
+          "너무 범용적이어서 재사용 가능성이 없는 스킬"
+        ],
+        "interviewQuestions": [
+          "팀에서 가장 가치 있는 스킬이 무엇이고 왜 스킬로 만들었나요?",
+          "CLAUDE.md 규칙과 스킬을 어떻게 구분해서 설계하시나요?",
+          "동적 컨텍스트 주입을 활용한 스킬 사례를 보여주실 수 있나요?"
+        ],
+        "masteryVsFamiliar": "단순히 아는 수준: 슬래시 커맨드를 만들 수 있다. 마스터 수준: CLAUDE.md와 Skills의 역할을 명확히 분리하고, 동적 컨텍스트 주입으로 실제 상태를 반영하는 살아있는 스킬을 설계하며, 팀의 반복 작업 전체를 스킬 라이브러리로 커버한다."
+      },
+      "keyTakeaways": [
+        {"title": "스킬 = 호출 가능한 절차", "content": "CLAUDE.md가 항상 적용 규칙이라면, Skills는 명시적으로 호출하는 팀 표준 절차다."},
+        {"title": "커맨드 이름은 파일 경로", "content": "name 필드가 아니라 디렉토리 이름이 커맨드 이름이 된다. 이 규칙을 혼동하면 커맨드를 찾지 못한다."},
+        {"title": "! 문법이 핵심 차별점", "content": "실행 시점에 쉘 명령을 실행하고 출력을 컨텍스트에 주입한다. 정적 지시가 아닌 현재 상태에 반응하는 스킬을 만든다."},
+        {"title": "allowed-tools로 권한 최소화", "content": "스킬이 필요한 도구만 허용한다. 불필요한 도구 접근을 차단하면 실수 가능성이 줄어든다."},
+        {"title": "실시간 감지로 바로 적용", "content": "SKILL.md 변경은 재시작 없이 즉시 반영된다. 스킬을 수정하고 바로 테스트할 수 있다."}
+      ]
+    },
+    {
+      "number": 5,
+      "emoji": "🔗",
+      "title": "Hooks: Event-Driven Automation",
+      "titleKr": "Hooks — 이벤트 기반 자동화의 완전 가이드",
+      "tldr": "훅은 Claude Code의 모든 이벤트에 자동화를 연결하는 메커니즘이다 — 파일 저장 시 자동 포맷, 위험 명령 차단, 테스트 자동 실행까지.",
+      "topics": ["20+ 훅 이벤트 타입", "5가지 핸들러 타입", "exit code 시맨틱", "PreToolUse/PostToolUse 패턴", "실전 훅 레시피"],
+      "learningGoals": [
+        "훅의 6가지 이벤트 카테고리를 이해한다",
+        "5가지 핸들러 타입(command, http, mcp_tool, prompt, agent)의 차이를 설명한다",
+        "exit code 0, 2, 기타의 동작을 정확히 이해한다",
+        "PostToolUse에서 자동 포맷 훅을 작성할 수 있다",
+        "PreToolUse에서 위험 명령을 차단하는 훅을 설계한다"
+      ],
+      "overview": "Hooks는 Claude Code의 가장 강력하고 가장 과소 평가된 기능이다. 파일을 편집할 때마다 자동으로 포맷터를 실행하거나, 위험한 명령을 실행 전에 차단하거나, 세션이 끝날 때 테스트를 자동 실행하거나, AI의 판단이 의심스러울 때 LLM 기반 검증을 추가하거나 — 이 모든 것이 훅으로 가능하다.\n\n훅을 이해하면 Claude Code가 단순한 AI 어시스턴트를 넘어 팀의 자동화 인프라가 된다. 이 챕터에서는 20개 이상의 이벤트 타입, 5가지 핸들러 타입, 그리고 실제로 팀에서 즉시 사용할 수 있는 레시피를 다룬다.",
+      "sections": [
+        {
+          "title": "훅 이벤트 6가지 카테고리",
+          "content": "훅 이벤트는 6가지 카테고리로 나뉜다:\n\n**1. 세션 생명주기 (비블로킹)**\n- `SessionStart` — 세션 시작 시\n- `SessionEnd` — 세션 종료 시\n- `Setup` — `--init-only`로 한 번만 실행\n\n**2. 턴 이벤트**\n- `UserPromptSubmit` — 사용자 프롬프트 제출 시 (블로킹, exit 2로 차단 가능)\n- `Stop` — Claude가 턴을 마칠 때 (exit 2로 계속 작업 강제)\n- `StopFailure` — 비블로킹 관찰용\n\n**3. 도구 실행 (에이전트 루프 핵심)**\n- `PreToolUse` — 모든 도구 호출 전 (블로킹, exit 2로 차단)\n- `PostToolUse` — 도구 성공 후 (응답 수정 가능)\n- `PermissionRequest` — 권한 다이얼로그 전 (자동 승인/거부)\n- `PostToolBatch` — 병렬 도구 배치 완료 후 (블로킹)\n\n**4. 에이전트/팀 이벤트**\n- `SubagentStart` / `SubagentStop`\n- `TeammateIdle` — 팀원을 계속 작업하게 유지 가능\n\n**5. 파일/설정 이벤트**\n- `FileChanged` — 디스크의 파일 변경 감지 (비동기)\n- `InstructionsLoaded` — CLAUDE.md 로드 시\n- `ConfigChange` — settings.json 변경 시 (블로킹, 거부 가능)\n\n**6. 태스크/컨텍스트 이벤트**\n- `TaskCreated` / `TaskCompleted`\n- `PreCompact` / `PostCompact` — 컨텍스트 압축 전후"
+        },
+        {
+          "title": "5가지 핸들러 타입",
+          "content": "각 훅 이벤트에 어떤 종류의 핸들러를 붙일지 선택할 수 있다:\n\n**1. command** — 가장 일반적. 쉘 명령을 실행한다.\n```json\n{ \"type\": \"command\", \"command\": \"prettier --write ${CLAUDE_TOOL_INPUT_FILE_PATH}\" }\n```\n\n**2. http** — HTTP POST로 외부 서비스에 이벤트를 전송한다.\n```json\n{ \"type\": \"http\", \"url\": \"http://localhost:8080/validate\" }\n```\n\n**3. mcp_tool** — 연결된 MCP 서버의 도구를 호출한다.\n```json\n{ \"type\": \"mcp_tool\", \"server\": \"my_server\", \"tool\": \"validate_code\" }\n```\n\n**4. prompt** — 단일 턴 LLM 평가. 빠른 모델로 조건을 검사한다.\n```json\n{ \"type\": \"prompt\", \"prompt\": \"이 쉘 명령이 안전한가? $ARGUMENTS\" }\n```\n\n**5. agent** — Read/Grep/Glob 도구를 가진 서브에이전트를 스폰한다 (실험적).\n```json\n{ \"type\": \"agent\", \"prompt\": \"이 작업이 허용된 범위 내인지 확인하라: $ARGUMENTS\" }\n```\n\nprompt와 agent 핸들러는 `PreToolUse`, `PostToolUse`, `PermissionRequest`에서만 사용 가능하다."
+        },
+        {
+          "title": "Exit Code 시맨틱 — 가장 중요한 이해",
+          "content": "훅의 동작은 종료 코드에 의해 결정된다:\n\n| 종료 코드 | 이벤트 유형 | 동작 |\n|---|---|---|\n| `0` | 모든 이벤트 | 성공. stdout의 JSON이 처리됨 |\n| `2` | PreToolUse | 도구 호출 **차단**. stderr가 Claude에 표시됨 |\n| `2` | Stop | Claude가 **계속 작업**하도록 강제 |\n| `2` | UserPromptSubmit | 프롬프트 **차단** |\n| 기타 | 모든 이벤트 | 비블로킹 오류. stderr 첫 줄만 표시 |\n\nexit code 2의 이중적 의미가 중요하다. PreToolUse에서는 '이 도구 호출을 막아라'이고, Stop에서는 '아직 작업이 끝나지 않았다 계속해라'이다. 같은 코드가 컨텍스트에 따라 반대 효과를 낸다.\n\nJSON 출력으로 Claude에 피드백을 줄 수 있다:\n\n```json\n{\n  \"systemMessage\": \"사용자에게 표시할 메시지\",\n  \"continue\": false,\n  \"stopReason\": \"차단 이유\",\n  \"hookSpecificOutput\": {\n    \"hookEventName\": \"PostToolUse\",\n    \"additionalContext\": \"Claude의 컨텍스트에 주입될 텍스트\"\n  }\n}\n```"
+        },
+        {
+          "title": "실전 훅 레시피 — 즉시 사용 가능한 패턴",
+          "content": "**레시피 1: 파일 저장 시 자동 포맷 (PostToolUse)**\n\n```json\n{\n  \"hooks\": {\n    \"PostToolUse\": [{\n      \"matcher\": \"Write|Edit\",\n      \"hooks\": [{\n        \"type\": \"command\",\n        \"command\": \"jq -r '.tool_input.file_path // empty' | { read -r f; [ -n \\\"$f\\\" ] && prettier --write \\\"$f\\\"; } 2>/dev/null || true\"\n      }]\n    }]\n  }\n}\n```\n\n**레시피 2: rm -rf 차단 (PreToolUse)**\n\n```json\n{\n  \"hooks\": {\n    \"PreToolUse\": [{\n      \"matcher\": \"Bash\",\n      \"if\": \"Bash(rm -rf *)\",\n      \"hooks\": [{\n        \"type\": \"command\",\n        \"command\": \"echo '{\\\"continue\\\": false, \\\"stopReason\\\": \\\"rm -rf는 허용되지 않습니다\\\"}'\"\n      }]\n    }]\n  }\n}\n```\n\n**레시피 3: 세션 종료 시 테스트 실행 (Stop)**\n\n```json\n{\n  \"hooks\": {\n    \"Stop\": [{\n      \"matcher\": \"*\",\n      \"hooks\": [{\n        \"type\": \"command\",\n        \"command\": \"npm test --silent && echo '{\\\"systemMessage\\\": \\\"테스트 통과 완료\\\"}' || echo '{\\\"continue\\\": false, \\\"stopReason\\\": \\\"테스트 실패: 수정 후 완료 선언하세요\\\"}'\"\n      }]\n    }]\n  }\n}\n```\n\n**레시피 4: .env 파일 읽기 차단 (PreToolUse)**\n\n```json\n{\n  \"permissions\": {\n    \"deny\": [\"Read(.env)\", \"Read(.env.local)\", \"Read(.env.production)\"]\n  }\n}\n```"
+        }
+      ],
+      "analogy": {
+        "title": "공장의 품질 관리 체크포인트",
+        "content": "현대 자동차 공장에는 생산 라인의 각 단계마다 품질 검사 포인트가 있다. 어떤 포인트는 문제를 발견하면 라인 전체를 멈춘다(블로킹). 어떤 포인트는 문제를 기록만 하고 라인을 계속 진행시킨다(비블로킹). 어떤 포인트는 발견된 문제를 즉석에서 자동 수정한다.\n\n훅은 Claude Code 에이전트 루프의 품질 관리 체크포인트다. 도구 호출 전(PreToolUse)과 후(PostToolUse)에 검사 로직이 실행된다. 문제 발견 시 exit code 2로 라인을 멈추거나, 자동 수정(포맷터 실행)을 하거나, 그냥 기록만 할 수 있다.\n\n가장 좋은 공장은 가능한 많은 품질 검사를 자동화한다 — 인간 검사자는 자동화로 잡기 어려운 판단의 영역에만 개입한다. 마찬가지로 좋은 훅 설계는 반복 가능한 검사를 자동화하고, 인간 승인은 실제로 판단이 필요한 경우에만 요구한다."
+      },
+      "codeExample": {
+        "language": "json",
+        "intro": "프로덕션에서 실제 사용되는 종합 hooks 설정이다. 포맷, 보안, 테스트 자동화가 하나의 settings.json에 담겨있다.",
+        "code": "{\n  \"hooks\": {\n    \"PostToolUse\": [\n      {\n        \"matcher\": \"Write|Edit\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"jq -r '.tool_input.file_path // empty' | { read -r f; [ -n \\\"$f\\\" ] && npx prettier --write \\\"$f\\\" --ignore-unknown; } 2>/dev/null || true\",\n            \"async\": true\n          }\n        ]\n      }\n    ],\n    \"PreToolUse\": [\n      {\n        \"matcher\": \"Bash\",\n        \"if\": \"Bash(git push --force *)\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"echo '{\\\"continue\\\": false, \\\"stopReason\\\": \\\"force push는 허용되지 않습니다. PR을 통해 머지하세요.\\\"}'\"\n          }\n        ]\n      },\n      {\n        \"matcher\": \"Read\",\n        \"if\": \"Read(.env*)\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"echo '{\\\"continue\\\": false, \\\"stopReason\\\": \\\".env 파일은 읽을 수 없습니다.\\\"}'\"\n          }\n        ]\n      }\n    ],\n    \"Stop\": [\n      {\n        \"matcher\": \"*\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"npm run typecheck --silent 2>&1 | grep -c 'error' | { read n; [ \\\"$n\\\" -eq 0 ] && echo '{\\\"systemMessage\\\": \\\"TypeCheck: 통과\\\"}' || echo '{\\\"continue\\\": false, \\\"stopReason\\\": \\\"TypeScript 에러가 있습니다. 수정 후 완료하세요.\\\"}'; }\",\n            \"async\": false\n          }\n        ]\n      }\n    ]\n  }\n}",
+        "walkthrough": "세 가지 훅이 각자 다른 역할을 한다. PostToolUse의 prettier 훅은 `async: true`로 파일 저장 후 백그라운드에서 포맷을 실행한다 (메인 흐름을 막지 않음). PreToolUse의 두 훅은 위험 작업을 차단한다 — `if` 필드로 특정 패턴에만 반응해 불필요한 훅 실행을 줄인다. Stop 훅은 TypeScript 에러가 있으면 완료를 선언하지 못하게 막는다."
+      },
+      "industryEvaluation": {
+        "overview": "훅을 사용하는 팀은 그렇지 않은 팀보다 코드 품질 관련 PR 리뷰 코멘트가 현저히 적다. 포맷, 타입 체크, 보안 체크 같은 반복적인 품질 게이트를 자동화했기 때문이다.",
+        "whatEngineersLookFor": [
+          "훅이 실제 팀의 pain point를 해결하는지",
+          "블로킹 훅과 비블로킹 훅을 적절히 구분하는지",
+          "exit code 시맨틱을 정확히 이해하고 있는지"
+        ],
+        "redFlags": [
+          "훅이 너무 많아서 Claude의 모든 작업이 지연되는 경우",
+          "비블로킹이어야 하는 훅이 블로킹으로 설정된 경우",
+          "훅 명령이 실패 시 Claude에 아무 피드백 없이 조용히 실패하는 경우"
+        ],
+        "interviewQuestions": [
+          "Stop 훅에서 exit code 2의 의미가 PreToolUse와 어떻게 다른지 설명해주세요.",
+          "팀에서 가장 많은 가치를 제공한 훅 설정이 무엇인가요?",
+          "LLM 기반 prompt 핸들러를 언제 command 핸들러 대신 사용하시나요?"
+        ],
+        "masteryVsFamiliar": "단순히 아는 수준: 훅을 설정할 수 있다. 마스터 수준: 팀의 품질 관리 전략을 훅 시스템으로 구현하고, exit code와 JSON 응답으로 Claude에 정확한 피드백을 줄 수 있으며, async/sync 실행을 의도적으로 선택한다."
+      },
+      "keyTakeaways": [
+        {"title": "훅은 에이전트 루프의 체크포인트", "content": "모든 도구 호출 전후에 자동화를 삽입할 수 있다. 반복 품질 검사를 인간이 하지 않아도 되게 만든다."},
+        {"title": "exit code 2는 이중 의미", "content": "PreToolUse에서는 차단, Stop에서는 계속 작업 강제. 같은 코드가 컨텍스트에 따라 반대 효과다."},
+        {"title": "if 필드로 과도한 실행 방지", "content": "모든 Bash 명령이 아니라 rm -rf* 패턴에만 반응하도록 필터링하라. 불필요한 훅 실행은 성능을 저하시킨다."},
+        {"title": "async: true로 흐름 보존", "content": "포맷터같은 사후 정리 작업은 async로 실행해 Claude의 메인 흐름을 막지 않는다."},
+        {"title": "JSON 응답으로 Claude에 피드백", "content": "단순히 차단하는 것보다 왜 차단되었는지 `stopReason`으로 알려주면 Claude가 더 적절히 대응한다."}
+      ]
+    },
+    {
+      "number": 6,
+      "emoji": "🗺️",
+      "title": "Plan Mode Mastery: The Explore-Plan-Implement-Commit Workflow",
+      "titleKr": "Plan Mode 마스터리 — Explore→Plan→Implement→Commit 4단계",
+      "tldr": "Claude Code 고수들의 핵심 비밀은 구현 시간보다 탐색과 계획에 더 많은 시간을 투자하는 것이다 — Plan Mode는 그 투자를 강제하는 메커니즘이다.",
+      "topics": ["Plan Mode vs Normal Mode vs Auto-Accept Mode", "4단계 워크플로우", "Plan Mode vs Thinking Mode", "Ultraplan", "효과적인 계획 작성법"],
+      "learningGoals": [
+        "Shift+Tab으로 순환되는 3가지 모드의 차이를 설명한다",
+        "Plan Mode와 Thinking Mode(Extended Thinking)의 근본적 차이를 이해한다",
+        "Explore→Plan→Implement→Commit 4단계 워크플로우를 실제로 적용한다",
+        "좋은 계획과 나쁜 계획의 차이를 구분하고 계획을 개선하는 방법을 안다",
+        "Ultraplan을 언제 사용해야 하는지 판단한다"
+      ],
+      "overview": "대부분의 Claude Code 초보자가 저지르는 가장 큰 실수는 바로 구현으로 뛰어드는 것이다. 요청을 입력하고 Claude가 코드를 쏟아내기를 기다린다. 잘못된 방향이면 다시 요청하고, 또 기다린다. 이 패턴은 비효율적일 뿐만 아니라, 요청이 복잡할수록 낭비되는 토큰과 시간이 기하급수적으로 커진다.\n\n해외 최고 고수들의 공통된 접근법은 반대다 — **전체 시간의 80%를 탐색과 계획에 투자**하고, 구현은 명확한 계획이 확정된 후에 시작한다. Plan Mode는 Claude Code가 이 철학을 강제하는 메커니즘이다. 계획을 작성하고 멈추며, 사용자의 승인 없이 아무것도 실행하지 않는다.",
+      "sections": [
+        {
+          "title": "3가지 모드 — Shift+Tab 사이클",
+          "content": "Shift+Tab을 누를 때마다 모드가 순환된다:\n\n| 모드 | 동작 | 사용 시점 |\n|---|---|---|\n| **Normal** (기본) | 도구 사용 전 권한 요청 | 일반 작업 |\n| **Auto-Accept** (1번 누름) | 모든 도구 호출 자동 승인 | 반복 작업, 테스트 수정 |\n| **Plan** (2번 누름) | 계획 작성 후 정지, 실행 없음 | 복잡한 기능, 리팩토링 |\n\nPlan Mode는 `claude --permission-mode plan` CLI 플래그나 `/plan` 커맨드로도 진입할 수 있다.\n\n**Auto-Accept의 위험**: 자동 승인 모드는 Claude가 모든 파일을 임의로 수정할 수 있게 된다. 명확한 태스크 범위가 있고 잘 정의된 CLAUDE.md가 있을 때만 사용하라. 탐색 단계에서는 절대로 사용하지 마라.\n\n**Plan Mode의 핵심 보장**: 이 모드에서 Claude는 파일을 읽고 탐색할 수 있지만, 어떤 파일도 수정하지 않고 어떤 명령도 실행하지 않는다. 안전하게 아키텍처를 논의할 수 있다."
+        },
+        {
+          "title": "Explore → Plan → Implement → Commit — 4단계 워크플로우",
+          "content": "이것이 해외 최고 고수들이 공통적으로 사용하는 패턴이다:\n\n**1단계: Explore (탐색)** — Plan Mode에서\n- 관련 파일을 열어보고 현재 구조를 파악하라\n- 의존성과 영향 범위를 확인하라\n- 이 단계에서 '모르는 것'을 발견하는 것이 목표\n\n**2단계: Plan (계획)** — 여전히 Plan Mode에서\n- 구현 전략을 단계별로 작성하라\n- 각 단계마다 검증 기준을 포함하라\n- 불확실한 부분을 명시하라\n- 계획이 마음에 들 때까지 Claude와 반복적으로 논의하라\n\n**3단계: Implement (구현)** — Normal 또는 Auto-Accept Mode로 전환\n- 계획에 따라 구현\n- 계획에서 벗어나는 발견이 있으면 **멈추고 계획을 업데이트**\n\n**4단계: Commit** — 검증 후\n- 모든 테스트 통과 확인\n- 변경 범위 검토\n- 커밋\n\n핵심 원칙: 계획이 확정되기 전까지는 구현을 시작하지 않는다. 구현 중 계획에서 이탈해야 한다면, 구현을 멈추고 계획을 먼저 업데이트한다."
+        },
+        {
+          "title": "Plan Mode vs Thinking Mode — 자주 혼동되는 개념",
+          "content": "이 두 가지는 근본적으로 다른 개념이다.\n\n**Plan Mode = 워크플로우 제어**\n- Claude가 계획을 작성하고 **멈춘다**\n- 사용자 승인 없이는 아무 것도 실행되지 않는다\n- Shift+Tab 또는 /plan으로 진입\n- 계획 품질에 영향을 주는 것이 아니라, 계획 후 실행을 막는 것\n\n**Thinking Mode (Extended Thinking) = 추론 제어**\n- Claude가 응답 전에 더 오래, 더 깊이 생각한다\n- 실행은 여전히 일어난다\n- `alwaysThinkingEnabled: true` 설정\n- 계획의 품질을 높이지만 실행을 막지는 않는다\n\n**Ultraplan** (2026년 4월 도입):\n- `/ultraplan` 커맨드로 호출\n- 더 깊은 컨텍스트 분석 + Plan Mode 결합\n- 복잡한 멀티파일 리팩토링이나 아키텍처 변경에 적합\n- 일반 Plan Mode보다 지연시간이 길지만 계획 품질이 높음\n\n세 가지를 조합하면: Ultraplan(깊은 분석) + Thinking Mode(깊은 추론) = 가능한 가장 높은 계획 품질. 구현은 이 계획이 승인된 후에만 시작된다."
+        },
+        {
+          "title": "좋은 계획 vs 나쁜 계획",
+          "content": "Plan Mode에서 좋은 계획을 얻기 위해서는 구체적인 컨텍스트를 제공해야 한다.\n\n**나쁜 요청 (모호한):**\n> '인증을 구현해주세요'\n\n**좋은 요청 (구체적인):**\n> '현재 Express 서버에 JWT 기반 인증을 추가해주세요. 기존 user 테이블 구조는 src/models/User.ts에 있고, 보안 요구사항은 CLAUDE.md에 있습니다. 영향받는 파일 목록, 변경 순서, 각 단계의 검증 방법을 계획으로 작성해주세요.'\n\n**좋은 계획이 포함해야 하는 요소:**\n\n```markdown\n## 구현 계획: JWT 인증\n\n### 영향받는 파일\n- src/middleware/auth.ts (새 파일)\n- src/routes/auth.ts (새 파일)\n- src/routes/users.ts (수정: 인증 미들웨어 추가)\n\n### 구현 순서\n1. auth.ts 미들웨어 생성\n   → 검증: 단위 테스트 통과\n2. auth 라우트 생성 (/login, /logout)\n   → 검증: Postman으로 토큰 발급 확인\n3. users 라우트에 미들웨어 적용\n   → 검증: 기존 테스트 통과, 인증 없이 접근 시 401\n\n### 의존성\n- jsonwebtoken 패키지 필요\n- JWT_SECRET 환경 변수 필요 (.env에 추가)\n```\n\n이 수준의 계획이 나오기 전까지 '계획이 충분히 구체적이지 않습니다, 단계를 더 세분화해주세요'로 반복 요청하라."
+        }
+      ],
+      "analogy": {
+        "title": "건축가와 시공업자",
+        "content": "건물을 짓는 과정을 생각해보자. 건축가와 의뢰인이 수개월 동안 설계도를 다듬는다. 의뢰인의 요구를 반영하고, 구조 엔지니어의 검토를 받고, 각종 규제를 확인하고, 예산을 계산한다. 설계도가 완전히 확정된 후에야 첫 삽을 뜬다.\n\n이유는 간단하다 — 설계 단계에서 변경하는 것이 시공 단계에서 변경하는 것보다 100배 저렴하다. 이미 지어진 벽을 허무는 것은 비용이 엄청나다.\n\n코딩도 마찬가지다. Plan Mode에서 계획을 수정하는 것은 토큰 몇 개다. 이미 작성된 코드를 삭제하고 다시 쓰는 것은 많은 토큰, 시간, 그리고 에너지다. 해외 고수들이 구현 전 탐색/계획에 80%의 시간을 쓰는 이유다 — 그게 실제로 더 빠르기 때문이다."
+      },
+      "codeExample": {
+        "language": "markdown",
+        "intro": "Plan Mode에서 실제로 주고받는 대화 흐름이다. 처음부터 구체적인 컨텍스트를 제공할 때와 그렇지 않을 때의 차이를 보여준다.",
+        "code": "# Plan Mode 활용 예시 — 좋은 패턴\n\n# 1. /plan 으로 Plan Mode 진입\n# 2. 구체적인 컨텍스트와 함께 요청:\n\n사용자:\n현재 상황:\n- Next.js 14 + Prisma + PostgreSQL 프로젝트\n- src/app/api/users/ 에 CRUD API 있음\n- 현재 인증 없음\n\n목표:\n- JWT 기반 인증 추가\n- /api/users/* 모든 엔드포인트 보호\n- src/lib/auth.ts에 토큰 검증 로직\n\n요구사항:\n- 기존 테스트 통과 유지\n- TypeScript 에러 0개\n- .env.local에 JWT_SECRET 추가 필요\n\n계획을 작성해주세요. 영향받는 파일, 구현 순서,\n각 단계 검증 방법을 포함해주세요.\n\n# Claude의 계획 (Plan Mode - 실행 없음):\nClaude:\n## 구현 계획: JWT 인증 시스템\n\n### 신규 파일\n1. src/lib/auth.ts — JWT 서명/검증 유틸리티\n2. src/middleware/requireAuth.ts — Next.js 미들웨어\n\n### 수정 파일  \n3. src/app/api/users/route.ts — requireAuth 적용\n4. src/app/api/users/[id]/route.ts — requireAuth 적용\n5. .env.local — JWT_SECRET 추가\n6. package.json — jsonwebtoken 의존성 추가\n\n### 구현 순서 및 검증\n1. pnpm add jsonwebtoken @types/jsonwebtoken\n   → 검증: pnpm build 성공\n2. src/lib/auth.ts 생성\n   → 검증: 단위 테스트 (test/lib/auth.test.ts)\n3. src/middleware/requireAuth.ts 생성\n   → 검증: 단위 테스트\n4. 기존 라우트에 미들웨어 적용\n   → 검증: 기존 테스트 통과 + 인증 없이 401 반환\n\n### 주의사항\n- 기존 테스트가 인증을 통과해야 하므로\n  테스트에 mock 토큰 주입 필요\n\n# 사용자: 계획 승인. 구현 시작하세요.\n# → Normal/Auto-Accept 모드로 전환 후 구현 시작",
+        "walkthrough": "이 흐름의 핵심은 Claude가 Plan Mode에서 아무것도 실행하지 않는다는 것이다. 파일을 읽고, 구조를 파악하고, 계획을 작성하지만 변경하지 않는다. 사용자가 '계획 승인'을 하기 전까지. 계획 단계에서 '주의사항'이 발견된 것도 중요하다 — 기존 테스트가 인증을 통과해야 한다는 사실을 구현 전에 발견했다."
+      },
+      "industryEvaluation": {
+        "overview": "Plan Mode를 활용하는 개발자와 그렇지 않은 개발자의 차이는 복잡한 기능을 구현할 때 두드러진다. 전자는 명확한 계획을 가지고 예측 가능하게 진행하고, 후자는 반복적인 수정과 롤백을 반복한다.",
+        "whatEngineersLookFor": [
+          "Plan Mode를 사용하는 습관이 있는지",
+          "계획이 충분히 구체적인지 (파일 목록, 순서, 검증 기준)",
+          "계획과 실제 구현의 편차를 어떻게 관리하는지"
+        ],
+        "redFlags": [
+          "Plan Mode를 알고 있지만 사용하지 않는 경우",
+          "계획을 승인하자마자 바로 수정하는 경우 (계획을 읽지 않음)",
+          "구현 중 계획을 벗어나도 계획을 업데이트하지 않는 경우"
+        ],
+        "interviewQuestions": [
+          "Plan Mode와 Auto-Accept Mode를 각각 어떤 상황에서 사용하시나요?",
+          "계획이 구현 중 현실과 맞지 않을 때 어떻게 처리하시나요?",
+          "Ultraplan과 일반 Plan Mode의 실제 품질 차이를 경험한 사례가 있나요?"
+        ],
+        "masteryVsFamiliar": "단순히 아는 수준: Plan Mode의 존재를 안다. 마스터 수준: 복잡도에 따라 Normal/Plan/Ultraplan을 의도적으로 선택하고, 계획 단계에서 적극적으로 피드백을 주어 계획 품질을 높이며, 구현 전 80% 투자 원칙을 팀 문화로 만들었다."
+      },
+      "keyTakeaways": [
+        {"title": "80%를 탐색/계획에 투자하라", "content": "해외 최고 고수들의 공통 원칙. 구현 전 충분한 계획이 실제로 더 빠른 결과를 낸다."},
+        {"title": "Shift+Tab으로 3가지 모드 순환", "content": "Normal → Auto-Accept → Plan. 복잡한 기능은 Plan Mode로, 반복 수정은 Auto-Accept로."},
+        {"title": "Plan Mode ≠ Thinking Mode", "content": "Plan Mode는 실행을 막는 워크플로우 제어. Thinking Mode는 추론 깊이 제어. 둘은 독립적이고 조합 가능하다."},
+        {"title": "계획에 검증 기준을 포함하라", "content": "각 구현 단계마다 검증 방법을 포함한 계획이 좋은 계획이다. '완료'의 정의가 없는 계획은 불완전하다."},
+        {"title": "계획 벗어나면 먼저 업데이트", "content": "구현 중 계획과 다른 것을 발견하면, 구현을 멈추고 계획을 먼저 업데이트한다. 계획이 항상 현실을 반영해야 한다."}
+      ]
+    },
+    {
+      "number": 7,
+      "emoji": "🤖",
+      "title": "Multi-Agent Orchestration: Dynamic Workflows",
+      "titleKr": "Multi-Agent 오케스트레이션 — 동적 워크플로우와 병렬 에이전트",
+      "tldr": "하나의 Claude 세션이 병렬로 16개의 서브에이전트를 동시에 실행하는 세상 — 이 멀티에이전트 패턴이 소프트웨어 개발의 속도와 범위를 재정의하고 있다.",
+      "topics": ["Dynamic Workflows 시스템", "서브에이전트 스폰과 오케스트레이션", "Worktree 격리 패턴", "Claude-plans-Codex-reviews 패턴", "Agent View 대시보드"],
+      "learningGoals": [
+        "Dynamic Workflows와 일반 에이전트 루프의 차이를 이해한다",
+        "리드 에이전트 + 스페셜리스트 에이전트 패턴을 설계한다",
+        "Worktree 격리로 병렬 에이전트가 충돌 없이 작업하는 방법을 이해한다",
+        "Claude가 계획하고 다른 모델이 리뷰하는 이중 AI 패턴을 구현한다",
+        "Agent View 대시보드를 활용해 멀티에이전트 세션을 모니터링한다"
+      ],
+      "overview": "2026년 5월, Anthropic은 Claude Code에 Dynamic Workflows를 출시했다. 이것은 단순한 기능 추가가 아니라 AI 개발 방식의 패러다임 전환이다. 오케스트레이션 로직이 컨텍스트 윈도우 안에 갇혀 있는 대신, 이제 코드로 작성되어 병렬 서브에이전트들을 지휘한다.\n\n이제 가능한 것들: 대규모 코드베이스를 병렬로 분석하거나, 테스트를 병렬로 실행하거나, PR 전체를 여러 전문 에이전트가 각자의 관점에서 동시에 리뷰하거나, 한 에이전트가 계획하고 다른 에이전트가 구현하면서 세 번째 에이전트가 검증하는 파이프라인을 구축하는 것.",
+      "sections": [
+        {
+          "title": "Dynamic Workflows — 코드로 작성하는 오케스트레이션",
+          "content": "Dynamic Workflows의 핵심은 오케스트레이션 로직을 JavaScript로 표현한다는 것이다.\n\n```javascript\nexport const meta = {\n  name: 'parallel-review',\n  description: 'PR을 여러 관점에서 병렬 리뷰',\n}\n\nconst DIMENSIONS = [\n  { key: 'bugs', prompt: '버그와 로직 오류를 찾아라' },\n  { key: 'security', prompt: '보안 취약점을 찾아라' },\n  { key: 'perf', prompt: '성능 문제를 찾아라' },\n]\n\n// 세 에이전트가 동시에 실행됨\nconst results = await parallel(\n  DIMENSIONS.map(d => () =>\n    agent(d.prompt, { label: `review:${d.key}`, schema: FINDINGS_SCHEMA })\n  )\n)\n```\n\n`parallel()` 함수로 여러 에이전트가 동시에 실행된다. `agent()` 함수로 각 서브에이전트를 스폰한다. `schema`를 지정하면 에이전트가 구조화된 JSON을 반환한다.\n\n**규모**: 한 워크플로우에서 최대 16개 동시 실행, 세션당 최대 1,000개 에이전트."
+        },
+        {
+          "title": "리드 에이전트 + 스페셜리스트 패턴",
+          "content": "가장 강력한 멀티에이전트 패턴은 역할 분리다:\n\n**리드 에이전트**: 전체 작업을 이해하고 분해한다. 각 스페셜리스트에게 구체적인 서브태스크를 할당한다.\n\n**스페셜리스트 에이전트**: 하나의 구체적인 문제에만 집중한다. 자신만의 컨텍스트 윈도우, 도구, 모델을 가진다.\n\n```javascript\n// 리드 에이전트가 작업 분해\nconst tasks = await agent(\n  '이 코드베이스의 버그를 찾아 태스크 목록으로 반환하라',\n  { schema: TASKS_SCHEMA }\n)\n\n// 각 버그를 독립적인 스페셜리스트가 처리\nconst fixes = await pipeline(\n  tasks,\n  task => agent(\n    `이 버그를 수정하라: ${task.description}`,\n    { isolation: 'worktree' }  // 격리된 git worktree에서 실행\n  )\n)\n```\n\n**해외 고수들의 실제 패턴**: Claude가 계획/분해를 담당하고, 특정 전문 모델(또는 같은 Claude의 다른 인스턴스)이 독립적으로 구현한다. 세 번째 에이전트가 각 결과를 검증한다. 이 파이프라인은 한 에이전트가 모든 것을 하는 것보다 결과 품질이 현저히 높다."
+        },
+        {
+          "title": "Worktree 격리 — 병렬 에이전트의 충돌 방지",
+          "content": "여러 에이전트가 같은 파일을 동시에 수정하면 충돌이 발생한다. `isolation: 'worktree'` 옵션이 이 문제를 해결한다.\n\n```javascript\nconst results = await parallel(\n  bugList.map(bug => () =>\n    agent(\n      `이 버그를 수정하라: ${bug.description}`,\n      {\n        isolation: 'worktree',  // 각 에이전트는 독립된 git 브랜치에서 작업\n        label: `fix:${bug.id}`\n      }\n    )\n  )\n)\n```\n\n`isolation: 'worktree'`를 설정하면 에이전트마다 별도의 git worktree(격리된 작업 디렉토리)가 생성된다. 에이전트들은 서로의 작업에 방해받지 않고 병렬로 파일을 수정할 수 있다.\n\n에이전트가 변경을 만들지 않으면 worktree는 자동으로 정리된다. 성공한 에이전트의 변경은 각자의 브랜치에 담기며, 이후 사람이 리뷰하고 머지를 결정할 수 있다.\n\n**비용 주의**: Worktree 격리는 ~200-500ms 설정 시간 + 디스크 공간이 필요하다. 에이전트가 실제로 파일을 수정해야 하는 경우에만 사용하고, 읽기 전용 분석에는 격리 없이 실행하라."
+        },
+        {
+          "title": "Claude-plans-Codex-reviews 패턴",
+          "content": "2026년 커뮤니티에서 주목받은 패턴 중 하나는 '계획은 Claude, 리뷰는 다른 AI'다.\n\n**왜 이것이 효과적인가**: 같은 모델이 계획하고 구현하면, 자신의 blind spot을 자신이 리뷰할 때 놓치기 쉽다. 다른 모델(또는 다른 관점으로 설정된 같은 모델)이 독립적으로 리뷰하면 발견율이 높아진다.\n\n```javascript\n// 1단계: Claude가 구현 계획 수립\nphase('Plan')\nconst plan = await agent(\n  '이 기능을 구현할 상세 계획을 작성하라',\n  { schema: PLAN_SCHEMA }\n)\n\n// 2단계: 계획 기반 구현\nphase('Implement')\nconst implementation = await agent(\n  `이 계획을 구현하라:\\n${plan.steps.join('\\n')}`,\n  { isolation: 'worktree' }\n)\n\n// 3단계: 독립적 검증 (다른 관점)\nphase('Verify')\nconst verification = await parallel(\n  ['correctness', 'security', 'edge-cases'].map(lens => () =>\n    agent(\n      `${lens} 관점에서 이 구현을 검증하라. 실패를 찾아내려 시도하라.`,\n      { schema: VERDICT_SCHEMA }\n    )\n  )\n)\n```\n\n세 가지 관점의 검증 에이전트를 동시에 실행하면, 단일 리뷰어보다 문제 발견율이 높아진다."
+        }
+      ],
+      "analogy": {
+        "title": "콘서트 오케스트라",
+        "content": "오케스트라에서 지휘자 혼자 모든 악기를 연주할 수는 없다. 하지만 지휘자가 없으면 수십 명의 연주자들이 각자의 템포로 연주해 소음이 된다. 지휘자의 역할은 전체 악보를 이해하고, 각 섹션에게 언제 무엇을 얼마나 강하게 연주할지 신호를 보내는 것이다.\n\nDynamic Workflows의 리드 에이전트가 정확히 지휘자 역할이다. 전체 태스크를 이해하고, 각 스페셜리스트 에이전트에게 구체적인 서브태스크를 할당하며, 결과들을 통합한다. 바이올린 섹션(버그 찾기 에이전트), 첼로 섹션(보안 분석 에이전트), 목관악기(성능 분석 에이전트)가 동시에 연주하고, 지휘자가 전체 결과를 하모니로 만든다.\n\nWorktree 격리는 각 섹션이 자신의 악보만 보면서 연주하는 것과 같다 — 다른 섹션의 즉흥 연주가 자신의 파트를 방해하지 않는다."
+      },
+      "codeExample": {
+        "language": "javascript",
+        "intro": "PR 리뷰를 병렬 멀티에이전트로 수행하는 실제 워크플로우 예제다. pipeline과 parallel의 차이, schema를 통한 구조화된 반환값에 주목하라.",
+        "code": "export const meta = {\n  name: 'adversarial-review',\n  description: 'PR을 다중 관점에서 병렬 검증',\n  phases: [\n    { title: 'Find', detail: '각 관점에서 문제 탐색' },\n    { title: 'Verify', detail: '발견 사항 교차 검증' },\n  ],\n}\n\nconst FINDINGS_SCHEMA = {\n  type: 'object',\n  properties: {\n    findings: {\n      type: 'array',\n      items: {\n        type: 'object',\n        properties: {\n          file: { type: 'string' },\n          line: { type: 'number' },\n          severity: { type: 'string', enum: ['high', 'medium', 'low'] },\n          description: { type: 'string' },\n        }\n      }\n    }\n  }\n}\n\nconst DIMENSIONS = [\n  { key: 'bugs', prompt: '로직 버그와 엣지 케이스를 찾아라' },\n  { key: 'security', prompt: 'XSS, SQL injection 등 보안 문제를 찾아라' },\n  { key: 'perf', prompt: 'N+1 쿼리, 불필요한 리렌더링 등을 찾아라' },\n]\n\n// Phase 1: 3개 관점을 pipeline으로 병렬 처리\n// (barrier 없음 — 각 관점이 독립적으로 완료되는 즉시 다음 단계로)\nconst reviewed = await pipeline(\n  DIMENSIONS,\n  d => agent(d.prompt, {\n    label: `find:${d.key}`,\n    phase: 'Find',\n    schema: FINDINGS_SCHEMA\n  }),\n  // Phase 2: 각 관점의 발견 사항을 즉시 교차 검증\n  (findings, originalDim) => parallel(\n    findings.findings.map(f => () =>\n      agent(\n        `이 발견이 실제 문제인지 반박하려고 시도하라: ${f.description}`,\n        { label: `verify:${f.file}:${f.line}`, phase: 'Verify' }\n      ).then(verdict => ({ ...f, real: verdict.includes('confirmed') }))\n    )\n  )\n)\n\nconst confirmed = reviewed.flat().filter(Boolean).filter(f => f.real)\nlog(`확인된 문제: ${confirmed.length}개`)\nreturn { confirmed }",
+        "walkthrough": "pipeline()을 사용한 이유는 각 관점(bugs, security, perf)이 독립적으로 완료되는 즉시 검증 단계로 넘어갈 수 있기 때문이다. barriers(parallel로 모두 기다리기)를 사용하면 가장 느린 관점이 모두를 기다리게 만든다. pipeline은 bugs 분석이 끝나는 즉시 그 결과 검증을 시작하고, 그 사이 security, perf 분석이 동시에 진행된다."
+      },
+      "industryEvaluation": {
+        "overview": "멀티에이전트 패턴을 실제로 사용하는 팀은 아직 초기 단계다. 하지만 이 패턴을 마스터한 팀의 생산성 격차는 이미 명확하게 나타나고 있다.",
+        "whatEngineersLookFor": [
+          "pipeline vs parallel의 선택 이유를 설명할 수 있는지",
+          "Worktree 격리 비용을 인식하고 필요한 경우에만 사용하는지",
+          "스키마를 통한 구조화된 에이전트 반환값 설계"
+        ],
+        "redFlags": [
+          "모든 에이전트에 worktree 격리를 사용하는 경우 (불필요한 비용)",
+          "barrier(parallel)를 무조건 사용하고 pipeline의 이점을 모르는 경우",
+          "에이전트 수를 무한정 늘리고 결과 품질을 검증하지 않는 경우"
+        ],
+        "interviewQuestions": [
+          "pipeline과 parallel의 차이를 실제 사례로 설명해주세요.",
+          "에이전트 수가 늘어날 때 비용과 품질의 트레이드오프를 어떻게 관리하시나요?",
+          "Claude-plans-Codex-reviews 패턴 같은 이중 AI 검증을 구현한 경험이 있나요?"
+        ],
+        "masteryVsFamiliar": "단순히 아는 수준: 여러 에이전트를 동시에 실행할 수 있다. 마스터 수준: 태스크 특성에 따라 pipeline/parallel을 의도적으로 선택하고, 비용 대비 품질을 최적화하며, 독립적 검증 에이전트를 통해 단일 에이전트 blind spot을 보완한다."
+      },
+      "keyTakeaways": [
+        {"title": "오케스트레이션은 코드로 표현된다", "content": "Dynamic Workflows는 오케스트레이션 로직을 컨텍스트 윈도우가 아닌 JavaScript 코드로 표현한다. 결정론적이고 반복 가능하다."},
+        {"title": "pipeline이 기본, parallel은 예외", "content": "barrier가 진짜 필요할 때만 parallel 사용. 대부분의 경우 pipeline이 더 빠르고 효율적이다."},
+        {"title": "Worktree 격리는 비쌈", "content": "파일을 병렬로 수정해야 할 때만 사용. 읽기 전용 분석에는 격리 없이 실행하라."},
+        {"title": "독립 검증이 품질을 높인다", "content": "같은 에이전트가 계획하고 리뷰하면 blind spot이 생긴다. 독립적인 검증 에이전트가 발견율을 높인다."},
+        {"title": "스키마로 에이전트 출력을 구조화하라", "content": "schema 옵션을 쓰면 에이전트가 구조화된 JSON을 반환한다. 다음 단계 에이전트가 안정적으로 처리할 수 있다."}
+      ]
+    },
+    {
+      "number": 8,
+      "emoji": "🧠",
+      "title": "Memory Systems: Persistent Context Across Sessions",
+      "titleKr": "Memory 시스템 — 세션을 넘나드는 영속적 컨텍스트",
+      "tldr": "Claude는 기본적으로 세션이 끝나면 모든 것을 잊는다 — Memory 시스템은 그 망각을 극복하고 Claude가 당신의 프로젝트와 작업 방식을 장기적으로 학습하게 만든다.",
+      "topics": ["Auto-memory 시스템", "4가지 메모리 타입", "MEMORY.md 인덱스 구조", "세션 간 컨텍스트 연속성", "메모리 관리 전략"],
+      "learningGoals": [
+        "Claude Code의 Auto-memory 시스템이 어떻게 작동하는지 이해한다",
+        "user, feedback, project, reference 4가지 메모리 타입의 차이를 설명한다",
+        "효과적인 메모리 파일 구조를 설계한다",
+        "언제 메모리를 저장하고 언제 저장하지 말아야 하는지 판단한다",
+        "메모리와 CLAUDE.md의 역할을 구분한다"
+      ],
+      "overview": "Claude Code 세션은 기본적으로 상태가 없다. 오늘 알려준 팀의 코딩 규칙, 내일은 다시 알려줘야 한다. 지난주에 한 실수에서 배운 교훈, 새 세션에서 Claude는 모른다. 이것은 AI 어시스턴트 사용의 가장 큰 마찰 중 하나다.\n\nAuto-memory 시스템은 이 문제를 해결한다. Claude가 대화에서 중요한 정보를 발견하면 자동으로 파일로 저장하고, 다음 세션에서 그 파일들을 불러와 컨텍스트에 포함한다. 프로젝트별로 독립된 메모리 디렉토리에 마크다운 파일로 저장되어, 사람이 읽고 수정할 수 있다.",
+      "sections": [
+        {
+          "title": "Auto-memory 시스템 — 어디에 어떻게 저장되는가",
+          "content": "Auto-memory 파일들은 다음 위치에 저장된다:\n\n```\n~/.claude/projects/<sanitized-cwd>/memory/\n├── MEMORY.md           ← 인덱스 파일 (항상 컨텍스트에 로드됨)\n├── user_role.md        ← 사용자 역할/선호도\n├── feedback_testing.md ← 테스트 전략 피드백\n├── project_auth.md     ← 인증 관련 프로젝트 결정\n└── reference_linear.md ← Linear 티켓 추적 참조\n```\n\n`MEMORY.md`는 특별하다 — **항상 컨텍스트 윈도우에 로드된다**. 이 파일은 인덱스로만 사용되며, 각 메모리의 한 줄 요약과 파일 링크를 담는다. 200줄 이후는 잘리므로 간결하게 유지해야 한다.\n\n개별 메모리 파일은 관련성이 있을 때만 로드된다 — 컨텍스트를 아낀다.\n\n설정으로 메모리 위치를 커스터마이즈할 수 있다:\n```json\n{\n  \"autoMemoryDirectory\": \"~/my-custom-memory/\"\n}\n```"
+        },
+        {
+          "title": "4가지 메모리 타입",
+          "content": "메모리 파일에는 4가지 타입이 있으며, 각각 다른 목적을 가진다:\n\n**1. user** — 사용자의 역할, 선호도, 지식 수준\n```markdown\n---\nname: user-role\ndescription: 사용자가 Go 전문가이며 React는 처음임을 기록\nmetadata:\n  type: user\n---\n10년 경력 Go 엔지니어. 이 프로젝트의 React 프론트엔드는 처음이다.\n프론트엔드 설명 시 Go 개념과 비교해서 설명하면 효과적이다.\n```\n\n**2. feedback** — 접근 방식에 대한 사용자 교정/확인\n```markdown\n---\nmetadata:\n  type: feedback\n---\n테스트에서 DB를 mock하지 말 것.\n**Why:** 지난 분기에 mock 테스트 통과 후 프로덕션 마이그레이션이 실패한 사건이 있었음.\n**How to apply:** 통합 테스트는 항상 실제 DB 사용.\n```\n\n**3. project** — 진행 중인 작업, 목표, 결정 사항\n```markdown\n---\nmetadata:\n  type: project\n---\n2026-07-01까지 인증 미들웨어 재작성 완료 목표.\n**Why:** Legal이 세션 토큰 저장 방식이 새 컴플라이언스 요구사항 미충족을 지적함.\n**How to apply:** 인증 관련 스코프 결정은 컴플라이언스 우선.\n```\n\n**4. reference** — 외부 시스템의 위치 정보\n```markdown\n---\nmetadata:\n  type: reference\n---\n파이프라인 버그는 Linear 프로젝트 'INGEST'에서 추적됨.\n```"
+        },
+        {
+          "title": "언제 저장하고 언제 저장하지 말아야 하는가",
+          "content": "메모리에 저장해야 하는 것:\n\n- 사용자의 역할, 전문 분야, 새로운 기술 분야\n- 사용자가 접근 방식을 수정하거나 확인한 것 ('이렇게 하지 마세요', '네 정확해요')\n- 진행 중인 프로젝트의 결정과 맥락\n- 외부 시스템 참조 (어떤 버그 트래커, 어떤 채널)\n\n**메모리에 저장하지 말아야 하는 것** (이것들은 다른 방법으로 관리한다):\n\n| 저장 안 할 것 | 이유 |\n|---|---|\n| 코드 패턴, 컨벤션, 파일 구조 | 코드 자체에서 읽을 수 있음 |\n| Git 히스토리, 최근 변경 | `git log/blame`이 권위적 소스 |\n| 디버깅 해결책, 수정 레시피 | 코드에 있음; 커밋 메시지에 맥락 있음 |\n| CLAUDE.md에 이미 있는 것 | 중복, 충돌 위험 |\n| 현재 세션의 임시 상태 | 세션이 끝나면 의미 없음 |\n\n기억해야 할 핵심 테스트: '이 정보를 미래의 Claude가 현재 파일을 보지 않고도 알아야 하는가?' 그렇다면 메모리에. 아니라면 코드나 git에."
+        },
+        {
+          "title": "MEMORY.md 인덱스 설계와 유지관리",
+          "content": "MEMORY.md는 항상 컨텍스트에 로드되므로 가볍게 유지하는 것이 중요하다.\n\n```markdown\n# Memory Index\n\n## User\n- [User Role](user_role.md) — Go 전문가, React 초보; 프론트엔드 설명 시 Go 비교법 효과적\n\n## Feedback  \n- [Testing Strategy](feedback_testing.md) — DB mock 금지; 작년 migration 실패 사건\n- [Response Style](feedback_style.md) — 요약 금지, diff를 직접 읽을 수 있음\n\n## Project\n- [Auth Rewrite](project_auth.md) — 2026-07-01 데드라인; compliance 요구사항\n- [Current Sprint](project_sprint.md) — JWT 미들웨어 구현 중\n\n## Reference\n- [Bug Tracker](reference_bugs.md) — Linear 'INGEST' 프로젝트\n- [Monitoring](reference_monitoring.md) — grafana.internal/d/api-latency\n```\n\n각 항목은 한 줄, 150자 이내. 파일 링크와 핵심 내용을 담는다.\n\n**유지관리 전략**: 메모리 파일이 오래되거나 틀려지면 즉시 업데이트하거나 삭제하라. stale한 메모리는 없는 것보다 나쁘다 — Claude가 잘못된 가정으로 작업할 수 있다. 메모리 파일을 읽기 전에 현재 코드 상태와 대조해 여전히 유효한지 확인하는 습관을 들여라."
+        }
+      ],
+      "analogy": {
+        "title": "새 팀원의 온보딩 노트",
+        "content": "상상해보자. 당신이 매일 아침 기억을 잃고 출근한다. 어제 동료와 어떤 결정을 했는지, 어떤 코딩 컨벤션을 사용하기로 했는지, 어떤 버그를 추적 중인지 — 전혀 기억이 없다. 매일 아침 동료들이 다시 설명해줘야 한다.\n\n이것이 기본 상태의 Claude다. 세션마다 새로 시작한다.\n\nAuto-memory는 이 문제에 대한 해결책이다 — 마치 매일 아침 책상에 놓인 '어제의 나에게 남기는 노트'와 같다. 어제의 Claude가 오늘의 Claude에게 남기는 메시지. '이 프로젝트에서 DB mock은 금지입니다. 이유: 지난 분기 사건이 있었습니다.' '이 사용자는 Go 전문가라 Go 개념으로 설명하면 빠릅니다.'\n\n가장 효과적인 노트는 WHY를 포함한다 — 규칙만 있고 이유가 없으면, 다음날의 나는 그 규칙이 아직도 유효한지 판단할 수 없다."
+      },
+      "codeExample": {
+        "language": "markdown",
+        "intro": "실제 프로젝트에서 사용하는 feedback 메모리 파일의 예제다. Why와 How to apply 구조가 어떻게 미래의 Claude를 안내하는지 주목하라.",
+        "code": "---\nname: db-testing-policy\ndescription: DB를 테스트에서 mock하지 말 것 — production divergence 사건\nmetadata:\n  type: feedback\n---\n\n통합 테스트에서 DB를 mock하지 마라. 항상 실제 DB 연결을 사용해야 한다.\n\n**Why:** 2025년 4분기에 mock 테스트가 전부 통과했지만,\nprod 마이그레이션이 실패한 사건이 있었다. Mock이 실제 Prisma 동작과\n다르게 작동했기 때문이다. 이 사건으로 프로덕션이 2시간 다운됐다.\n\n**How to apply:** 테스트 파일에서 `jest.mock('prisma')`나\n`vi.mock('@/lib/db')` 패턴을 보면 제안하지 말 것.\n통합 테스트는 `test-db`라는 별도 PostgreSQL 인스턴스를 사용한다\n(`.env.test`의 `DATABASE_URL` 참조).\n\n[[feedback-test-runner]]  ← 관련 메모리 링크",
+        "walkthrough": "이 메모리 파일의 구조에서 Why와 How to apply 섹션이 핵심이다. Why가 없으면 미래의 Claude는 이 규칙이 여전히 유효한지 판단할 수 없다. How to apply는 규칙을 적용해야 하는 구체적인 코드 패턴을 알려준다. `[[feedback-test-runner]]` 링크는 관련 메모리 파일을 연결한다 — 나중에 그 파일이 만들어지면 연결이 완성된다."
+      },
+      "industryEvaluation": {
+        "overview": "메모리 시스템을 적극적으로 관리하는 팀은 AI와 협업하는 속도가 시간이 지날수록 빨라진다. 초기 온보딩 투자가 복리로 돌아오는 것이다.",
+        "whatEngineersLookFor": [
+          "메모리와 CLAUDE.md의 역할을 명확히 구분하는지",
+          "Why와 How to apply가 포함된 feedback 메모리 구조",
+          "stale 메모리를 주기적으로 정리하는 습관"
+        ],
+        "redFlags": [
+          "CLAUDE.md에 있어야 할 코딩 규칙을 메모리에 저장하는 경우",
+          "Why 없이 규칙만 있는 feedback 메모리",
+          "오래된 프로젝트 상태가 그대로 메모리에 남아있는 경우"
+        ],
+        "interviewQuestions": [
+          "메모리와 CLAUDE.md를 어떻게 구분해서 사용하시나요?",
+          "feedback 메모리에 Why를 포함하는 것이 왜 중요한가요?",
+          "stale 메모리를 발견했을 때 어떻게 처리하시나요?"
+        ],
+        "masteryVsFamiliar": "단순히 아는 수준: Auto-memory 시스템이 존재한다. 마스터 수준: 세션마다 메모리 파일을 적극적으로 관리하고, feedback 메모리에 Why를 항상 포함하며, CLAUDE.md와 메모리의 역할을 명확히 분리해 중복과 충돌을 방지한다."
+      },
+      "keyTakeaways": [
+        {"title": "MEMORY.md는 항상 로드된다", "content": "200줄 이후 잘리므로 가볍게 유지하라. 각 항목은 한 줄, 핵심 내용과 파일 링크만."},
+        {"title": "4타입: user/feedback/project/reference", "content": "각 타입은 다른 목적. feedback이 가장 중요 — 작업 방식을 교정하고 반복 실수를 막는다."},
+        {"title": "Why를 반드시 포함하라", "content": "규칙만 있고 이유가 없으면 미래의 Claude가 여전히 유효한지 판단할 수 없다."},
+        {"title": "코드에서 읽을 수 있는 것은 저장하지 마라", "content": "코딩 패턴, git 히스토리, CLAUDE.md에 있는 것 — 메모리에 중복 저장하면 충돌 위험만 높아진다."},
+        {"title": "stale 메모리는 없는 것보다 나쁘다", "content": "오래된 메모리를 믿고 Claude가 잘못된 가정으로 작업할 수 있다. 주기적으로 현재 상태와 대조하라."}
+      ]
+    },
+    {
+      "number": 9,
+      "emoji": "🏆",
+      "title": "Expert Configurations: How Top Practitioners Use Claude Code",
+      "titleKr": "고수들의 세팅 — 해외 최고 전문가들의 Claude Code 환경",
+      "tldr": "Superpowers 플러그인, 9가지 핵심 settings.json 설정, 팀 CLAUDE.md 전략 — 해외 파워유저들이 실제로 사용하는 구체적인 설정을 분해한다.",
+      "topics": ["Superpowers 플러그인 14가지 스킬", "첫날 바꾸는 9가지 settings.json 설정", "팀 CLAUDE.md 전략", "커뮤니티 검증된 패턴", "나쁜 CLAUDE.md vs 좋은 CLAUDE.md"],
+      "learningGoals": [
+        "Superpowers 플러그인의 핵심 스킬들과 그것이 강제하는 방법론을 이해한다",
+        "첫날 바꿔야 하는 9가지 settings.json 설정을 알고 적용한다",
+        "팀 전체가 CLAUDE.md를 살아있는 문서로 관리하는 전략을 설계한다",
+        "커뮤니티에서 검증된 hooks 패턴을 자신의 환경에 적용한다",
+        "해외 파워유저들의 공통 접근법을 자신의 워크플로우에 통합한다"
+      ],
+      "overview": "Claude Code를 6개월 이상 집중적으로 사용한 개발자들의 설정을 분석하면 공통 패턴이 나타난다. 그들은 CLAUDE.md를 정기적으로 업데이트하고, hooks로 품질 자동화를 구현하고, 반복 작업을 스킬로 캡슐화하며, 멀티에이전트 패턴을 선택적으로 도입한다.\n\n이 챕터는 그 패턴들을 구체적인 설정 파일과 스킬로 번역한다. Superpowers 플러그인이 어떻게 전체 개발 방법론을 자동화하는지, 커뮤니티에서 가장 많이 검증된 hooks 레시피가 무엇인지, 팀 CLAUDE.md를 살아있는 문서로 유지하는 전략이 무엇인지.",
+      "sections": [
+        {
+          "title": "Superpowers 플러그인 — 방법론을 자동화하는 14가지 스킬",
+          "content": "Superpowers(`npx skills add superpowers`)는 Jesse Storimer가 만든 오픈소스 플러그인으로, 아무것도 하지 않고 코드를 쓰려는 Claude를 멈추고 방법론을 따르게 강제한다.\n\n**핵심 스킬들**:\n\n| 스킬 | 역할 |\n|---|---|\n| `brainstorming` | 구현 전 소크라테스식 요구사항 정제 |\n| `writing-plans` | 주니어 엔지니어가 따를 수 있는 상세 구현 계획 |\n| `test-driven-development` | 빨강-초록-리팩토링 사이클 강제 |\n| `systematic-debugging` | 재현→격리→근원→수정 4단계 강제 |\n| `subagent-driven-development` | 스페셜리스트 서브에이전트로 분산 구현 |\n| `verification-before-completion` | 완료 전 검증 게이트 |\n| `receiving-code-review` | 구조화된 다관점 코드 리뷰 |\n\n**핵심 메커니즘**: Claude가 '뭔가를 만들려 한다'고 감지되면 자동으로 `brainstorming` → `writing-plans` → TDD/구현 흐름을 거친다. 코드를 바로 쓰는 게 아니라, 먼저 '당신이 진짜 원하는 게 뭔지' 소크라테스식으로 파악한다.\n\n**Token 효율성**: 스킬은 호출될 때만 로드된다. 사용하지 않을 때의 오버헤드는 거의 없다."
+        },
+        {
+          "title": "첫날 바꾸는 9가지 settings.json 설정",
+          "content": "커뮤니티에서 검증된 '첫날 설정' 목록:\n\n```json\n{\n  \"model\": \"claude-opus-4-7\",\n  \"env\": {\n    \"ANTHROPIC_MODEL\": \"claude-opus-4-7\"\n  },\n  \"permissions\": {\n    \"allow\": [\n      \"Bash(git status)\",\n      \"Bash(git diff *)\",\n      \"Bash(git log *)\",\n      \"Bash(npm test)\",\n      \"Bash(npm run lint)\",\n      \"Bash(npm run typecheck)\"\n    ],\n    \"deny\": [\n      \"Bash(git push --force *)\",\n      \"Bash(rm -rf *)\",\n      \"Read(.env)\",\n      \"Read(.env.local)\",\n      \"Read(.env.production)\"\n    ]\n  },\n  \"hooks\": {\n    \"PostToolUse\": [{\n      \"matcher\": \"Write|Edit\",\n      \"hooks\": [{ \"type\": \"command\",\n        \"command\": \"jq -r '.tool_input.file_path // empty' | { read -r f; [ -n \\\"$f\\\" ] && npx prettier --write \\\"$f\\\" --ignore-unknown; } 2>/dev/null || true\",\n        \"async\": true }]\n    }]\n  }\n}\n```\n\n**9가지 변경사항 설명**:\n1. 모델 명시적 설정 (기본값에 의존하지 않음)\n2. env에도 모델 설정 (일부 도구가 env에서 읽음)\n3. 읽기 전용 git 명령 allowlist\n4. 테스트/린트 자동 승인\n5. force push deny\n6. rm -rf deny\n7. .env 파일 읽기 deny\n8. PostToolUse 포맷터 훅\n9. 포맷터 async 실행 (메인 흐름 비차단)"
+        },
+        {
+          "title": "팀 CLAUDE.md 전략 — 살아있는 문서",
+          "content": "최고의 팀 CLAUDE.md는 한 번 쓰고 잊어버리는 문서가 아니다 — 팀의 AI 협업 경험이 누적되는 살아있는 문서다.\n\n**규칙 1: 실수가 생기면 즉시 추가하라**\nClaude가 잘못된 행동을 했다 → CLAUDE.md에 규칙 추가 → 다음 번에는 반복 안 함.\n이 피드백 루프가 시간이 지날수록 팀의 Claude를 점점 강력하게 만든다.\n\n**규칙 2: 모든 팀원이 기여자**\nCLAUDE.md를 git에 커밋하고 PR 리뷰 대상에 포함시켜라. 한 사람의 파일이 아닌 팀의 집단 지식.\n\n**규칙 3: 중요한 것을 먼저**\nClaude는 파일을 위에서 아래로 읽으며 초반 내용에 더 집중한다. Do NOT 목록을 두 번째 섹션에 배치하라.\n\n**규칙 4: 코드 스니펫 대신 파일 참조**\n`src/utils/validators.ts:1-30` 형태로 참조. 스니펫은 코드가 변경되면 stale해진다.\n\n**커뮤니티 검증된 Do NOT 패턴**:\n\n```markdown\n## Do NOT\n- Use `any` type — always fix the actual type error\n- Use default exports — all exports must be named\n- Modify `schema.prisma` directly — ask me first\n- Leave `console.log` in production code\n- Refactor code unrelated to the current task\n- Create new DB migrations without confirmation\n- Push to main without PR review\n```"
+        },
+        {
+          "title": "해외 고수들의 공통 접근법",
+          "content": "6개월 이상 Claude Code를 집중 사용한 개발자들에게서 공통적으로 나타나는 패턴:\n\n**패턴 1: 주간 CLAUDE.md 리뷰**\n매주 금요일, 그 주에 Claude가 반복적으로 잘못한 것을 CLAUDE.md에 추가한다. 처음에는 비어있던 Do NOT 목록이 몇 개월 후에는 팀의 가장 가치 있는 규칙 모음이 된다.\n\n**패턴 2: 복잡도 기반 모드 선택**\n- 1파일 버그 수정: Normal mode, 바로 시작\n- 3-5파일 기능 추가: Plan mode, 계획 확인 후 구현\n- 아키텍처 변경: Ultraplan + 멀티에이전트 검증\n\n**패턴 3: 스킬 라이브러리 구축**\n처음 6개월 동안 반복적으로 하는 작업(PR 생성, 릴리즈 노트, 마이그레이션 계획 등)을 하나씩 스킬로 만든다. 6개월 후에는 30분 걸리던 PR 작업이 5분이 된다.\n\n**패턴 4: 세션 시작 루틴**\n매 세션 시작에 `!git log --oneline -5`와 `!git status`를 자동 주입하는 SessionStart 훅을 설정한다. Claude가 항상 현재 상태를 파악하고 시작한다.\n\n```json\n{\n  \"hooks\": {\n    \"SessionStart\": [{\n      \"matcher\": \"*\",\n      \"hooks\": [{\n        \"type\": \"command\",\n        \"command\": \"echo '## 현재 상태'; git log --oneline -5 2>/dev/null; echo '---'; git status 2>/dev/null\",\n        \"async\": false\n      }]\n    }]\n  }\n}\n```"
+        }
+      ],
+      "analogy": {
+        "title": "장인의 작업실",
+        "content": "뛰어난 장인의 작업실을 들어가보면 단순히 도구들이 정리되어 있는 것 이상이다. 모든 도구가 손이 닿기 쉬운 곳에 있다. 가장 자주 쓰는 도구가 가장 가까이 있다. 지난 실수에서 만든 맞춤 지그와 가이드들이 같은 실수를 반복하지 않게 막는다.\n\n해외 Claude Code 고수들의 환경이 정확히 이렇다. CLAUDE.md는 지난 실수에서 학습한 맞춤 가이드다. hooks는 반복 작업을 자동화하는 지그다. skills는 복잡한 작업을 일관성 있게 실행하는 템플릿이다. 이 모든 것이 처음부터 완성된 것이 아니라 수개월의 사용을 통해 조금씩 구축된 것이다.\n\n장인의 작업실을 하루아침에 따라 만들 수 없듯이, 이 환경도 즉시 복제할 수 없다. 하지만 그 장인이 어떤 원칙으로 작업실을 구성했는지 이해하면, 자신만의 최적화된 환경을 훨씬 빠르게 만들 수 있다."
+      },
+      "codeExample": {
+        "language": "json",
+        "intro": "6개월 이상 사용 후 안정화된 프로덕션 설정이다. 각 설정이 어떤 문제를 해결하기 위해 추가되었는지 주석으로 설명했다.",
+        "code": "// ~/.claude/settings.json\n// 모든 프로젝트에 적용되는 개인 설정\n{\n  \"model\": \"claude-opus-4-7\",\n  \"env\": {\n    \"ANTHROPIC_MODEL\": \"claude-opus-4-7\",\n    \"CLAUDE_CODE_MAX_OUTPUT_TOKENS\": \"100000\"\n  },\n  \"permissions\": {\n    \"allow\": [\n      \"Bash(git status)\",\n      \"Bash(git diff *)\",\n      \"Bash(git log *)\",\n      \"Bash(git branch *)\",\n      \"Bash(npm test)\",\n      \"Bash(npm run *)\",\n      \"Bash(npx *)\"\n    ],\n    \"deny\": [\n      \"Bash(git push --force *)\",\n      \"Bash(git push --force-with-lease *)\",\n      \"Bash(rm -rf *)\",\n      \"Read(.env)\",\n      \"Read(.env.local)\",\n      \"Read(.env.production)\",\n      \"Read(**/secrets/**)\"\n    ]\n  },\n  \"hooks\": {\n    \"SessionStart\": [{\n      \"matcher\": \"*\",\n      \"hooks\": [{\n        \"type\": \"command\",\n        \"command\": \"git log --oneline -5 2>/dev/null | { echo '## Recent commits:'; cat; echo '## Status:'; git status --short 2>/dev/null; }\",\n        \"async\": false\n      }]\n    }],\n    \"PostToolUse\": [{\n      \"matcher\": \"Write|Edit\",\n      \"hooks\": [{\n        \"type\": \"command\",\n        \"command\": \"jq -r '.tool_input.file_path // empty' | { read -r f; [ -n \\\"$f\\\" ] && npx prettier --write \\\"$f\\\" --ignore-unknown 2>/dev/null; } || true\",\n        \"async\": true\n      }]\n    }],\n    \"Stop\": [{\n      \"matcher\": \"*\",\n      \"hooks\": [{\n        \"type\": \"command\",\n        \"command\": \"npm run typecheck --silent 2>&1 | tail -3\",\n        \"async\": true\n      }]\n    }]\n  }\n}",
+        "walkthrough": "SessionStart 훅은 매 세션 초반에 git 상태를 Claude의 컨텍스트에 주입한다. 이 한 줄이 '지금 어떤 브랜치에 있고 뭐가 변경됐냐'는 매 세션 반복 질문을 없앤다. Stop 훅의 typecheck는 async:true로 실행되어 Claude의 턴을 막지 않으면서 결과를 보여준다."
+      },
+      "industryEvaluation": {
+        "overview": "Claude Code 파워유저는 도구를 수동적으로 사용하지 않는다 — 적극적으로 환경을 구성하고 최적화한다. 이 차이가 시간이 지날수록 생산성 격차를 만든다.",
+        "whatEngineersLookFor": [
+          "설정이 단순히 복사된 것인지 팀의 실제 pain point를 반영하는지",
+          "hooks와 스킬이 실제로 사용되고 주기적으로 업데이트되는지",
+          "CLAUDE.md에 팀 전체가 기여하고 있는지"
+        ],
+        "redFlags": [
+          "settings.json을 기본값 그대로 쓰는 경우",
+          "CLAUDE.md를 한 번 쓰고 업데이트하지 않는 경우",
+          "Superpowers나 다른 스킬 플러그인을 설치했지만 어떤 스킬이 있는지 모르는 경우"
+        ],
+        "interviewQuestions": [
+          "가장 최근에 CLAUDE.md에 추가한 규칙이 무엇이고, 어떤 경험에서 나왔나요?",
+          "Superpowers의 systematic-debugging 스킬이 일반 디버깅과 어떻게 다른지 설명해주세요.",
+          "팀 CLAUDE.md 업데이트 프로세스가 어떻게 되나요?"
+        ],
+        "masteryVsFamiliar": "단순히 아는 수준: 플러그인과 설정 옵션의 이름을 안다. 마스터 수준: 각 설정이 어떤 구체적인 문제를 해결하는지 설명하고, 팀의 환경이 시간이 지날수록 더 강력해지는 피드백 루프를 만들었다."
+      },
+      "keyTakeaways": [
+        {"title": "Superpowers = 방법론 자동화", "content": "단순한 스킬 모음이 아니라 전체 개발 방법론(brainstorm→plan→TDD→review)을 강제하는 시스템이다."},
+        {"title": "9가지 첫날 설정", "content": "모델 명시, 안전 명령 허용, 위험 명령 금지, 포맷터 훅 — 이 조합이 바로 사용 가능한 기반을 만든다."},
+        {"title": "실수 → CLAUDE.md 추가", "content": "이 피드백 루프가 팀의 Claude를 점점 강력하게 만든다. 주간 리뷰 루틴으로 강화하라."},
+        {"title": "복잡도 기반 모드 선택", "content": "모든 작업에 Plan Mode를 쓸 필요는 없다. 복잡도에 따라 Normal/Plan/Ultraplan을 의도적으로 선택하라."},
+        {"title": "스킬 라이브러리는 투자", "content": "처음 6개월 동안 반복 작업을 하나씩 스킬화하면, 1년 후에는 시간 대비 ROI가 극적으로 높아진다."}
+      ]
+    },
+    {
+      "number": 10,
+      "emoji": "🚀",
+      "title": "Building Your Ultimate Claude Code Environment",
+      "titleKr": "나만의 Claude Code 환경 완성 — 전체 통합과 팀 워크플로우",
+      "tldr": "9개 챕터의 모든 개념을 하나의 일관된 환경으로 통합하는 방법 — 개인 환경 세팅부터 팀 전체의 AI 개발 문화까지.",
+      "topics": ["전체 아키텍처 통합", "개인 환경 빠른 설정 체크리스트", "팀 온보딩 전략", "AI 개발 문화 구축", "지속적 개선 루프"],
+      "learningGoals": [
+        "이 코스에서 배운 모든 개념을 하나의 일관된 환경으로 통합한다",
+        "개인 Claude Code 환경을 30분 안에 세팅하는 체크리스트를 실행한다",
+        "팀 전체에 Claude Code 모범 사례를 온보딩하는 전략을 설계한다",
+        "CLAUDE.md, Skills, Hooks, Memory가 서로 어떻게 보완하는지 설명한다",
+        "지속적 개선 루프를 팀 문화로 만드는 방법을 안다"
+      ],
+      "overview": "이 코스를 통해 우리는 CLAUDE.md의 기초부터 멀티에이전트 오케스트레이션까지, Claude Code 생태계의 전체 레이어를 탐색했다. 이제 마지막 질문이 남았다 — 이 모든 것을 어떻게 하나의 일관된 환경으로 통합할 것인가?\n\n이 챕터는 종합 정리이자 실행 가이드다. 개인 개발자가 30분 안에 강력한 기반 환경을 세팅하는 체크리스트, 팀에 이 지식을 전파하는 전략, 그리고 환경이 시간이 지날수록 더 강력해지는 피드백 루프 설계.",
+      "sections": [
+        {
+          "title": "전체 아키텍처 — 4개 레이어의 역할 분담",
+          "content": "Claude Code 환경을 구성하는 4개 레이어가 각자 다른 역할을 한다:\n\n| 레이어 | 역할 | 범위 | 변경 주기 |\n|---|---|---|---|\n| **CLAUDE.md** | 항상 적용 규칙 | 프로젝트/글로벌 | 실수 발생 시 즉시 |\n| **Skills** | 호출 가능한 절차 | 프로젝트/글로벌 | 반복 작업 발생 시 |\n| **Hooks** | 자동화 품질 게이트 | 프로젝트/글로벌 | 초기 설정 후 안정적 |\n| **Memory** | 장기 컨텍스트 | 개인/프로젝트별 | 중요 결정 발생 시 |\n\n이 4개가 서로를 보완한다. CLAUDE.md의 규칙이 작동하지 않으면 Hooks가 차단한다. Skills가 없어서 반복 작업이 있으면 Memory가 최소한 컨텍스트를 제공한다. Memory에 저장할 수 없는 팀 공유 규칙은 CLAUDE.md에 있다.\n\n**절대로 중복하지 마라**: 같은 규칙이 CLAUDE.md와 Memory 양쪽에 있으면 한쪽이 stale해질 때 충돌한다. 각 레이어에 명확한 책임을 부여하라."
+        },
+        {
+          "title": "30분 빠른 세팅 체크리스트",
+          "content": "이 체크리스트를 따르면 30분 안에 강력한 기반 환경이 완성된다:\n\n**글로벌 설정 (10분)**\n- [ ] `~/.claude/CLAUDE.md` 생성: Karpathy 4원칙 + 개인 스타일 규칙\n- [ ] `~/.claude/settings.json` 생성: 9가지 첫날 설정 적용\n- [ ] Superpowers 설치: `npx skills add superpowers`\n\n**프로젝트 설정 (15분)**\n- [ ] `/init` 실행해 초안 CLAUDE.md 생성\n- [ ] Do NOT 목록 추가 (팀 컨벤션 기반)\n- [ ] 검증 스텝 추가 (프로젝트별 test/typecheck 명령)\n- [ ] `.claude/settings.json` 생성: 프로젝트 특화 permissions\n\n**팀 표준화 (5분)**\n- [ ] CLAUDE.md를 git에 커밋\n- [ ] `.claude/settings.local.json`을 `.gitignore`에 추가\n- [ ] 팀에 CLAUDE.md 업데이트 프로세스 공유\n\n**선택적 고급 설정**\n- [ ] 가장 자주 하는 반복 작업을 첫 스킬로 만들기\n- [ ] PostToolUse 포맷터 훅 설정\n- [ ] Stop 훅으로 자동 typecheck 설정"
+        },
+        {
+          "title": "팀 온보딩 전략",
+          "content": "개인 환경을 팀 전체에 확산하는 것은 다른 도전이다. 기술적 문제가 아니라 문화적 문제다.\n\n**단계 1: 초기 설득 (1주)**\n팀에서 가장 영향력 있는 개발자가 먼저 환경을 구성하고, 측정 가능한 결과를 공유한다. 'CLAUDE.md 추가 후 PR 당 불필요한 변경 수가 60% 감소했다' 같은 구체적인 수치가 설득력 있다.\n\n**단계 2: CLAUDE.md 공유 (2주)**\n개인 CLAUDE.md에서 팀에 보편적으로 적용되는 규칙을 추출해 팀 CLAUDE.md에 PR로 제안한다. '이 규칙이 왜 필요한지 설명하는 코멘트'와 함께.\n\n**단계 3: Hooks 표준화 (3주)**\n포맷터 훅, 위험 명령 차단 같은 팀 공유 훅을 `.claude/settings.json`에 추가하고 커밋한다. 새 팀원이 클론하면 자동으로 적용된다.\n\n**단계 4: 회고에 통합 (지속)**\n스프린트 회고에 'Claude Code 실수' 항목을 추가한다. 팀이 경험한 AI 실수를 CLAUDE.md에 반영하는 시간을 의도적으로 만든다.\n\n**측정하라**: Do NOT 규칙 위반 빈도, PR 당 평균 재작업 횟수, 완료까지 평균 대화 턴 수 — 이 지표들이 CLAUDE.md 투자의 ROI를 보여준다."
+        },
+        {
+          "title": "지속적 개선 루프 — 환경이 시간과 함께 강해지는 방법",
+          "content": "최고의 Claude Code 환경은 처음부터 완성된 게 아니다. 6개월 이상의 사용을 통해 점진적으로 강화된다. 이 프로세스를 의도적으로 설계하면 더 빠르게 성장한다.\n\n**주간 루프 (매주 금요일, 15분)**:\n1. 그 주에 Claude가 반복한 실수 확인\n2. CLAUDE.md Do NOT 목록에 추가\n3. 반복 작업이 있었다면 스킬화 계획\n\n**월간 루프 (매월 마지막 금요일, 30분)**:\n1. Memory 파일 리뷰 — stale한 것 삭제/업데이트\n2. 사용하지 않는 Skills 정리\n3. Hooks 효과 측정 — 실제로 작동하는지 확인\n\n**분기 루프 (매분기)**:\n1. 멀티에이전트 패턴 도입 검토\n2. 팀 CLAUDE.md 대규모 리팩토링\n3. 새로운 Claude Code 기능 파일럿\n\n이 루프가 자동적으로 돌아가는 팀은 AI와 협업하는 능력이 지속적으로 향상된다 — 경쟁자들이 여전히 초기 설정 단계에 머물러 있는 동안."
+        }
+      ],
+      "analogy": {
+        "title": "정원 가꾸기",
+        "content": "Claude Code 환경은 건물보다 정원에 가깝다. 건물은 설계가 완성되면 짓고, 완성되면 끝이다. 정원은 심고, 가꾸고, 계절에 따라 변하며, 수년에 걸쳐 풍성해진다.\n\nCLAUDE.md의 첫 버전은 정원의 씨앗과 같다. 처음에는 작고 소박하다. 하지만 매주 새 규칙이 추가되고, 실수가 교훈으로 전환되고, 팀의 집단 지식이 축적되면 — 1년 후에는 처음 씨앗과는 비교할 수 없이 풍성한 환경이 된다.\n\n정원을 가꾸는 것처럼 Claude Code 환경을 가꿔라. 죽어가는 식물(stale 메모리, 작동하지 않는 훅)은 과감히 제거하라. 잘 자라는 식물(효과적인 스킬)은 더 키워라. 새로운 씨앗(새 패턴)을 꾸준히 심어라. 그리고 무엇보다 — 정기적으로 돌아다니며 상태를 살펴라."
+      },
+      "codeExample": {
+        "language": "markdown",
+        "intro": "이 코스를 마친 후 30분 안에 실행할 수 있는 완전한 설정 가이드다. 각 단계를 순서대로 따라하면 강력한 기반 환경이 완성된다.",
+        "code": "# Claude Code 완전 설정 가이드 (30분)\n\n## 1단계: 글로벌 CLAUDE.md (5분)\n# ~/.claude/CLAUDE.md 생성\n\n# Karpathy 4원칙 + 개인 스타일 규칙\n# (Chapter 2의 전문을 시작점으로 사용)\n\n## 2단계: 글로벌 settings.json (5분)\n# ~/.claude/settings.json\n# (Chapter 9의 9가지 첫날 설정 적용)\n\n## 3단계: Superpowers 설치 (2분)\nnpx skills add superpowers\n\n# 설치 확인\nclaude --list-skills | grep brainstorming\n\n## 4단계: 프로젝트 CLAUDE.md 생성 (10분)\n# 프로젝트 루트에서:\n# Claude Code 실행 후\n/init\n# 생성된 초안을 수정:\n# - 프로젝트 개요 추가\n# - Do NOT 목록 (팀 컨벤션)\n# - 변경 후 검증 명령\n\n## 5단계: 팀 settings.json (5분)\nmkdir -p .claude\ncat > .claude/settings.json << 'EOF'\n{\n  \"permissions\": {\n    \"allow\": [\"Bash(npm *)\", \"Bash(git status)\", \"Bash(git diff *)\"],\n    \"deny\": [\"Bash(git push --force *)\", \"Bash(rm -rf *)\", \"Read(.env*)\"]\n  }\n}\nEOF\n\n# 개인 설정은 gitignore에\necho '.claude/settings.local.json' >> .gitignore\n\n## 6단계: 첫 스킬 만들기 (3분)\nmkdir -p .claude/skills/pr\ncat > .claude/skills/pr/SKILL.md << 'EOF'\n---\nname: pr\ndescription: PR을 생성하고 팀 체크리스트를 적용한다\n---\n\n현재 브랜치 변경사항: !`git log main..HEAD --oneline`\n\n체크리스트 확인 후 gh pr create 실행.\nEOF\n\n## 완료! 테스트:\n# claude (세션 시작)\n# /pr (첫 스킬 테스트)\n# /brainstorming (Superpowers 테스트)",
+        "walkthrough": "6단계가 30분 안에 완료된다. 1-2단계는 모든 프로젝트에 적용되는 글로벌 기반. 3단계는 방법론 자동화. 4단계가 가장 중요 — 프로젝트 특화 규칙. 5단계는 팀 공유 설정. 6단계는 첫 스킬로 패턴을 익히는 것. 이 환경은 완성이 아닌 시작점이다 — 매주 조금씩 강화될 것이다."
+      },
+      "industryEvaluation": {
+        "overview": "이 코스를 완주한 사람과 그렇지 않은 사람의 차이는 '도구를 아는 것'과 '도구를 통합해서 쓰는 것' 사이의 차이다. 개별 기능을 아는 것과 그것들이 서로 어떻게 보완하는지 이해하는 것은 완전히 다른 레벨이다.",
+        "whatEngineersLookFor": [
+          "4개 레이어(CLAUDE.md/Skills/Hooks/Memory)의 역할 분담이 명확한지",
+          "환경이 지속적으로 개선되는 피드백 루프가 있는지",
+          "팀 전체에 지식을 전파하는 전략이 있는지"
+        ],
+        "redFlags": [
+          "4개 레이어가 있지만 각 역할이 명확하지 않아 중복/충돌이 있는 경우",
+          "개인 환경은 완성됐지만 팀에는 공유하지 않는 경우",
+          "환경을 구성했지만 주기적으로 업데이트하지 않는 경우"
+        ],
+        "interviewQuestions": [
+          "CLAUDE.md, Skills, Hooks, Memory 중 팀에 도입했을 때 가장 즉각적인 효과를 본 것이 무엇인가요?",
+          "Claude Code 환경을 팀에 온보딩할 때 가장 큰 저항은 무엇이었고 어떻게 극복했나요?",
+          "6개월 전과 지금의 CLAUDE.md를 비교하면 어떤 차이가 있나요?"
+        ],
+        "masteryVsFamiliar": "단순히 아는 수준: 4개 레이어가 존재한다는 것을 안다. 마스터 수준: 4개 레이어의 책임을 명확히 분리하고, 환경이 시간이 지날수록 강력해지는 피드백 루프를 팀 문화로 만들었으며, 새 팀원이 합류할 때 이 환경을 30분 안에 온보딩시킬 수 있다."
+      },
+      "keyTakeaways": [
+        {"title": "4레이어는 서로 보완한다", "content": "CLAUDE.md(규칙) + Skills(절차) + Hooks(자동화) + Memory(컨텍스트). 중복 없이 각자의 역할이 명확해야 한다."},
+        {"title": "30분 체크리스트로 시작하라", "content": "글로벌 CLAUDE.md, settings.json 9가지 설정, Superpowers 설치, 프로젝트 /init — 이 순서로 30분."},
+        {"title": "주간/월간/분기 루프를 설계하라", "content": "환경 최적화를 일회성 이벤트가 아닌 정기적 루틴으로 만들어라. 그래야 시간이 지날수록 더 강력해진다."},
+        {"title": "팀에 전파하는 것이 진정한 완성", "content": "개인 환경 최적화는 개인 생산성만 높인다. 팀 CLAUDE.md와 팀 settings.json이 팀 전체의 AI 역량을 높인다."},
+        {"title": "측정으로 증명하라", "content": "PR 당 재작업 횟수, 불필요한 변경 감소율 — 측정 가능한 지표가 CLAUDE.md 투자의 가치를 팀에 설득한다."},
+        {"title": "정원처럼 가꿔라", "content": "Claude Code 환경은 완성이 없다. 매주 조금씩 씨앗을 심고, stale한 것을 제거하고, 잘 자라는 것을 키워라."}
+      ]
+    }
+  ]
+}
