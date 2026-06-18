@@ -1,0 +1,1024 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import propertyData from "../../data/property.json";
+const data = JSON.stringify(propertyData);
+---
+<BaseLayout title="Property" activeSlug="property" crumbs={[{label:"Personal"},{label:"Property"}]}>
+<style>
+/* ── Light Frost Blue Theme ─────────────────────── */
+#prop-root {
+  background: #f0f7ff;
+  color: #0d1e3a;
+  min-height: 100vh;
+  margin: -20px -24px;
+  padding: 28px 28px 56px;
+}
+
+/* ── Lock Screen (dark, elegant) ─────────────────── */
+#lockScreen {
+  position: fixed; inset: 0; z-index: 9999;
+  background: radial-gradient(ellipse at 30% 40%, rgba(20,60,130,0.6), transparent 65%),
+              radial-gradient(ellipse at 75% 70%, rgba(10,40,100,0.45), transparent 60%),
+              #060d1e;
+  display: flex; align-items: center; justify-content: center;
+}
+.lock-card {
+  background: rgba(12,28,65,0.88);
+  border: 1px solid rgba(130,200,255,0.35);
+  border-radius: 24px; padding: 52px 48px; width: 400px; text-align: center;
+  backdrop-filter: blur(24px);
+  box-shadow: 0 0 80px rgba(50,120,255,0.15), 0 8px 48px rgba(0,0,0,0.7);
+  position: relative; overflow: hidden;
+}
+.lock-card::before {
+  content:''; position:absolute; top:0; left:0; right:0; height:1px;
+  background: linear-gradient(90deg, transparent, rgba(130,200,255,0.7), transparent);
+}
+.lock-icon { font-size:48px; margin-bottom:20px; filter:drop-shadow(0 0 14px rgba(80,170,255,0.6)); }
+.lock-title { font-size:20px; font-weight:700; color:#c4e4ff; margin-bottom:6px; }
+.lock-sub { font-size:13px; color:#92bfdf; margin-bottom:32px; }
+.lock-input {
+  width:100%; padding:14px 18px; box-sizing:border-box;
+  background:rgba(8,22,58,0.9); border:1px solid rgba(130,200,255,0.35);
+  border-radius:12px; color:#d8eeff; font-size:16px;
+  outline:none; text-align:center; letter-spacing:3px;
+  transition: border-color .2s, box-shadow .2s;
+}
+.lock-input:focus { border-color:#50aaff; box-shadow:0 0 0 3px rgba(80,170,255,0.2); }
+.lock-btn {
+  width:100%; margin-top:14px; padding:14px;
+  background:linear-gradient(135deg,#1a60d0,#0d3d9e);
+  border:1px solid rgba(80,170,255,0.4); border-radius:12px;
+  color:#c4e4ff; font-size:15px; font-weight:700; cursor:pointer;
+  transition:all .2s; letter-spacing:0.5px;
+}
+.lock-btn:hover { background:linear-gradient(135deg,#2070e0,#1050b8); transform:translateY(-1px); box-shadow:0 4px 24px rgba(30,100,255,0.4); }
+.lock-err { font-size:12px; color:#f87171; margin-top:10px; min-height:18px; }
+.lock-hint { font-size:11px; color:#6a96ba; margin-top:20px; }
+
+/* ── Dashboard ───────────────────────────────────── */
+#dashboard { display:none; }
+.view { padding-bottom:0; }
+
+/* Snapshot Tabs */
+.snap-tabs { display:flex; gap:8px; margin-bottom:28px; flex-wrap:wrap; }
+.snap-tab {
+  padding:9px 20px; border-radius:10px; cursor:pointer; font-size:13px; font-weight:600;
+  border:1px solid rgba(100,160,240,0.3); color:#4a789e;
+  background:#ffffff; transition:all .2s;
+  box-shadow:0 1px 4px rgba(80,140,220,0.06);
+}
+.snap-tab.active {
+  background:linear-gradient(135deg,#2574e4,#1a5cc8);
+  border-color:#2574e4; color:#ffffff;
+  box-shadow:0 4px 14px rgba(37,116,228,0.25);
+}
+.snap-tab:hover:not(.active) { border-color:rgba(100,160,240,0.5); color:#0d1e3a; background:#f4f9ff; }
+.snap-delta { display:inline-block; font-size:10px; font-weight:700; padding:2px 6px; border-radius:5px; margin-left:6px; vertical-align:middle; }
+.snap-delta.pos { background:rgba(22,163,74,0.12); color:#16a34a; }
+.snap-delta.neg { background:rgba(220,38,38,0.1); color:#dc2626; }
+
+/* Cards */
+.card {
+  background:#ffffff;
+  border:1px solid rgba(100,160,240,0.2);
+  border-radius:16px; padding:24px;
+  box-shadow:0 2px 16px rgba(80,140,220,0.06);
+  transition:box-shadow .2s, border-color .2s;
+}
+.card:hover { border-color:rgba(80,140,220,0.3); box-shadow:0 4px 24px rgba(80,140,220,0.1); }
+.card-label {
+  font-size:11px; font-weight:700; letter-spacing:1.2px; text-transform:uppercase;
+  color:#4a789e; margin-bottom:12px; display:flex; align-items:center; gap:8px;
+}
+.card-label::before { content:''; display:inline-block; width:3px; height:13px; background:#2574e4; border-radius:2px; }
+
+/* Grid */
+.g3  { display:grid; grid-template-columns:repeat(3,1fr); gap:18px; margin-bottom:20px; }
+.g2  { display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-bottom:20px; }
+.g12 { display:grid; grid-template-columns:1fr 1.8fr; gap:18px; margin-bottom:20px; }
+.g21 { display:grid; grid-template-columns:1.8fr 1fr; gap:18px; margin-bottom:20px; }
+@media(max-width:900px){.g3,.g2,.g12,.g21{grid-template-columns:1fr;}}
+
+/* Hero Goal */
+.goal-hero {
+  background:linear-gradient(135deg,#ddeeff,#e8f4ff);
+  border:1px solid rgba(100,160,240,0.35);
+  border-radius:20px; padding:32px; margin-bottom:20px;
+  position:relative; overflow:hidden;
+  box-shadow:0 4px 24px rgba(80,140,220,0.1);
+}
+.goal-hero::before {
+  content:''; position:absolute; top:-100px; right:-80px;
+  width:350px; height:350px;
+  background:radial-gradient(circle,rgba(37,116,228,0.07),transparent 65%);
+  border-radius:50%;
+}
+.goal-grid { display:grid; grid-template-columns:160px 1fr 220px; gap:36px; align-items:center; position:relative; }
+@media(max-width:900px){.goal-grid{grid-template-columns:1fr;text-align:center;}}
+
+.gauge-wrap { position:relative; width:160px; height:160px; }
+.gauge-wrap canvas { width:160px!important; height:160px!important; }
+.gauge-center { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+.gauge-pct  { font-size:28px; font-weight:900; color:#d97706; line-height:1; }
+.gauge-lbl  { font-size:11px; color:#4a789e; margin-top:3px; }
+
+.goal-main h3 { font-size:11px; color:#7a9fb8; letter-spacing:1.2px; text-transform:uppercase; margin-bottom:6px; font-weight:700; }
+.goal-networth { font-size:42px; font-weight:900; letter-spacing:-2px; color:#0d1e3a; line-height:1; }
+.goal-target { font-size:14px; color:#4a789e; margin-top:8px; }
+.goal-target strong { color:#d97706; }
+.goal-bar-wrap { margin-top:16px; }
+.goal-bar-bg { height:8px; background:rgba(100,160,240,0.2); border-radius:99px; overflow:hidden; }
+.goal-bar-fill { height:100%; border-radius:99px; background:linear-gradient(90deg,#2574e4,#d97706); transition:width 1s ease; }
+.goal-bar-labels { display:flex; justify-content:space-between; font-size:11px; color:#7a9fb8; margin-top:6px; }
+.goal-pills { display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; }
+.gpill { display:inline-flex; align-items:center; gap:5px; background:rgba(37,116,228,0.07); border:1px solid rgba(100,160,240,0.3); border-radius:8px; padding:4px 10px; font-size:11px; color:#3d6b98; }
+.dot { width:6px; height:6px; border-radius:50%; display:inline-block; }
+
+.goal-stats { display:flex; flex-direction:column; gap:12px; }
+.gstat { background:rgba(255,255,255,0.8); border:1px solid rgba(100,160,240,0.2); border-radius:12px; padding:14px 16px; }
+.gstat-label { font-size:11px; color:#4a789e; margin-bottom:4px; font-weight:600; }
+.gstat-val   { font-size:17px; font-weight:800; color:#0d1e3a; }
+
+/* Stat cards */
+.stat-card .big { font-size:26px; font-weight:900; letter-spacing:-1px; color:#0d1e3a; }
+.stat-card .sub { font-size:12px; color:#4a789e; margin-top:4px; }
+.stat-card .accent-bar { height:3px; border-radius:99px; margin-bottom:16px; }
+
+/* Stacked bar (flex-grow based) */
+.sbar-wrap { margin-top:14px; }
+.sbar { display:flex; height:14px; border-radius:7px; overflow:hidden; border:1px solid rgba(100,160,240,0.15); }
+.sbar div { height:100%; transition:flex .6s ease; }
+.sbar-legend { display:flex; gap:12px; margin-top:8px; flex-wrap:wrap; }
+.sbar-lbl { font-size:11px; color:#4a789e; display:flex; align-items:center; gap:5px; font-weight:500; }
+.sbar-dot { width:9px; height:9px; border-radius:3px; display:inline-block; flex-shrink:0; }
+
+/* Mini bar */
+.mbar { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+.mbar-lbl { font-size:11px; color:#4a789e; min-width:68px; font-weight:500; }
+.mbar-bg { flex:1; height:5px; background:rgba(100,160,240,0.15); border-radius:99px; overflow:hidden; }
+.mbar-fill { height:100%; border-radius:99px; }
+.mbar-val { font-size:11px; min-width:38px; text-align:right; font-variant-numeric:tabular-nums; color:#0d1e3a; }
+
+/* Badge */
+.badge { display:inline-block; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:700; }
+.badge-green  { background:rgba(22,163,74,0.12);  color:#16a34a; }
+.badge-red    { background:rgba(220,38,38,0.1);   color:#dc2626; }
+.badge-blue   { background:rgba(37,116,228,0.1);  color:#2574e4; }
+.badge-gold   { background:rgba(217,119,6,0.12);  color:#d97706; }
+.badge-purple { background:rgba(124,58,237,0.1);  color:#7c3aed; }
+
+/* Table */
+.dtable { width:100%; border-collapse:collapse; font-size:13px; color:#0d1e3a; }
+.dtable th {
+  padding:9px 12px; font-size:10px; font-weight:700; letter-spacing:0.8px;
+  text-transform:uppercase; color:#7a9fb8;
+  border-bottom:1px solid rgba(100,160,240,0.2); text-align:left;
+  background:rgba(240,247,255,0.6);
+}
+.dtable th.r { text-align:right; }
+.dtable td { padding:11px 12px; border-bottom:1px solid rgba(100,160,240,0.1); vertical-align:middle; color:#0d1e3a; }
+.dtable td.r { text-align:right; font-variant-numeric:tabular-nums; }
+.dtable tbody tr:hover { background:rgba(37,116,228,0.04); }
+.dtable tbody tr:last-child td { border-bottom:none; }
+.dtable tfoot tr td { border-top:1px solid rgba(100,160,240,0.25); background:rgba(37,116,228,0.04); font-weight:700; color:#0d1e3a; }
+
+/* Chart */
+.chart-wrap { position:relative; height:260px; }
+.chart-sm   { position:relative; height:220px; }
+
+/* Loan card */
+.loan-item { background:#f4f9ff; border:1px solid rgba(100,160,240,0.2); border-radius:12px; padding:16px 20px; margin-bottom:12px; }
+.loan-item:last-child { margin-bottom:0; }
+.loan-top { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; }
+.loan-name   { font-weight:700; font-size:14px; color:#0d1e3a; }
+.loan-bank   { font-size:11px; color:#4a789e; margin-top:2px; }
+.loan-amount { font-size:20px; font-weight:900; color:#dc2626; }
+.loan-meta   { display:flex; gap:16px; font-size:12px; color:#4a789e; margin:8px 0; flex-wrap:wrap; }
+
+/* Delta */
+.delta { font-size:12px; font-weight:700; }
+.delta.pos  { color:#16a34a; }
+.delta.neg  { color:#dc2626; }
+.delta.zero { color:#4a789e; }
+
+/* Section heading */
+.sh { font-size:16px; font-weight:800; color:#0d1e3a; margin-bottom:20px; display:flex; align-items:center; gap:10px; }
+.sh::before { content:''; display:block; width:4px; height:18px; background:linear-gradient(180deg,#2574e4,rgba(37,116,228,0.2)); border-radius:2px; }
+
+/* Debt segment bar */
+.debt-seg-bar { display:flex; height:12px; border-radius:6px; overflow:hidden; margin-top:12px; margin-bottom:14px; border:1px solid rgba(100,160,240,0.15); }
+.debt-seg-bar div { height:100%; }
+.debt-loan-row { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px; padding-bottom:10px; border-bottom:1px solid rgba(100,160,240,0.12); }
+.debt-loan-row:last-child { border-bottom:none; margin-bottom:0; padding-bottom:0; }
+.debt-loan-name   { font-size:12px; color:#0d1e3a; font-weight:700; margin-bottom:2px; }
+.debt-loan-bank   { font-size:10px; color:#7a9fb8; }
+.debt-loan-meta   { font-size:11px; color:#4a789e; margin-top:3px; }
+.debt-loan-amount { font-size:14px; font-weight:900; color:#dc2626; text-align:right; }
+.debt-loan-int    { font-size:10px; color:#4a789e; text-align:right; margin-top:2px; }
+
+/* Return gauge (semi-circle) */
+.return-gauge-wrap { position:relative; width:160px; height:80px; margin:10px auto 0; }
+.return-gauge-wrap canvas { width:160px!important; height:80px!important; }
+.return-gauge-center { position:absolute; bottom:0; left:0; right:0; text-align:center; }
+.return-gauge-pct { font-size:22px; font-weight:900; line-height:1; }
+.return-amounts { display:flex; justify-content:space-around; margin-top:10px; }
+.return-amt-item  { text-align:center; }
+.return-amt-label { font-size:10px; color:#7a9fb8; margin-bottom:3px; }
+.return-amt-val   { font-size:13px; font-weight:700; }
+
+/* Top 5 bar */
+.top5-chart-wrap { position:relative; height:220px; margin-bottom:16px; }
+
+/* AI 투자 의견 */
+.ai-opinion { background:rgba(37,116,228,0.04); border:1px solid rgba(37,116,228,0.15); border-radius:12px; padding:18px 20px; margin-top:18px; }
+.ai-opinion-title { font-size:12px; font-weight:700; color:#2574e4; letter-spacing:0.8px; text-transform:uppercase; margin-bottom:12px; display:flex; align-items:center; gap:6px; }
+.ai-opinion-title::before { content:'🤖'; font-size:14px; }
+.ai-row { display:flex; gap:8px; margin-bottom:8px; font-size:12px; }
+.ai-row-label { color:#7a9fb8; min-width:90px; font-weight:600; flex-shrink:0; }
+.ai-row-val   { color:#0d1e3a; flex:1; }
+.ai-comment   { font-size:12px; color:#4a789e; margin-top:10px; line-height:1.7; border-top:1px solid rgba(100,160,240,0.2); padding-top:10px; }
+
+/* ── Snapshot Comparison ─────────────────────────── */
+.cmp-date-btn {
+  padding:6px 14px; border-radius:8px; cursor:pointer; font-size:12px; font-weight:600;
+  border:1px solid rgba(100,160,240,0.3); color:#4a789e;
+  background:#ffffff; transition:all .18s;
+}
+.cmp-date-btn.active { background:#2574e4; border-color:#2574e4; color:#ffffff; box-shadow:0 2px 8px rgba(37,116,228,0.25); }
+.cmp-date-btn:hover:not(.active) { border-color:#2574e4; color:#2574e4; }
+
+.cmp-panel { display:grid; grid-template-columns:1fr auto 1fr; gap:20px; align-items:center; margin-top:16px; padding:22px; background:#f4f9ff; border-radius:14px; border:1px solid rgba(100,160,240,0.22); }
+.cmp-snap-label { font-size:10px; color:#7a9fb8; font-weight:700; letter-spacing:0.8px; text-transform:uppercase; margin-bottom:4px; }
+.cmp-snap-nw  { font-size:28px; font-weight:900; color:#0d1e3a; letter-spacing:-0.5px; }
+.cmp-snap-sub { font-size:12px; color:#4a789e; margin-top:5px; }
+.cmp-arrow-col { display:flex; flex-direction:column; align-items:center; gap:6px; }
+.cmp-arrow-icon { font-size:22px; color:#2574e4; }
+.cmp-arrow-val  { font-size:14px; font-weight:800; }
+.cmp-arrow-pct  { font-size:11px; font-weight:700; }
+
+.cmp-metrics { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:16px; }
+.cmp-met-card { background:#f4f9ff; border:1px solid rgba(100,160,240,0.2); border-radius:10px; padding:12px 14px; }
+.cmp-met-label { font-size:10px; color:#7a9fb8; font-weight:700; text-transform:uppercase; letter-spacing:0.6px; margin-bottom:6px; }
+.cmp-met-row { display:flex; align-items:center; gap:6px; font-size:12px; }
+.cmp-met-from  { color:#4a789e; }
+.cmp-met-arr   { color:#7a9fb8; font-size:10px; }
+.cmp-met-to    { font-weight:700; color:#0d1e3a; }
+.cmp-met-delta { font-size:11px; font-weight:800; margin-left:auto; }
+
+.growth-chart-wrap { position:relative; height:240px; margin-top:20px; }
+</style>
+
+<div id="prop-root">
+
+<!-- Lock Screen -->
+<div id="lockScreen">
+  <div class="lock-card">
+    <div class="lock-icon">🔐</div>
+    <div class="lock-title">Private — Property</div>
+    <div class="lock-sub">자산 현황에 접근하려면 비밀번호를 입력하세요.</div>
+    <input id="pwInput" class="lock-input" type="password" placeholder="••••••••" autocomplete="off" />
+    <button class="lock-btn" id="unlockBtn">잠금 해제</button>
+    <div class="lock-err" id="pwErr"></div>
+    <div class="lock-hint">direcf.github.io / personal / property</div>
+  </div>
+</div>
+
+<!-- Dashboard -->
+<div id="dashboard">
+<div class="view">
+
+  <!-- Snapshot Tabs -->
+  <div class="snap-tabs" id="snapTabs"></div>
+
+  <!-- Goal Hero -->
+  <div class="goal-hero">
+    <div class="goal-grid">
+      <div>
+        <div class="gauge-wrap">
+          <canvas id="gaugeChart"></canvas>
+          <div class="gauge-center">
+            <div class="gauge-pct" id="gaugePct">0%</div>
+            <div class="gauge-lbl">달성</div>
+          </div>
+        </div>
+      </div>
+      <div class="goal-main">
+        <h3>현재 순자산</h3>
+        <div class="goal-networth" id="heroNetWorth">—</div>
+        <div class="goal-target">목표: <strong>5억원</strong> &nbsp;·&nbsp; <span style="color:#2574e4">2027년 2월까지</span></div>
+        <div class="goal-bar-wrap">
+          <div class="goal-bar-bg"><div class="goal-bar-fill" id="goalBarFill" style="width:0%"></div></div>
+          <div class="goal-bar-labels"><span>0</span><span id="goalBarMid" style="color:#d97706"></span><span style="color:#d97706">5억 목표</span></div>
+        </div>
+        <div class="goal-pills" id="goalPills"></div>
+      </div>
+      <div class="goal-stats" id="goalStats"></div>
+    </div>
+  </div>
+
+  <!-- Top 3 stat cards -->
+  <div class="g3">
+    <!-- 총 자산 -->
+    <div class="card stat-card">
+      <div class="accent-bar" style="background:linear-gradient(90deg,#2574e4,rgba(37,116,228,0.1))"></div>
+      <div class="card-label">총 자산</div>
+      <div class="big" id="statTotal">—</div>
+      <div class="sub" id="statTotalSub"></div>
+      <div class="sbar-wrap" id="statTotalBars"></div>
+    </div>
+    <!-- 총 부채 -->
+    <div class="card stat-card">
+      <div class="accent-bar" style="background:linear-gradient(90deg,#dc2626,rgba(220,38,38,0.1))"></div>
+      <div class="card-label">총 부채</div>
+      <div class="big" id="statDebt" style="color:#dc2626">—</div>
+      <div class="sub" id="statDebtSub"></div>
+      <div id="statDebtItems"></div>
+    </div>
+    <!-- 투자 수익 -->
+    <div class="card stat-card">
+      <div class="accent-bar" style="background:linear-gradient(90deg,#16a34a,rgba(22,163,74,0.1))"></div>
+      <div class="card-label">투자 수익</div>
+      <div class="big" id="statGain">—</div>
+      <div class="sub" id="statGainSub"></div>
+      <div class="return-gauge-wrap" style="margin-top:10px;">
+        <canvas id="returnGaugeChart"></canvas>
+        <div class="return-gauge-center">
+          <div class="return-gauge-pct" id="returnGaugePct">—</div>
+          <div style="font-size:10px;color:#7a9fb8;margin-top:2px;">수익률</div>
+        </div>
+      </div>
+      <div class="return-amounts" id="returnAmounts"></div>
+    </div>
+  </div>
+
+  <!-- Trend + Donut -->
+  <div class="g12">
+    <div class="card">
+      <div class="sh">순자산 추이</div>
+      <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="sh">자산 구성</div>
+      <div class="chart-sm"><canvas id="donutChart"></canvas></div>
+      <div id="donutLegend" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:14px;justify-content:center;"></div>
+    </div>
+  </div>
+
+  <!-- Investment Portfolio -->
+  <div class="card" style="margin-bottom:20px;">
+    <div class="sh">투자 포트폴리오</div>
+    <div class="top5-chart-wrap"><canvas id="top5Chart"></canvas></div>
+    <div style="overflow-x:auto;">
+      <table class="dtable">
+        <thead>
+          <tr>
+            <th>종목</th><th>증권사</th>
+            <th class="r">투자원금</th><th class="r">현재 평가액</th>
+            <th class="r">손익</th><th class="r">수익률</th><th style="min-width:100px">비중</th>
+          </tr>
+        </thead>
+        <tbody id="invTable"></tbody>
+        <tfoot>
+          <tr>
+            <td colspan="2" style="padding:12px;">합계</td>
+            <td class="r" id="invTotalCost" style="padding:12px;"></td>
+            <td class="r" id="invTotalEval" style="padding:12px;color:#2574e4"></td>
+            <td class="r" id="invTotalGain" style="padding:12px;"></td>
+            <td class="r" id="invTotalRate" style="padding:12px;"></td>
+            <td style="padding:12px;"></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    <div class="ai-opinion" id="aiOpinion"></div>
+  </div>
+
+  <!-- Return Bar Chart -->
+  <div class="card" style="margin-bottom:20px;">
+    <div class="sh">종목별 수익률</div>
+    <div class="chart-wrap"><canvas id="returnChart"></canvas></div>
+  </div>
+
+  <!-- Snapshot Comparison + Loan -->
+  <div class="g21">
+    <div class="card">
+      <div class="sh">스냅샷 비교</div>
+      <div style="margin-bottom:14px;">
+        <div style="font-size:11px;color:#7a9fb8;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:10px;">비교 기준 날짜 선택</div>
+        <div id="cmpBtns" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
+      </div>
+      <div id="cmpPanel"></div>
+      <div class="growth-chart-wrap"><canvas id="growthChart"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="sh">대출 현황</div>
+      <div id="loanSection"></div>
+    </div>
+  </div>
+
+</div>
+</div><!-- /dashboard -->
+</div><!-- /#prop-root -->
+
+<script is:inline src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script is:inline define:vars={{ data: propertyData }}>
+// ── Auth ──────────────────────────────────────────
+const HASH = 'ee6123683515b4605b92a9e8e3db97d3517f607f4a7a95583f821371ddd017a1';
+const SESSION_KEY = 'prop:auth';
+
+async function sha256(msg) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(msg));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+async function tryUnlock() {
+  const pw = document.getElementById('pwInput').value;
+  const h = await sha256(pw);
+  if (h === HASH) {
+    sessionStorage.setItem(SESSION_KEY, '1');
+    document.getElementById('lockScreen').style.display = 'none';
+    document.getElementById('dashboard').style.display = 'block';
+    init();
+  } else {
+    document.getElementById('pwErr').textContent = '비밀번호가 올바르지 않습니다.';
+    document.getElementById('pwInput').value = '';
+  }
+}
+document.getElementById('unlockBtn').addEventListener('click', tryUnlock);
+document.getElementById('pwInput').addEventListener('keydown', e => { if(e.key==='Enter') tryUnlock(); });
+if (sessionStorage.getItem(SESSION_KEY) === '1') {
+  document.getElementById('lockScreen').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'block';
+}
+
+// ── Helpers ───────────────────────────────────────
+const fmt = v => {
+  if (Math.abs(v) >= 1e8) return (v/1e8).toFixed(2)+'억';
+  if (Math.abs(v) >= 1e4) return Math.round(v/1e4).toLocaleString()+'만';
+  return v.toLocaleString();
+};
+const fmtPct = v => (v>=0?'+':'')+v.toFixed(1)+'%';
+const deltaClass = v => v>0?'pos':v<0?'neg':'zero';
+const dSign = v => v>0?'+':'';
+const dColor = v => v>=0?'#16a34a':'#dc2626';
+
+// ── Chart color constants (light theme) ──────────
+const CLR = {
+  grid: 'rgba(100,160,220,0.12)',
+  tick: '#7a9fb8',
+  tip:  { bg:'rgba(255,255,255,0.98)', border:'rgba(100,160,220,0.4)', title:'#0d1e3a', body:'#4a789e' },
+};
+
+let gaugeInst, trendInst, donutInst, returnInst, returnGaugeInst, topBarInst, growthInst;
+let curIdx = data.snapshots.length - 1;
+let cmpFromIdx = 0;
+if (cmpFromIdx === curIdx) cmpFromIdx = curIdx > 0 ? 0 : (data.snapshots.length > 1 ? 1 : 0);
+
+// ── Init ──────────────────────────────────────────
+function init() {
+  if (typeof Chart === 'undefined') { setTimeout(init, 100); return; }
+  buildTabs();
+  buildTrendChart();
+  render(curIdx);
+}
+
+// ── Snapshot Date Selector (single dropdown) ──────
+function buildTabs() {
+  const el = document.getElementById('snapTabs');
+  el.style.cssText = 'position:relative;margin-bottom:28px;display:inline-block;';
+
+  const s = data.snapshots[curIdx];
+  const prev = curIdx > 0 ? data.snapshots[curIdx-1] : null;
+  const delta = prev ? s.summary.netWorth - prev.summary.netWorth : null;
+  let deltaHtml = '';
+  if (delta !== null) {
+    const col = delta >= 0 ? '#16a34a' : '#dc2626';
+    const bg  = delta >= 0 ? 'rgba(22,163,74,0.12)' : 'rgba(220,38,38,0.1)';
+    deltaHtml = `<span style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px;background:${bg};color:${col};margin-left:8px;">${delta>=0?'+':''}${fmt(delta)}</span>`;
+  }
+
+  const opts = data.snapshots.map((ss, i) => {
+    const sprev = i > 0 ? data.snapshots[i-1] : null;
+    const sdelta = sprev ? ss.summary.netWorth - sprev.summary.netWorth : null;
+    const isActive = i === curIdx;
+    let sdeltaHtml = '';
+    if (sdelta !== null) {
+      const c2 = sdelta >= 0 ? '#16a34a' : '#dc2626';
+      const b2 = sdelta >= 0 ? 'rgba(22,163,74,0.12)' : 'rgba(220,38,38,0.1)';
+      sdeltaHtml = `<span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:5px;background:${b2};color:${c2};margin-left:8px;">${sdelta>=0?'+':''}${fmt(sdelta)}</span>`;
+    }
+    const itemBg = isActive ? 'rgba(37,116,228,0.08)' : 'transparent';
+    const itemColor = isActive ? '#2574e4' : '#0d1e3a';
+    const itemFW = isActive ? '700' : '500';
+    return `<div onclick="selectDate(${i})"
+      onmouseover="this.style.background='rgba(37,116,228,0.06)'"
+      onmouseout="this.style.background='${itemBg}'"
+      style="display:flex;align-items:center;padding:10px 14px;cursor:pointer;border-radius:8px;background:${itemBg};">
+      <span style="font-size:13px;font-weight:${itemFW};color:${itemColor};">${ss.snapshotDate}</span>
+      ${sdeltaHtml}
+      ${isActive?'<span style="margin-left:auto;color:#2574e4;font-size:12px;padding-left:8px;">✓</span>':''}
+    </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <button id="datePickerBtn" onclick="toggleDateDropdown()"
+      style="display:inline-flex;align-items:center;gap:10px;padding:10px 20px;background:#ffffff;border:1.5px solid rgba(100,160,240,0.4);border-radius:12px;cursor:pointer;font-size:14px;font-weight:700;color:#0d1e3a;box-shadow:0 2px 12px rgba(80,140,220,0.1);font-family:inherit;">
+      <span>📅</span>
+      <span>${s.snapshotDate}</span>
+      ${deltaHtml}
+      <span style="color:#4a789e;font-size:13px;margin-left:4px;">▾</span>
+    </button>
+    <div id="dateDropdown" style="display:none;position:absolute;top:calc(100% + 6px);left:0;background:#ffffff;border:1px solid rgba(100,160,240,0.25);border-radius:14px;box-shadow:0 8px 32px rgba(80,140,220,0.18);z-index:200;min-width:280px;padding:8px;">
+      ${opts}
+    </div>
+  `;
+
+  if (!el._outsideClickAdded) {
+    document.addEventListener('click', function(ev) {
+      const dd = document.getElementById('dateDropdown');
+      const btn = document.getElementById('datePickerBtn');
+      if (dd && btn && !btn.contains(ev.target) && !dd.contains(ev.target)) {
+        dd.style.display = 'none';
+      }
+    });
+    el._outsideClickAdded = true;
+  }
+}
+
+// ── Trend Line Chart ──────────────────────────────
+function buildTrendChart() {
+  const labels = data.snapshots.map(s => s.snapshotDate);
+  const ctx = document.getElementById('trendChart').getContext('2d');
+  const g1 = ctx.createLinearGradient(0,0,0,260);
+  g1.addColorStop(0,'rgba(37,116,228,0.15)'); g1.addColorStop(1,'rgba(37,116,228,0)');
+  const g2 = ctx.createLinearGradient(0,0,0,260);
+  g2.addColorStop(0,'rgba(22,163,74,0.12)');  g2.addColorStop(1,'rgba(22,163,74,0)');
+  trendInst = new Chart(ctx, {
+    type:'line',
+    data: {
+      labels,
+      datasets: [
+        { label:'총자산', data:data.snapshots.map(s=>s.summary.totalAssets), borderColor:'#2574e4', backgroundColor:g1, borderWidth:2.5, pointBackgroundColor:'#2574e4', pointRadius:5, tension:0.35, fill:true },
+        { label:'순자산', data:data.snapshots.map(s=>s.summary.netWorth),    borderColor:'#16a34a', backgroundColor:g2, borderWidth:2.5, pointBackgroundColor:'#16a34a', pointRadius:5, tension:0.35, fill:true },
+        { label:'총부채', data:data.snapshots.map(s=>s.summary.totalDebt),   borderColor:'#dc2626', backgroundColor:'transparent', borderWidth:2, borderDash:[5,3], pointBackgroundColor:'#dc2626', pointRadius:4, tension:0.35 },
+      ]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      plugins: {
+        legend:{ labels:{ color:CLR.tick, font:{size:11}, boxWidth:12, padding:16 } },
+        tooltip:{ backgroundColor:CLR.tip.bg, borderColor:CLR.tip.border, borderWidth:1, titleColor:CLR.tip.title, bodyColor:CLR.tip.body,
+          callbacks:{ label: c => ` ${c.dataset.label}: ${(c.raw/1e8).toFixed(3)}억원` } }
+      },
+      scales: {
+        x:{ grid:{color:CLR.grid}, ticks:{color:CLR.tick, font:{size:11}} },
+        y:{ grid:{color:CLR.grid}, ticks:{color:CLR.tick, font:{size:11}, callback:v=>(v/1e8).toFixed(1)+'억'} }
+      }
+    }
+  });
+}
+
+// ── Main render ───────────────────────────────────
+function render(idx) {
+  curIdx = idx;
+  const s  = data.snapshots[idx];
+  const sm = s.summary;
+  const prev = idx > 0 ? data.snapshots[idx-1] : null;
+  const pct  = (sm.netWorth / data.goal.target * 100).toFixed(1);
+
+  // ── Goal Hero
+  document.getElementById('heroNetWorth').textContent = fmt(sm.netWorth);
+  document.getElementById('gaugePct').textContent = pct+'%';
+  document.getElementById('goalBarFill').style.width = Math.min(pct,100)+'%';
+  document.getElementById('goalBarMid').textContent = `현재 ${fmt(sm.netWorth)} (${pct}%)`;
+
+  const remain = data.goal.target - sm.netWorth;
+  const months = Math.round((new Date(data.goal.deadline) - new Date(s.snapshotDate)) / (1000*60*60*24*30.5));
+  const _pill = (color, text) => `<span style="display:inline-flex;align-items:center;gap:5px;background:rgba(37,116,228,0.07);border:1px solid rgba(100,160,240,0.3);border-radius:8px;padding:4px 10px;font-size:11px;color:#3d6b98;"><span style="width:6px;height:6px;border-radius:50%;display:inline-block;background:${color}"></span>${text}</span>`;
+  document.getElementById('goalPills').innerHTML =
+    _pill('#2574e4','총자산 '+fmt(sm.totalAssets)) +
+    _pill('#dc2626','총부채 '+fmt(sm.totalDebt)) +
+    _pill('#d97706','목표까지 '+fmt(remain));
+  const monthlyNeed = months > 0 ? Math.round(remain/months) : 0;
+  const _gs = 'background:rgba(255,255,255,0.85);border:1px solid rgba(100,160,240,0.2);border-radius:12px;padding:14px 16px;';
+  const _gl = 'font-size:11px;color:#4a789e;margin-bottom:4px;font-weight:600;';
+  const _gv = 'font-size:17px;font-weight:800;';
+  document.getElementById('goalStats').innerHTML = `
+    <div style="${_gs}"><div style="${_gl}">목표까지 남은 금액</div><div style="${_gv}color:#dc2626;">−${fmt(remain)}</div></div>
+    <div style="${_gs}"><div style="${_gl}">목표 기간 (2027-02)</div><div style="${_gv}color:#4a789e;">${months>0?`약 ${months}개월`:'마감 지남'}</div></div>
+    <div style="${_gs}"><div style="${_gl}">월 필요 증가액</div><div style="${_gv}color:#2574e4;">${fmt(monthlyNeed)}/월</div></div>
+  `;
+
+  // Gauge
+  if (gaugeInst) gaugeInst.destroy();
+  gaugeInst = new Chart(document.getElementById('gaugeChart').getContext('2d'), {
+    type:'doughnut',
+    data:{ datasets:[{ data:[parseFloat(pct),100-parseFloat(pct)],
+      backgroundColor:['#d97706','rgba(200,220,255,0.4)'], borderWidth:0, cutout:'78%', circumference:270, rotation:225 }] },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false},tooltip:{enabled:false}} }
+  });
+
+  // ── Stat: 총자산
+  const taD = prev ? sm.totalAssets - prev.summary.totalAssets : null;
+  document.getElementById('statTotal').innerHTML = `<span style="font-size:26px;font-weight:900;letter-spacing:-1px;color:#0d1e3a;">${fmt(sm.totalAssets)}</span>` +
+    (taD!==null?` <span style="font-size:14px;font-weight:700;color:${taD>=0?'#16a34a':'#dc2626'}">${dSign(taD)}${fmt(taD)}</span>`:'');
+  document.getElementById('statTotalSub').textContent = `순자산 ${fmt(sm.netWorth)}`;
+
+  const rePct  = sm.realEstate/sm.totalAssets*100;
+  const invPct = sm.investmentTotal/sm.totalAssets*100;
+  const cashPct= (sm.cash+sm.savings)/sm.totalAssets*100;
+  const _dot = (c) => `<span style="width:9px;height:9px;border-radius:3px;display:inline-block;flex-shrink:0;background:${c};"></span>`;
+  const _lbl = (c,t) => `<span style="font-size:11px;color:#4a789e;display:flex;align-items:center;gap:5px;font-weight:500;">${_dot(c)}${t}</span>`;
+  document.getElementById('statTotalBars').innerHTML = `
+    <div style="display:flex;height:14px;border-radius:7px;overflow:hidden;border:1px solid rgba(100,160,240,0.15);margin-top:14px;">
+      <div style="flex:${rePct};background:#2574e4;"></div>
+      <div style="flex:${invPct};background:#d97706;"></div>
+      <div style="flex:${cashPct};background:#16a34a;"></div>
+    </div>
+    <div style="display:flex;gap:12px;margin-top:8px;flex-wrap:wrap;">
+      ${_lbl('#2574e4','부동산 '+rePct.toFixed(1)+'%')}
+      ${_lbl('#d97706','투자 '+invPct.toFixed(1)+'%')}
+      ${_lbl('#16a34a','현금 '+cashPct.toFixed(1)+'%')}
+    </div>
+  `;
+
+  // ── Stat: 총부채
+  const tdD = prev ? sm.totalDebt - prev.summary.totalDebt : null;
+  document.getElementById('statDebt').innerHTML = `<span style="font-size:26px;font-weight:900;letter-spacing:-1px;color:#dc2626;">${fmt(sm.totalDebt)}</span>` +
+    (tdD!==null&&tdD!==0?` <span style="font-size:14px;font-weight:700;color:${tdD<=0?'#16a34a':'#dc2626'}">${dSign(tdD)}${fmt(tdD)}</span>`:'');
+  document.getElementById('statDebtSub').textContent = `부채비율 ${(sm.totalDebt/sm.totalAssets*100).toFixed(1)}%`;
+
+  const loanColors = ['#ef4444','#f59e0b','#8b5cf6','#3b82f6'];
+  const totalInterest = s.loans.reduce((a,l) => a + l.balance*(l.rate||0)/100/12, 0);
+  const debtSegs = s.loans.map((l,i) =>
+    `<div style="flex:${l.balance};background:${loanColors[i%loanColors.length]};height:100%;"></div>`).join('');
+  const debtRows = s.loans.map((l,i) => {
+    const monthInt = Math.round(l.balance*(l.rate||0)/100/12);
+    const nm = l.name.length>14?l.name.slice(0,14)+'…':l.name;
+    return `<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid rgba(100,160,240,0.12);">
+      <div>
+        <div style="font-size:12px;font-weight:700;margin-bottom:2px;color:${loanColors[i%loanColors.length]}">${nm}</div>
+        <div style="font-size:10px;color:#7a9fb8;">${l.bank} · ${l.type}</div>
+        <div style="font-size:11px;color:#4a789e;margin-top:3px;">${l.rate?`금리 <strong style="color:#d97706">${l.rate}%</strong>`:''}</div>
+      </div>
+      <div>
+        <div style="font-size:14px;font-weight:900;color:#dc2626;text-align:right;">${fmt(l.balance)}</div>
+        <div style="font-size:10px;color:#4a789e;text-align:right;margin-top:2px;">월이자 ${monthInt.toLocaleString()}원</div>
+      </div>
+    </div>`;
+  }).join('');
+  document.getElementById('statDebtItems').innerHTML = `
+    <div style="display:flex;height:12px;border-radius:6px;overflow:hidden;margin-top:12px;margin-bottom:14px;border:1px solid rgba(100,160,240,0.15);">${debtSegs}</div>
+    ${debtRows}
+    <div style="font-size:11px;color:#4a789e;margin-top:8px;text-align:right;">월 이자 합계: <strong style="color:#dc2626">${Math.round(totalInterest).toLocaleString()}원</strong></div>
+  `;
+
+  // ── Stat: 투자수익 (semi-circle gauge)
+  const isPos = sm.investmentGain >= 0;
+  const gainColor = isPos ? '#16a34a' : '#dc2626';
+  document.getElementById('statGain').innerHTML = `<span style="color:${gainColor}">${dSign(sm.investmentGain)}${fmt(sm.investmentGain)}</span>`;
+  document.getElementById('statGainSub').innerHTML = `수익률 <span style="color:${gainColor}">${fmtPct(sm.investmentGainRate)}</span>`;
+
+  const gRate   = parseFloat(sm.investmentGainRate)||0;
+  const gaugeN  = Math.min(Math.max((gRate+100)/300*100, 0), 100);
+  if (returnGaugeInst) returnGaugeInst.destroy();
+  returnGaugeInst = new Chart(document.getElementById('returnGaugeChart').getContext('2d'), {
+    type:'doughnut',
+    data:{ datasets:[{ data:[gaugeN,100-gaugeN],
+      backgroundColor:[gainColor,'rgba(200,220,255,0.4)'], borderWidth:0, circumference:180, rotation:-90, cutout:'72%' }] },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false},tooltip:{enabled:false}} }
+  });
+  document.getElementById('returnGaugePct').innerHTML = `<span style="color:${gainColor}">${fmtPct(gRate)}</span>`;
+  document.getElementById('returnAmounts').innerHTML = `
+    <div style="text-align:center;"><div style="font-size:10px;color:#7a9fb8;margin-bottom:3px;">투자원금</div><div style="font-size:13px;font-weight:700;color:#4a789e;">${fmt(sm.investmentCost)}</div></div>
+    <div style="text-align:center;"><div style="font-size:10px;color:#7a9fb8;margin-bottom:3px;">현재 평가</div><div style="font-size:13px;font-weight:700;color:${gainColor};">${fmt(sm.investmentTotal)}</div></div>
+  `;
+
+  // ── Donut Chart
+  if (donutInst) donutInst.destroy();
+  const dd = [
+    { label:'부동산', val:sm.realEstate,     color:'#2574e4' },
+    { label:'주식·투자', val:sm.investmentTotal, color:'#d97706' },
+    { label:'저축',   val:sm.savings,        color:'#16a34a' },
+    { label:'현금',   val:sm.cash,           color:'#8b5cf6' },
+  ];
+  donutInst = new Chart(document.getElementById('donutChart').getContext('2d'), {
+    type:'doughnut',
+    data:{ labels:dd.map(d=>d.label), datasets:[{ data:dd.map(d=>d.val), backgroundColor:dd.map(d=>d.color), borderWidth:3, borderColor:'#ffffff', hoverOffset:6 }] },
+    options:{
+      responsive:true, maintainAspectRatio:false, cutout:'68%',
+      plugins:{ legend:{display:false},
+        tooltip:{ backgroundColor:CLR.tip.bg, borderColor:CLR.tip.border, borderWidth:1, titleColor:CLR.tip.title, bodyColor:CLR.tip.body,
+          callbacks:{ label:c=>`  ${c.label}: ${(c.raw/1e8).toFixed(3)}억 (${(c.raw/sm.totalAssets*100).toFixed(1)}%)` } }
+      }
+    }
+  });
+  document.getElementById('donutLegend').innerHTML = dd.map(d =>
+    `<span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:#4a789e;background:#f4f9ff;border:1px solid rgba(100,160,240,0.2);border-radius:7px;padding:4px 10px;"><span class="dot" style="background:${d.color}"></span>${d.label} ${(d.val/sm.totalAssets*100).toFixed(1)}%</span>`
+  ).join('');
+
+  // ── Investment Table
+  const invs = s.investments;
+  const totalEval = invs.reduce((a,x)=>a+x.eval,0);
+  const totalCost = invs.reduce((a,x)=>a+x.cost,0);
+  const _badge = (pos) => pos
+    ? 'display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;background:rgba(22,163,74,0.12);color:#16a34a;'
+    : 'display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;background:rgba(220,38,38,0.1);color:#dc2626;';
+  const _blueB = 'display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;background:rgba(37,116,228,0.1);color:#2574e4;';
+  const _td = 'padding:11px 12px;border-bottom:1px solid rgba(100,160,240,0.1);vertical-align:middle;';
+  document.getElementById('invTable').innerHTML = invs.map(inv => {
+    const pnl = inv.eval-inv.cost, pos = pnl>=0;
+    const w = (inv.eval/totalEval*100).toFixed(1);
+    return `<tr>
+      <td style="${_td}color:#0d1e3a;"><strong>${inv.name}</strong></td>
+      <td style="${_td}"><span style="${_blueB}">${inv.broker}</span></td>
+      <td style="${_td}text-align:right;color:#4a789e;font-variant-numeric:tabular-nums;">${inv.cost.toLocaleString()}</td>
+      <td style="${_td}text-align:right;font-variant-numeric:tabular-nums;"><strong style="color:#2574e4">${inv.eval.toLocaleString()}</strong></td>
+      <td style="${_td}text-align:right;font-variant-numeric:tabular-nums;"><span style="color:${pos?'#16a34a':'#dc2626'}">${pnl>=0?'+':''}${Math.round(pnl).toLocaleString()}</span></td>
+      <td style="${_td}text-align:right;"><span style="${_badge(pos)}">${fmtPct(inv.rate)}</span></td>
+      <td style="${_td}"><div style="display:flex;align-items:center;gap:8px;"><div style="flex:1;height:5px;background:rgba(100,160,240,0.15);border-radius:99px;overflow:hidden;"><div style="height:100%;width:${w}%;background:${pos?'#16a34a':'#dc2626'};border-radius:99px;"></div></div><span style="font-size:11px;min-width:38px;text-align:right;color:#0d1e3a;">${w}%</span></div></td>
+    </tr>`;
+  }).join('');
+
+  const totalGain = totalEval-totalCost;
+  const totalRate = totalCost>0?totalGain/totalCost*100:0;
+  const gp = totalGain>=0;
+  document.getElementById('invTotalCost').textContent = totalCost.toLocaleString();
+  document.getElementById('invTotalEval').textContent = totalEval.toLocaleString();
+  document.getElementById('invTotalGain').innerHTML = `<span style="color:${gp?'#16a34a':'#dc2626'}">${totalGain>=0?'+':''}${Math.round(totalGain).toLocaleString()}</span>`;
+  document.getElementById('invTotalRate').innerHTML = `<span style="${_badge(gp)}">${fmtPct(totalRate)}</span>`;
+
+  // ── Top 5 Bar Chart
+  const top5 = [...invs].sort((a,b)=>b.eval-a.eval).slice(0,5);
+  if (topBarInst) topBarInst.destroy();
+  topBarInst = new Chart(document.getElementById('top5Chart').getContext('2d'), {
+    type:'bar',
+    data:{
+      labels:top5.map(x=>x.name),
+      datasets:[{ label:'평가금액', data:top5.map(x=>x.eval),
+        backgroundColor:top5.map(x=>x.eval-x.cost>=0?'rgba(37,116,228,0.75)':'rgba(220,38,38,0.65)'),
+        borderRadius:6, borderSkipped:false }]
+    },
+    options:{
+      indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false},
+        tooltip:{ backgroundColor:CLR.tip.bg, borderColor:CLR.tip.border, borderWidth:1, titleColor:CLR.tip.title, bodyColor:CLR.tip.body,
+          callbacks:{ label:c=>{ const inv=top5[c.dataIndex]; return [` 평가액: ${c.raw.toLocaleString()}원`,` 수익률: ${fmtPct(inv.rate)}`]; } } }
+      },
+      scales:{
+        x:{ grid:{color:CLR.grid}, ticks:{color:CLR.tick, font:{size:10}, callback:v=>(v/1e8).toFixed(2)+'억'} },
+        y:{ grid:{display:false}, ticks:{color:'#0d1e3a', font:{size:12, weight:'600'}} }
+      }
+    }
+  });
+
+  // ── AI Opinion (personalized: 만31세, work 2023-01-01, goal 5억 2027-02)
+  const sortedEval = [...invs].sort((a,b)=>b.eval-a.eval);
+  const top = sortedEval[0];
+  const topW = totalEval>0?(top.eval/totalEval*100):0;
+  const worst = [...invs].sort((a,b)=>a.rate-b.rate)[0];
+  const best  = [...invs].sort((a,b)=>b.rate-a.rate)[0];
+  const conc  = topW>=50;
+  const loss  = worst&&worst.rate<-30;
+
+  const workStart = new Date('2023-01-01');
+  const snapDt    = new Date(s.snapshotDate);
+  const workDays  = Math.floor((snapDt - workStart) / (1000*60*60*24));
+  const workYrs   = Math.floor(workDays / 365);
+  const workRemMs = Math.floor((workDays % 365) / 30);
+  const goalPctNum = sm.netWorth / data.goal.target * 100;
+  const deadlineDt = new Date(data.goal.deadline);
+  const remainMos  = Math.max(0, Math.round((deadlineDt - snapDt) / (1000*60*60*24*30.5)));
+  const monthlyNeedGoal = remainMos > 0 ? Math.round((data.goal.target - sm.netWorth) / remainMos) : 0;
+  const firstSnap = data.snapshots[0];
+  const firstDt   = new Date(firstSnap.snapshotDate);
+  const elapsedMos = Math.max(1, Math.round((snapDt - firstDt) / (1000*60*60*24*30.5)));
+  const avgMonthlyGrowth = idx > 0 ? Math.round((sm.netWorth - firstSnap.summary.netWorth) / elapsedMos) : 0;
+
+  let encourageMsg;
+  if (goalPctNum >= 70) {
+    encourageMsg = `목표의 ${goalPctNum.toFixed(1)}% 달성! 🚀 만 31세, 투자 경력 ${workYrs}년 ${workRemMs}개월 만에 이룬 놀라운 성과입니다. 이 페이스라면 목표 기간보다 빠른 달성도 충분히 가능합니다. 지금의 기여도를 유지하면서 리스크 관리에 집중하세요.`;
+  } else if (goalPctNum >= 50) {
+    encourageMsg = `목표 절반을 돌파했습니다! 만 31세에 이 수준의 자산 형성 속도는 동세대 상위권입니다. 월 평균 ${fmt(avgMonthlyGrowth)}씩 성장 중 — 현 페이스를 유지하면 목표가 충분히 가능합니다.`;
+  } else if (goalPctNum >= 30) {
+    encourageMsg = `투자 ${workYrs}년 ${workRemMs}개월 차, 착실한 자산 성장 중입니다. 현재 월 평균 ${fmt(avgMonthlyGrowth)} 성장 — 목표 달성을 위해 월 ${fmt(monthlyNeedGoal)}의 자산 증가가 필요합니다. 꾸준함이 최대의 무기입니다.`;
+  } else {
+    encourageMsg = `${workYrs}년 ${workRemMs}개월 동안 꾸준히 자산을 쌓아왔습니다. 투자는 복리의 게임입니다. 지금의 포트폴리오가 미래 5억의 기반이 됩니다.`;
+  }
+
+  let riskMsg;
+  if (conc && loss) {
+    riskMsg = `${top.name} 집중(${topW.toFixed(1)}%) + ${worst.name} 깊은 손실(${fmtPct(worst.rate)}) 동시 발생 — 분산 확대 및 손절 기준 재정비 시급`;
+  } else if (conc) {
+    riskMsg = `${top.name} 비중 ${topW.toFixed(1)}% — 단일 종목 집중 리스크. 반도체 사이클 변동성 주시 권장`;
+  } else if (loss) {
+    riskMsg = `${worst.name} 손실 ${fmtPct(worst.rate)} — 추가 매수 전 실적 확인 필수. 손절 기준 사전 설정 권장`;
+  } else {
+    riskMsg = `리스크 적정 수준. 최고 수익 ${best?best.name+' '+fmtPct(best.rate):''} — 정기 리밸런싱으로 목표 비중 유지`;
+  }
+
+  const investDir = sm.investmentGainRate >= 0
+    ? `+${sm.investmentGainRate.toFixed(2)}% 수익 — 원금 ${fmt(sm.investmentCost)} → 평가 ${fmt(sm.investmentTotal)} (+${fmt(sm.investmentGain)})`
+    : `${sm.investmentGainRate.toFixed(2)}% 손실 — 원금 ${fmt(sm.investmentCost)} → 평가 ${fmt(sm.investmentTotal)} (${fmt(sm.investmentGain)})`;
+
+  const onPace = avgMonthlyGrowth >= monthlyNeedGoal;
+
+  const _aiRow = (lbl, val, color) =>
+    `<div style="display:flex;gap:8px;margin-bottom:9px;font-size:12px;"><span style="color:#7a9fb8;min-width:100px;font-weight:700;flex-shrink:0;">${lbl}</span><span style="color:${color};flex:1;line-height:1.5;">${val}</span></div>`;
+  document.getElementById('aiOpinion').innerHTML = `
+    <div style="font-size:12px;font-weight:700;color:#2574e4;letter-spacing:0.8px;text-transform:uppercase;margin-bottom:14px;display:flex;align-items:center;gap:6px;"><span>🤖</span>AI 투자 의견 · ${s.snapshotDate} 기준</div>
+    ${_aiRow('투자 경력', `${workYrs}년 ${workRemMs}개월 (2023.01 시작, 만 31세)`, '#4a789e')}
+    ${_aiRow('목표 달성률', `${goalPctNum.toFixed(1)}% · 잔여 ${remainMos}개월 · 월 ${fmt(monthlyNeedGoal)} 필요`, goalPctNum>=60?'#16a34a':goalPctNum>=40?'#d97706':'#dc2626')}
+    ${_aiRow('월 성장 추이', `평균 ${fmt(avgMonthlyGrowth)}/월 ${onPace?'✅ 목표 페이스 이상':'⚠️ 목표 페이스 미달'}`, onPace?'#16a34a':'#d97706')}
+    ${_aiRow('투자 현황', investDir, sm.investmentGainRate>=0?'#16a34a':'#dc2626')}
+    ${_aiRow('리스크 분석', riskMsg, conc||loss?'#d97706':'#16a34a')}
+    <div style="font-size:12px;color:#3d6b98;margin-top:12px;line-height:1.8;border-top:1px solid rgba(100,160,240,0.2);padding-top:12px;">${encourageMsg}</div>
+  `;
+
+  // ── Return Chart
+  if (returnInst) returnInst.destroy();
+  const sorted = [...invs].sort((a,b)=>b.rate-a.rate);
+  returnInst = new Chart(document.getElementById('returnChart').getContext('2d'), {
+    type:'bar',
+    data:{
+      labels:sorted.map(x=>x.name),
+      datasets:[{ label:'수익률(%)', data:sorted.map(x=>x.rate),
+        backgroundColor:sorted.map(x=>x.rate>=0?'rgba(22,163,74,0.75)':'rgba(220,38,38,0.65)'), borderRadius:6 }]
+    },
+    options:{
+      indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false},
+        tooltip:{ backgroundColor:CLR.tip.bg, borderColor:CLR.tip.border, borderWidth:1, titleColor:CLR.tip.title, bodyColor:CLR.tip.body,
+          callbacks:{ label:c=>`  ${c.raw>0?'+':''}${c.raw.toFixed(1)}%` } }
+      },
+      scales:{
+        x:{ grid:{color:CLR.grid}, ticks:{color:CLR.tick, callback:v=>v+'%', font:{size:11}} },
+        y:{ grid:{display:false}, ticks:{color:'#4a789e', font:{size:12}} }
+      }
+    }
+  });
+
+  // ── Loan Section
+  const loanEl = document.getElementById('loanSection');
+  const loanTotal2 = s.loans.reduce((a,l)=>a+l.balance,0);
+  loanEl.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;background:rgba(220,38,38,0.06);border:1px solid rgba(220,38,38,0.15);border-radius:12px;margin-bottom:16px;">
+      <div><div style="font-size:11px;color:#4a789e;font-weight:600">총 대출 잔액</div><div style="font-size:26px;font-weight:900;color:#dc2626">${fmt(loanTotal2)}</div></div>
+      <div style="text-align:right"><div style="font-size:11px;color:#4a789e;font-weight:600">월 이자 합계</div><div style="font-size:18px;font-weight:700;color:#dc2626">${Math.round(totalInterest).toLocaleString()}원</div></div>
+    </div>
+    ${s.loans.map(l => {
+      const repaid = l.principal-l.balance;
+      const repaidPct = (repaid/l.principal*100).toFixed(1);
+      const monthInt  = Math.round(l.balance*(l.rate||0)/100/12);
+      return `<div style="background:#f4f9ff;border:1px solid rgba(100,160,240,0.2);border-radius:12px;padding:16px 20px;margin-bottom:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
+          <div>
+            <div style="font-weight:700;font-size:14px;color:#0d1e3a;">${l.name.slice(0,20)}${l.name.length>20?'…':''}</div>
+            <div style="font-size:11px;color:#4a789e;margin-top:2px;">${l.bank} · ${l.type}</div>
+          </div>
+          <div style="font-size:20px;font-weight:900;color:#dc2626;">${fmt(l.balance)}</div>
+        </div>
+        <div style="display:flex;gap:16px;font-size:12px;color:#4a789e;margin:8px 0;flex-wrap:wrap;">
+          <span>원금: <strong style="color:#0d1e3a;">${fmt(l.principal)}</strong></span>
+          ${l.rate?`<span style="color:#d97706;font-weight:700">금리 ${l.rate}%</span>`:''}
+          ${l.maturityDate?`<span>만기 <strong style="color:#d97706">${l.maturityDate}</strong></span>`:''}
+        </div>
+        <div style="font-size:12px;color:#4a789e;">월 이자: <strong style="color:#dc2626">${monthInt.toLocaleString()}원</strong></div>
+        <div style="height:5px;margin-top:8px;background:rgba(100,160,240,0.15);border-radius:99px;overflow:hidden;"><div style="height:100%;width:${100-parseFloat(repaidPct)}%;background:#dc2626;border-radius:99px;"></div></div>
+        <div style="font-size:11px;color:#4a789e;margin-top:4px;">상환 진행 ${repaidPct}% (${fmt(repaid)} 상환)</div>
+      </div>`;
+    }).join('')}
+  `;
+
+  // ── Snapshot Comparison
+  buildSnapCmp();
+
+  // ── Growth Chart (all snapshots)
+  if (growthInst) growthInst.destroy();
+  growthInst = new Chart(document.getElementById('growthChart').getContext('2d'), {
+    type:'bar',
+    data:{
+      labels:data.snapshots.map(ss=>ss.snapshotDate),
+      datasets:[
+        { label:'순자산',    data:data.snapshots.map(ss=>ss.summary.netWorth),        backgroundColor:'rgba(22,163,74,0.7)',   borderRadius:5, borderSkipped:false },
+        { label:'총자산',    data:data.snapshots.map(ss=>ss.summary.totalAssets),     backgroundColor:'rgba(37,116,228,0.55)', borderRadius:5, borderSkipped:false },
+        { label:'투자 평가', data:data.snapshots.map(ss=>ss.summary.investmentTotal), backgroundColor:'rgba(217,119,6,0.7)',   borderRadius:5, borderSkipped:false },
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{
+        legend:{ labels:{ color:CLR.tick, font:{size:11}, boxWidth:10, padding:14 } },
+        tooltip:{ backgroundColor:CLR.tip.bg, borderColor:CLR.tip.border, borderWidth:1, titleColor:CLR.tip.title, bodyColor:CLR.tip.body,
+          callbacks:{ label:c=>` ${c.dataset.label}: ${(c.raw/1e8).toFixed(3)}억원` } }
+      },
+      scales:{
+        x:{ grid:{color:CLR.grid}, ticks:{color:CLR.tick, font:{size:11}} },
+        y:{ grid:{color:CLR.grid}, ticks:{color:CLR.tick, font:{size:11}, callback:v=>(v/1e8).toFixed(1)+'억'} }
+      }
+    }
+  });
+}
+
+// ── Snapshot Comparison Panel ─────────────────────
+function buildSnapCmp() {
+  const btnsEl  = document.getElementById('cmpBtns');
+  const panelEl = document.getElementById('cmpPanel');
+
+  if (data.snapshots.length < 2) {
+    panelEl.innerHTML = '<div style="color:#7a9fb8;font-size:13px;text-align:center;padding:20px;">비교할 데이터가 없습니다.</div>';
+    btnsEl.innerHTML  = '';
+    return;
+  }
+
+  if (cmpFromIdx === curIdx || cmpFromIdx >= data.snapshots.length) {
+    cmpFromIdx = curIdx > 0 ? 0 : 1;
+  }
+
+  // Buttons — all inline styles, no CSS class dependency
+  const _btnBase = 'padding:6px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;border:1px solid;transition:all .18s;';
+  btnsEl.innerHTML = data.snapshots.map((ss, i) => {
+    if (i === curIdx) return '';
+    const act = i === cmpFromIdx;
+    const st = act
+      ? _btnBase + 'color:#fff;background:#2574e4;border-color:#2574e4;box-shadow:0 2px 8px rgba(37,116,228,0.25);'
+      : _btnBase + 'color:#4a789e;background:#fff;border-color:rgba(100,160,240,0.3);';
+    return `<button style="${st}" onclick="setCmpFrom(${i})">${ss.snapshotDate}</button>`;
+  }).join('');
+
+  const from = data.snapshots[cmpFromIdx];
+  const to   = data.snapshots[curIdx];
+  const nwD  = to.summary.netWorth        - from.summary.netWorth;
+  const taD  = to.summary.totalAssets     - from.summary.totalAssets;
+  const tdD  = to.summary.totalDebt       - from.summary.totalDebt;
+  const invD = to.summary.investmentTotal - from.summary.investmentTotal;
+  const nwPct = from.summary.netWorth > 0 ? nwD/from.summary.netWorth*100 : 0;
+
+  const _dc = v => v >= 0 ? '#16a34a' : '#dc2626';
+  const _ds = v => v >= 0 ? '+' : '';
+
+  const _metCard = (label, fromV, toV, diff, invertGood) => {
+    const c = invertGood ? _dc(-diff) : _dc(diff);
+    return `<div style="background:#f4f9ff;border:1px solid rgba(100,160,240,0.2);border-radius:10px;padding:14px;">
+      <div style="font-size:10px;color:#7a9fb8;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:8px;">${label}</div>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+        <span style="font-size:13px;color:#4a789e;">${fmt(fromV)}</span>
+        <span style="color:#7a9fb8;font-size:11px;">→</span>
+        <span style="font-size:13px;font-weight:700;color:#0d1e3a;">${fmt(toV)}</span>
+        <span style="font-size:12px;font-weight:800;margin-left:auto;color:${c}">${_ds(diff)}${fmt(diff)}</span>
+      </div>
+    </div>`;
+  };
+
+  panelEl.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:20px;align-items:center;padding:22px;background:#f4f9ff;border-radius:14px;border:1px solid rgba(100,160,240,0.22);margin-bottom:12px;">
+      <div>
+        <div style="font-size:10px;color:#7a9fb8;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;margin-bottom:6px;">기준 스냅샷</div>
+        <div style="font-size:26px;font-weight:900;color:#0d1e3a;letter-spacing:-0.5px;">${fmt(from.summary.netWorth)}</div>
+        <div style="font-size:12px;color:#4a789e;margin-top:5px;">${from.snapshotDate}</div>
+        <div style="font-size:12px;color:#4a789e;">총자산 ${fmt(from.summary.totalAssets)}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:0 8px;">
+        <span style="font-size:22px;color:#2574e4;">→</span>
+        <div style="font-size:15px;font-weight:800;color:${_dc(nwD)}">${_ds(nwD)}${fmt(nwD)}</div>
+        <div style="font-size:11px;font-weight:700;color:${_dc(nwD)}">(${_ds(nwPct)}${nwPct.toFixed(1)}%)</div>
+      </div>
+      <div>
+        <div style="font-size:10px;color:#7a9fb8;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;margin-bottom:6px;display:flex;align-items:center;gap:6px;">현재 선택 <span style="background:#2574e4;color:#fff;font-size:9px;padding:1px 7px;border-radius:4px;">NOW</span></div>
+        <div style="font-size:26px;font-weight:900;color:#2574e4;letter-spacing:-0.5px;">${fmt(to.summary.netWorth)}</div>
+        <div style="font-size:12px;color:#4a789e;margin-top:5px;">${to.snapshotDate}</div>
+        <div style="font-size:12px;color:#4a789e;">총자산 ${fmt(to.summary.totalAssets)}</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+      ${_metCard('총자산',    from.summary.totalAssets,     to.summary.totalAssets,     taD,  false)}
+      ${_metCard('순자산',    from.summary.netWorth,        to.summary.netWorth,        nwD,  false)}
+      ${_metCard('총부채',    from.summary.totalDebt,       to.summary.totalDebt,       tdD,  true)}
+      ${_metCard('투자 평가', from.summary.investmentTotal, to.summary.investmentTotal, invD, false)}
+    </div>
+  `;
+}
+
+window.toggleDateDropdown = function() {
+  const dd = document.getElementById('dateDropdown');
+  if (!dd) return;
+  dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
+};
+
+window.selectDate = function(i) {
+  curIdx = i;
+  if (cmpFromIdx === curIdx) {
+    cmpFromIdx = curIdx > 0 ? 0 : (data.snapshots.length > 1 ? 1 : 0);
+  }
+  buildTabs();
+  render(i);
+};
+
+window.setCmpFrom = function(i) {
+  cmpFromIdx = i;
+  buildSnapCmp();
+};
+
+if (sessionStorage.getItem(SESSION_KEY) === '1') init();
+</script>
+</BaseLayout>
