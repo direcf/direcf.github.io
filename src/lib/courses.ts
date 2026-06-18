@@ -5,6 +5,7 @@ import jw from "../data/courses/jepa-world-models.json";
 import ak from "../data/courses/ai-agents-knowledge-work.json";
 import he from "../data/courses/harness-engineering.json";
 import wam from "../data/courses/world-action-models.json";
+import ccs from "../data/courses/claude-code-skills-guide.json";
 import { marked } from "marked";
 import katex from "katex";
 
@@ -44,6 +45,7 @@ export interface Course {
 }
 
 export const COURSES: Record<string, Course> = {
+  "claude-code-skills-guide":  ccs as Course,
   "engineering-philosophy":    ep as Course,
   "system-architecture":       sa as Course,
   "video-codec":               vc as Course,
