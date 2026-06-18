@@ -1,0 +1,361 @@
+---
+import BaseLayout from "../../../layouts/BaseLayout.astro";
+---
+<BaseLayout title="지역 분석" activeSlug="property" crumbs={[{label:"Personal"},{label:"Property",href:"/property/"},{label:"지역 분석"}]}>
+<style>
+#prop-root{background:#f0f7ff;color:#0d1e3a;min-height:100vh;margin:-20px -24px;padding:28px 28px 56px;}
+#lockScreen{position:fixed;inset:0;z-index:9999;background:radial-gradient(ellipse at 30% 40%,rgba(20,60,130,.6),transparent 65%),radial-gradient(ellipse at 75% 70%,rgba(10,40,100,.45),transparent 60%),#060d1e;display:flex;align-items:center;justify-content:center;}
+.lock-card{background:rgba(12,28,65,.88);border:1px solid rgba(130,200,255,.35);border-radius:24px;padding:52px 48px;width:400px;text-align:center;backdrop-filter:blur(24px);box-shadow:0 0 80px rgba(50,120,255,.15),0 8px 48px rgba(0,0,0,.7);position:relative;overflow:hidden;}
+.lock-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(130,200,255,.7),transparent);}
+.lock-icon{font-size:48px;margin-bottom:20px;filter:drop-shadow(0 0 14px rgba(80,170,255,.6));}
+.lock-title{font-size:20px;font-weight:700;color:#c4e4ff;margin-bottom:6px;}
+.lock-sub{font-size:13px;color:#92bfdf;margin-bottom:32px;}
+.lock-input{width:100%;padding:14px 18px;box-sizing:border-box;background:rgba(8,22,58,.9);border:1px solid rgba(130,200,255,.35);border-radius:12px;color:#d8eeff;font-size:16px;outline:none;text-align:center;letter-spacing:3px;transition:border-color .2s,box-shadow .2s;}
+.lock-input:focus{border-color:#50aaff;box-shadow:0 0 0 3px rgba(80,170,255,.2);}
+.lock-btn{width:100%;margin-top:14px;padding:14px;background:linear-gradient(135deg,#1a60d0,#0d3d9e);border:1px solid rgba(80,170,255,.4);border-radius:12px;color:#c4e4ff;font-size:15px;font-weight:700;cursor:pointer;transition:all .2s;letter-spacing:.5px;}
+.lock-btn:hover{background:linear-gradient(135deg,#2070e0,#1050b8);transform:translateY(-1px);box-shadow:0 4px 24px rgba(30,100,255,.4);}
+.lock-err{font-size:12px;color:#f87171;margin-top:10px;min-height:18px;}
+.lock-hint{font-size:11px;color:#6a96ba;margin-top:20px;}
+#dashboard{display:none;}
+</style>
+
+<div id="prop-root">
+
+<div id="lockScreen">
+  <div class="lock-card">
+    <div class="lock-icon">🔐</div>
+    <div class="lock-title">Private — Property</div>
+    <div class="lock-sub">자산 현황에 접근하려면 비밀번호를 입력하세요.</div>
+    <input id="pwInput" class="lock-input" type="password" placeholder="••••••••" autocomplete="off" />
+    <button class="lock-btn" id="unlockBtn">잠금 해제</button>
+    <div class="lock-err" id="pwErr"></div>
+    <div class="lock-hint">direcf.github.io / personal / property</div>
+  </div>
+</div>
+
+<div id="dashboard">
+  <div style="margin-bottom:28px;">
+    <div style="font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:#4a789e;margin-bottom:8px;">Personal · Private · Property</div>
+    <h1 style="font-size:26px;font-weight:900;color:#0d1e3a;letter-spacing:-1px;margin:0 0 6px;">서울 지역 분석</h1>
+    <p style="font-size:13px;color:#4a789e;margin:0;">따뜻한 부동산 스터디 2026 자료 기반 · 파란 구에 마우스를 올려 상세 정보를 확인하세요</p>
+  </div>
+
+  <div style="background:#fff;border:1px solid rgba(100,160,240,.2);border-radius:20px;padding:28px 24px 32px;box-shadow:0 2px 20px rgba(80,140,220,.07);position:relative;">
+
+    <!-- Legend -->
+    <div style="display:flex;gap:20px;align-items:center;margin-bottom:20px;flex-wrap:wrap;">
+      <div style="display:flex;align-items:center;gap:7px;">
+        <div style="width:14px;height:14px;background:#3b82f6;border-radius:3px;flex-shrink:0;"></div>
+        <span style="font-size:12px;color:#4a789e;font-weight:600;">분석 자료 있음 (10개구)</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:7px;">
+        <div style="width:14px;height:14px;background:#d1d9e6;border-radius:3px;flex-shrink:0;"></div>
+        <span style="font-size:12px;color:#94a3b8;">자료 없음 (15개구)</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:7px;">
+        <div style="width:14px;height:14px;background:#93c5fd;border-radius:3px;opacity:.7;flex-shrink:0;"></div>
+        <span style="font-size:12px;color:#94a3b8;">한강</span>
+      </div>
+    </div>
+
+    <!-- SVG Map Container -->
+    <div style="position:relative;">
+      <svg id="seoulMap" viewBox="0 0 720 600" xmlns="http://www.w3.org/2000/svg"
+        style="width:100%;max-width:800px;height:auto;display:block;margin:0 auto;background:linear-gradient(160deg,#eef4fc 0%,#f5f8fd 100%);border-radius:12px;">
+        <defs>
+          <linearGradient id="pdfGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#60a5fa"/>
+            <stop offset="100%" style="stop-color:#2563eb"/>
+          </linearGradient>
+          <filter id="guGlow" x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur stdDeviation="4" result="blur"/>
+            <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+          </filter>
+        </defs>
+
+        <!-- Han River -->
+        <path d="M 28,362 C 80,352 140,347 200,350 C 270,355 332,370 415,380 C 480,387 535,390 582,390 L 688,388 L 688,408 C 582,410 535,410 480,407 C 415,400 332,390 270,375 C 200,370 140,367 80,372 L 28,382 Z"
+          fill="#93c5fd" opacity="0.58"/>
+
+        <!-- Districts rendered by JS -->
+        <g id="guGroup"></g>
+      </svg>
+    </div>
+  </div>
+</div><!-- /dashboard -->
+
+</div><!-- /prop-root -->
+
+<!-- Tooltip (fixed, follows cursor) -->
+<div id="mapTip" style="position:fixed;z-index:9998;pointer-events:none;opacity:0;transition:opacity .15s ease;top:0;left:0;">
+  <div style="background:#fff;border:1px solid rgba(100,160,240,.28);border-radius:16px;padding:18px 20px;box-shadow:0 8px 36px rgba(37,99,235,.16),0 2px 8px rgba(0,0,0,.08);min-width:240px;max-width:300px;">
+    <div id="tipName" style="font-size:17px;font-weight:800;color:#0d1e3a;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid #e8f0fc;display:flex;align-items:center;gap:8px;"></div>
+    <div id="tipBody"></div>
+  </div>
+</div>
+
+<script is:inline>
+const HASH = 'ee6123683515b4605b92a9e8e3db97d3517f607f4a7a95583f821371ddd017a1';
+const SESSION_KEY = 'prop:auth';
+
+async function sha256(msg){
+  const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(msg));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+async function tryUnlock(){
+  const pw=document.getElementById('pwInput').value;
+  const h=await sha256(pw);
+  if(h===HASH){
+    sessionStorage.setItem(SESSION_KEY,'1');
+    document.getElementById('lockScreen').style.display='none';
+    document.getElementById('dashboard').style.display='block';
+    buildMap();
+  } else {
+    document.getElementById('pwErr').textContent='비밀번호가 올바르지 않습니다.';
+    document.getElementById('pwInput').value='';
+  }
+}
+document.getElementById('unlockBtn').addEventListener('click',tryUnlock);
+document.getElementById('pwInput').addEventListener('keydown',e=>{if(e.key==='Enter')tryUnlock();});
+if(sessionStorage.getItem(SESSION_KEY)==='1'){
+  document.getElementById('lockScreen').style.display='none';
+  document.getElementById('dashboard').style.display='block';
+  buildMap();
+}
+
+// ──────────── District data ────────────
+const GU_DATA = [
+  // PDF Districts (분석 자료 있음)
+  {n:'강서구',   pdf:1, p:'28,270 150,270 150,395 28,395',                   cx:89,  cy:333, sz:10},
+  {n:'관악구',   pdf:1, p:'160,468 338,468 335,578 160,578',                 cx:249, cy:523, sz:10},
+  {n:'구로구',   pdf:1, p:'72,468 158,468 160,545 72,545',                   cx:115, cy:507, sz:9 },
+  {n:'노원구',   pdf:1, p:'452,0 688,0 688,158 452,158',                     cx:570, cy:79,  sz:12},
+  {n:'도봉구',   pdf:1, p:'365,0 455,0 455,140 365,140',                     cx:410, cy:70,  sz:10},
+  {n:'동대문구', pdf:1, p:'368,255 450,255 450,335 368,335',                 cx:409, cy:295, sz:9 },
+  {n:'서대문구', pdf:1, p:'152,215 262,215 262,322 198,358 152,335',         cx:207, cy:282, sz:9 },
+  {n:'성북구',   pdf:1, p:'292,140 452,140 452,260 368,260 292,250',         cx:372, cy:200, sz:10},
+  {n:'은평구',   pdf:1, p:'60,88 258,88 258,228 155,235 60,222',             cx:159, cy:158, sz:11},
+  {n:'중랑구',   pdf:1, p:'448,155 578,155 578,285 448,285',                 cx:513, cy:220, sz:10},
+  // Non-PDF Districts (회색)
+  {n:'강남구',   pdf:0, p:'450,388 558,388 558,568 450,568',                 cx:504, cy:478, sz:11},
+  {n:'강동구',   pdf:0, p:'558,158 688,158 688,368 558,368',                 cx:623, cy:263, sz:10},
+  {n:'강북구',   pdf:0, p:'252,0 365,0 365,140 295,148 252,138',             cx:308, cy:72,  sz:10},
+  {n:'광진구',   pdf:0, p:'448,272 558,272 558,388 448,388',                 cx:503, cy:330, sz:10},
+  {n:'금천구',   pdf:0, p:'135,540 158,540 160,578 135,578',                 cx:147, cy:559, sz:8 },
+  {n:'동작구',   pdf:0, p:'215,432 332,432 330,470 215,470',                 cx:274, cy:451, sz:9 },
+  {n:'마포구',   pdf:0, p:'150,270 295,270 295,395 220,418 150,405',         cx:223, cy:342, sz:9 },
+  {n:'서초구',   pdf:0, p:'332,415 450,415 450,578 332,578',                 cx:391, cy:497, sz:10},
+  {n:'성동구',   pdf:0, p:'368,328 450,328 450,418 368,418',                 cx:409, cy:373, sz:9 },
+  {n:'송파구',   pdf:0, p:'558,368 688,368 688,535 558,535',                 cx:623, cy:452, sz:10},
+  {n:'양천구',   pdf:0, p:'80,395 152,395 150,468 80,468',                   cx:116, cy:432, sz:10},
+  {n:'영등포구', pdf:0, p:'152,392 295,392 295,508 152,508',                 cx:224, cy:450, sz:9 },
+  {n:'용산구',   pdf:0, p:'215,318 368,318 368,438 215,438',                 cx:292, cy:378, sz:10},
+  {n:'종로구',   pdf:0, p:'252,215 368,215 368,322 252,322',                 cx:310, cy:269, sz:10},
+  {n:'중구',     pdf:0, p:'295,315 370,315 368,390 292,392',                 cx:331, cy:353, sz:8 },
+];
+
+// Tooltip content for PDF districts
+const GU_INFO = {
+  '동대문구': {
+    공급:    '3년 내 1,112세대 (청량리롯데캐슬 761+제기동역아이파크 351)\n서울 내 심각한 공급 부족 구간',
+    소득거주: '주소지 소득 서울 18위 · 원천징수 16위\n종로·광화문·여의도 출퇴근 직장인 다수',
+    입지:    '청량리역 동북부 교통·상업 허브\n직장접근 A · 교통 S- 등급\n동북선(27.11) · GTX-B/C · 면목선 호재',
+    투자:    '중상',
+    대장:    '청량리롯데캐슬SKY-L65\n36평(전용84) · 매매 ≈19.2억 (2026.01)',
+  },
+  '강서구': {
+    공급:    '마곡지구 입주 마무리, 향후 공급 제한적',
+    소득거주: '소득 서울 중상위\n마곡 산업단지 직주근접 수요',
+    입지:    '5·9호선, 마곡 업무지구 인접\n김포공항 인근',
+    투자:    '중상',
+    대장:    '자료 업데이트 예정',
+  },
+  '관악구': {
+    공급:    '2026년 이후 공급 제한적',
+    소득거주: '소득 서울 하위권\n실거주 수요 중심',
+    입지:    '2호선 봉천역·낙성대역\n서울대 인근',
+    투자:    '중하',
+    대장:    '자료 업데이트 예정',
+  },
+  '구로구': {
+    공급:    '보통 수준',
+    소득거주: '소득 서울 중하\nG밸리 직장인 거주',
+    입지:    '1·2·7호선, G밸리(구로디지털단지) 인접',
+    투자:    '중',
+    대장:    '자료 업데이트 예정',
+  },
+  '노원구': {
+    공급:    '과거 대량 공급 일단락, 2026년 이후 보통',
+    소득거주: '소득 서울 중하위\n학군 수요(노원구 4·7호선 학원가)',
+    입지:    '4·7호선, 학군 강점 지역',
+    투자:    '중하',
+    대장:    '자료 업데이트 예정',
+  },
+  '도봉구': {
+    공급:    '보통 수준',
+    소득거주: '소득 서울 하위권',
+    입지:    '1·7호선, 저가 진입 가능성',
+    투자:    '중하',
+    대장:    '자료 업데이트 예정',
+  },
+  '서대문구': {
+    공급:    '재개발 진행 중, 향후 공급 보통',
+    소득거주: '소득 서울 중위\n홍대·신촌 인근 직장인',
+    입지:    '2·5호선, 홍대·신촌·이대 상권',
+    투자:    '중',
+    대장:    '자료 업데이트 예정',
+  },
+  '성북구': {
+    공급:    '공급 제한적',
+    소득거주: '소득 서울 중상위\n성북동 고급 주거 혼재',
+    입지:    '4·6호선, 성균관대·고려대 인근',
+    투자:    '중',
+    대장:    '자료 업데이트 예정',
+  },
+  '은평구': {
+    공급:    '뉴타운 일단락, 향후 공급 제한적',
+    소득거주: '소득 서울 중하\n은평뉴타운 신축 실거주',
+    입지:    '3·6호선, GTX-A 수혜 기대\n은평뉴타운',
+    투자:    '중',
+    대장:    '자료 업데이트 예정',
+  },
+  '중랑구': {
+    공급:    '보통 수준',
+    소득거주: '소득 서울 하위권\n실거주·전세 중심',
+    입지:    '7호선·경춘선 · 저가 매수 접근',
+    투자:    '하',
+    대장:    '자료 업데이트 예정',
+  },
+};
+
+// ──────────── Build SVG map ────────────
+function buildMap(){
+  const NS='http://www.w3.org/2000/svg';
+  const grp=document.getElementById('guGroup');
+  if(!grp||grp.children.length>0) return;
+
+  GU_DATA.forEach(d=>{
+    const g=document.createElementNS(NS,'g');
+    g.style.cursor='pointer';
+
+    const poly=document.createElementNS(NS,'polygon');
+    poly.setAttribute('points',d.p);
+    poly.style.stroke='#fff';
+    poly.style.strokeWidth='1.5';
+    poly.style.strokeLinejoin='round';
+    poly.style.transition='fill .18s ease, fill-opacity .18s ease';
+    if(d.pdf){
+      poly.style.fill='url(#pdfGrad)';
+      poly.style.fillOpacity='0.82';
+    } else {
+      poly.style.fill='#d1d9e6';
+      poly.style.fillOpacity='1';
+    }
+
+    const txt=document.createElementNS(NS,'text');
+    txt.setAttribute('x',d.cx);
+    txt.setAttribute('y',d.cy);
+    txt.setAttribute('text-anchor','middle');
+    txt.setAttribute('dominant-baseline','middle');
+    txt.textContent=d.n;
+    txt.style.fontSize=d.sz+'px';
+    txt.style.fontWeight=d.pdf?'700':'500';
+    txt.style.fill=d.pdf?'#fff':'#6b7a99';
+    txt.style.pointerEvents='none';
+    txt.style.letterSpacing='-0.3px';
+    txt.style.fontFamily="'Apple SD Gothic Neo',sans-serif";
+
+    g.appendChild(poly);
+    g.appendChild(txt);
+    grp.appendChild(g);
+
+    g.addEventListener('mouseenter',e=>{ onEnter(g,poly,d,e); });
+    g.addEventListener('mousemove',onMove);
+    g.addEventListener('mouseleave',()=>{ onLeave(g,poly,d); });
+  });
+}
+
+// ──────────── Hover effects ────────────
+function onEnter(g,poly,d,e){
+  if(d.pdf){
+    poly.style.fill='#2563eb';
+    poly.style.fillOpacity='1';
+    g.style.filter='drop-shadow(0 4px 16px rgba(37,99,235,.55))';
+  } else {
+    poly.style.fill='#a0aec0';
+    g.style.filter='drop-shadow(0 2px 8px rgba(0,0,0,.18))';
+  }
+  showTip(d,e);
+}
+function onLeave(g,poly,d){
+  if(d.pdf){
+    poly.style.fill='url(#pdfGrad)';
+    poly.style.fillOpacity='0.82';
+  } else {
+    poly.style.fill='#d1d9e6';
+  }
+  g.style.filter='';
+  hideTip();
+}
+function onMove(e){ moveTip(e); }
+
+// ──────────── Tooltip ────────────
+const tip=document.getElementById('mapTip');
+const tipName=document.getElementById('tipName');
+const tipBody=document.getElementById('tipBody');
+
+function showTip(d,e){
+  tipName.innerHTML=(d.pdf?'<span style="background:#3b82f6;color:#fff;font-size:10px;padding:2px 7px;border-radius:10px;font-weight:600;letter-spacing:.5px;">자료있음</span> ':'')+d.n;
+  if(d.pdf && GU_INFO[d.n]){
+    const info=GU_INFO[d.n];
+    const rows=[
+      ['🏗️ 공급',      info.공급],
+      ['💰 소득/거주', info.소득거주],
+      ['🚇 입지',      info.입지],
+      ['🏠 대장단지',  info.대장],
+    ];
+    const badge=getBadgeHtml(info.투자);
+    tipBody.innerHTML=
+      '<div style="margin-bottom:10px;">'+badge+'</div>'+
+      rows.map(([lbl,val])=>
+        '<div style="margin-bottom:10px;">'
+        +'<div style="font-size:10px;font-weight:700;color:#4a789e;margin-bottom:3px;">'+lbl+'</div>'
+        +'<div style="font-size:12px;color:#1e3a5f;line-height:1.5;white-space:pre-line;">'+val+'</div>'
+        +'</div>'
+      ).join('');
+  } else {
+    tipBody.innerHTML='<div style="font-size:12px;color:#94a3b8;text-align:center;padding:8px 0;">분석 자료 없음<br><span style="font-size:11px;">추후 업데이트 예정</span></div>';
+  }
+  tip.style.opacity='1';
+  moveTip(e);
+}
+
+function getBadgeHtml(level){
+  const map={
+    '상':   {bg:'#dcfce7',c:'#166534',label:'투자매력 ★★★★★ 상'},
+    '중상': {bg:'#dbeafe',c:'#1d4ed8',label:'투자매력 ★★★★☆ 중상'},
+    '중':   {bg:'#fef9c3',c:'#854d0e',label:'투자매력 ★★★☆☆ 중'},
+    '중하': {bg:'#fee2e2',c:'#991b1b',label:'투자매력 ★★☆☆☆ 중하'},
+    '하':   {bg:'#f1f5f9',c:'#475569',label:'투자매력 ★☆☆☆☆ 하'},
+  };
+  const s=map[level]||map['중'];
+  return '<span style="background:'+s.bg+';color:'+s.c+';font-size:11px;font-weight:700;padding:4px 10px;border-radius:8px;">'+s.label+'</span>';
+}
+
+function moveTip(e){
+  const margin=16;
+  const tw=tip.firstElementChild.offsetWidth||280;
+  const th=tip.firstElementChild.offsetHeight||200;
+  let x=e.clientX+margin;
+  let y=e.clientY+margin;
+  if(x+tw>window.innerWidth-8) x=e.clientX-tw-margin;
+  if(y+th>window.innerHeight-8) y=e.clientY-th-margin;
+  tip.style.left=x+'px';
+  tip.style.top=y+'px';
+}
+
+function hideTip(){
+  tip.style.opacity='0';
+}
+</script>
+</BaseLayout>
