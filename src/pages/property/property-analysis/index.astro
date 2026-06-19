@@ -142,8 +142,7 @@ const risingCount = properties.filter((p: any) => p.trend === '상승').length;
 /* ── TABLE WRAPPER ───────────────────────────────────────────── */
 .table-wrap {
   background:var(--fb-card); border:1px solid var(--fb-border);
-  border-radius:20px; overflow:hidden;
-  box-shadow: 0 0 60px rgba(79,195,247,.05), 0 8px 40px rgba(0,0,0,.5); }
+  border-radius:20px; overflow:hidden; }
 .table-header {
   padding:18px 24px 14px; border-bottom:1px solid var(--fb-border);
   display:flex; align-items:center; justify-content:space-between; gap:12px; }
@@ -161,9 +160,8 @@ thead th:last-child  { padding-right:24px; text-align:right; }
 
 tbody tr {
   border-bottom:1px solid rgba(79,195,247,.055);
-  cursor:pointer; transition:background .15s; }
+  transition:background .15s; }
 tbody tr:last-child { border-bottom:none; }
-tbody tr:hover { background:rgba(79,195,247,.06); }
 
 td {
   padding:18px 20px; vertical-align:middle;
@@ -176,8 +174,14 @@ td:last-child  { padding-right:24px; text-align:right; }
 .apt-addr { font-size:11px; color:var(--fb-muted); }
 
 /* tier badge */
-.tier-badge { display:inline-flex; align-items:center; padding:3px 10px;
-  border-radius:20px; font-size:10px; font-weight:700; letter-spacing:.05em; }
+.tier-badge { display:inline-flex; align-items:center; padding:4px 8px;
+  border-radius:6px; font-size:10px; font-weight:700; letter-spacing:.03em; white-space:nowrap; }
+
+/* star importance */
+.star-rate { display:flex; gap:2px; justify-content:center; cursor:default; }
+.star { font-size:15px; color:var(--fb-border); transition:color .08s; line-height:1; cursor:pointer; }
+.star.filled { color:var(--fb-gold); }
+.star.preview { color:var(--fb-gold); opacity:.55; }
 
 /* price */
 .price-main { font-size:14px; font-weight:800; color:var(--fb-100); font-variant-numeric:tabular-nums; }
@@ -306,6 +310,7 @@ td:last-child  { padding-right:24px; text-align:right; }
             <th>평균 평단가</th>
             <th>시세 추세</th>
             <th>투자점수</th>
+            <th style="text-align:center;">중요도</th>
             <th>상세</th>
           </tr>
         </thead>
@@ -316,7 +321,7 @@ td:last-child  { padding-right:24px; text-align:right; }
             const ti = trendIcon(p.trend);
             const sc = scoreColor(p.investmentScore);
             return (
-              <tr onclick={`location.href='/property/property-analysis/${p.id}/'`}>
+              <tr>
                 <td>
                   <div class="apt-name">{p.name}</div>
                   <div class="apt-addr">{p.neighborhood} · {p.address?.split(' ').slice(-1)[0]}</div>
@@ -360,8 +365,15 @@ td:last-child  { padding-right:24px; text-align:right; }
                     <div style="font-size:9px;color:var(--fb-muted);">/ 5점</div>
                   </div>
                 </td>
+                <td style="text-align:center;">
+                  <div class="star-rate" data-propid={p.id}>
+                    {[1,2,3,4,5].map((n: number) => (
+                      <span class="star" data-n={String(n)}>★</span>
+                    ))}
+                  </div>
+                </td>
                 <td>
-                  <a class="detail-btn" href={`/property/property-analysis/${p.id}/`} onclick="event.stopPropagation()">
+                  <a class="detail-btn" href={`/property/property-analysis/${p.id}/`}>
                     보고서 →
                   </a>
                 </td>
@@ -403,9 +415,30 @@ td:last-child  { padding-right:24px; text-align:right; }
 const HASH='ee6123683515b4605b92a9e8e3db97d3517f607f4a7a95583f821371ddd017a1';
 const SESSION_KEY='prop:auth';
 async function sha256(msg){const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(msg));return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');}
-async function tryUnlock(){const pw=document.getElementById('pwInput').value;const h=await sha256(pw);if(h===HASH){sessionStorage.setItem(SESSION_KEY,'1');document.getElementById('lockScreen').style.display='none';document.getElementById('dashboard').style.display='block';}else{document.getElementById('pwErr').textContent='비밀번호가 올바르지 않습니다.';document.getElementById('pwInput').value='';}}
+function setupStars(){
+  document.querySelectorAll('.star-rate').forEach(function(el){
+    var id=el.dataset.propid;
+    var n=parseInt(localStorage.getItem('prop:star:'+id)||'0');
+    el.querySelectorAll('.star').forEach(function(s){s.classList.toggle('filled',parseInt(s.dataset.n)<=n&&n>0);});
+    el.querySelectorAll('.star').forEach(function(star){
+      star.addEventListener('mouseenter',function(){
+        var hn=parseInt(star.dataset.n);
+        el.querySelectorAll('.star').forEach(function(s){s.classList.toggle('preview',parseInt(s.dataset.n)<=hn);});
+      });
+      star.addEventListener('click',function(){
+        var cn=parseInt(star.dataset.n);
+        var cur=parseInt(localStorage.getItem('prop:star:'+id)||'0');
+        var next=cur===cn?0:cn;
+        localStorage.setItem('prop:star:'+id,String(next));
+        el.querySelectorAll('.star').forEach(function(s){s.classList.toggle('filled',parseInt(s.dataset.n)<=next&&next>0);});
+      });
+    });
+    el.addEventListener('mouseleave',function(){el.querySelectorAll('.star').forEach(function(s){s.classList.remove('preview');});});
+  });
+}
+async function tryUnlock(){const pw=document.getElementById('pwInput').value;const h=await sha256(pw);if(h===HASH){sessionStorage.setItem(SESSION_KEY,'1');document.getElementById('lockScreen').style.display='none';document.getElementById('dashboard').style.display='block';setupStars();}else{document.getElementById('pwErr').textContent='비밀번호가 올바르지 않습니다.';document.getElementById('pwInput').value='';}}
 document.getElementById('unlockBtn').addEventListener('click',tryUnlock);
 document.getElementById('pwInput').addEventListener('keydown',e=>{if(e.key==='Enter')tryUnlock();});
-if(sessionStorage.getItem(SESSION_KEY)==='1'){document.getElementById('lockScreen').style.display='none';document.getElementById('dashboard').style.display='block';}
+if(sessionStorage.getItem(SESSION_KEY)==='1'){document.getElementById('lockScreen').style.display='none';document.getElementById('dashboard').style.display='block';setupStars();}
 </script>
 </BaseLayout>
