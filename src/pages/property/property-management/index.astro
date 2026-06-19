@@ -286,22 +286,16 @@ import propertyData from "../../../data/property.json";
         <div style="font-size:9px;font-weight:700;color:var(--muted);letter-spacing:1.4px;text-transform:uppercase;margin-bottom:10px;margin-top:4px">투자 수익</div>
         <div id="s-ig" style="font-size:26px;font-weight:900;letter-spacing:-1px"></div>
         <div id="s-ig-sub" style="font-size:12px;color:var(--muted);margin-top:4px"></div>
-        <div style="position:relative;height:84px;margin-top:10px"><div id="retGauge" style="position:absolute;inset:0"></div></div>
+        <div style="position:relative;height:96px;margin-top:10px;overflow:visible"><div id="retGauge"></div></div>
         <div id="retGaugeLbl" style="text-align:center;margin-top:2px;font-size:11px;color:var(--muted)"></div>
         <div id="cagrRow" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:11px;color:var(--muted)"></div>
       </div>
     </div>
 
-    <!-- Trend + Donut -->
-    <div class="pm-g12 pm-sa" style="animation-delay:.12s">
-      <div class="pm-card">
-        <div class="pm-sh"><div class="pm-shbar"></div>순자산 추이</div>
-        <div style="position:relative;height:280px"><div id="trendChart"></div></div>
-      </div>
-      <div class="pm-card">
-        <div class="pm-sh"><div class="pm-shbar"></div>자산 구성</div>
-        <div style="position:relative;height:230px"><div id="donutChart"></div></div>
-      </div>
+    <!-- Trend -->
+    <div class="pm-card pm-sa" style="margin-bottom:18px;animation-delay:.12s">
+      <div class="pm-sh"><div class="pm-shbar"></div>순자산 추이</div>
+      <div style="position:relative;height:320px"><div id="trendChart"></div></div>
     </div>
 
     <!-- Live Market -->
@@ -487,7 +481,7 @@ function buildRetGauge(rate) {
   const c = CC(), col = rate >= 0 ? c.pos : c.neg;
   const norm = ((Math.min(Math.max(rate, -50), 100) + 50) / 150 * 100).toFixed(1);
   mk('retGauge', {
-    ...apexBase({ type: 'radialBar', height: 90 }),
+    ...apexBase({ type: 'radialBar', height: 96 }),
     series: [parseFloat(norm)],
     plotOptions: { radialBar: { startAngle: -90, endAngle: 90, hollow: { size: '65%', background: 'transparent' }, dataLabels: { show: false }, track: { background: c.soft, strokeWidth: '100%' } } },
     colors: [col], stroke: { lineCap: 'round' }, legend: { show: false }, tooltip: { enabled: false },
@@ -599,21 +593,30 @@ function buildSimChart(snap, goal, sav, rate) {
     ca.push(Math.round(nc / 1e6)); ra.push(Math.round(nr / 1e6)); oa.push(Math.round(no_ / 1e6)); gl.push(Math.round(G / 1e6));
     nc = nc * (1 + mc) + sav; nr = nr * (1 + mr) + sav; no_ = no_ * (1 + mo) + sav;
   }
+  const goalLbl = labels[Math.min(mtd, cm)];
   const opts = {
-    ...apexBase({ type: 'line', height: 220, animations: { speed: 250 } }),
+    ...apexBase({ type: 'line', height: 220, animations: { enabled: true, speed: 300 } }),
     series: [{ name: '보수적', data: ca }, { name: '현실적', data: ra }, { name: '낙관적', data: oa }, { name: '목표', data: gl }],
     colors: [c.neg, c.acc, c.pos, c.goal],
-    stroke: { width: [2.5, 3, 2.5, 2], curve: 'smooth', dashArray: [0, 0, 0, 6] },
-    fill: { opacity: 0 },
-    xaxis: { categories: labels, labels: { rotate: -35, style: { fontSize: '9px', colors: c.text }, formatter: (v, i) => i % Math.ceil(cm / 7) === 0 ? v : '' }, axisBorder: { show: false }, axisTicks: { show: false } },
+    stroke: { show: true, width: [2.5, 3, 2.5, 1.5], curve: 'smooth', dashArray: [0, 0, 0, 5] },
+    xaxis: {
+      categories: labels,
+      tickAmount: 6,
+      labels: { rotate: -30, style: { fontSize: '10px', colors: c.text } },
+      axisBorder: { show: false }, axisTicks: { show: false },
+    },
     yaxis: { labels: { style: { fontSize: '10px', colors: c.text }, formatter: v => (v / 100).toFixed(1) + '억' } },
-    legend: { fontSize: '11px', fontFamily: "'Pretendard',sans-serif", labels: { colors: c.text } },
+    legend: { fontSize: '12px', fontFamily: "'Pretendard',sans-serif", labels: { colors: c.text } },
     markers: { size: 0 },
-    tooltip: { ...apexBase().tooltip, y: { formatter: v => (v * 1e6).toLocaleString() + '원' } },
-    annotations: { xaxis: [{ x: labels[Math.min(mtd, cm)], borderColor: c.goal, borderWidth: 1.5, strokeDashArray: 4, label: { text: '목표일', style: { color: c.goal, background: c.bg, fontSize: '10px' }, orientation: 'horizontal', position: 'top' } }] },
+    tooltip: { ...apexBase().tooltip, y: { formatter: v => (v * 1e6 / 1e8).toFixed(2) + '억원' } },
+    annotations: { xaxis: [{ x: goalLbl, borderColor: c.goal, borderWidth: 2, strokeDashArray: 4, label: { text: '목표일', style: { color: c.goal, background: c.bg, fontSize: '10px', fontWeight: 700 }, orientation: 'horizontal', position: 'top', offsetY: 8 } }] },
   };
-  if (simChart) { simChart.updateOptions(opts, true, true); }
-  else { const el = document.getElementById('simChart'); if (el) { simChart = new ApexCharts(el, opts); simChart.render(); charts['simChart'] = simChart; } }
+  if (simChart) {
+    try { simChart.destroy(); } catch(e) {}
+    simChart = null;
+  }
+  const el = document.getElementById('simChart');
+  if (el) { el.innerHTML = ''; simChart = new ApexCharts(el, opts); simChart.render(); charts['simChart'] = simChart; }
 }
 function updateSim(snap, goal) {
   const c = CC(), sm = snap.summary, sd = new Date(snap.snapshotDate), G = goal.target;
@@ -648,37 +651,84 @@ function initSim(snap, goal) {
 /* ── Live Market ──────────────────────────────────────────── */
 const TMAP = { 'SK하이닉스': '000660.KS', '삼성전자': '005930.KS', '테슬라': 'TSLA', 'KODEX 미국S&P500': '069500.KS', 'NAVER': '035420.KS', 'TIGER KRX금현물': '132030.KS', 'ACE 미국S&P500': '360750.KS', '애플': 'AAPL', '쿠팡': 'CPNG', '유니티 소프트웨어': 'U' };
 let _liveInvs = [], _liveDone = false;
+
+/* CORS proxy 순서대로 시도 — 하나라도 성공하면 반환 */
+async function _proxyFetch(yahooUrl) {
+  const strategies = [
+    async () => {
+      const r = await fetch(`https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`, { signal: AbortSignal.timeout(8000) });
+      if (!r.ok) throw new Error('http ' + r.status);
+      return r.json();
+    },
+    async () => {
+      const r = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(yahooUrl)}`, { signal: AbortSignal.timeout(8000) });
+      const w = await r.json();
+      return JSON.parse(w.contents);
+    },
+    async () => {
+      const r = await fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yahooUrl)}`, { signal: AbortSignal.timeout(8000) });
+      if (!r.ok) throw new Error('http ' + r.status);
+      return r.json();
+    },
+  ];
+  for (const fn of strategies) {
+    try { const j = await fn(); if (j) return j; } catch(e) {}
+  }
+  throw new Error('all proxies failed');
+}
+
+async function _fetchTicker(tk) {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(tk)}?interval=1d&range=1d`;
+  const j = await _proxyFetch(url);
+  const m = j.chart?.result?.[0]?.meta;
+  if (!m) throw new Error('no meta');
+  const price = m.regularMarketPrice;
+  const prev = m.previousClose ?? m.chartPreviousClose ?? null;
+  return { price, pct: prev ? (price - prev) / prev * 100 : null, isKRW: tk.endsWith('.KS') };
+}
+
 async function fetchRealtime() {
   const el = document.getElementById('liveRows'); if (!el || !_liveInvs.length) return;
-  // deduplicate by ticker, then take top5 by eval
   const seen = new Set();
-  const top5 = _liveInvs.filter(inv => { const tk = TMAP[inv.name]; if (!tk || seen.has(tk)) return false; seen.add(tk); return true; }).sort((a, b) => b.eval - a.eval).slice(0, 5);
+  const top5 = _liveInvs
+    .filter(inv => { const tk = TMAP[inv.name]; if (!tk || seen.has(tk)) return false; seen.add(tk); return true; })
+    .sort((a, b) => b.eval - a.eval).slice(0, 5);
   const rb = document.getElementById('liveRefBtn');
   if (rb) { rb.disabled = true; rb.textContent = '조회 중…'; }
-  el.innerHTML = top5.map(() => `<div class="pm-lmrow"><div style="height:13px;width:100px;background:var(--bg-soft);border-radius:4px"></div><div style="height:13px;width:80px;background:var(--bg-soft);border-radius:4px"></div></div>`).join('');
+  el.innerHTML = top5.map(() => `<div class="pm-lmrow" style="opacity:.4"><div style="height:12px;width:110px;background:var(--bg-soft);border-radius:4px;animation:pmIn .8s ease infinite alternate"></div><div style="height:12px;width:70px;background:var(--bg-soft);border-radius:4px"></div></div>`).join('');
+
   const res = await Promise.allSettled(top5.map(async inv => {
-    const tk = TMAP[inv.name] ?? null; if (!tk) return { inv, tk, price: null, pct: null };
+    const tk = TMAP[inv.name]; if (!tk) return { inv, tk: null, price: null, pct: null, isKRW: false };
     try {
-      const url = `https://api.allorigins.win/get?url=${encodeURIComponent('https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(tk) + '?interval=1d&range=1d')}`;
-      const r = await fetch(url, { signal: AbortSignal.timeout(12000) });
-      const w = await r.json(); const j = JSON.parse(w.contents);
-      const m = j.chart?.result?.[0]?.meta; if (!m) throw new Error('no meta');
-      const price = m.regularMarketPrice, prev = m.previousClose ?? m.chartPreviousClose ?? null;
-      return { inv, tk, price, pct: prev ? (price - prev) / prev * 100 : null, isKRW: tk.endsWith('.KS') };
-    } catch(e) { return { inv, tk, price: null, pct: null }; }
+      const d = await _fetchTicker(tk);
+      return { inv, tk, ...d };
+    } catch(e) {
+      return { inv, tk, price: null, pct: null, isKRW: tk.endsWith('.KS') };
+    }
   }));
-  el.innerHTML = res.map(r => {
-    const d = r.status === 'fulfilled' ? r.value : { inv: top5[0], tk: null, price: null, pct: null };
+
+  let anyOk = false;
+  el.innerHTML = res.map((r, i) => {
+    const d = r.status === 'fulfilled' ? r.value : { inv: top5[i], tk: null, price: null, pct: null, isKRW: false };
+    const ok = d.price != null;
+    if (ok) anyOk = true;
     const pos = d.pct != null && d.pct >= 0;
-    const ps = d.price != null ? (d.isKRW ? Math.round(d.price).toLocaleString('ko-KR') + '원' : '$' + d.price.toFixed(2)) : '—';
+    const ps = ok ? (d.isKRW ? Math.round(d.price).toLocaleString('ko-KR') + '원' : '$' + d.price.toFixed(2)) : `<span style="font-size:10px;color:var(--muted)">스냅샷 ${fW(d.inv.eval)}</span>`;
     const bc = pos ? '#059669' : '#dc2626', bbc = pos ? 'rgba(5,150,105,.09)' : 'rgba(220,38,38,.08)';
-    const bs = d.pct != null ? `<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;background:${bbc};color:${bc}">${d.pct >= 0 ? '+' : ''}${d.pct.toFixed(2)}%</span>` : `<span style="font-size:11px;color:var(--muted)">—</span>`;
-    return `<div class="pm-lmrow"><div style="min-width:0;flex:1"><span class="pm-lmname">${d.inv.name}</span><span class="pm-lmtk">${d.tk || ''}</span></div><div style="display:flex;align-items:center;gap:10px;flex-shrink:0"><span class="pm-lmprice">${ps}</span>${bs}</div></div>`;
+    const badge = d.pct != null
+      ? `<span style="font-size:11px;font-weight:700;padding:2px 9px;border-radius:6px;background:${bbc};color:${bc}">${d.pct >= 0 ? '+' : ''}${d.pct.toFixed(2)}%</span>`
+      : (ok ? '' : `<span style="font-size:10px;color:var(--fn-bd);background:var(--fn-bg);padding:2px 7px;border-radius:5px">조회실패</span>`);
+    return `<div class="pm-lmrow"><div style="min-width:0;flex:1"><span class="pm-lmname">${d.inv.name}</span><span class="pm-lmtk">${d.tk || ''}</span></div><div style="display:flex;align-items:center;gap:10px;flex-shrink:0"><span class="pm-lmprice">${ps}</span>${badge}</div></div>`;
   }).join('');
+
+  if (!anyOk) {
+    el.insertAdjacentHTML('beforeend', `<div style="text-align:center;padding:10px;font-size:11px;color:var(--fn);background:var(--fn-bg);border-radius:8px;margin-top:8px">⚠ CORS 제한으로 시세 조회 실패 — 스냅샷 데이터 표시 중</div>`);
+  }
   if (rb) { rb.disabled = false; rb.textContent = '새로고침'; }
   const ts = document.getElementById('liveTs');
   if (ts) ts.textContent = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' 기준';
 }
+
 function initLive(invs) {
   _liveInvs = Array.isArray(invs) ? invs : [];
   if (!_liveDone) { _liveDone = true; fetchRealtime(); }
@@ -798,7 +848,7 @@ function render(idx) {
   const re = sm.realEstate / sm.totalAssets * 100, in2 = sm.investmentTotal / sm.totalAssets * 100, cs = (sm.cash + sm.savings) / sm.totalAssets * 100;
   document.getElementById('s-ta').innerHTML = fW(sm.totalAssets) + (taD != null ? ` <span style="font-size:14px;font-weight:700;color:${PC(taD)}">${taD >= 0 ? '+' : ''}${fW(taD)}</span>` : '');
   document.getElementById('s-ta-sub').textContent = `순자산 ${fW(sm.netWorth)} · 부채비율 ${(sm.totalDebt / sm.totalAssets * 100).toFixed(1)}%`;
-  document.getElementById('s-ta-bar').innerHTML = `<div class="pm-abar"><div class="pm-aseg" style="width:${re.toFixed(1)}%;background:${c.acc}"></div><div class="pm-aseg" style="width:${in2.toFixed(1)}%;background:${c.pos}"></div><div class="pm-aseg" style="width:${cs.toFixed(1)}%;background:${c.goal}"></div></div><div class="pm-aleg"><span class="pm-aitem"><span class="pm-adot" style="background:${c.acc}"></span>부동산 ${re.toFixed(0)}%</span><span class="pm-aitem"><span class="pm-adot" style="background:${c.pos}"></span>투자 ${in2.toFixed(0)}%</span><span class="pm-aitem"><span class="pm-adot" style="background:${c.goal}"></span>현금 ${cs.toFixed(0)}%</span></div>`;
+  document.getElementById('s-ta-bar').innerHTML = `<div class="pm-abar"><div class="pm-aseg" style="width:${re.toFixed(1)}%;background:${c.acc}" title="부동산 ${fW(sm.realEstate)} (${re.toFixed(1)}%)"></div><div class="pm-aseg" style="width:${in2.toFixed(1)}%;background:${c.pos}" title="투자 ${fW(sm.investmentTotal)} (${in2.toFixed(1)}%)"></div><div class="pm-aseg" style="width:${cs.toFixed(1)}%;background:${c.goal}" title="현금·저축 ${fW(sm.cash + sm.savings)} (${cs.toFixed(1)}%)"></div></div><div class="pm-aleg"><span class="pm-aitem"><span class="pm-adot" style="background:${c.acc}"></span>부동산 ${re.toFixed(0)}% <span style="color:var(--text-2);font-weight:700">${fW(sm.realEstate)}</span></span><span class="pm-aitem"><span class="pm-adot" style="background:${c.pos}"></span>투자 ${in2.toFixed(0)}% <span style="color:var(--text-2);font-weight:700">${fW(sm.investmentTotal)}</span></span><span class="pm-aitem"><span class="pm-adot" style="background:${c.goal}"></span>현금 ${cs.toFixed(0)}% <span style="color:var(--text-2);font-weight:700">${fW(sm.cash + sm.savings)}</span></span></div>`;
 
   // 총부채 card
   const tdD = prev ? sm.totalDebt - prev.totalDebt : null;
