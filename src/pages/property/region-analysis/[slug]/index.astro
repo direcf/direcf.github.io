@@ -1,0 +1,357 @@
+---
+import BaseLayout from "../../../../layouts/BaseLayout.astro";
+
+export async function getStaticPaths() {
+  const files = import.meta.glob('../../../../data/districts/*.json', { eager: true });
+  return Object.entries(files).map(([path, mod]) => {
+    const slug = path.match(/\/(\w+)\.json$/)[1];
+    return { params: { slug }, props: { d: mod.default || mod } };
+  });
+}
+
+const { d } = Astro.props;
+
+function gradeBg(g) {
+  if (!g) return 'background:#f1f5f9;color:#475569';
+  const u = g.toUpperCase();
+  if (u.startsWith('S')) return 'background:#ede9fe;color:#4c1d95';
+  if (u.startsWith('A')) return 'background:#dcfce7;color:#166534';
+  if (u.startsWith('B')) return 'background:#dbeafe;color:#1d4ed8';
+  if (u.startsWith('C')) return 'background:#fef9c3;color:#854d0e';
+  return 'background:#f1f5f9;color:#475569';
+}
+
+function stars(n) {
+  const f = Math.min(Math.round(n || 0), 5);
+  return '★'.repeat(f) + '☆'.repeat(5 - f);
+}
+
+function orDash(v, suffix = '') {
+  return v != null && v !== '' && v !== '미확인' ? `${v}${suffix}` : '—';
+}
+
+const supplyLow = d.quickStats?.supply3yr != null && d.quickStats.supply3yr < 3000;
+const tierColors: Record<string, string> = {
+  '대장': 'background:linear-gradient(135deg,#eff6ff,#dbeafe);border:1px solid rgba(59,130,246,.22)',
+  '중위': 'background:var(--bg);border:1px solid var(--border)',
+  '팔로우': 'background:var(--bg);border:1px solid var(--border)',
+};
+const tierTextColors: Record<string, string> = {
+  '대장': 'color:#1d4ed8',
+  '중위': 'color:var(--muted)',
+  '팔로우': 'color:var(--muted)',
+};
+const priceColors: Record<string, string> = {
+  '대장': 'color:#1d4ed8',
+  '중위': 'color:#1d4ed8',
+  '팔로우': 'color:#1d4ed8',
+};
+const devTypeIcon: Record<string, string> = {
+  '교통': '🚇',
+  '재개발': '🏗️',
+  '뉴타운': '🏗️',
+  '정비': '🏗️',
+  '산업': '🏭',
+  '공원': '🌿',
+};
+const devTypeGreen = new Set(['재개발', '뉴타운', '정비', '공원']);
+---
+<BaseLayout title={`${d.name} 분석`} activeSlug="property" crumbs={[{label:"Personal"},{label:"Property",href:"/property/"},{label:"지역 분석",href:"/property/region-analysis/"},{label:d.name}]}>
+<style>
+#prop-root{background:var(--bg);color:var(--text);min-height:100vh;padding:28px 32px 72px;}
+#lockScreen{position:fixed;inset:0;z-index:9999;background:radial-gradient(ellipse at 30% 40%,rgba(20,60,130,.6),transparent 65%),radial-gradient(ellipse at 75% 70%,rgba(10,40,100,.45),transparent 60%),#060d1e;display:flex;align-items:center;justify-content:center;}
+.lock-card{background:rgba(12,28,65,.88);border:1px solid rgba(130,200,255,.35);border-radius:24px;padding:52px 48px;width:400px;text-align:center;backdrop-filter:blur(24px);box-shadow:0 0 80px rgba(50,120,255,.15),0 8px 48px rgba(0,0,0,.7);position:relative;overflow:hidden;}
+.lock-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(130,200,255,.7),transparent);}
+.lock-icon{font-size:48px;margin-bottom:20px;filter:drop-shadow(0 0 14px rgba(80,170,255,.6));}
+.lock-title{font-size:20px;font-weight:700;color:#c4e4ff;margin-bottom:6px;}
+.lock-sub{font-size:13px;color:#92bfdf;margin-bottom:32px;}
+.lock-input{width:100%;padding:14px 18px;box-sizing:border-box;background:rgba(8,22,58,.9);border:1px solid rgba(130,200,255,.35);border-radius:12px;color:#d8eeff;font-size:16px;outline:none;text-align:center;letter-spacing:3px;transition:border-color .2s,box-shadow .2s;}
+.lock-input:focus{border-color:#50aaff;box-shadow:0 0 0 3px rgba(80,170,255,.2);}
+.lock-btn{width:100%;margin-top:14px;padding:14px;background:linear-gradient(135deg,#1a60d0,#0d3d9e);border:1px solid rgba(80,170,255,.4);border-radius:12px;color:#c4e4ff;font-size:15px;font-weight:700;cursor:pointer;transition:all .2s;}
+.lock-btn:hover{background:linear-gradient(135deg,#2070e0,#1050b8);transform:translateY(-1px);box-shadow:0 4px 24px rgba(30,100,255,.4);}
+.lock-err{font-size:12px;color:#f87171;margin-top:10px;min-height:18px;}
+.lock-hint{font-size:11px;color:#6a96ba;margin-top:20px;}
+#dashboard{display:none;}
+</style>
+
+<div id="prop-root">
+
+<div id="lockScreen">
+  <div class="lock-card">
+    <div class="lock-icon">🔐</div>
+    <div class="lock-title">Private — Property</div>
+    <div class="lock-sub">자산 현황에 접근하려면 비밀번호를 입력하세요.</div>
+    <input id="pwInput" class="lock-input" type="password" placeholder="••••••••" autocomplete="off" />
+    <button class="lock-btn" id="unlockBtn">잠금 해제</button>
+    <div class="lock-err" id="pwErr"></div>
+    <div class="lock-hint">direcf.github.io / personal / property</div>
+  </div>
+</div>
+
+<div id="dashboard">
+
+  <!-- Back -->
+  <div style="margin-bottom:20px;">
+    <a href="/property/region-analysis/" style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--muted);text-decoration:none;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:7px 14px;box-shadow:var(--shadow-sm);transition:all .15s;"
+      onmouseover="this.style.color='#2574e4';this.style.borderColor='rgba(37,116,228,.35)'"
+      onmouseout="this.style.color='';this.style.borderColor=''">
+      ← 서울 지도로 돌아가기
+    </a>
+  </div>
+
+  <!-- Header -->
+  <div style="background:linear-gradient(135deg,#1e3a8a 0%,#1d4ed8 60%,#2563eb 100%);border-radius:20px;padding:32px 32px 28px;margin-bottom:20px;box-shadow:0 8px 32px rgba(29,78,216,.25);position:relative;overflow:hidden;">
+    <div style="position:absolute;top:-40px;right:-40px;width:200px;height:200px;background:rgba(255,255,255,.05);border-radius:50%;"></div>
+    <div style="position:absolute;bottom:-60px;right:60px;width:150px;height:150px;background:rgba(255,255,255,.04);border-radius:50%;"></div>
+    <div style="font-size:11px;font-weight:700;letter-spacing:1.2px;color:rgba(147,197,253,.8);text-transform:uppercase;margin-bottom:10px;">따뜻한부스터 2026{d.dataDate ? ` · ${d.dataDate} 자료 기반` : ''}</div>
+    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:12px;">
+      <h1 style="font-size:32px;font-weight:900;color:#fff;margin:0;letter-spacing:-1px;">{d.name}</h1>
+      {d.hanja && <span style="font-size:14px;color:rgba(191,219,254,.7);font-weight:400;">{d.hanja}</span>}
+      {d.attraction && <span style="background:rgba(255,255,255,.15);color:#fff;font-size:13px;font-weight:700;padding:5px 14px;border-radius:20px;border:1px solid rgba(255,255,255,.25);">투자매력도 {stars(d.attractionStars)} {d.attraction}</span>}
+    </div>
+    {d.summary && <p style="font-size:14px;color:rgba(191,219,254,.9);margin:0;line-height:1.7;max-width:680px;">{d.summary}</p>}
+  </div>
+
+  <!-- Quick Stats -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px;margin-bottom:20px;">
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:16px;padding:18px 18px 16px;box-shadow:var(--shadow-sm);">
+      <div style="font-size:10px;font-weight:700;color:#3b82f6;text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px;">소득 순위</div>
+      <div style="font-size:22px;font-weight:900;color:#1d4ed8;line-height:1.1;">{d.quickStats?.incomeRankAddress != null ? `서울 ${d.quickStats.incomeRankAddress}위` : '—'}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:3px;">{d.quickStats?.incomeRankSource != null ? `원천징수 기준 ${d.quickStats.incomeRankSource}위` : ''}</div>
+    </div>
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:16px;padding:18px 18px 16px;box-shadow:var(--shadow-sm);">
+      <div style="font-size:10px;font-weight:700;color:#3b82f6;text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px;">평당가</div>
+      <div style="font-size:22px;font-weight:900;color:#1d4ed8;line-height:1.1;">{orDash(d.quickStats?.pricePerPyeong)}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:3px;">{d.priceStatus?.baseDate ? `${d.priceStatus.baseDate} 기준` : ''}</div>
+    </div>
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:16px;padding:18px 18px 16px;box-shadow:var(--shadow-sm);">
+      <div style={`font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px;color:${supplyLow ? '#ef4444' : '#3b82f6'}`}>3년 내 공급</div>
+      <div style={`font-size:22px;font-weight:900;line-height:1.1;color:${supplyLow ? '#dc2626' : '#1d4ed8'}`}>{d.quickStats?.supply3yr != null ? `${d.quickStats.supply3yr.toLocaleString()}세대` : '—'}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:3px;">{supplyLow ? '공급 부족 주의' : '공급 현황'}</div>
+    </div>
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:16px;padding:18px 18px 16px;box-shadow:var(--shadow-sm);">
+      <div style="font-size:10px;font-weight:700;color:#3b82f6;text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px;">교통 등급</div>
+      <div style="font-size:22px;font-weight:900;color:#1d4ed8;line-height:1.1;">{orDash(d.quickStats?.trafficGrade)}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:3px;">{d.locationAnalysis?.traffic?.desc ? d.locationAnalysis.traffic.desc.slice(0, 20) + '…' : ''}</div>
+    </div>
+  </div>
+
+  <!-- 도시 이해 -->
+  <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:20px;padding:24px 26px 28px;margin-bottom:16px;box-shadow:var(--shadow-sm);">
+    <h2 style="font-size:15px;font-weight:800;color:var(--text);margin:0 0 16px;letter-spacing:-.3px;">🏙️ 도시 이해</h2>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;">
+      {d.cityOverview?.location && (
+        <div style="background:var(--bg);border-radius:12px;padding:14px 16px;">
+          <div style="font-size:10px;font-weight:700;color:var(--muted);margin-bottom:5px;">위치</div>
+          <div style="font-size:12px;color:var(--text);line-height:1.6;">{d.cityOverview.location}</div>
+        </div>
+      )}
+      {(d.cityOverview?.population || d.cityOverview?.households) && (
+        <div style="background:var(--bg);border-radius:12px;padding:14px 16px;">
+          <div style="font-size:10px;font-weight:700;color:var(--muted);margin-bottom:5px;">인구 · 세대</div>
+          <div style="font-size:12px;color:var(--text);line-height:1.6;">
+            {d.cityOverview?.population != null ? `인구 ${d.cityOverview.population.toLocaleString()}명` : ''}
+            {d.cityOverview?.population && d.cityOverview?.households ? <br /> : ''}
+            {d.cityOverview?.households != null ? `세대 ${d.cityOverview.households.toLocaleString()}` : ''}
+          </div>
+        </div>
+      )}
+      {d.cityOverview?.fiscalIndependence && (
+        <div style="background:var(--bg);border-radius:12px;padding:14px 16px;">
+          <div style="font-size:10px;font-weight:700;color:var(--muted);margin-bottom:5px;">재정자립도</div>
+          <div style="font-size:12px;color:var(--text);line-height:1.6;">{d.cityOverview.fiscalIndependence}</div>
+        </div>
+      )}
+      {d.cityOverview?.zones && d.cityOverview.zones.slice(0, 3).map((z) => (
+        <div style="background:var(--bg);border-radius:12px;padding:14px 16px;">
+          <div style="font-size:10px;font-weight:700;color:var(--muted);margin-bottom:5px;">{z.name}</div>
+          <div style="font-size:12px;color:var(--text);line-height:1.6;">{z.feature}</div>
+        </div>
+      ))}
+    </div>
+  </div>
+
+  <!-- 입지 분석 -->
+  <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:20px;padding:24px 26px 28px;margin-bottom:16px;box-shadow:var(--shadow-sm);">
+    <h2 style="font-size:15px;font-weight:800;color:var(--text);margin:0 0 18px;letter-spacing:-.3px;">🚇 입지 분석</h2>
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      {[
+        { key: 'workplace', label: '직장 접근성' },
+        { key: 'traffic',   label: '교통' },
+        { key: 'school',    label: '학군' },
+        { key: 'environment', label: '환경' },
+      ].map(({ key, label }) => {
+        const item = d.locationAnalysis?.[key];
+        if (!item) return null;
+        return (
+          <div style="display:flex;align-items:flex-start;gap:14px;">
+            <div style={`width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;flex-shrink:0;text-align:center;line-height:1.2;${gradeBg(item.grade)}`}>{item.grade || '—'}</div>
+            <div>
+              <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:3px;">{label}</div>
+              <div style="font-size:12px;color:var(--muted);line-height:1.6;">{item.desc}</div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  </div>
+
+  <!-- 개발 호재 -->
+  {d.developmentPlans && d.developmentPlans.length > 0 && (
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:20px;padding:24px 26px 28px;margin-bottom:16px;box-shadow:var(--shadow-sm);">
+      <h2 style="font-size:15px;font-weight:800;color:var(--text);margin:0 0 16px;letter-spacing:-.3px;">⚡ 개발 호재</h2>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;">
+        {d.developmentPlans.map((plan) => {
+          const isGreen = devTypeGreen.has(plan.type);
+          const icon = devTypeIcon[plan.type] || '⚡';
+          const cardStyle = isGreen
+            ? 'background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1px solid rgba(34,197,94,.18);border-radius:12px;padding:14px 16px;'
+            : 'background:linear-gradient(135deg,#eff6ff,#dbeafe);border:1px solid rgba(59,130,246,.18);border-radius:12px;padding:14px 16px;';
+          const labelColor = isGreen ? 'color:#166534' : 'color:#1d4ed8';
+          return (
+            <div style={cardStyle}>
+              <div style={`font-size:11px;font-weight:700;margin-bottom:5px;${labelColor}`}>{icon} {plan.label}</div>
+              <div style="font-size:12px;color:var(--text);line-height:1.5;">{plan.detail}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  )}
+
+  <!-- 공급 현황 -->
+  <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:20px;padding:24px 26px 28px;margin-bottom:16px;box-shadow:var(--shadow-sm);">
+    <h2 style="font-size:15px;font-weight:800;color:var(--text);margin:0 0 16px;letter-spacing:-.3px;">🏗️ 공급 현황</h2>
+    {supplyLow && (
+      <div style="background:#fff5f5;border:1px solid #fecaca;border-radius:12px;padding:14px 18px;margin-bottom:16px;display:flex;align-items:center;gap:12px;">
+        <div style="font-size:24px;">⚠️</div>
+        <div>
+          <div style="font-size:13px;font-weight:700;color:#dc2626;">3년 내 공급 {d.quickStats?.supply3yr?.toLocaleString()}세대 — 공급 부족</div>
+          <div style="font-size:11px;color:#7f1d1d;margin-top:3px;">{d.priceStatus?.note || ''}</div>
+        </div>
+      </div>
+    )}
+    {d.supplyStatus?.complexes && d.supplyStatus.complexes.length > 0 ? (
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        {d.supplyStatus.complexes.map((c) => (
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--bg);border-radius:10px;flex-wrap:wrap;gap:8px;">
+            <div>
+              <div style="font-size:13px;font-weight:700;color:var(--text);">{c.name}</div>
+              <div style="font-size:11px;color:var(--muted);">{c.dong}{c.dong && c.date ? ' · ' : ''}{c.date ? `${c.date} 입주` : ''}</div>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-size:16px;font-weight:800;color:#1d4ed8;">{c.units?.toLocaleString()}세대</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    ) : (
+      <div style="font-size:13px;color:var(--muted);">3년 내 공급 정보 없음</div>
+    )}
+  </div>
+
+  <!-- 소득 / 주거 -->
+  {(d.quickStats?.incomeRankAddress != null || d.quickStats?.incomeRankSource != null) && (
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:20px;padding:24px 26px 28px;margin-bottom:16px;box-shadow:var(--shadow-sm);">
+      <h2 style="font-size:15px;font-weight:800;color:var(--text);margin:0 0 16px;letter-spacing:-.3px;">💰 소득 / 주거</h2>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px;">
+        {d.quickStats?.incomeRankAddress != null && (
+          <div style="background:var(--bg);border-radius:12px;padding:16px;">
+            <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px;">주소지 기준 소득</div>
+            <div style="font-size:26px;font-weight:900;color:#1d4ed8;margin-bottom:4px;">서울 {d.quickStats.incomeRankAddress}위</div>
+            {d.quickStats?.incomeRankSource != null && (
+              <div style="font-size:11px;color:var(--muted);">원천징수 기준 {d.quickStats.incomeRankSource}위</div>
+            )}
+          </div>
+        )}
+        <div style="background:var(--bg);border-radius:12px;padding:16px;">
+          <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px;">재정자립도</div>
+          <div style="font-size:18px;font-weight:800;color:var(--text);margin-bottom:4px;">{orDash(d.cityOverview?.fiscalIndependence)}</div>
+        </div>
+      </div>
+    </div>
+  )}
+
+  <!-- 시세 현황 -->
+  <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:20px;padding:24px 26px 28px;margin-bottom:16px;box-shadow:var(--shadow-sm);">
+    <h2 style="font-size:15px;font-weight:800;color:var(--text);margin:0 0 4px;letter-spacing:-.3px;">📊 시세 현황</h2>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:18px;">{d.priceStatus?.baseDate ? `${d.priceStatus.baseDate} 기준` : ''}</div>
+    {d.priceStatus?.pricePerPyeong && (
+      <div style="background:#eff6ff;border:1px solid rgba(59,130,246,.2);border-radius:12px;padding:12px 18px;margin-bottom:16px;display:flex;align-items:center;gap:10px;">
+        <span style="font-size:14px;">📍</span>
+        <div style="font-size:13px;color:var(--text);">{d.name} 평당가 <strong>{d.priceStatus.pricePerPyeong}</strong>{d.priceStatus?.note ? ` — ${d.priceStatus.note}` : ''}</div>
+      </div>
+    )}
+    {d.priceStatus?.rows && d.priceStatus.rows.length > 0 && (
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+          <thead>
+            <tr style="background:var(--bg);">
+              <th style="padding:10px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--muted);border-bottom:2px solid var(--border);">단지</th>
+              <th style="padding:10px 12px;text-align:center;font-size:11px;font-weight:700;color:var(--muted);border-bottom:2px solid var(--border);">평형</th>
+              <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:var(--muted);border-bottom:2px solid var(--border);">매매</th>
+              <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:var(--muted);border-bottom:2px solid var(--border);">전세</th>
+            </tr>
+          </thead>
+          <tbody>
+            {d.priceStatus.rows.map((r) => (
+              <tr style="border-bottom:1px solid var(--border);">
+                <td style="padding:10px 12px;color:var(--text);font-weight:600;">{r.complex}</td>
+                <td style="padding:10px 12px;text-align:center;color:var(--muted);">{r.size}</td>
+                <td style="padding:10px 12px;text-align:right;font-weight:700;color:var(--text);">{r.sale}</td>
+                <td style="padding:10px 12px;text-align:right;color:var(--muted);">{r.lease}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </div>
+
+  <!-- 단지 분석 -->
+  {d.complexAnalysis && d.complexAnalysis.length > 0 && (
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:20px;padding:24px 26px 28px;margin-bottom:16px;box-shadow:var(--shadow-sm);">
+      <h2 style="font-size:15px;font-weight:800;color:var(--text);margin:0 0 18px;letter-spacing:-.3px;">🏢 단지 분석</h2>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px;">
+        {d.complexAnalysis.map((c) => (
+          <div style={`${tierColors[c.tier] || tierColors['팔로우']};border-radius:16px;padding:20px;`}>
+            <div style={`font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px;${tierTextColors[c.tier] || tierTextColors['팔로우']}`}>{c.tier} 단지</div>
+            <div style="font-size:15px;font-weight:800;color:var(--text);margin-bottom:4px;line-height:1.3;">{c.name}</div>
+            <div style="font-size:11px;color:var(--muted);margin-bottom:14px;">
+              {[c.year && `${c.year} 준공`, c.units && `${c.units.toLocaleString()}세대`, c.size].filter(Boolean).join(' · ')}
+            </div>
+            <div style="border-top:1px solid rgba(100,160,240,.2);padding-top:12px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
+                <span style="font-size:11px;color:var(--muted);">매매</span>
+                <span style={`font-size:16px;font-weight:800;${priceColors[c.tier] || 'color:#1d4ed8'}`}>{orDash(c.sale)}</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                <span style="font-size:11px;color:var(--muted);">전세</span>
+                <span style="font-size:14px;font-weight:700;color:var(--text);">{orDash(c.lease)}</span>
+              </div>
+              {c.note && <div style="font-size:10px;color:var(--muted);line-height:1.6;">{c.note}</div>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )}
+
+  <!-- Footer -->
+  <div style="text-align:center;padding:16px;font-size:11px;color:var(--muted);">
+    본 분석은 따뜻한부스터 2026 자료{d.dataDate ? `(${d.dataDate} 기준)` : ''} 기반입니다. 투자 결정은 반드시 직접 현장 확인 후 판단하세요.
+  </div>
+
+</div><!-- /dashboard -->
+</div><!-- /prop-root -->
+
+<script is:inline>
+const HASH='ee6123683515b4605b92a9e8e3db97d3517f607f4a7a95583f821371ddd017a1';
+const SESSION_KEY='prop:auth';
+async function sha256(msg){const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(msg));return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');}
+async function tryUnlock(){const pw=document.getElementById('pwInput').value;const h=await sha256(pw);if(h===HASH){sessionStorage.setItem(SESSION_KEY,'1');document.getElementById('lockScreen').style.display='none';document.getElementById('dashboard').style.display='block';}else{document.getElementById('pwErr').textContent='비밀번호가 올바르지 않습니다.';document.getElementById('pwInput').value='';}}
+document.getElementById('unlockBtn').addEventListener('click',tryUnlock);
+document.getElementById('pwInput').addEventListener('keydown',e=>{if(e.key==='Enter')tryUnlock();});
+if(sessionStorage.getItem(SESSION_KEY)==='1'){document.getElementById('lockScreen').style.display='none';document.getElementById('dashboard').style.display='block';}
+</script>
+</BaseLayout>
