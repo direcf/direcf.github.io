@@ -1,0 +1,575 @@
+---
+import propertyData from "../../../../data/property.json";
+
+const distFiles = import.meta.glob('../../../../data/districts/*.json', { eager: true });
+const districts = Object.values(distFiles).map((m) => (m as any).default || m);
+
+// 최신 스냅샷
+const snap = [...propertyData.snapshots].sort(
+  (a, b) => new Date(b.snapshotDate).getTime() - new Date(a.snapshotDate).getTime()
+)[0];
+
+function parseAeok(s: string | null | undefined): number | null {
+  if (!s || s === '—') return null;
+  const v = parseFloat(String(s).replace('억', ''));
+  return isNaN(v) ? null : v;
+}
+
+function fmt억(n: number | null, digits = 2): string {
+  if (n == null) return '—';
+  if (n >= 1) return n.toFixed(digits) + '억';
+  return Math.round(n * 10000).toLocaleString() + '만';
+}
+
+function fmtWon(n: number): string {
+  if (n >= 100000000) return (n / 100000000).toFixed(2) + '억원';
+  if (n >= 10000) return Math.round(n / 10000).toLocaleString() + '만원';
+  return n.toLocaleString() + '원';
+}
+
+const { summary, investments, loans } = snap;
+const liquidCash = summary.cash + summary.savings;
+const totalInvest = summary.investmentTotal;
+const netWorth = summary.netWorth;
+
+// 가용 자금 시나리오 (억 단위)
+const scenCash = +(liquidCash / 1e8).toFixed(2);
+const scen30 = +((liquidCash + totalInvest * 0.3) / 1e8).toFixed(2);
+const scen60 = +((liquidCash + totalInvest * 0.6) / 1e8).toFixed(2);
+
+// SK하이닉스 집중도 (KRW 단위 항목만 — eval >100,000 필터)
+const skhEval = investments
+  .filter((i) => i.eval > 100000 && (i.name.includes('SK하이닉스') || (i.name.includes('레버리지') && i.name.includes('SK'))))
+  .reduce((s, i) => s + i.eval, 0);
+const skhRatio = Math.round(skhEval / totalInvest * 100);
+
+// 신한은행 대출 만기 (스냅샷 기준으로 고정)
+const shinhan = loans.find((l) => l.bank === '신한은행' && l.maturityDate);
+const daysToMaturity = shinhan
+  ? Math.round((new Date(shinhan.maturityDate!).getTime() - new Date(snap.snapshotDate).getTime()) / (1000 * 60 * 60 * 24))
+  : null;
+
+// 목표 분석
+const needed = propertyData.goal.target - netWorth;
+const goalPct = Math.round(netWorth / propertyData.goal.target * 100);
+const skhGrowthForGoal = needed > 0 ? +(needed / skhEval * 100).toFixed(1) : 0;
+
+// 모든 단지 갭 분석 + 스코어링
+const gradeMap: Record<string, number> = { S:5, 'A+':5, A:4, 'B+':4, B:3, 'B-':3, C:2, D:1 };
+const allComplexes = (districts as any[]).flatMap((d) => {
+  const trafficScore = gradeMap[d.locationAnalysis?.traffic?.grade] || 3;
+  const attrScore = d.attractionStars || 1;
+  const supplyBonus = (d.quickStats?.supply3yr || 9999) < 1000 ? 1 : 0;
+  return (d.complexAnalysis || []).map((c: any) => {
+    const sale = parseAeok(c.sale);
+    const lease = parseAeok(c.lease);
+    const gap = (sale && lease) ? +(sale - lease).toFixed(2) : null;
+    const rate = (sale && lease) ? Math.round(lease / sale * 100) : null;
+    const score = (attrScore / 5 * 100) * 0.35 + (rate || 0) * 0.35 + (trafficScore / 5 * 100) * 0.15 + supplyBonus * 15;
+    return {
+      district: d.name, slug: d.slug,
+      attraction: d.attractionStars, attractionLabel: d.attraction,
+      tier: c.tier, name: c.name, year: c.year, size: c.size,
+      sale, lease, gap, rate, score,
+      trafficGrade: d.locationAnalysis?.traffic?.grade,
+      supply3yr: d.quickStats?.supply3yr,
+    };
+  }).filter((c: any) => c.gap !== null);
+});
+
+// 갭 기준 상위 9개에서 스코어 정렬 → TOP 6
+const topTargets: any[] = [...allComplexes]
+  .sort((a, b) => a.gap - b.gap)
+  .slice(0, 9)
+  .sort((a, b) => b.score - a.score)
+  .slice(0, 6);
+
+// 시나리오별 가능 여부
+const HASH = 'ee6123683515b4605b92a9e8e3db97d3517f607f4a7a95583f821371ddd017a1';
+const SESSION_KEY = 'prop:auth';
+---
+
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI 부동산 투자 레포트</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Pretendard', 'Apple SD Gothic Neo', sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+
+    /* ── 잠금 화면 ── */
+    #lockScreen { display:flex; align-items:center; justify-content:center; min-height:100vh; background: linear-gradient(135deg,#0f172a,#1e293b); }
+    .lock-card { background:#1e293b; border:1px solid #334155; border-radius:16px; padding:40px; width:100%; max-width:400px; text-align:center; }
+    .lock-icon { font-size:48px; margin-bottom:16px; }
+    .lock-title { font-size:20px; font-weight:700; color:#f1f5f9; margin-bottom:8px; }
+    .lock-sub { font-size:14px; color:#94a3b8; margin-bottom:24px; }
+    .lock-input { width:100%; padding:12px 16px; background:#0f172a; border:1px solid #334155; border-radius:8px; color:#f1f5f9; font-size:16px; text-align:center; margin-bottom:12px; outline:none; }
+    .lock-input:focus { border-color:#6366f1; }
+    .lock-btn { width:100%; padding:12px; background:#6366f1; color:#fff; border:none; border-radius:8px; font-size:16px; font-weight:600; cursor:pointer; }
+    .lock-btn:hover { background:#4f46e5; }
+    .lock-err { color:#f87171; font-size:13px; margin-top:8px; display:none; }
+
+    /* ── 대시보드 ── */
+    #dashboard { display:none; max-width:1100px; margin:0 auto; padding:24px 16px 60px; }
+
+    .report-header { margin-bottom:32px; border-bottom:1px solid #1e3a5f; padding-bottom:24px; }
+    .report-badge { display:inline-block; padding:4px 12px; background:#1e3a5f; color:#60a5fa; border-radius:20px; font-size:12px; font-weight:600; letter-spacing:.05em; margin-bottom:12px; }
+    .report-title { font-size:28px; font-weight:800; color:#f1f5f9; line-height:1.3; margin-bottom:8px; }
+    .report-meta { font-size:13px; color:#64748b; }
+
+    /* stat cards */
+    .stat-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:16px; margin-bottom:24px; }
+    .stat-card { background:#1e293b; border:1px solid #334155; border-radius:12px; padding:20px; }
+    .stat-label { font-size:12px; color:#64748b; font-weight:500; margin-bottom:6px; text-transform:uppercase; letter-spacing:.05em; }
+    .stat-value { font-size:24px; font-weight:800; color:#f1f5f9; margin-bottom:4px; }
+    .stat-sub { font-size:12px; color:#94a3b8; }
+    .stat-goal { color:#a78bfa; }
+    .stat-warn { color:#fbbf24; }
+    .stat-ok { color:#34d399; }
+    .stat-bad { color:#f87171; }
+
+    /* 경고 배너 */
+    .alert-row { display:flex; flex-direction:column; gap:10px; margin-bottom:28px; }
+    .alert { display:flex; align-items:flex-start; gap:12px; padding:14px 16px; border-radius:10px; font-size:14px; line-height:1.5; }
+    .alert-warn { background:#451a03; border:1px solid #92400e; }
+    .alert-info { background:#0c1a2e; border:1px solid #1d4ed8; }
+    .alert-danger { background:#3b0764; border:1px solid #7c3aed; }
+    .alert-icon { font-size:18px; flex-shrink:0; }
+    .alert-body strong { color:#f1f5f9; display:block; margin-bottom:2px; }
+    .alert-body span { color:#94a3b8; }
+
+    /* 시나리오 */
+    .section-title { font-size:18px; font-weight:700; color:#f1f5f9; margin-bottom:16px; display:flex; align-items:center; gap:8px; }
+    .section-title::before { content:''; display:block; width:4px; height:20px; background:#6366f1; border-radius:2px; }
+
+    .scen-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; margin-bottom:32px; }
+    .scen-card { background:#1e293b; border:1px solid #334155; border-radius:12px; padding:20px; }
+    .scen-card.active { border-color:#6366f1; background:#1e1b4b; }
+    .scen-label { font-size:12px; color:#64748b; font-weight:600; text-transform:uppercase; letter-spacing:.05em; margin-bottom:8px; }
+    .scen-amount { font-size:26px; font-weight:800; color:#f1f5f9; margin-bottom:8px; }
+    .scen-desc { font-size:12px; color:#94a3b8; margin-bottom:12px; line-height:1.5; }
+    .scen-bar { height:8px; background:#0f172a; border-radius:4px; overflow:hidden; margin-bottom:4px; }
+    .scen-fill { height:100%; border-radius:4px; }
+    .scen-possible { font-size:11px; font-weight:600; margin-top:6px; }
+    .scen-possible.ok { color:#34d399; }
+    .scen-possible.partial { color:#fbbf24; }
+    .scen-possible.no { color:#f87171; }
+
+    /* 추천 단지 테이블 */
+    .target-section { margin-bottom:32px; }
+    .target-table { width:100%; border-collapse:collapse; }
+    .target-table th { font-size:11px; color:#64748b; font-weight:600; text-transform:uppercase; letter-spacing:.05em; padding:10px 12px; text-align:left; border-bottom:1px solid #334155; }
+    .target-table td { padding:14px 12px; border-bottom:1px solid #1e293b; font-size:13px; vertical-align:middle; }
+    .target-table tr:hover td { background:#1e293b40; }
+    .rank-badge { display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:50%; font-size:11px; font-weight:800; }
+    .rank-1 { background:#fbbf24; color:#000; }
+    .rank-2 { background:#94a3b8; color:#000; }
+    .rank-3 { background:#b45309; color:#fff; }
+    .rank-n { background:#1e293b; color:#64748b; border:1px solid #334155; }
+    .tier-badge { display:inline-block; padding:2px 8px; border-radius:4px; font-size:10px; font-weight:700; }
+    .tier-대장 { background:#1e3a5f; color:#60a5fa; }
+    .tier-중위 { background:#1a2e1a; color:#4ade80; }
+    .tier-팔로우 { background:#2e1a2e; color:#c084fc; }
+    .gap-bar-wrap { width:90px; }
+    .gap-bar { height:6px; background:#0f172a; border-radius:3px; overflow:hidden; display:flex; }
+    .gap-bar-lease { height:100%; background:#60a5fa; }
+    .gap-bar-gap { height:100%; background:#fbbf24; }
+    .gap-tag { display:inline-block; margin-top:4px; padding:1px 6px; border-radius:3px; font-size:10px; font-weight:700; }
+    .gap-tag.ok { background:#052e16; color:#4ade80; }
+    .gap-tag.caution { background:#451a03; color:#fbbf24; }
+    .gap-tag.bad { background:#3b0764; color:#f87171; }
+    .scen-dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:4px; }
+    .dot-green { background:#34d399; }
+    .dot-yellow { background:#fbbf24; }
+    .dot-red { background:#f87171; }
+
+    /* 전문가 의견 */
+    .expert-section { margin-bottom:32px; }
+    .expert-box { background:#1e293b; border:1px solid #334155; border-radius:12px; padding:28px; }
+    .expert-header { display:flex; align-items:center; gap:12px; margin-bottom:20px; }
+    .expert-avatar { width:44px; height:44px; background:linear-gradient(135deg,#6366f1,#a855f7); border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:20px; flex-shrink:0; }
+    .expert-name { font-weight:700; color:#f1f5f9; font-size:15px; }
+    .expert-title { font-size:12px; color:#94a3b8; }
+    .expert-body p { font-size:14px; color:#cbd5e1; line-height:1.8; margin-bottom:14px; }
+    .expert-body p:last-child { margin-bottom:0; }
+    .expert-body strong { color:#f1f5f9; }
+    .expert-highlight { background:#1e3a5f; border-left:3px solid #6366f1; padding:12px 16px; border-radius:0 8px 8px 0; margin:16px 0; font-size:14px; color:#93c5fd; line-height:1.7; }
+
+    /* 리스크 */
+    .risk-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:16px; margin-bottom:32px; }
+    .risk-card { background:#1e293b; border:1px solid #334155; border-radius:12px; padding:20px; }
+    .risk-level { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; margin-bottom:8px; }
+    .risk-high { color:#f87171; }
+    .risk-mid { color:#fbbf24; }
+    .risk-low { color:#34d399; }
+    .risk-title { font-size:15px; font-weight:700; color:#f1f5f9; margin-bottom:8px; }
+    .risk-desc { font-size:13px; color:#94a3b8; line-height:1.6; }
+
+    /* 실행 타임라인 */
+    .timeline { margin-bottom:32px; }
+    .tl-item { display:flex; gap:16px; margin-bottom:20px; }
+    .tl-left { display:flex; flex-direction:column; align-items:center; flex-shrink:0; }
+    .tl-dot { width:14px; height:14px; border-radius:50%; flex-shrink:0; }
+    .tl-dot-now { background:#6366f1; box-shadow:0 0 0 4px #6366f120; }
+    .tl-dot-soon { background:#fbbf24; }
+    .tl-dot-future { background:#334155; border:2px solid #475569; }
+    .tl-line { width:2px; flex:1; background:#1e3a5f; margin:4px auto; }
+    .tl-right { padding-bottom:8px; }
+    .tl-period { font-size:11px; color:#64748b; font-weight:600; margin-bottom:4px; }
+    .tl-action { font-size:14px; font-weight:700; color:#f1f5f9; margin-bottom:4px; }
+    .tl-detail { font-size:13px; color:#94a3b8; line-height:1.6; }
+
+    /* 반응형 */
+    @media (max-width:640px) {
+      .report-title { font-size:22px; }
+      .target-table th:nth-child(4), .target-table td:nth-child(4) { display:none; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- 잠금 화면 -->
+<div id="lockScreen">
+  <div class="lock-card">
+    <div class="lock-icon">🔒</div>
+    <div class="lock-title">AI 투자 레포트</div>
+    <div class="lock-sub">개인 자산 연동 분석 — 비밀번호를 입력하세요</div>
+    <input type="password" id="pwInput" class="lock-input" placeholder="비밀번호" />
+    <button class="lock-btn" onclick="tryUnlock()">분석 레포트 열기</button>
+    <div class="lock-err" id="lockErr">비밀번호가 올바르지 않습니다</div>
+  </div>
+</div>
+
+<!-- 대시보드 -->
+<div id="dashboard">
+  <!-- 헤더 -->
+  <div class="report-header">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;">
+      <div>
+        <div class="report-badge">AI REAL ESTATE ANALYST</div>
+        <div class="report-title">서울 10개 구 갭투자<br>개인 맞춤 분석 레포트</div>
+        <div class="report-meta">
+          📅 분석 기준일: {snap.snapshotDate} &nbsp;|&nbsp; 🏙 분석 대상: 서울 10개 구 30개 단지
+        </div>
+      </div>
+      <a href="/property/region-analysis/" style="font-size:13px;color:#64748b;text-decoration:none;margin-top:4px;">← 지역 분석 목록</a>
+    </div>
+  </div>
+
+  <!-- 자산 현황 -->
+  <div class="stat-grid">
+    <div class="stat-card">
+      <div class="stat-label">순자산 (Net Worth)</div>
+      <div class="stat-value stat-ok">{fmtWon(netWorth)}</div>
+      <div class="stat-sub">목표 5억 대비 {goalPct}% 달성</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">현금 + 적금</div>
+      <div class="stat-value stat-warn">{fmtWon(liquidCash)}</div>
+      <div class="stat-sub">즉시 가용 — 투자자산 대비 매우 낮음</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">투자자산 (주식)</div>
+      <div class="stat-value">{fmtWon(totalInvest)}</div>
+      <div class="stat-sub">수익 +{summary.investmentGainRate.toFixed(1)}% (원가 대비)</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">총 부채 / 월 이자</div>
+      <div class="stat-value stat-warn">{fmtWon(summary.totalDebt)}</div>
+      <div class="stat-sub">월 {Math.round(summary.monthlyInterest / 10000).toLocaleString()}만원 이자</div>
+    </div>
+  </div>
+
+  <!-- 경고 배너 -->
+  <div class="alert-row">
+    <div class="alert alert-danger">
+      <div class="alert-icon">⚡</div>
+      <div class="alert-body">
+        <strong>SK하이닉스 단일종목 집중도 {skhRatio}%</strong>
+        <span>투자자산 {fmtWon(totalInvest)} 중 {fmtWon(Math.round(skhEval))}이 SK하이닉스 포지션입니다. 반도체 업황 급변 시 순자산 전체가 흔들릴 수 있는 구조입니다.</span>
+      </div>
+    </div>
+    {daysToMaturity !== null && (
+      <div class="alert alert-warn">
+        <div class="alert-icon">⏰</div>
+        <div class="alert-body">
+          <strong>신한은행 1억 대출 만기 {daysToMaturity}일 후 ({shinhan!.maturityDate})</strong>
+          <span>만기일시상환 대출 — 만기 전 재연장(롤오버) 또는 상환 결정 필요. 부동산 투자 타이밍과 충돌할 수 있어 사전 계획이 중요합니다.</span>
+        </div>
+      </div>
+    )}
+    <div class="alert alert-info">
+      <div class="alert-icon">🎯</div>
+      <div class="alert-body">
+        <strong>목표 5억까지 {fmtWon(needed)} 부족 (2027-02-28 마감)</strong>
+        <span>현재 페이스: SK하이닉스 포지션({fmtWon(Math.round(skhEval))})이 {skhGrowthForGoal}% 추가 상승하면 목표 도달 가능. 단, 부동산 투자 시 자산 구성 변경 고려 필요.</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 투자 가능 자금 시나리오 -->
+  <div class="section-title">갭투자 가능 자금 시나리오</div>
+  <div class="scen-grid" style="margin-bottom:32px;">
+    <div class="scen-card">
+      <div class="scen-label">시나리오 A — 보수적</div>
+      <div class="scen-amount">{fmt억(scenCash)}</div>
+      <div class="scen-desc">현금 + 적금만 활용. 주식 매도 없음. 현재 상태에서 즉시 동원 가능한 최소 자금.</div>
+      <div class="scen-bar"><div class="scen-fill" style={`width:${Math.min(scenCash/4*100,100)}%;background:#64748b;`}></div></div>
+      <div class="scen-possible no">✗ 서울 갭투자 불가 (최소 1억↑ 필요)</div>
+    </div>
+    <div class="scen-card active">
+      <div class="scen-label">시나리오 B — 중간 ★추천</div>
+      <div class="scen-amount">{fmt억(scen30)}</div>
+      <div class="scen-desc">투자자산 30% 청산 (SK하이닉스 일부 차익실현) + 현금. SK하이닉스 차익 약 {fmtWon(Math.round(totalInvest * 0.3))} 매도 기준.</div>
+      <div class="scen-bar"><div class="scen-fill" style={`width:${Math.min(scen30/4*100,100)}%;background:#6366f1;`}></div></div>
+      <div class="scen-possible partial">△ 최소한의 진입 가능권 (구체 단지 분석 필요)</div>
+    </div>
+    <div class="scen-card">
+      <div class="scen-label">시나리오 C — 공격적</div>
+      <div class="scen-amount">{fmt억(scen60)}</div>
+      <div class="scen-desc">투자자산 60% 청산. SK하이닉스 비중을 40% 이하로 낮추며 자금 확보. 포트폴리오 리밸런싱 효과도 있음.</div>
+      <div class="scen-bar"><div class="scen-fill" style={`width:${Math.min(scen60/4*100,100)}%;background:#10b981;`}></div></div>
+      <div class="scen-possible ok">✓ 노원·도봉 핵심 단지 진입 가능</div>
+    </div>
+  </div>
+
+  <!-- 추천 단지 TOP 6 -->
+  <div class="target-section">
+    <div class="section-title">갭투자 최적 타겟 단지 TOP 6</div>
+    <div style="font-size:13px;color:#64748b;margin-bottom:16px;">
+      서울 10개 구 30개 단지 중 ① 갭 규모 ② 투자 매력도 ③ 교통등급 ④ 공급 부족도를 종합 스코어링한 결과입니다.
+    </div>
+    <div style="overflow-x:auto;">
+      <table class="target-table">
+        <thead>
+          <tr>
+            <th>순위</th>
+            <th>단지</th>
+            <th>매매 / 전세</th>
+            <th>전세가율</th>
+            <th>갭 필요금액</th>
+            <th>시나리오</th>
+          </tr>
+        </thead>
+        <tbody>
+          {topTargets.map((c, i) => {
+            const rankClass = i === 0 ? 'rank-1' : i === 1 ? 'rank-2' : i === 2 ? 'rank-3' : 'rank-n';
+            const tierClass = 'tier-' + c.tier;
+            const gapTagClass = c.rate >= 65 ? 'ok' : c.rate >= 50 ? 'caution' : 'bad';
+            const canB = c.gap <= scen30;
+            const canC = c.gap <= scen60;
+            return (
+              <tr>
+                <td><span class={`rank-badge ${rankClass}`}>{i + 1}</span></td>
+                <td>
+                  <div style="font-weight:700;color:#f1f5f9;margin-bottom:3px;">{c.name}</div>
+                  <div style="font-size:11px;color:#64748b;">
+                    <a href={`/property/region-analysis/${c.slug}/`} style="color:#6366f1;text-decoration:none;">{c.district}</a>
+                    &nbsp;<span class={`tier-badge ${tierClass}`}>{c.tier}</span>
+                    &nbsp;{c.year}년 / {c.size}
+                  </div>
+                </td>
+                <td>
+                  <div style="font-size:13px;color:#f1f5f9;">{fmt억(c.sale)}</div>
+                  <div style="font-size:12px;color:#94a3b8;">전세 {fmt억(c.lease)}</div>
+                </td>
+                <td>
+                  <div class="gap-bar-wrap">
+                    <div class="gap-bar">
+                      <div class="gap-bar-lease" style={`width:${c.rate}%;`}></div>
+                      <div class="gap-bar-gap" style={`width:${100 - c.rate}%;`}></div>
+                    </div>
+                    <div class={`gap-tag ${gapTagClass}`}>{c.rate}%</div>
+                  </div>
+                </td>
+                <td>
+                  <div style="font-size:15px;font-weight:800;color:#fbbf24;">{fmt억(c.gap)}</div>
+                  <div style="font-size:11px;color:#64748b;">교통 {c.trafficGrade} / 공급 {(c.supply3yr || 0).toLocaleString()}세대</div>
+                </td>
+                <td>
+                  {canB ? (
+                    <span style="font-size:11px;font-weight:700;color:#6366f1;">B 가능</span>
+                  ) : canC ? (
+                    <span style="font-size:11px;font-weight:700;color:#10b981;">C 가능</span>
+                  ) : (
+                    <span style="font-size:11px;color:#64748b;">추가 자금</span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 전문가 의견 -->
+  <div class="expert-section">
+    <div class="section-title">AI 전문가 종합 의견</div>
+    <div class="expert-box">
+      <div class="expert-header">
+        <div class="expert-avatar">🏢</div>
+        <div>
+          <div class="expert-name">AI 부동산 전문 애널리스트</div>
+          <div class="expert-title">자산현황 기반 매수 추천 분석 ({snap.snapshotDate} 기준)</div>
+        </div>
+      </div>
+      <div class="expert-body">
+        <p>
+          <strong>현재 포트폴리오 진단:</strong> 순자산 {fmtWon(netWorth)} 중 투자자산({fmtWon(totalInvest)})의 {skhRatio}%가 SK하이닉스에 집중되어 있습니다. 부동산 직접 보유({fmtWon(summary.realEstate)})를 제외하면 현금성 자산은 {fmtWon(liquidCash)}에 불과해, <strong>즉시 동원 가능한 갭투자 실탄이 거의 없는 상태</strong>입니다. 지금 당장의 부동산 매수는 SK하이닉스 일부 청산 없이는 구조적으로 불가능합니다.
+        </p>
+        <div class="expert-highlight">
+          💡 핵심 전략: <strong>SK하이닉스 차익 일부 실현 → 노원구 중위 단지 갭투자 진입</strong><br>
+          타이밍: 신한은행 1억 대출 만기({shinhan!.maturityDate}) 전인 2026년 10~11월이 최적 진입 윈도우
+        </div>
+        <p>
+          <strong>1순위 추천 — {topTargets[0]?.district} {topTargets[0]?.name}:</strong> 갭 {fmt억(topTargets[0]?.gap)}으로 분석 대상 30개 단지 중 진입 장벽이 가장 낮습니다. GTX-C 및 동북선 경전철 더블 호재, 중계동 학군(A등급) 환경, 75% 전세가율(전세금이 매매가의 75%라 갭이 작음)이 삼박자를 이룹니다. 시나리오 C(투자자산 60% 청산)로 {fmt억(scen60)} 확보 시 {fmt억(topTargets[0]?.gap)} 갭을 커버할 수 있습니다.
+        </p>
+        <p>
+          <strong>2순위 — {topTargets[1]?.district} {topTargets[1]?.name}:</strong> 갭 {fmt억(topTargets[1]?.gap)}으로 1순위보다 진입이 소폭 어렵지만, 전세가율 {topTargets[1]?.rate}%와 {topTargets[1]?.trafficGrade}급 교통(노원 동북선+GTX-C)이 강점입니다. 신축 가치와 학군이 1순위 대비 우위인 단지로, 자금 여유가 조금 더 있다면 이 단지가 장기 보유 관점에서 더 유리합니다.
+        </p>
+        <p>
+          <strong>매수 타이밍 고려사항:</strong> 신한은행 1억 만기일시상환 대출이 {daysToMaturity}일 후 도래합니다. 이 시점에 ① 대출 재연장(금리 재산정), ② 일부 상환 후 잔액 연장, ③ 타 은행 대환 등 세 가지 선택지가 있습니다. 부동산 추가 취득 시 DSR(총부채원리금상환비율) 규제로 추가 담보대출이 제한될 수 있으므로, <strong>만기 최소 3개월 전</strong>에 은행과 상담을 권장합니다.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 리스크 요인 -->
+  <div class="section-title">핵심 리스크 요인</div>
+  <div class="risk-grid" style="margin-bottom:32px;">
+    <div class="risk-card">
+      <div class="risk-level risk-high">● HIGH RISK</div>
+      <div class="risk-title">SK하이닉스 집중 리스크</div>
+      <div class="risk-desc">투자자산의 {skhRatio}%가 단일 종목. 반도체 업황 악화 또는 HBM 모멘텀 둔화 시 순자산 {fmtWon(netWorth)}이 급격히 훼손될 수 있음. 부동산 투자 전 분산이 선행되어야 함.</div>
+    </div>
+    <div class="risk-card">
+      <div class="risk-level risk-high">● HIGH RISK</div>
+      <div class="risk-title">대출 만기 충돌 위험</div>
+      <div class="risk-desc">신한은행 1억 ({shinhan!.maturityDate} 만기)과 부동산 취득 타이밍이 겹칠 경우 유동성 압박. 부동산 취득 전에 대출 재연장을 반드시 확정해야 함.</div>
+    </div>
+    <div class="risk-card">
+      <div class="risk-level risk-mid">● MID RISK</div>
+      <div class="risk-title">서울 외곽 공급 압력</div>
+      <div class="risk-desc">노원·도봉은 GTX-C 미개통 상태에서 전세가 하락 시 역전세 리스크 존재. 전세가율이 높은 단지일수록 역전세 발생 시 갭투자 자금 추가 투입 가능성 있음.</div>
+    </div>
+    <div class="risk-card">
+      <div class="risk-level risk-mid">● MID RISK</div>
+      <div class="risk-title">DSR·취득세 부담</div>
+      <div class="risk-desc">1주택자 추가 취득 시 취득세 중과(일반 1~3% → 중과 8~12%). 무주택 여부에 따라 세금 구조가 크게 달라짐. 현 부동산({fmtWon(summary.realEstate)}) 자가 여부 확인 필수.</div>
+    </div>
+    <div class="risk-card">
+      <div class="risk-level risk-low">● LOW RISK</div>
+      <div class="risk-title">회사 저금리 대출 유지</div>
+      <div class="risk-desc">회사 대출 1.2% 저금리 구조는 현재 가장 유리한 부채. 조기 상환보다 유지가 유리. 단, 퇴직 시 즉시 상환 조건이라면 해당 부분도 사전 확인 필요.</div>
+    </div>
+    <div class="risk-card">
+      <div class="risk-level risk-low">● LOW RISK</div>
+      <div class="risk-title">목표 미달 리스크</div>
+      <div class="risk-desc">5억 목표까지 {fmtWon(needed)} 부족. SK하이닉스 {skhGrowthForGoal}% 추가 상승이 필요한데, 부동산 투자로 자금을 이전하면 주식 상승 수혜를 그만큼 놓치게 됨. 기회비용 고려 필요.</div>
+    </div>
+  </div>
+
+  <!-- 실행 타임라인 -->
+  <div class="section-title">추천 실행 타임라인</div>
+  <div class="timeline">
+    <div class="tl-item">
+      <div class="tl-left">
+        <div class="tl-dot tl-dot-now"></div>
+        <div class="tl-line"></div>
+      </div>
+      <div class="tl-right">
+        <div class="tl-period">현재 — 2026년 7~8월</div>
+        <div class="tl-action">🔍 사전 준비 단계</div>
+        <div class="tl-detail">① 현 보유 부동산({fmtWon(summary.realEstate)}) 자가/전세 여부에 따른 세금 구조 확인<br>② 신한은행 대출 재연장 조건 사전 협의 시작<br>③ 노원구 중계건영2차 / 삼익포레스트 현장 방문 및 전세가 추이 모니터링</div>
+      </div>
+    </div>
+    <div class="tl-item">
+      <div class="tl-left">
+        <div class="tl-dot tl-dot-soon"></div>
+        <div class="tl-line"></div>
+      </div>
+      <div class="tl-right">
+        <div class="tl-period">2026년 9~10월</div>
+        <div class="tl-action">💰 SK하이닉스 차익 실현 결정</div>
+        <div class="tl-detail">SK하이닉스 NH 포지션에서 약 {fmtWon(Math.round(totalInvest * 0.3))} 분할 매도 (시나리오 B)<br>→ 가용 자금 약 {fmt억(scen30)} 확보<br>→ 만기 대출 상환 여부 최종 결정</div>
+      </div>
+    </div>
+    <div class="tl-item">
+      <div class="tl-left">
+        <div class="tl-dot tl-dot-soon"></div>
+        <div class="tl-line"></div>
+      </div>
+      <div class="tl-right">
+        <div class="tl-period">2026년 10~11월</div>
+        <div class="tl-action">🏠 갭투자 진입 (최적 윈도우)</div>
+        <div class="tl-detail">신한은행 대출 만기 3개월 전, 취득세 납부 여력 확보된 시점<br>타겟: 노원구 {topTargets[0]?.name} (갭 {fmt억(topTargets[0]?.gap)})<br>전세 계약 승계 또는 신규 전세입자 모집</div>
+      </div>
+    </div>
+    <div class="tl-item">
+      <div class="tl-left">
+        <div class="tl-dot tl-dot-future"></div>
+        <div class="tl-line"></div>
+      </div>
+      <div class="tl-right">
+        <div class="tl-period">2027년 1~2월</div>
+        <div class="tl-action">📋 신한은행 대출 만기 처리</div>
+        <div class="tl-detail">1억 만기일시상환 → 재연장 or 타 은행 대환 대출<br>목표({propertyData.goal.deadline} 마감) 달성 여부 최종 점검<br>부동산 취득세·보유세 반영한 순자산 재계산</div>
+      </div>
+    </div>
+    <div class="tl-item">
+      <div class="tl-left">
+        <div class="tl-dot tl-dot-future"></div>
+      </div>
+      <div class="tl-right">
+        <div class="tl-period">2027년 이후</div>
+        <div class="tl-action">🚀 GTX-C 수혜 구간 진입</div>
+        <div class="tl-detail">GTX-C 노원구 구간 개통(2029년 예정) 전 2~3년 선점 효과<br>전세가 상승 시 갭 축소 → 조기 매도 또는 임대 유지 선택<br>남은 SK하이닉스 포지션과 부동산 투 트랙 자산 운용</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="text-align:center;padding:24px;color:#334155;font-size:12px;">
+    본 레포트는 공개 데이터({snap.snapshotDate} 기준)와 AI 분석을 결합한 참고 자료입니다. 실제 투자 결정 전 전문 세무사·공인중개사 상담을 권장합니다.
+  </div>
+</div>
+
+<!-- Script 1: 인증 -->
+<script is:inline>
+const HASH = 'ee6123683515b4605b92a9e8e3db97d3517f607f4a7a95583f821371ddd017a1';
+const SESSION_KEY = 'prop:auth';
+
+async function sha256(msg) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(msg));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+function showDashboard() {
+  document.getElementById('lockScreen').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'block';
+}
+
+async function tryUnlock() {
+  const pw = document.getElementById('pwInput').value;
+  const h = await sha256(pw);
+  if (h === HASH) {
+    sessionStorage.setItem(SESSION_KEY, '1');
+    showDashboard();
+  } else {
+    document.getElementById('lockErr').style.display = 'block';
+  }
+}
+
+document.getElementById('pwInput').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') tryUnlock();
+});
+
+if (sessionStorage.getItem(SESSION_KEY) === '1') {
+  showDashboard();
+}
+</script>
+
+</body>
+</html>
