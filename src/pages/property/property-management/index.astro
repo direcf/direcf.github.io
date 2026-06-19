@@ -289,8 +289,8 @@ const analyzedProps = Object.values(propFiles).map((m: any) => m.default || m);
         <div style="font-size:9px;font-weight:700;color:var(--muted);letter-spacing:1.4px;text-transform:uppercase;margin-bottom:10px;margin-top:4px">투자 수익</div>
         <div id="s-ig" style="font-size:26px;font-weight:900;letter-spacing:-1px"></div>
         <div id="s-ig-sub" style="font-size:12px;color:var(--muted);margin-top:4px"></div>
-        <div style="position:relative;height:96px;margin-top:10px;overflow:visible"><div id="retGauge"></div></div>
-        <div id="retGaugeLbl" style="text-align:center;margin-top:2px;font-size:11px;color:var(--muted)"></div>
+        <div style="margin-top:10px"><div id="retGauge"></div></div>
+        <div id="retGaugeLbl" style="text-align:center;margin-top:4px;font-size:11px;color:var(--muted)"></div>
         <div id="cagrRow" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:11px;color:var(--muted)"></div>
       </div>
     </div>
@@ -496,20 +496,24 @@ function buildRetGauge(rate) {
   const el = document.getElementById('retGauge'); if (!el) return;
   const c = CC(), col = rate >= 0 ? c.pos : c.neg;
   const p = Math.min(Math.max((rate + 50) / 150, 0), 1);
-  const R = 70, cx = 100, cy = 78;
+  const R = 68, cx = 100, cy = 70;
   const len = +(Math.PI * R).toFixed(2);
   const dash = +(len * p).toFixed(2);
-  const lbl = (rate >= 0 ? '+' : '') + rate.toFixed(1) + '%';
-  el.innerHTML = `<svg viewBox="0 0 200 84" style="width:100%;display:block">
+  // dot position on arc (fraction p from left end)
+  const dotA = Math.PI * (1 - p);
+  const dotX = +(cx + R * Math.cos(dotA)).toFixed(1);
+  const dotY = +(cy - R * Math.sin(dotA)).toFixed(1);
+  el.innerHTML = `<svg viewBox="0 0 200 84" style="width:100%;max-height:84px;display:block">
     <path d="M${cx-R} ${cy} A${R} ${R} 0 0 1 ${cx+R} ${cy}"
-      fill="none" stroke="${c.soft}" stroke-width="12" stroke-linecap="round"/>
+      fill="none" stroke="${c.soft}" stroke-width="13" stroke-linecap="round"/>
     <path d="M${cx-R} ${cy} A${R} ${R} 0 0 1 ${cx+R} ${cy}"
-      fill="none" stroke="${col}" stroke-width="12" stroke-linecap="round"
+      fill="none" stroke="${col}" stroke-width="13" stroke-linecap="round"
       stroke-dasharray="${dash} ${len}"/>
-    <text x="${cx}" y="${cy-20}" text-anchor="middle" dominant-baseline="middle"
-      fill="${col}" font-size="22" font-weight="900" font-family="Pretendard,sans-serif">${lbl}</text>
-    <text x="${cx}" y="${cy-4}" text-anchor="middle" dominant-baseline="middle"
-      fill="${c.text}" font-size="9" font-family="Pretendard,sans-serif" opacity="0.5">투자수익률</text>
+    <circle cx="${dotX}" cy="${dotY}" r="5.5" fill="${c.bg}" stroke="${col}" stroke-width="2.5"/>
+    <text x="${cx-R}" y="${cy+13}" text-anchor="middle"
+      fill="${c.text}" font-size="8" font-family="Pretendard,sans-serif" opacity="0.38">−50%</text>
+    <text x="${cx+R}" y="${cy+13}" text-anchor="middle"
+      fill="${c.text}" font-size="8" font-family="Pretendard,sans-serif" opacity="0.38">+100%</text>
   </svg>`;
 }
 function buildTrend() {
@@ -992,7 +996,8 @@ function render(idx) {
   document.getElementById('s-ig').innerHTML = `<span style="color:${isPos ? 'var(--fp)' : 'var(--fn)'}">${sm.investmentGain >= 0 ? '+' : ''}${fW(sm.investmentGain)}</span>`;
   document.getElementById('s-ig-sub').innerHTML = `수익률 <span style="font-weight:700;color:${isPos ? 'var(--fp)' : 'var(--fn)'}">${fP(sm.investmentGainRate || 0)}</span>`;
   buildRetGauge(parseFloat(sm.investmentGainRate) || 0);
-  document.getElementById('retGaugeLbl').innerHTML = `<span style="color:var(--muted)">총 손익 <strong style="color:${isPos ? 'var(--fp)' : 'var(--fn)'}">${isPos ? '+' : ''}${fW(sm.investmentGain)}</strong></span>`;
+  const invCost = sm.investmentTotal - sm.investmentGain;
+  document.getElementById('retGaugeLbl').innerHTML = `<span style="color:var(--muted)">원금 <strong style="color:var(--text-2)">${fW(invCost)}</strong> · 평가 <strong style="color:${isPos ? 'var(--fp)' : 'var(--fn)'}">${fW(sm.investmentTotal)}</strong></span>`;
   const f0 = data.snapshots[0];
   const mon = Math.max(1, Math.round((new Date(s.snapshotDate) - new Date(f0.snapshotDate)) / (864e5 * 30.5)));
   const cagrEl = document.getElementById('cagrRow');
