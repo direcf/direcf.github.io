@@ -1,31 +1,233 @@
 ---
 import BaseLayout from "../../../layouts/BaseLayout.astro";
+
+const files = import.meta.glob('../../../data/properties/*.json', { eager: true });
+const properties = Object.values(files).map((m: any) => m.default || m)
+  .sort((a: any, b: any) => new Date(b.analysisDate).getTime() - new Date(a.analysisDate).getTime());
+
+function scoreColor(s: number) {
+  if (s >= 5) return '#4fc3f7';
+  if (s >= 4) return '#34d399';
+  if (s >= 3) return '#fbbf24';
+  return '#f87171';
+}
+function trendIcon(t: string) {
+  if (t === '상승') return '↑';
+  if (t === '하락') return '↓';
+  return '→';
+}
+function trendColor(t: string) {
+  if (t === '상승') return '#34d399';
+  if (t === '하락') return '#f87171';
+  return '#7dd8ff';
+}
+function tierBadge(tier: string) {
+  if (tier === '대장') return { bg: 'rgba(99,102,241,0.18)', border: 'rgba(99,102,241,0.4)', color: '#a5b4fc' };
+  if (tier === '중위') return { bg: 'rgba(52,211,153,0.15)', border: 'rgba(52,211,153,0.3)', color: '#6ee7b7' };
+  return { bg: 'rgba(79,195,247,0.1)', border: 'rgba(79,195,247,0.25)', color: '#7dd8ff' };
+}
+
+const totalCount = properties.length;
+const avgGapRate = properties.length
+  ? Math.round(properties.reduce((s: number, p: any) => s + (p.gapRate || 0), 0) / properties.length)
+  : 0;
+const avgScore = properties.length
+  ? (properties.reduce((s: number, p: any) => s + (p.investmentScore || 0), 0) / properties.length).toFixed(1)
+  : '—';
+const risingCount = properties.filter((p: any) => p.trend === '상승').length;
 ---
+
 <BaseLayout title="매물 분석" activeSlug="property" crumbs={[{label:"Personal"},{label:"Property",href:"/property/"},{label:"매물 분석"}]}>
+
 <style>
-#prop-root{background:var(--bg);color:var(--text);min-height:100vh;padding:28px 32px 56px;}
-#lockScreen{position:fixed;inset:0;z-index:9999;background:radial-gradient(ellipse at 30% 40%,rgba(20,60,130,.6),transparent 65%),radial-gradient(ellipse at 75% 70%,rgba(10,40,100,.45),transparent 60%),#060d1e;display:flex;align-items:center;justify-content:center;}
-.lock-card{background:rgba(12,28,65,.88);border:1px solid rgba(130,200,255,.35);border-radius:24px;padding:52px 48px;width:400px;text-align:center;backdrop-filter:blur(24px);box-shadow:0 0 80px rgba(50,120,255,.15),0 8px 48px rgba(0,0,0,.7);position:relative;overflow:hidden;}
-.lock-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(130,200,255,.7),transparent);}
-.lock-icon{font-size:48px;margin-bottom:20px;filter:drop-shadow(0 0 14px rgba(80,170,255,.6));}
-.lock-title{font-size:20px;font-weight:700;color:#c4e4ff;margin-bottom:6px;}
-.lock-sub{font-size:13px;color:#92bfdf;margin-bottom:32px;}
-.lock-input{width:100%;padding:14px 18px;box-sizing:border-box;background:rgba(8,22,58,.9);border:1px solid rgba(130,200,255,.35);border-radius:12px;color:#d8eeff;font-size:16px;outline:none;text-align:center;letter-spacing:3px;transition:border-color .2s,box-shadow .2s;}
-.lock-input:focus{border-color:#50aaff;box-shadow:0 0 0 3px rgba(80,170,255,.2);}
-.lock-btn{width:100%;margin-top:14px;padding:14px;background:linear-gradient(135deg,#1a60d0,#0d3d9e);border:1px solid rgba(80,170,255,.4);border-radius:12px;color:#c4e4ff;font-size:15px;font-weight:700;cursor:pointer;transition:all .2s;letter-spacing:.5px;}
-.lock-btn:hover{background:linear-gradient(135deg,#2070e0,#1050b8);transform:translateY(-1px);box-shadow:0 4px 24px rgba(30,100,255,.4);}
-.lock-err{font-size:12px;color:#f87171;margin-top:10px;min-height:18px;}
-.lock-hint{font-size:11px;color:#6a96ba;margin-top:20px;}
-#dashboard{display:none;}
+/* ── FROST BLUE PALETTE ─────────────────────────────────────── */
+:root {
+  --fb-bg:    #030b1a;
+  --fb-card:  rgba(5,18,45,0.88);
+  --fb-card2: rgba(8,22,55,0.92);
+  --fb-border: rgba(79,195,247,0.13);
+  --fb-border2: rgba(79,195,247,0.22);
+  --fb-glow:  rgba(79,195,247,0.08);
+  --fb-400:   #4fc3f7;
+  --fb-300:   #7dd8ff;
+  --fb-200:   #b3e8ff;
+  --fb-100:   #e0f7ff;
+  --fb-muted: #4a7a9a;
+  --fb-text:  #c8e8ff;
+  --fb-up:    #34d399;
+  --fb-dn:    #f87171;
+  --fb-gold:  #fbbf24;
+}
+/* ── LOCK SCREEN ─────────────────────────────────────────────── */
+#lockScreen { position:fixed; inset:0; z-index:9999;
+  background: radial-gradient(ellipse at 20% 30%, rgba(15,50,120,.7), transparent 55%),
+              radial-gradient(ellipse at 80% 70%, rgba(5,30,80,.55), transparent 55%),
+              #020913;
+  display:flex; align-items:center; justify-content:center; }
+.lock-grid { position:absolute; inset:0;
+  background-image: linear-gradient(rgba(79,195,247,.025) 1px,transparent 1px),
+                    linear-gradient(90deg,rgba(79,195,247,.025) 1px,transparent 1px);
+  background-size: 48px 48px; pointer-events:none; }
+.lock-orb { position:absolute; border-radius:50%; filter:blur(90px); pointer-events:none; }
+.lock-orb-1 { width:500px; height:500px; background:radial-gradient(circle,rgba(79,195,247,.12),transparent 65%); top:-180px; left:-100px; }
+.lock-orb-2 { width:400px; height:400px; background:radial-gradient(circle,rgba(29,78,216,.12),transparent 65%); bottom:-140px; right:-80px; }
+.lock-card { position:relative; z-index:1; width:380px;
+  background: rgba(3,12,32,.92); border:1px solid var(--fb-border2);
+  border-radius:24px; padding:52px 44px 44px; text-align:center;
+  backdrop-filter:blur(32px); -webkit-backdrop-filter:blur(32px);
+  box-shadow: 0 0 80px rgba(79,195,247,.08), 0 24px 80px rgba(0,0,0,.65); }
+.lock-card::before { content:''; position:absolute; top:0; left:0; right:0; height:1px;
+  background:linear-gradient(90deg,transparent,rgba(79,195,247,.6),transparent); border-radius:24px 24px 0 0; }
+.lock-logo { width:64px; height:64px; margin:0 auto 24px; border-radius:50%;
+  background: rgba(79,195,247,.08); border:1px solid rgba(79,195,247,.2);
+  display:flex; align-items:center; justify-content:center; font-size:26px; }
+.lock-title { font-size:12px; font-weight:800; letter-spacing:.3em; color:var(--fb-200); text-transform:uppercase; margin-bottom:5px; }
+.lock-sub   { font-size:12px; color:var(--fb-muted); margin-bottom:36px; }
+.lock-input { width:100%; padding:14px 4px; background:transparent; border:none;
+  border-bottom:1px solid rgba(255,255,255,.12); color:var(--fb-100);
+  font-size:20px; text-align:center; letter-spacing:6px; outline:none;
+  transition:border-color .2s; caret-color:var(--fb-400); font-family:inherit; }
+.lock-input:focus { border-bottom-color:var(--fb-400); }
+.lock-input::placeholder { color:rgba(74,122,154,.5); letter-spacing:4px; font-size:16px; }
+.lock-btn { width:100%; margin-top:24px; padding:14px;
+  background:linear-gradient(135deg,rgba(79,195,247,.2),rgba(29,78,216,.25));
+  border:1px solid var(--fb-border2); border-radius:12px;
+  color:var(--fb-200); font-size:14px; font-weight:700; cursor:pointer;
+  letter-spacing:.05em; transition:all .2s; font-family:inherit; }
+.lock-btn:hover { background:linear-gradient(135deg,rgba(79,195,247,.3),rgba(29,78,216,.35));
+  border-color:var(--fb-400); color:var(--fb-100);
+  box-shadow:0 0 24px rgba(79,195,247,.15); transform:translateY(-1px); }
+.lock-err  { font-size:12px; color:#f87171; margin-top:12px; min-height:18px; }
+.lock-hint { font-size:10px; color:#2a4a5e; margin-top:20px; letter-spacing:.1em; }
+
+/* ── DASHBOARD ───────────────────────────────────────────────── */
+#dashboard { display:none; }
+#prop-root { background:var(--fb-bg); min-height:100vh; padding:28px 32px 80px; }
+
+/* ── PAGE HEADER ─────────────────────────────────────────────── */
+.page-header { margin-bottom:28px; }
+.page-eyebrow { font-size:10px; font-weight:700; letter-spacing:1.6px; text-transform:uppercase;
+  color:var(--fb-muted); margin-bottom:10px; }
+.page-title { font-size:30px; font-weight:900; letter-spacing:-1px; color:var(--fb-100); margin-bottom:6px; }
+.page-desc  { font-size:13px; color:var(--fb-muted); line-height:1.6; }
+
+/* ── STAT CARDS ──────────────────────────────────────────────── */
+.stat-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:28px; }
+@media(max-width:900px){ .stat-grid{ grid-template-columns:repeat(2,1fr); } }
+.stat-card {
+  background:var(--fb-card); border:1px solid var(--fb-border);
+  border-radius:16px; padding:20px; position:relative; overflow:hidden;
+  backdrop-filter:blur(20px); }
+.stat-card::before { content:''; position:absolute; top:0; left:0; right:0; height:2px;
+  background:linear-gradient(90deg,var(--fb-400),rgba(79,195,247,0)); }
+.stat-label { font-size:9px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase;
+  color:var(--fb-muted); margin-bottom:10px; }
+.stat-val   { font-size:26px; font-weight:900; letter-spacing:-1px; color:var(--fb-100); }
+.stat-sub   { font-size:11px; color:var(--fb-muted); margin-top:4px; }
+.stat-glow  { position:absolute; top:-30px; right:-30px; width:100px; height:100px;
+  background:radial-gradient(circle,rgba(79,195,247,.07),transparent 65%); border-radius:50%; }
+
+/* ── FILTER BAR ──────────────────────────────────────────────── */
+.filter-bar { display:flex; align-items:center; gap:10px; margin-bottom:16px; flex-wrap:wrap; }
+.filter-btn { padding:7px 16px; background:var(--fb-card); border:1px solid var(--fb-border);
+  border-radius:20px; color:var(--fb-muted); font-size:12px; font-weight:600; cursor:pointer;
+  transition:all .2s; font-family:inherit; }
+.filter-btn:hover, .filter-btn.active { background:rgba(79,195,247,.1); border-color:var(--fb-border2); color:var(--fb-200); }
+.filter-label { font-size:11px; font-weight:700; color:var(--fb-muted); letter-spacing:.05em; margin-right:2px; }
+
+/* ── TABLE WRAPPER ───────────────────────────────────────────── */
+.table-wrap {
+  background:var(--fb-card); border:1px solid var(--fb-border);
+  border-radius:20px; overflow:hidden;
+  box-shadow: 0 0 60px rgba(79,195,247,.05), 0 8px 40px rgba(0,0,0,.5); }
+.table-header {
+  padding:18px 24px 14px; border-bottom:1px solid var(--fb-border);
+  display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.table-title { font-size:13px; font-weight:800; color:var(--fb-200); letter-spacing:.03em; }
+.table-count { font-size:11px; color:var(--fb-muted); }
+
+table { width:100%; border-collapse:collapse; }
+thead th {
+  padding:12px 20px; text-align:left;
+  font-size:9px; font-weight:700; letter-spacing:1.4px; text-transform:uppercase;
+  color:var(--fb-muted); border-bottom:1px solid var(--fb-border);
+  white-space:nowrap; background:rgba(3,12,32,.3); }
+thead th:first-child { padding-left:24px; }
+thead th:last-child  { padding-right:24px; text-align:right; }
+
+tbody tr {
+  border-bottom:1px solid rgba(79,195,247,.055);
+  cursor:pointer; transition:background .15s; }
+tbody tr:last-child { border-bottom:none; }
+tbody tr:hover { background:rgba(79,195,247,.06); }
+
+td {
+  padding:18px 20px; vertical-align:middle;
+  font-size:13px; color:var(--fb-text); }
+td:first-child { padding-left:24px; }
+td:last-child  { padding-right:24px; text-align:right; }
+
+/* name column */
+.apt-name { font-size:14px; font-weight:800; color:var(--fb-100); margin-bottom:3px; }
+.apt-addr { font-size:11px; color:var(--fb-muted); }
+
+/* tier badge */
+.tier-badge { display:inline-flex; align-items:center; padding:3px 10px;
+  border-radius:20px; font-size:10px; font-weight:700; letter-spacing:.05em; }
+
+/* price */
+.price-main { font-size:14px; font-weight:800; color:var(--fb-100); font-variant-numeric:tabular-nums; }
+.price-sub  { font-size:11px; color:var(--fb-muted); margin-top:2px; }
+
+/* gap */
+.gap-num { font-size:14px; font-weight:700; color:var(--fb-300); }
+.gap-rate { font-size:11px; color:var(--fb-muted); margin-top:2px; }
+
+/* trend */
+.trend-chip { display:inline-flex; align-items:center; gap:5px;
+  padding:4px 10px; border-radius:20px; font-size:11px; font-weight:700; }
+
+/* score */
+.score-ring { display:inline-flex; align-items:center; justify-content:center;
+  width:36px; height:36px; border-radius:50%;
+  border:2px solid; font-size:13px; font-weight:900; }
+
+/* detail btn */
+.detail-btn { display:inline-flex; align-items:center; gap:5px;
+  padding:7px 14px; background:rgba(79,195,247,.1); border:1px solid var(--fb-border2);
+  border-radius:10px; color:var(--fb-300); font-size:12px; font-weight:600;
+  text-decoration:none; transition:all .2s; white-space:nowrap; }
+.detail-btn:hover { background:rgba(79,195,247,.18); border-color:var(--fb-400); color:var(--fb-100); }
+
+/* tag */
+.tag { display:inline-flex; align-items:center;
+  padding:2px 8px; background:rgba(79,195,247,.08); border:1px solid var(--fb-border);
+  border-radius:8px; font-size:10px; color:var(--fb-muted); margin:2px 2px 0 0; }
+
+/* empty state */
+.empty-state { padding:80px 40px; text-align:center; }
+.empty-icon  { font-size:48px; margin-bottom:16px; opacity:.3; }
+.empty-title { font-size:16px; font-weight:700; color:var(--fb-200); margin-bottom:6px; }
+.empty-desc  { font-size:13px; color:var(--fb-muted); line-height:1.7; }
+
+/* watermark */
+.watermark { position:absolute; top:0; right:0; bottom:0; width:280px; pointer-events:none; overflow:hidden; border-radius:0 20px 20px 0; }
+.watermark-text { position:absolute; top:50%; right:-60px; transform:translateY(-50%) rotate(90deg);
+  font-size:80px; font-weight:900; letter-spacing:.05em; color:rgba(79,195,247,.025);
+  white-space:nowrap; }
 </style>
 
 <div id="prop-root">
 
+<!-- LOCK SCREEN -->
 <div id="lockScreen">
+  <div class="lock-grid"></div>
+  <div class="lock-orb lock-orb-1"></div>
+  <div class="lock-orb lock-orb-2"></div>
   <div class="lock-card">
-    <div class="lock-icon">🔐</div>
+    <div class="lock-logo">🏢</div>
     <div class="lock-title">Private — Property</div>
-    <div class="lock-sub">자산 현황에 접근하려면 비밀번호를 입력하세요.</div>
+    <div class="lock-sub">매물 분석에 접근하려면 비밀번호를 입력하세요.</div>
     <input id="pwInput" class="lock-input" type="password" placeholder="••••••••" autocomplete="off" />
     <button class="lock-btn" id="unlockBtn">잠금 해제</button>
     <div class="lock-err" id="pwErr"></div>
@@ -33,20 +235,152 @@ import BaseLayout from "../../../layouts/BaseLayout.astro";
   </div>
 </div>
 
+<!-- DASHBOARD -->
 <div id="dashboard">
-  <div style="margin-bottom:32px;">
-    <div style="font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);margin-bottom:8px;">Personal · Private · Property</div>
-    <h1 style="font-size:28px;font-weight:900;color:var(--text);letter-spacing:-1px;margin:0 0 6px;">매물 분석</h1>
-    <p style="font-size:14px;color:var(--muted);margin:0;">검토한 부동산 매물 분석을 하나씩 기록합니다.</p>
+
+  <!-- Page Header -->
+  <div class="page-header">
+    <div class="page-eyebrow">Personal · Private · Property</div>
+    <h1 class="page-title">매물 분석</h1>
+    <p class="page-desc">검토한 아파트 매물을 전문가 관점에서 분석·기록합니다. 매물을 클릭하면 상세 분석 보고서를 볼 수 있습니다.</p>
   </div>
 
-  <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:20px;padding:60px 40px;text-align:center;box-shadow:var(--shadow-sm);">
-    <div style="font-size:48px;margin-bottom:16px;opacity:.4;">🏠</div>
-    <div style="font-size:18px;font-weight:700;color:var(--text);margin-bottom:8px;">아직 등록된 매물이 없습니다</div>
-    <div style="font-size:13px;color:var(--muted);line-height:1.7;">검토한 부동산 매물 분석을 여기에 하나씩 추가할 예정입니다.</div>
+  <!-- Stat Cards -->
+  <div class="stat-grid">
+    <div class="stat-card">
+      <div class="stat-glow"></div>
+      <div class="stat-label">분석 매물</div>
+      <div class="stat-val">{totalCount}</div>
+      <div class="stat-sub">총 등록 단지</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-glow"></div>
+      <div class="stat-label">평균 전세가율</div>
+      <div class="stat-val">{avgGapRate}<span style="font-size:16px;font-weight:600;color:var(--fb-muted)">%</span></div>
+      <div class="stat-sub">갭투자 부담 기준선</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-glow"></div>
+      <div class="stat-label">평균 투자점수</div>
+      <div class="stat-val" style="color:var(--fb-400)">{avgScore}</div>
+      <div class="stat-sub">5점 만점</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-glow"></div>
+      <div class="stat-label">상승 추세</div>
+      <div class="stat-val" style="color:var(--fb-up)">{risingCount}</div>
+      <div class="stat-sub">/ {totalCount} 단지</div>
+    </div>
   </div>
-</div>
-</div>
+
+  <!-- Table -->
+  {properties.length === 0 ? (
+    <div class="table-wrap">
+      <div class="empty-state">
+        <div class="empty-icon">🏠</div>
+        <div class="empty-title">아직 등록된 매물이 없습니다</div>
+        <div class="empty-desc">property-analysis 스킬로 아파트 이름을 말하면<br>자동으로 분석·추가됩니다.</div>
+      </div>
+    </div>
+  ) : (
+    <div class="table-wrap" style="position:relative;">
+      <div class="watermark"><div class="watermark-text">ANALYSIS</div></div>
+      <div class="table-header">
+        <div>
+          <div class="table-title">분석 매물 목록</div>
+          <div class="table-count">총 {totalCount}개 단지 · 최신 분석일 기준 정렬</div>
+        </div>
+        <div style="font-size:11px;color:var(--fb-muted);">행 클릭 → 상세 보고서</div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>단지명 / 위치</th>
+            <th>티어</th>
+            <th>매매 / 전세</th>
+            <th>갭 / 전세가율</th>
+            <th>평균 평단가</th>
+            <th>시세 추세</th>
+            <th>투자점수</th>
+            <th>상세</th>
+          </tr>
+        </thead>
+        <tbody>
+          {properties.map((p: any) => {
+            const tb = tierBadge(p.tier);
+            const tc = trendColor(p.trend);
+            const ti = trendIcon(p.trend);
+            const sc = scoreColor(p.investmentScore);
+            return (
+              <tr onclick={`location.href='/property/property-analysis/${p.id}/'`}>
+                <td>
+                  <div class="apt-name">{p.name}</div>
+                  <div class="apt-addr">{p.neighborhood} · {p.address?.split(' ').slice(-1)[0]}</div>
+                  <div style="margin-top:6px;">
+                    {(p.tags || []).slice(0,3).map((t: string) => (
+                      <span class="tag">{t}</span>
+                    ))}
+                  </div>
+                </td>
+                <td>
+                  <span class="tier-badge" style={`background:${tb.bg};border:1px solid ${tb.border};color:${tb.color}`}>
+                    {p.tier}
+                  </span>
+                </td>
+                <td>
+                  <div class="price-main">{p.salePrice}</div>
+                  <div class="price-sub">전세 {p.leasePrice}</div>
+                  <div class="price-sub" style="margin-top:1px;">{p.mainSize}</div>
+                </td>
+                <td>
+                  <div class="gap-num">{p.gap}</div>
+                  <div class="gap-rate">전세가율 {p.gapRate}%</div>
+                </td>
+                <td>
+                  <div style="font-size:13px;font-weight:700;color:var(--fb-200);">{p.pricePerPyeong}</div>
+                  <div style="font-size:11px;color:var(--fb-muted);">{p.completionYear}년 준공 · {p.age}년차</div>
+                </td>
+                <td>
+                  <span class="trend-chip" style={`background:${tc}18;border:1px solid ${tc}44;color:${tc}`}>
+                    {ti} {p.trend}
+                  </span>
+                  {p.trendNote && (
+                    <div style="font-size:10px;color:var(--fb-muted);margin-top:4px;">{p.trendNote}</div>
+                  )}
+                </td>
+                <td>
+                  <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+                    <span class="score-ring" style={`border-color:${sc};color:${sc}`}>
+                      {p.investmentScore}
+                    </span>
+                    <div style="font-size:9px;color:var(--fb-muted);">/ 5점</div>
+                  </div>
+                </td>
+                <td>
+                  <a class="detail-btn" href={`/property/property-analysis/${p.id}/`} onclick="event.stopPropagation()">
+                    보고서 →
+                  </a>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  )}
+
+  <!-- Footer -->
+  <div style="margin-top:20px;padding:0 4px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+    <div style="font-size:11px;color:var(--fb-muted);">
+      본 분석은 실거래가 데이터 기반 개인 투자 검토 자료입니다. 투자 결정은 반드시 현장 확인 후 판단하세요.
+    </div>
+    <a href="/property/region-analysis/" style="font-size:12px;color:var(--fb-400);text-decoration:none;font-weight:600;">
+      지역 분석 보기 →
+    </a>
+  </div>
+
+</div><!-- /dashboard -->
+</div><!-- /prop-root -->
 
 <script is:inline>
 const HASH='ee6123683515b4605b92a9e8e3db97d3517f607f4a7a95583f821371ddd017a1';

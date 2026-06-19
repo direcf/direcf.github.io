@@ -33,6 +33,12 @@ const scenCash = +(liquidCash / 1e8).toFixed(2);
 const scen30   = +((liquidCash + totalInvest * 0.3) / 1e8).toFixed(2);
 const scen60   = +((liquidCash + totalInvest * 0.6) / 1e8).toFixed(2);
 
+// 영끌 시나리오 D: 주식 매도 없이 신규 대출만으로
+const YEONGKKUL_COMPANY = 1e8;   // 회사대출 추가 1억 @1.2%
+const YEONGKKUL_MORTGAGE = 6e8;  // 주담대 6억 @4.5% (가정)
+const scenD = +((liquidCash + YEONGKKUL_COMPANY + YEONGKKUL_MORTGAGE) / 1e8).toFixed(2);
+const scenD_monthly = Math.round((YEONGKKUL_COMPANY * 0.012 + YEONGKKUL_MORTGAGE * 0.045) / 12 / 10000);
+
 const skhEval = investments
   .filter((i) => i.eval > 100000 && (i.name.includes('SK하이닉스') || (i.name.includes('레버리지') && i.name.includes('SK'))))
   .reduce((s, i) => s + i.eval, 0);
@@ -68,6 +74,12 @@ const allComplexes = (districts as any[]).flatMap((d) => {
 const topTargets: any[] = [...allComplexes]
   .sort((a, b) => a.gap - b.gap).slice(0, 9)
   .sort((a, b) => b.score - a.score).slice(0, 6);
+
+// 영끌 전용 타겟: 시나리오 B/C로 불가하지만 D(영끌)로 접근 가능한 고갭 단지
+const yeongkkul_targets: any[] = [...allComplexes]
+  .filter((c) => c.gap !== null && c.gap > scen60 && c.gap <= scenD)
+  .sort((a, b) => b.score - a.score)
+  .slice(0, 6);
 
 const marketNews = [
   { icon: '🏦', label: '기준금리', value: '2.5% 동결', trend: 'neutral',
@@ -446,6 +458,19 @@ const marketNews = [
       <div class="scen-bar-track"><div class="scen-bar-fill fill-teal" style={`width:${Math.min(scen60/4*100,100)}%`}></div></div>
       <div class="scen-verdict verdict-ok">✓ 노원·도봉 핵심 단지 진입 가능</div>
     </div>
+    <div class="scen-card" style="border-color:var(--c-amber);grid-column:1/-1;">
+      <span class="scen-tag" style="background:var(--c-amber-bg);color:var(--c-amber);border:1px solid var(--c-amber-bd);">시나리오 D — 영끌 🔥</span>
+      <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;">
+        <div class="scen-amount">{fmt억(scenD)}</div>
+        <div style="font-size:12px;color:var(--muted);">주식 매도 없음 · 신규 대출만</div>
+      </div>
+      <div class="scen-desc">
+        회사대출 추가 1억(@1.2%) + 주담대 6억(@4.5%) 활용. 순자산 손상 없이 레버리지로만 조달.<br/>
+        <strong style="color:var(--c-amber);">⚠ 월 추가 이자 {scenD_monthly}만원</strong> (기존 대출 이자 별도)
+      </div>
+      <div class="scen-bar-track"><div class="scen-bar-fill" style={`width:${Math.min(scenD/10*100,100)}%;background:linear-gradient(90deg,var(--c-amber),#fbbf24)`}></div></div>
+      <div class="scen-verdict" style="color:var(--c-amber);">△ 갭 {fmt억(scenD)} 이하 전 단지 접근 가능 — 이자 부담 검토 필수</div>
+    </div>
   </div>
 
   <!-- 추천 단지 TOP 6 -->
@@ -503,8 +528,10 @@ const marketNews = [
                   <span style="font-size:11px;font-weight:700;color:var(--accent);background:var(--accent-soft);padding:3px 8px;border-radius:4px;">B 가능</span>
                 ) : canC ? (
                   <span style="font-size:11px;font-weight:700;color:var(--c-green);background:var(--c-green-bg);padding:3px 8px;border-radius:4px;">C 가능</span>
+                ) : (c.gap > scenD) ? (
+                  <span style="font-size:11px;color:var(--muted);">자금 부족</span>
                 ) : (
-                  <span style="font-size:11px;color:var(--muted);">추가 자금</span>
+                  <span style="font-size:11px;font-weight:700;color:var(--c-amber);background:var(--c-amber-bg);padding:3px 8px;border-radius:4px;">D 영끌</span>
                 )}
               </td>
             </tr>
@@ -513,6 +540,71 @@ const marketNews = [
       </tbody>
     </table>
   </div>
+
+  <!-- 영끌 확장 타겟 -->
+  {yeongkkul_targets.length > 0 && (
+    <>
+      <div class="sec-label">영끌 시나리오 D — 추가 접근 가능 단지</div>
+      <div class="sub-note">시나리오 B/C로 불가, D(회사대출 1억 + 주담대 6억)로만 진입 가능 · 갭 {fmt억(scen60)}~{fmt억(scenD)} 구간</div>
+      <div class="target-wrap">
+        <table class="target-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>단지</th>
+              <th>매매 / 전세</th>
+              <th>전세가율</th>
+              <th>갭 필요금액</th>
+              <th>월 추가이자</th>
+            </tr>
+          </thead>
+          <tbody>
+            {yeongkkul_targets.map((c, i) => {
+              const rankCls = i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':'rank-n';
+              const tierCls = 'tier-' + c.tier;
+              const rateCls = c.rate >= 65 ? 'rate-high' : c.rate >= 50 ? 'rate-mid' : 'rate-low';
+              const gapAmt = c.gap || 0;
+              const monthlyInt = Math.round(gapAmt * 1e8 * 0.045 / 12 / 10000);
+              return (
+                <tr>
+                  <td><span class={`rank-badge ${rankCls}`}>{i+1}</span></td>
+                  <td>
+                    <div style="font-weight:700;margin-bottom:4px;">{c.name}</div>
+                    <div style="font-size:11px;color:var(--muted);display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+                      <a href={`/property/region-analysis/${c.slug}/`} style="color:var(--accent);text-decoration:none;font-weight:600;">{c.district}</a>
+                      <span class={`tier-badge ${tierCls}`}>{c.tier}</span>
+                      <span>{c.year}년 / {c.size}</span>
+                    </div>
+                  </td>
+                  <td>
+                    <div style="font-size:13px;font-weight:600;">{fmt억(c.sale)}</div>
+                    <div style="font-size:11px;color:var(--muted);">전세 {fmt억(c.lease)}</div>
+                  </td>
+                  <td>
+                    <div class="gap-bar-wrap">
+                      <div class="gap-bar">
+                        <div class="gap-bar-lease" style={`width:${c.rate}%`}></div>
+                        <div class="gap-bar-gap" style={`width:${100-c.rate}%`}></div>
+                      </div>
+                      <div class={`rate-pill ${rateCls}`}>{c.rate}%</div>
+                    </div>
+                  </td>
+                  <td>
+                    <div style="font-size:16px;font-weight:900;color:var(--c-amber);letter-spacing:-0.5px;">{fmt억(c.gap)}</div>
+                    <div style="font-size:10px;color:var(--muted);margin-top:2px;">교통 {c.trafficGrade}</div>
+                  </td>
+                  <td>
+                    <div style="font-size:14px;font-weight:700;color:var(--c-red);">~{monthlyInt}만/월</div>
+                    <div style="font-size:10px;color:var(--muted);">@4.5% 주담대</div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
+  )}
 
   <!-- 전문가 의견 -->
   <div class="sec-label">AI 전문가 종합 의견</div>

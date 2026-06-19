@@ -1,5 +1,27 @@
 ---
 import BaseLayout from "../../../../layouts/BaseLayout.astro";
+
+const propFiles = import.meta.glob('../../../../data/properties/*.json', { eager: true });
+const dongdaemunProps = Object.values(propFiles)
+  .map((m: any) => m.default || m)
+  .filter((p: any) => p.district === 'dongdaemun');
+
+function trendColor(t: string) {
+  if (t === '상승') return '#34d399';
+  if (t === '하락') return '#f87171';
+  return '#7dd8ff';
+}
+function trendIcon(t: string) {
+  if (t === '상승') return '↑';
+  if (t === '하락') return '↓';
+  return '→';
+}
+function scoreColor(s: number) {
+  if (s >= 5) return '#4fc3f7';
+  if (s >= 4) return '#34d399';
+  if (s >= 3) return '#fbbf24';
+  return '#f87171';
+}
 ---
 <BaseLayout title="동대문구 분석" activeSlug="property" crumbs={[{label:"Personal"},{label:"Property",href:"/property/"},{label:"지역 분석",href:"/property/region-analysis/"},{label:"동대문구"}]}>
 <style>
@@ -353,6 +375,68 @@ import BaseLayout from "../../../../layouts/BaseLayout.astro";
 
     </div>
   </div>
+
+  <!-- 분석된 매물 연동 섹션 -->
+  {dongdaemunProps.length > 0 && (
+    <div style="margin-bottom:20px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+        <div>
+          <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#4a7a9a;margin-bottom:4px;">연동된 매물 분석</div>
+          <h2 style="font-size:16px;font-weight:800;color:var(--text);margin:0;">동대문구에서 분석한 매물</h2>
+        </div>
+        <a href="/property/property-analysis/" style="font-size:12px;font-weight:600;color:#4fc3f7;text-decoration:none;padding:6px 14px;background:rgba(79,195,247,.07);border:1px solid rgba(79,195,247,.2);border-radius:10px;transition:all .15s;"
+          onmouseover="this.style.background='rgba(79,195,247,.14)'" onmouseout="this.style.background='rgba(79,195,247,.07)'">
+          전체 매물 목록 →
+        </a>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;">
+        {dongdaemunProps.map((prop: any) => (
+          <a href={`/property/property-analysis/${prop.id}/`} style="display:block;text-decoration:none;
+            background:rgba(5,18,45,.85);border:1px solid rgba(79,195,247,.13);border-radius:18px;
+            padding:20px 22px;position:relative;overflow:hidden;
+            box-shadow:0 4px 20px rgba(0,0,0,.35);transition:all .2s;"
+            onmouseover="this.style.borderColor='rgba(79,195,247,.3)';this.style.background='rgba(8,25,60,.9)'"
+            onmouseout="this.style.borderColor='rgba(79,195,247,.13)';this.style.background='rgba(5,18,45,.85)'">
+            <div style="position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,#4fc3f7,rgba(79,195,247,0));"></div>
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:10px;">
+              <div>
+                <div style="font-size:14px;font-weight:800;color:#e0f7ff;margin-bottom:3px;">{prop.name}</div>
+                <div style="font-size:11px;color:#4a7a9a;">{prop.neighborhood} · {prop.completionYear}년 준공 ({prop.age}년차)</div>
+              </div>
+              <div style={`display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:50%;border:2px solid ${scoreColor(prop.investmentScore)};font-size:12px;font-weight:900;color:${scoreColor(prop.investmentScore)};flex-shrink:0`}>
+                {prop.investmentScore}
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+              {(prop.tags||[]).slice(0,3).map((t: string) => (
+                <span style="padding:2px 8px;background:rgba(79,195,247,.08);border:1px solid rgba(79,195,247,.15);border-radius:8px;font-size:10px;color:#4a7a9a;">{t}</span>
+              ))}
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;">
+              <div style="background:rgba(3,12,32,.5);border-radius:10px;padding:8px 10px;">
+                <div style="font-size:9px;color:#4a7a9a;margin-bottom:3px;">매매가</div>
+                <div style="font-size:13px;font-weight:800;color:#e0f7ff;">{prop.salePrice}</div>
+              </div>
+              <div style="background:rgba(3,12,32,.5);border-radius:10px;padding:8px 10px;">
+                <div style="font-size:9px;color:#4a7a9a;margin-bottom:3px;">갭</div>
+                <div style="font-size:13px;font-weight:800;color:#fbbf24;">{prop.gap}</div>
+              </div>
+              <div style="background:rgba(3,12,32,.5);border-radius:10px;padding:8px 10px;">
+                <div style="font-size:9px;color:#4a7a9a;margin-bottom:3px;">전세가율</div>
+                <div style="font-size:13px;font-weight:800;color:#7dd8ff;">{prop.gapRate}%</div>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;">
+              <span style={`display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:${trendColor(prop.trend)}18;border:1px solid ${trendColor(prop.trend)}44;color:${trendColor(prop.trend)}`}>
+                {trendIcon(prop.trend)} {prop.trend}
+              </span>
+              <span style="font-size:11px;font-weight:600;color:#4fc3f7;">상세 보고서 →</span>
+            </div>
+          </a>
+        ))}
+      </div>
+    </div>
+  )}
 
   <!-- Footer note -->
   <div style="text-align:center;padding:16px;font-size:11px;color:var(--muted);">
