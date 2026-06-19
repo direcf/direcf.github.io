@@ -3,1033 +3,939 @@ import BaseLayout from "../../../layouts/BaseLayout.astro";
 import propertyData from "../../../data/property.json";
 ---
 <BaseLayout title="자산 현황" activeSlug="property" crumbs={[{label:"Personal"},{label:"Property",href:"/property/"},{label:"자산 현황"}]}>
-<style>
+
+<!-- is:global → JS로 생성된 DOM에도 CSS 적용 -->
+<style is:global>
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-dynamic-subset.css');
 
-/* ── Brand accent vars (light / dark) ─────────────────────── */
+/* ── Financial semantic colors ──────────────────────────────── */
 :root {
-  --clr-pos: #065f46; --clr-pos-bg: rgba(6,95,70,0.1);
-  --clr-neg: #991b1b; --clr-neg-bg: rgba(153,27,27,0.08);
-  --clr-goal: #92400e; --clr-goal-bg: rgba(146,64,14,0.08);
-  --clr-teal: #0891b2; --clr-teal-bg: rgba(8,145,178,0.08);
+  --fp:#059669; --fp-bg:rgba(5,150,105,.09); --fp-bd:rgba(5,150,105,.22);
+  --fn:#dc2626; --fn-bg:rgba(220,38,38,.08);  --fn-bd:rgba(220,38,38,.22);
+  --fg:#d97706; --fg-bg:rgba(217,119,6,.08);  --fg-bd:rgba(217,119,6,.22);
 }
 [data-theme="dark"] {
-  --clr-pos: #10d4a0; --clr-pos-bg: rgba(16,212,160,0.12);
-  --clr-neg: #ff4d6d; --clr-neg-bg: rgba(255,77,109,0.12);
-  --clr-goal: #c9a84c; --clr-goal-bg: rgba(201,168,76,0.12);
-  --clr-teal: #22d3ee; --clr-teal-bg: rgba(34,211,238,0.1);
+  --fp:#10b981; --fp-bg:rgba(16,185,129,.12); --fp-bd:rgba(16,185,129,.3);
+  --fn:#f87171; --fn-bg:rgba(248,113,113,.1); --fn-bd:rgba(248,113,113,.3);
+  --fg:#fbbf24; --fg-bg:rgba(251,191,36,.1);  --fg-bd:rgba(251,191,36,.3);
 }
 
-/* ── Base overrides ────────────────────────────────────────── */
-#pmDashboard { font-family: 'Pretendard', -apple-system, 'Apple SD Gothic Neo', sans-serif; }
+/* ── Font ───────────────────────────────────────────────────── */
+#pmWrap, #lockScreen {
+  font-family: 'Pretendard', -apple-system, 'Apple SD Gothic Neo', 'SF Pro Text', sans-serif;
+}
 
-/* ── KPI Ticker ────────────────────────────────────────────── */
+/* ── KPI Ticker ─────────────────────────────────────────────── */
 #kpiTicker {
-  position: sticky;
-  top: var(--header-h, 58px);
-  z-index: 9;
-  height: 50px;
-  background: var(--header-blur-bg, rgba(238,244,251,.95));
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  padding: 0 32px;
-  gap: 0;
+  position:sticky; top:var(--header-h,58px); z-index:9; height:56px;
+  display:flex; align-items:center;
+  background:var(--bg-card);
+  border-bottom:1.5px solid var(--border);
+  box-shadow:0 2px 10px rgba(0,0,0,.06);
 }
-.kpi-brand { display:flex; align-items:center; gap:8px; margin-right:20px; padding-right:20px; border-right:1px solid var(--border); flex-shrink:0; }
-.kpi-brand-dot { width:18px; height:18px; border-radius:5px; background:var(--accent); flex-shrink:0; }
-.kpi-brand-txt { font-size:11px; font-weight:900; letter-spacing:0.15em; color:var(--text); text-transform:uppercase; }
-.kpi-items { display:flex; flex:1; overflow:hidden; }
-.kpi-item { display:flex; flex-direction:column; justify-content:center; padding:0 18px; border-right:1px solid var(--border); flex-shrink:0; }
-.kpi-item:last-child { border-right:none; }
-.kpi-lbl { font-size:9px; font-weight:700; letter-spacing:1.4px; text-transform:uppercase; color:var(--muted); margin-bottom:1px; }
-.kpi-val { font-size:14px; font-weight:800; color:var(--text); font-variant-numeric:tabular-nums; letter-spacing:-0.3px; }
-.kpi-delta { font-size:10px; font-weight:700; padding:0 5px; border-radius:4px; margin-left:5px; }
-#kpiUpdated { font-size:9px; color:var(--muted); flex-shrink:0; letter-spacing:0.3px; }
-
-/* ── Lock Screen ───────────────────────────────────────────── */
-#lockScreen { position:fixed; inset:0; z-index:9999; background:#060c1a; display:flex; align-items:center; justify-content:center; overflow:hidden; }
-.orb { position:absolute; border-radius:50%; filter:blur(90px); pointer-events:none; }
-.orb-1 { width:560px; height:560px; background:radial-gradient(circle,rgba(29,78,216,0.22),transparent 65%); top:-180px; left:-120px; animation:orb1 13s ease-in-out infinite; }
-.orb-2 { width:480px; height:480px; background:radial-gradient(circle,rgba(8,145,178,0.13),transparent 65%); bottom:-160px; right:-100px; animation:orb2 16s ease-in-out infinite; }
-.orb-3 { width:380px; height:380px; background:radial-gradient(circle,rgba(146,64,14,0.08),transparent 65%); top:55%; left:55%; animation:orb3 20s ease-in-out infinite; }
-.lock-grid { position:absolute; inset:0; background-image:linear-gradient(rgba(255,255,255,0.014) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.014) 1px,transparent 1px); background-size:56px 56px; pointer-events:none; }
-.lock-card { position:relative; z-index:1; width:360px; background:rgba(10,18,40,0.92); border:1px solid rgba(255,255,255,0.08); border-radius:24px; padding:48px 44px 40px; text-align:center; backdrop-filter:blur(32px); -webkit-backdrop-filter:blur(32px); box-shadow:0 0 80px rgba(29,78,216,0.12),0 24px 80px rgba(0,0,0,0.65); animation:fadeUp 0.5s cubic-bezier(0.16,1,0.3,1) forwards; }
-.lock-shine-top { position:absolute; top:0; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,rgba(201,168,76,0.55),transparent); border-radius:24px 24px 0 0; }
-.lock-shine-bot { position:absolute; bottom:0; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,rgba(29,78,216,0.35),transparent); border-radius:0 0 24px 24px; }
-.lock-icon { width:68px; height:68px; border-radius:50%; background:rgba(29,78,216,0.1); border:1px solid rgba(29,78,216,0.18); display:flex; align-items:center; justify-content:center; margin:0 auto 22px; }
-.lock-title { font-size:12px; font-weight:900; letter-spacing:0.32em; color:#e6edf7; text-transform:uppercase; margin-bottom:5px; }
-.lock-sub { font-size:12px; color:rgba(126,138,163,0.8); margin-bottom:34px; }
-.lock-input { width:100%; padding:13px 4px; background:transparent; border:none; border-bottom:1px solid rgba(255,255,255,0.1); color:#e6edf7; font-size:20px; text-align:center; letter-spacing:6px; outline:none; transition:border-color .2s; caret-color:#60a5fa; font-family:inherit; }
-.lock-input:focus { border-bottom-color:#60a5fa; }
-.lock-input::placeholder { color:rgba(126,138,163,0.45); letter-spacing:4px; font-size:15px; }
-.lock-btn { width:100%; margin-top:22px; padding:13px; background:linear-gradient(135deg,#1d4ed8,#1e40af); border:none; border-radius:12px; color:#fff; font-size:14px; font-weight:700; cursor:pointer; letter-spacing:0.05em; transition:all .2s; box-shadow:0 4px 20px rgba(29,78,216,0.35); font-family:inherit; }
-.lock-btn:hover { filter:brightness(1.1); transform:translateY(-1px); }
-.lock-err { font-size:12px; color:#ff4d6d; margin-top:10px; min-height:18px; }
-.lock-hint { font-size:10px; color:rgba(42,53,80,0.6); margin-top:18px; letter-spacing:0.1em; }
-
-/* ── Cards ─────────────────────────────────────────────────── */
-.pcard {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 22px;
-  box-shadow: var(--shadow-sm);
-  transition: border-color .18s, box-shadow .18s;
-  position: relative;
-  overflow: hidden;
+.pm-kbrand {
+  display:flex; align-items:center; gap:9px; padding:0 22px;
+  border-right:1.5px solid var(--border); height:100%; flex-shrink:0;
 }
-.pcard:hover { border-color: var(--accent); box-shadow: var(--shadow-md); }
-.pcard-accent { position:absolute; top:0; left:0; right:0; height:3px; }
-.pcard-accent.a { background:linear-gradient(90deg,var(--accent),transparent); }
-.pcard-accent.p { background:linear-gradient(90deg,var(--clr-pos),transparent); }
-.pcard-accent.n { background:linear-gradient(90deg,var(--clr-neg),transparent); }
-.pcard-accent.g { background:linear-gradient(90deg,var(--clr-goal),transparent); }
+.pm-kbdot { width:22px;height:22px;border-radius:7px;background:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0; }
+.pm-kbtxt { font-size:11px;font-weight:900;letter-spacing:.18em;color:var(--text); }
+.pm-kslots { display:flex; flex:1; height:100%; }
+.pm-kslot {
+  display:flex; flex-direction:column; justify-content:center; gap:2px;
+  padding:0 20px; border-right:1px solid var(--border); flex-shrink:0; min-width:115px;
+}
+.pm-kslot:last-child { border-right:none; }
+.pm-klbl { font-size:9px;font-weight:700;color:var(--muted);letter-spacing:1.1px;text-transform:uppercase; }
+.pm-krow { display:flex;align-items:center;gap:6px; }
+.pm-kval { font-size:15px;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-.4px; }
+.pm-kdelta { font-size:10px;font-weight:700;padding:1px 6px;border-radius:5px; }
+.pm-kts { font-size:9px;color:var(--muted);padding:0 16px;flex-shrink:0; }
 
-/* ── Section heading ────────────────────────────────────────── */
-.sh { font-size:15px; font-weight:800; color:var(--text); margin-bottom:18px; display:flex; align-items:center; gap:10px; letter-spacing:-0.3px; }
-.sh::before { content:''; display:block; width:3px; height:15px; background:var(--accent); border-radius:2px; flex-shrink:0; }
+/* ── Lock Screen ────────────────────────────────────────────── */
+#lockScreen { position:fixed;inset:0;z-index:9999;background:#060c1a;display:flex;align-items:center;justify-content:center;overflow:hidden; }
+.pm-orb { position:absolute;border-radius:50%;filter:blur(90px);pointer-events:none; }
+.pm-orb-a { width:560px;height:560px;background:radial-gradient(circle,rgba(29,78,216,.22),transparent 65%);top:-180px;left:-120px;animation:pmOrba 13s ease-in-out infinite; }
+.pm-orb-b { width:480px;height:480px;background:radial-gradient(circle,rgba(8,145,178,.13),transparent 65%);bottom:-160px;right:-100px;animation:pmOrbb 16s ease-in-out infinite; }
+.pm-lkcard { position:relative;z-index:1;width:360px;background:rgba(10,18,40,.92);border:1px solid rgba(255,255,255,.08);border-radius:24px;padding:48px 44px 40px;text-align:center;backdrop-filter:blur(32px);box-shadow:0 0 80px rgba(29,78,216,.12),0 24px 80px rgba(0,0,0,.65);animation:pmFadeUp .5s cubic-bezier(.16,1,.3,1) both; }
+.pm-lkshine { position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(201,168,76,.55),transparent);border-radius:24px 24px 0 0; }
+.pm-lkicon { width:68px;height:68px;border-radius:50%;background:rgba(29,78,216,.1);border:1px solid rgba(29,78,216,.18);display:flex;align-items:center;justify-content:center;margin:0 auto 22px; }
+.pm-lktitle { font-size:12px;font-weight:900;letter-spacing:.32em;color:#e6edf7;text-transform:uppercase;margin-bottom:5px; }
+.pm-lksub { font-size:12px;color:rgba(126,138,163,.8);margin-bottom:32px; }
+.pm-lkinp { width:100%;padding:13px 4px;background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,.12);color:#e6edf7;font-size:20px;text-align:center;letter-spacing:6px;outline:none;transition:border-color .2s;caret-color:#60a5fa;font-family:inherit; }
+.pm-lkinp:focus { border-bottom-color:#60a5fa; }
+.pm-lkinp::placeholder { color:rgba(126,138,163,.45);letter-spacing:4px;font-size:14px; }
+.pm-lkbtn { width:100%;margin-top:22px;padding:13px;background:linear-gradient(135deg,#1d4ed8,#1e40af);border:none;border-radius:12px;color:#fff;font-size:14px;font-weight:700;cursor:pointer;letter-spacing:.05em;transition:all .2s;box-shadow:0 4px 20px rgba(29,78,216,.35);font-family:inherit; }
+.pm-lkbtn:hover { filter:brightness(1.1);transform:translateY(-1px); }
+.pm-lkerr { font-size:12px;color:#f87171;margin-top:10px;min-height:18px; }
+
+/* ── Cards ──────────────────────────────────────────────────── */
+.pm-card {
+  background:var(--bg-card); border:1px solid var(--border); border-radius:14px;
+  padding:22px 24px; box-shadow:0 1px 4px rgba(0,0,0,.05);
+  transition:box-shadow .18s; position:relative; overflow:hidden;
+}
+.pm-card:hover { box-shadow:0 4px 18px rgba(0,0,0,.1); }
+.pm-stripe { position:absolute;top:0;left:0;right:0;height:3px;border-radius:14px 14px 0 0; }
+
+/* ── Section heading ─────────────────────────────────────────── */
+.pm-sh { font-size:15px;font-weight:800;color:var(--text);margin-bottom:18px;display:flex;align-items:center;gap:10px;letter-spacing:-.3px; }
+.pm-shbar { width:3px;height:16px;background:var(--accent);border-radius:2px;flex-shrink:0; }
 
 /* ── Grids ──────────────────────────────────────────────────── */
-.pg3  { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-bottom:18px; }
-.pg2  { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:18px; }
-.pg12 { display:grid; grid-template-columns:1fr 1.9fr; gap:16px; margin-bottom:18px; }
-.pg21 { display:grid; grid-template-columns:1.9fr 1fr; gap:16px; margin-bottom:18px; }
-@media(max-width:900px) { .pg3,.pg2,.pg12,.pg21 { grid-template-columns:1fr; } }
+.pm-g3  { display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:18px; }
+.pm-g2  { display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:18px; }
+.pm-g12 { display:grid;grid-template-columns:1fr 1.9fr;gap:16px;margin-bottom:18px; }
+.pm-g21 { display:grid;grid-template-columns:1.9fr 1fr;gap:16px;margin-bottom:18px; }
+@media(max-width:900px) { .pm-g3,.pm-g2,.pm-g12,.pm-g21 { grid-template-columns:1fr; } }
 
-/* ── Goal hero ──────────────────────────────────────────────── */
-.goal-hero { background:var(--bg-card); border:1px solid var(--border); border-radius:16px; padding:32px; margin-bottom:18px; position:relative; overflow:hidden; box-shadow:var(--shadow-sm); }
-.goal-hero::before { content:''; position:absolute; top:0; left:0; right:0; height:3px; background:linear-gradient(90deg,var(--accent),var(--clr-pos),transparent); }
-.goal-grid { display:grid; grid-template-columns:170px 1fr 210px; gap:36px; align-items:center; }
-@media(max-width:900px) { .goal-grid { grid-template-columns:1fr; } }
-.gauge-wrap { position:relative; width:160px; height:160px; }
-.gauge-center { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; pointer-events:none; z-index:2; }
-.gauge-pct { font-size:26px; font-weight:900; color:var(--clr-goal); line-height:1; }
-.gauge-lbl { font-size:11px; color:var(--muted); margin-top:3px; }
-.goal-label { font-size:10px; color:var(--muted); letter-spacing:1.4px; text-transform:uppercase; font-weight:700; margin-bottom:8px; }
-.goal-nw { font-size:46px; font-weight:900; letter-spacing:-3px; color:var(--text); line-height:1; }
-.goal-target { font-size:13px; color:var(--muted); margin-top:8px; }
-.goal-bar-outer { margin-top:16px; }
-.goal-bar-bg { height:8px; background:var(--bg-soft); border-radius:4px; overflow:visible; position:relative; }
-.goal-bar-fill { height:100%; border-radius:4px; background:linear-gradient(90deg,var(--accent),var(--clr-pos)); transition:width 1s cubic-bezier(.16,1,.3,1); }
-.goal-milestones { position:absolute; top:0; left:0; right:0; height:8px; }
-.ms { position:absolute; top:-6px; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center; gap:2px; }
-.ms-line { width:1.5px; height:20px; border-radius:1px; }
-.ms-lbl { font-size:9px; font-weight:700; white-space:nowrap; }
-.goal-bar-labels { display:flex; justify-content:space-between; font-size:11px; color:var(--muted); margin-top:5px; }
-.goal-pills { display:flex; gap:7px; flex-wrap:wrap; margin-top:12px; }
-.gpill { display:inline-flex; align-items:center; gap:5px; background:var(--bg-soft); border:1px solid var(--border); border-radius:8px; padding:4px 10px; font-size:11px; color:var(--text-2); }
-.gstat-col { display:flex; flex-direction:column; gap:10px; }
-.gstat { background:var(--bg-soft); border:1px solid var(--border); border-radius:10px; padding:13px 16px; }
-.gstat-lbl { font-size:9px; color:var(--muted); margin-bottom:3px; font-weight:700; letter-spacing:0.5px; text-transform:uppercase; }
-.gstat-val { font-size:16px; font-weight:800; color:var(--text); }
+/* ── Goal Hero ──────────────────────────────────────────────── */
+.pm-hero {
+  background:var(--bg-card); border:1px solid var(--border); border-radius:16px;
+  padding:30px; margin-bottom:18px; position:relative;
+  box-shadow:0 2px 10px rgba(0,0,0,.07);
+}
+.pm-hero::before { content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--accent),var(--fp),transparent);border-radius:16px 16px 0 0; }
+.pm-hgrid { display:grid;grid-template-columns:160px 1fr 200px;gap:32px;align-items:start; }
+@media(max-width:900px) { .pm-hgrid { grid-template-columns:1fr; } }
+.pm-gwrap { position:relative;width:155px;height:155px; }
+.pm-gctr { position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;z-index:2; }
+.pm-gpct { font-size:26px;font-weight:900;line-height:1;color:var(--fg); }
+.pm-glbl { font-size:10px;color:var(--muted);margin-top:3px; }
+.pm-nwlbl { font-size:10px;font-weight:700;color:var(--muted);letter-spacing:1.4px;text-transform:uppercase;margin-bottom:7px; }
+.pm-nwval { font-size:42px;font-weight:900;letter-spacing:-1.5px;color:var(--text);line-height:1; }
+.pm-nwsub { font-size:12px;color:var(--muted);margin-top:7px; }
+/* Progress bar */
+.pm-pbar-wrap { margin-top:20px; }
+.pm-pbar-bg { height:10px;background:var(--bg-soft);border-radius:5px;position:relative;overflow:visible; }
+.pm-pbar-fill { height:100%;border-radius:5px;background:linear-gradient(90deg,var(--accent),var(--fp));transition:width 1s cubic-bezier(.16,1,.3,1);position:relative;z-index:1; }
+.pm-pticks { position:absolute;inset:0; }
+.pm-ptick { position:absolute;top:-6px;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:2px; }
+.pm-tickline { width:1.5px;border-radius:1px; }
+.pm-ticklbl { font-size:9px;font-weight:700;white-space:nowrap; }
+.pm-pends { display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:14px; }
+.pm-pills { display:flex;gap:7px;flex-wrap:wrap;margin-top:12px; }
+.pm-pill { background:var(--bg-soft);border:1px solid var(--border);border-radius:7px;padding:5px 11px;font-size:11px;color:var(--text-2);display:flex;align-items:center;gap:5px;white-space:nowrap; }
+.pm-pdot { width:6px;height:6px;border-radius:50%;flex-shrink:0; }
+.pm-gscol { display:flex;flex-direction:column;gap:10px; }
+.pm-gs { background:var(--bg-soft);border:1px solid var(--border);border-radius:10px;padding:13px 15px; }
+.pm-gsl { font-size:9px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:5px; }
+.pm-gsv { font-size:15px;font-weight:800;color:var(--text); }
 
-/* ── Stat badges & bars ─────────────────────────────────────── */
-.badge { display:inline-block; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:700; }
-.b-pos { background:var(--clr-pos-bg); color:var(--clr-pos); }
-.b-neg { background:var(--clr-neg-bg); color:var(--clr-neg); }
-.b-goal { background:var(--clr-goal-bg); color:var(--clr-goal); }
-.b-acc { background:var(--accent-soft); color:var(--accent); }
-.sbar { display:flex; height:10px; border-radius:5px; overflow:hidden; border:1px solid var(--border); margin-top:12px; }
-.sbar-leg { display:flex; gap:10px; margin-top:7px; flex-wrap:wrap; }
-.sbar-dot { width:8px; height:8px; border-radius:2px; display:inline-block; flex-shrink:0; }
-.sbar-lbl { font-size:11px; color:var(--muted); display:flex; align-items:center; gap:4px; }
-.mbar { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
-.mbar-lbl { font-size:11px; color:var(--muted); min-width:64px; font-weight:500; }
-.mbar-bg { flex:1; height:5px; background:var(--bg-soft); border-radius:99px; overflow:hidden; }
-.mbar-fill { height:100%; border-radius:99px; }
-.mbar-val { font-size:11px; min-width:36px; text-align:right; color:var(--text-2); font-variant-numeric:tabular-nums; }
+/* ── Badges ─────────────────────────────────────────────────── */
+.pm-bd { display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;white-space:nowrap; }
+.pm-bdp { background:var(--fp-bg);color:var(--fp); }
+.pm-bdn { background:var(--fn-bg);color:var(--fn); }
+.pm-bdg { background:var(--fg-bg);color:var(--fg); }
+.pm-bda { background:rgba(219,234,254,.8);color:var(--accent); }
+[data-theme="dark"] .pm-bda { background:rgba(96,165,250,.12);color:var(--accent); }
 
-/* ── Chart wrappers ─────────────────────────────────────────── */
-.ch { position:relative; height:280px; }
-.ch-sm { position:relative; height:230px; }
-.ch-mini { position:relative; height:80px; }
-.ch-growth { position:relative; height:240px; margin-top:18px; }
+/* ── Asset bar ──────────────────────────────────────────────── */
+.pm-abar { height:12px;border-radius:6px;overflow:hidden;border:1px solid var(--border);margin-top:14px;display:flex; }
+.pm-aseg { height:100%; }
+.pm-aleg { display:flex;gap:13px;margin-top:8px;flex-wrap:wrap; }
+.pm-aitem { display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted); }
+.pm-adot { width:9px;height:9px;border-radius:3px;flex-shrink:0; }
+
+/* ── Live Market ─────────────────────────────────────────────── */
+.pm-lmrow { display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);gap:12px; }
+.pm-lmrow:last-child { border-bottom:none; }
+.pm-lmname { font-size:13px;font-weight:700;color:var(--text); }
+.pm-lmtk { font-size:10px;color:var(--muted);margin-left:5px; }
+.pm-lmprice { font-size:13px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums; }
+
+/* ── AI Insight ─────────────────────────────────────────────── */
+.pm-aibox { background:var(--bg-soft);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:0 12px 12px 0;padding:15px 18px;margin-top:14px; }
+.pm-aititle { font-size:10px;font-weight:700;color:var(--accent);letter-spacing:1px;text-transform:uppercase;margin-bottom:11px; }
+.pm-airow { display:flex;gap:10px;margin-bottom:7px;font-size:12px;line-height:1.55; }
+.pm-aik { color:var(--muted);min-width:90px;font-weight:700;flex-shrink:0; }
+.pm-aiv { color:var(--text-2); }
+
+/* ── Comparison ─────────────────────────────────────────────── */
+.pm-cmpbtn { padding:5px 13px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:600;border:1px solid var(--border);color:var(--muted);background:var(--bg-card);transition:all .15s;font-family:inherit; }
+.pm-cmpbtn.active { background:var(--accent);border-color:var(--accent);color:#fff; }
+.pm-cmpbtn:hover:not(.active) { border-color:var(--accent);color:var(--accent); }
+.pm-cmpmc { background:var(--bg-soft);border:1px solid var(--border);border-radius:9px;padding:11px 13px; }
+.pm-cmpl { font-size:9px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px; }
+
+/* ── Health ─────────────────────────────────────────────────── */
+.pm-hm { background:var(--bg-soft);border:1px solid var(--border);border-radius:10px;padding:12px 14px; }
+.pm-hml { font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px; }
+.pm-hmbar { height:4px;background:var(--border);border-radius:2px;overflow:hidden;margin-bottom:4px; }
+.pm-hmfill { height:100%;border-radius:2px; }
+.pm-hmtxt { font-size:10px;color:var(--muted); }
 
 /* ── Table ──────────────────────────────────────────────────── */
-.dtbl { width:100%; border-collapse:collapse; font-size:13px; }
-.dtbl th { padding:9px 11px; font-size:9px; font-weight:700; letter-spacing:1px; text-transform:uppercase; color:var(--muted); border-bottom:1px solid var(--border); background:var(--bg-soft); text-align:left; }
-.dtbl th.r { text-align:right; }
-.dtbl td { padding:10px 11px; border-bottom:1px solid var(--border); vertical-align:middle; color:var(--text-2); }
-.dtbl td.r { text-align:right; font-variant-numeric:tabular-nums; }
-.dtbl tbody tr:hover td { background:var(--bg-soft); }
-.dtbl tbody tr:last-child td { border-bottom:none; }
-.dtbl tfoot td { border-top:1px solid var(--border); background:var(--bg-soft); font-weight:700; padding:10px 11px; }
+.pm-tbl { width:100%;border-collapse:collapse;font-size:13px; }
+.pm-tbl th { padding:8px 10px;font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);background:var(--bg-soft);text-align:left; }
+.pm-tbl th.r { text-align:right; }
+.pm-tbl td { padding:10px 10px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:middle; }
+.pm-tbl td.r { text-align:right;font-variant-numeric:tabular-nums; }
+.pm-tbl tbody tr:hover td { background:var(--bg-soft); }
+.pm-tbl tbody tr:last-child td { border-bottom:none; }
+.pm-tbl tfoot td { border-top:1.5px solid var(--border);background:var(--bg-soft);font-weight:700;padding:9px 10px; }
 
-/* ── Live market (compact) ──────────────────────────────────── */
-.lm-row { display:flex; align-items:center; justify-content:space-between; padding:9px 0; border-bottom:1px solid var(--border); gap:10px; }
-.lm-row:last-child { border-bottom:none; }
-.lm-name { font-size:13px; font-weight:700; color:var(--text); }
-.lm-ticker { font-size:10px; color:var(--muted); margin-left:5px; }
-.lm-price { font-size:13px; font-weight:700; color:var(--text); font-variant-numeric:tabular-nums; }
-.lm-skel { height:13px; border-radius:4px; background:var(--bg-soft); animation:shimmer 1.4s linear infinite; background-size:200% 100%; }
-[data-theme="dark"] .lm-skel { background:linear-gradient(90deg,rgba(255,255,255,0.04) 25%,rgba(255,255,255,0.08) 50%,rgba(255,255,255,0.04) 75%); background-size:200% 100%; }
+/* ── Sim Slider ─────────────────────────────────────────────── */
+.pm-sl { -webkit-appearance:none;appearance:none;width:100%;height:4px;border-radius:2px;background:var(--bg-soft);outline:none;cursor:pointer; }
+.pm-sl::-webkit-slider-thumb { -webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--accent);border:2px solid var(--bg-card);cursor:pointer;box-shadow:0 0 6px rgba(29,78,216,.3); }
+.pm-sl::-moz-range-thumb { width:16px;height:16px;border-radius:50%;background:var(--accent);border:2px solid var(--bg-card); }
 
-/* ── AI opinion ─────────────────────────────────────────────── */
-.ai-box { background:var(--bg-soft); border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:0 12px 12px 0; padding:16px 18px; margin-top:16px; }
-.ai-title { font-size:10px; font-weight:700; color:var(--accent); letter-spacing:1px; text-transform:uppercase; margin-bottom:12px; display:flex; align-items:center; gap:6px; }
-.ai-row { display:flex; gap:8px; margin-bottom:8px; font-size:12px; }
-.ai-key { color:var(--muted); min-width:88px; font-weight:700; flex-shrink:0; }
-.ai-val { color:var(--text-2); flex:1; line-height:1.55; }
-
-/* ── Cmp panel ──────────────────────────────────────────────── */
-.cmp-btn { padding:5px 13px; border-radius:7px; cursor:pointer; font-size:12px; font-weight:600; border:1px solid var(--border); color:var(--muted); background:var(--bg-card); transition:all .15s; font-family:inherit; }
-.cmp-btn.active { background:var(--accent); border-color:var(--accent); color:#fff; }
-.cmp-btn:hover:not(.active) { border-color:var(--accent); color:var(--accent); }
-
-/* ── Health section ─────────────────────────────────────────── */
-.h-score-wrap { display:flex; flex-direction:column; align-items:center; }
-.h-score-ring { position:relative; width:120px; height:120px; }
-.h-score-center { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
-.h-metric { background:var(--bg-soft); border:1px solid var(--border); border-radius:10px; padding:12px 14px; }
-.h-metric-lbl { font-size:10px; color:var(--muted); font-weight:700; margin-bottom:7px; text-transform:uppercase; letter-spacing:0.5px; }
-.h-mbar { height:4px; background:var(--border); border-radius:2px; overflow:hidden; margin-top:5px; }
-.h-mbar-fill { height:100%; border-radius:2px; }
-
-/* ── Sim slider ─────────────────────────────────────────────── */
-.sim-sl { -webkit-appearance:none; appearance:none; width:100%; height:4px; border-radius:2px; background:var(--bg-soft); outline:none; cursor:pointer; }
-.sim-sl::-webkit-slider-thumb { -webkit-appearance:none; width:16px; height:16px; border-radius:50%; background:var(--accent); border:2px solid var(--bg-card); cursor:pointer; box-shadow:0 0 6px rgba(29,78,216,0.4); }
-.sim-sl::-moz-range-thumb { width:16px; height:16px; border-radius:50%; background:var(--accent); border:2px solid var(--bg-card); }
-
-/* ── Keyframes ──────────────────────────────────────────────── */
-@keyframes orb1 { 0%,100%{transform:translate(0,0)} 50%{transform:translate(28px,-22px)} }
-@keyframes orb2 { 0%,100%{transform:translate(0,0)} 50%{transform:translate(-22px,28px)} }
-@keyframes orb3 { 0%,100%{transform:translate(0,0)} 50%{transform:translate(18px,18px)} }
-@keyframes fadeUp { from{opacity:0;transform:translateY(10px) scale(.97)} to{opacity:1;transform:translateY(0) scale(1)} }
-@keyframes shake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-7px)} 40%{transform:translateX(7px)} 60%{transform:translateX(-4px)} 80%{transform:translateX(4px)} }
-@keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
-@keyframes sectIn { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
-.sect-anim { animation: sectIn .45s cubic-bezier(.16,1,.3,1) both; }
+/* ── Animations ─────────────────────────────────────────────── */
+@keyframes pmOrba { 0%,100%{transform:translate(0,0)} 50%{transform:translate(28px,-22px)} }
+@keyframes pmOrbb { 0%,100%{transform:translate(0,0)} 50%{transform:translate(-22px,28px)} }
+@keyframes pmFadeUp { from{opacity:0;transform:translateY(10px) scale(.97)} to{opacity:1;transform:none} }
+@keyframes pmShake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-7px)} 40%{transform:translateX(7px)} 60%{transform:translateX(-4px)} 80%{transform:translateX(4px)} }
+@keyframes pmIn { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:none} }
+.pm-sa { animation:pmIn .4s cubic-bezier(.16,1,.3,1) both; }
 </style>
 
 <!-- Lock Screen ─────────────────────────────────────────────── -->
 <div id="lockScreen">
-  <div class="orb orb-1"></div>
-  <div class="orb orb-2"></div>
-  <div class="orb orb-3"></div>
-  <div class="lock-grid"></div>
-  <div class="lock-card">
-    <div class="lock-shine-top"></div>
-    <div class="lock-icon">
-      <svg width="34" height="34" viewBox="0 0 48 48" fill="none" stroke="#60a5fa" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M15 22v-7a9 9 0 0 1 18 0v7"/>
-        <rect x="9" y="22" width="30" height="21" rx="5"/>
+  <div class="pm-orb pm-orb-a"></div>
+  <div class="pm-orb pm-orb-b"></div>
+  <div class="pm-lkcard">
+    <div class="pm-lkshine"></div>
+    <div class="pm-lkicon">
+      <svg width="32" height="32" viewBox="0 0 48 48" fill="none" stroke="#60a5fa" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M15 22v-7a9 9 0 0 1 18 0v7"/><rect x="9" y="22" width="30" height="21" rx="5"/>
         <circle cx="24" cy="33" r="3" fill="#60a5fa" stroke="none"/>
         <line x1="24" y1="36" x2="24" y2="40.5" stroke="#60a5fa" stroke-width="2.2"/>
       </svg>
     </div>
-    <div class="lock-title">PRIVATE</div>
-    <div class="lock-sub">자산 현황 · 비밀번호 입력</div>
-    <input id="pwInput" class="lock-input" type="password" placeholder="· · · · · · · ·" autocomplete="off"/>
-    <button class="lock-btn" id="unlockBtn">잠금 해제</button>
-    <div class="lock-err" id="pwErr"></div>
-    <div class="lock-hint">direcf.github.io · property</div>
-    <div class="lock-shine-bot"></div>
+    <div class="pm-lktitle">PRIVATE</div>
+    <div class="pm-lksub">자산 현황 · 비밀번호 입력</div>
+    <input id="pwInput" class="pm-lkinp" type="password" placeholder="· · · · · · · ·" autocomplete="off"/>
+    <button class="pm-lkbtn" id="unlockBtn">잠금 해제</button>
+    <div class="pm-lkerr" id="pwErr"></div>
   </div>
 </div>
 
-<!-- Dashboard (hidden until auth) ───────────────────────────── -->
-<div id="pmDashboard" style="display:none">
+<!-- Dashboard ───────────────────────────────────────────────── -->
+<div id="pmWrap" style="display:none">
 
-  <!-- KPI Ticker (sticky, inside .main flow, never covers sidebar/header) -->
+  <!-- KPI Ticker -->
   <div id="kpiTicker">
-    <div class="kpi-brand">
-      <div class="kpi-brand-dot"></div>
-      <span class="kpi-brand-txt">WEALTH</span>
+    <div class="pm-kbrand">
+      <div class="pm-kbdot">
+        <svg width="12" height="10" viewBox="0 0 14 12" fill="none"><polyline points="1,6 4,6 6,1 9,11 11,6 14,6" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <span class="pm-kbtxt">WEALTH</span>
     </div>
-    <div class="kpi-items" id="kpiItems"></div>
-    <div id="kpiUpdated"></div>
+    <div class="pm-kslots" id="kpiSlots"></div>
+    <div class="pm-kts" id="kpiTs"></div>
   </div>
 
-  <!-- Content -->
-  <div class="view" id="propView" style="padding-top:24px">
+  <!-- View -->
+  <div class="view" id="propView" style="padding-top:22px">
 
-    <!-- Date Selector -->
-    <div style="position:relative;display:inline-block;margin-bottom:24px;" id="snapTabWrap">
-      <button id="datePickerBtn" style="display:inline-flex;align-items:center;gap:10px;padding:9px 18px;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;cursor:pointer;font-size:14px;font-weight:700;color:var(--text);box-shadow:var(--shadow-sm);font-family:inherit;">
-        <span>📅</span><span id="datePickerLabel">—</span><span style="color:var(--muted);font-size:13px;">▾</span>
+    <!-- Date selector -->
+    <div style="position:relative;display:inline-block;margin-bottom:22px">
+      <button id="dateBtn" style="display:inline-flex;align-items:center;gap:10px;padding:9px 18px;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;cursor:pointer;font-size:14px;font-weight:700;color:var(--text);box-shadow:0 1px 4px rgba(0,0,0,.05);font-family:inherit">
+        <span>📅</span><span id="dateLbl">—</span><span style="color:var(--muted);font-size:12px">▾</span>
       </button>
-      <div id="dateDropdown" style="display:none;position:absolute;top:calc(100% + 5px);left:0;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-lg);z-index:50;min-width:260px;padding:6px;" id="dateDropdown"></div>
+      <div id="dateDd" style="display:none;position:absolute;top:calc(100% + 6px);left:0;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.1);z-index:50;min-width:240px;padding:6px"></div>
     </div>
 
     <!-- Goal Hero -->
-    <div class="goal-hero sect-anim" style="animation-delay:.05s">
-      <div class="goal-grid">
+    <div class="pm-hero pm-sa" style="animation-delay:.04s">
+      <div class="pm-hgrid">
         <div>
-          <div class="gauge-wrap">
-            <div id="gaugeChart" style="position:absolute;inset:0;"></div>
-            <div class="gauge-center">
-              <div class="gauge-pct" id="gaugePct">0%</div>
-              <div class="gauge-lbl">달성률</div>
-            </div>
+          <div class="pm-gwrap">
+            <div id="gaugeChart" style="position:absolute;inset:0"></div>
+            <div class="pm-gctr"><div class="pm-gpct" id="gaugePct">0%</div><div class="pm-glbl">달성률</div></div>
           </div>
         </div>
         <div>
-          <div class="goal-label">현재 순자산</div>
-          <div class="goal-nw" id="heroNW">—</div>
-          <div class="goal-target" id="heroTarget"></div>
-          <div class="goal-bar-outer">
-            <div class="goal-bar-bg">
-              <div class="goal-bar-fill" id="goalBarFill" style="width:0%"></div>
-              <div class="goal-milestones" id="goalMilestones"></div>
+          <div class="pm-nwlbl">현재 순자산</div>
+          <div class="pm-nwval" id="heroNW">—</div>
+          <div class="pm-nwsub" id="heroSub"></div>
+          <div class="pm-pbar-wrap">
+            <div class="pm-pbar-bg">
+              <div class="pm-pbar-fill" id="pbarFill" style="width:0%"></div>
+              <div class="pm-pticks" id="pbarTicks"></div>
             </div>
-            <div class="goal-bar-labels"><span>0</span><span id="goalBarMid" style="color:var(--accent)"></span><span style="color:var(--clr-goal)">5억 목표</span></div>
+            <div class="pm-pends">
+              <span>0</span>
+              <span id="pbarMid" style="font-weight:700;color:var(--accent)"></span>
+              <span style="font-weight:700;color:var(--fg)">5억 목표</span>
+            </div>
           </div>
-          <div class="goal-pills" id="goalPills"></div>
+          <div class="pm-pills" id="goalPills"></div>
         </div>
-        <div class="gstat-col" id="goalStats"></div>
+        <div class="pm-gscol" id="gsCol"></div>
       </div>
     </div>
 
-    <!-- 3 Stat Cards -->
-    <div class="pg3 sect-anim" style="animation-delay:.1s">
-      <div class="pcard">
-        <div class="pcard-accent a"></div>
-        <div style="font-size:10px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">총 자산</div>
-        <div id="statTotal" style="font-size:26px;font-weight:900;letter-spacing:-1px;color:var(--text);"></div>
-        <div id="statTotalSub" style="font-size:12px;color:var(--muted);margin-top:4px;"></div>
-        <div id="statTotalBars"></div>
+    <!-- 3 Stat cards -->
+    <div class="pm-g3 pm-sa" style="animation-delay:.08s">
+      <div class="pm-card">
+        <div class="pm-stripe" style="background:var(--accent)"></div>
+        <div style="font-size:9px;font-weight:700;color:var(--muted);letter-spacing:1.4px;text-transform:uppercase;margin-bottom:10px;margin-top:4px">총 자산</div>
+        <div id="s-ta" style="font-size:26px;font-weight:900;letter-spacing:-1px;color:var(--text)"></div>
+        <div id="s-ta-sub" style="font-size:12px;color:var(--muted);margin-top:4px"></div>
+        <div id="s-ta-bar"></div>
       </div>
-      <div class="pcard">
-        <div class="pcard-accent n"></div>
-        <div style="font-size:10px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">총 부채</div>
-        <div id="statDebt" style="font-size:26px;font-weight:900;letter-spacing:-1px;color:var(--clr-neg);"></div>
-        <div id="statDebtSub" style="font-size:12px;color:var(--muted);margin-top:4px;"></div>
-        <div id="statDebtDetail"></div>
+      <div class="pm-card">
+        <div class="pm-stripe" style="background:var(--fn)"></div>
+        <div style="font-size:9px;font-weight:700;color:var(--muted);letter-spacing:1.4px;text-transform:uppercase;margin-bottom:10px;margin-top:4px">총 부채</div>
+        <div id="s-td" style="font-size:26px;font-weight:900;letter-spacing:-1px;color:var(--fn)"></div>
+        <div id="s-td-sub" style="font-size:12px;color:var(--muted);margin-top:4px"></div>
+        <div id="s-td-det"></div>
       </div>
-      <div class="pcard">
-        <div class="pcard-accent p"></div>
-        <div style="font-size:10px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">투자 수익</div>
-        <div id="statGain" style="font-size:26px;font-weight:900;letter-spacing:-1px;"></div>
-        <div id="statGainSub" style="font-size:12px;color:var(--muted);margin-top:4px;"></div>
-        <div class="ch-mini" style="margin-top:10px;"><div id="returnGaugeChart" style="position:absolute;inset:0;"></div></div>
-        <div style="text-align:center;margin-top:2px;" id="returnGaugeLabel"></div>
-        <div id="cagrRow" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:11px;color:var(--muted);"></div>
+      <div class="pm-card">
+        <div class="pm-stripe" style="background:var(--fp)"></div>
+        <div style="font-size:9px;font-weight:700;color:var(--muted);letter-spacing:1.4px;text-transform:uppercase;margin-bottom:10px;margin-top:4px">투자 수익</div>
+        <div id="s-ig" style="font-size:26px;font-weight:900;letter-spacing:-1px"></div>
+        <div id="s-ig-sub" style="font-size:12px;color:var(--muted);margin-top:4px"></div>
+        <div style="position:relative;height:84px;margin-top:10px"><div id="retGauge" style="position:absolute;inset:0"></div></div>
+        <div id="retGaugeLbl" style="text-align:center;margin-top:2px;font-size:11px;color:var(--muted)"></div>
+        <div id="cagrRow" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:11px;color:var(--muted)"></div>
       </div>
     </div>
 
     <!-- Trend + Donut -->
-    <div class="pg12 sect-anim" style="animation-delay:.15s">
-      <div class="pcard">
-        <div class="sh">순자산 추이</div>
-        <div class="ch"><div id="trendChart"></div></div>
+    <div class="pm-g12 pm-sa" style="animation-delay:.12s">
+      <div class="pm-card">
+        <div class="pm-sh"><div class="pm-shbar"></div>순자산 추이</div>
+        <div style="position:relative;height:280px"><div id="trendChart"></div></div>
       </div>
-      <div class="pcard">
-        <div class="sh">자산 구성</div>
-        <div class="ch-sm"><div id="donutChart"></div></div>
+      <div class="pm-card">
+        <div class="pm-sh"><div class="pm-shbar"></div>자산 구성</div>
+        <div style="position:relative;height:230px"><div id="donutChart"></div></div>
       </div>
     </div>
 
-    <!-- Live Market (compact) -->
-    <div class="pcard sect-anim" style="margin-bottom:18px;animation-delay:.2s">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
-        <div class="sh" style="margin-bottom:0;">실시간 시세</div>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <div style="width:6px;height:6px;border-radius:50%;background:var(--clr-pos);animation:none;" id="livePulseDot"></div>
-          <span id="liveUpdated" style="font-size:10px;color:var(--muted);">--:-- 기준</span>
-          <button id="liveRefBtn" style="padding:3px 10px;background:var(--bg-soft);border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:11px;cursor:pointer;font-family:inherit;" onclick="fetchRealtime()">새로고침</button>
+    <!-- Live Market -->
+    <div class="pm-card pm-sa" style="margin-bottom:18px;animation-delay:.15s">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div class="pm-sh" style="margin-bottom:0"><div class="pm-shbar"></div>실시간 시세</div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="width:6px;height:6px;border-radius:50%;background:var(--fp)"></div>
+          <span id="liveTs" style="font-size:10px;color:var(--muted)">--:-- 기준</span>
+          <button id="liveRefBtn" onclick="fetchRealtime()" style="padding:3px 10px;background:var(--bg-soft);border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:11px;cursor:pointer;font-family:inherit">새로고침</button>
         </div>
       </div>
       <div id="liveRows"></div>
     </div>
 
     <!-- Portfolio -->
-    <div class="pcard sect-anim" style="margin-bottom:18px;animation-delay:.22s">
-      <div class="sh">투자 포트폴리오</div>
-      <div class="ch-sm" style="margin-bottom:16px;"><div id="top5Chart"></div></div>
-      <div style="overflow-x:auto;">
-        <table class="dtbl">
-          <thead>
-            <tr>
-              <th>종목</th><th>증권사</th>
-              <th class="r">투자원금</th><th class="r">평가액</th>
-              <th class="r">손익</th><th class="r">수익률</th><th style="min-width:90px;">비중</th>
-            </tr>
-          </thead>
-          <tbody id="invTable"></tbody>
-          <tfoot>
-            <tr>
-              <td colspan="2">합계</td>
-              <td class="r" id="invTc"></td><td class="r" id="invTe" style="color:var(--accent)"></td>
-              <td class="r" id="invTg"></td><td class="r" id="invTr"></td><td></td>
-            </tr>
-          </tfoot>
+    <div class="pm-card pm-sa" style="margin-bottom:18px;animation-delay:.17s">
+      <div class="pm-sh"><div class="pm-shbar"></div>투자 포트폴리오</div>
+      <div style="position:relative;height:230px;margin-bottom:16px"><div id="top5Chart"></div></div>
+      <div style="overflow-x:auto">
+        <table class="pm-tbl">
+          <thead><tr>
+            <th>종목</th><th>증권사</th>
+            <th class="r">투자원금</th><th class="r">평가액</th>
+            <th class="r">손익</th><th class="r">수익률</th><th style="min-width:80px">비중</th>
+          </tr></thead>
+          <tbody id="invBody"></tbody>
+          <tfoot><tr>
+            <td colspan="2">합계</td>
+            <td class="r" id="inv-tc"></td>
+            <td class="r" id="inv-te" style="color:var(--accent);font-weight:800"></td>
+            <td class="r" id="inv-tg"></td><td class="r" id="inv-tr"></td><td></td>
+          </tr></tfoot>
         </table>
       </div>
-      <div class="ai-box" id="aiBox"></div>
+      <div class="pm-aibox" id="aiBox"></div>
     </div>
 
-    <!-- Return Chart -->
-    <div class="pcard sect-anim" style="margin-bottom:18px;animation-delay:.25s">
-      <div class="sh">종목별 수익률</div>
-      <div class="ch"><div id="returnChart"></div></div>
+    <!-- Return chart -->
+    <div class="pm-card pm-sa" style="margin-bottom:18px;animation-delay:.19s">
+      <div class="pm-sh"><div class="pm-shbar"></div>종목별 수익률</div>
+      <div style="position:relative;height:280px"><div id="retChart"></div></div>
     </div>
 
-    <!-- Health Scorecard -->
-    <div id="healthSection" class="sect-anim" style="margin-bottom:18px;animation-delay:.28s"></div>
+    <!-- Health -->
+    <div id="healthSection" class="pm-sa" style="margin-bottom:18px;animation-delay:.21s"></div>
 
-    <!-- Snapshot Comparison + Loans -->
-    <div class="pg21 sect-anim" style="animation-delay:.3s">
-      <div class="pcard">
-        <div class="sh">스냅샷 비교</div>
-        <div style="font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:8px;">비교 기준 날짜</div>
-        <div id="cmpBtns" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;"></div>
+    <!-- Snapshot comparison + Loans -->
+    <div class="pm-g21 pm-sa" style="animation-delay:.23s">
+      <div class="pm-card">
+        <div class="pm-sh"><div class="pm-shbar"></div>스냅샷 비교</div>
+        <div id="cmpBtns" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px"></div>
         <div id="cmpPanel"></div>
-        <div class="ch-growth"><div id="growthChart"></div></div>
+        <div style="position:relative;height:240px;margin-top:16px"><div id="growthChart"></div></div>
       </div>
-      <div class="pcard">
-        <div class="sh">대출 현황</div>
-        <div id="loanSection"></div>
+      <div class="pm-card">
+        <div class="pm-sh"><div class="pm-shbar"></div>대출 현황</div>
+        <div id="loanSect"></div>
       </div>
     </div>
 
     <!-- Simulator -->
-    <div class="pcard sect-anim" style="margin-bottom:32px;animation-delay:.33s">
-      <div class="sh">목표 달성 시뮬레이터</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
+    <div class="pm-card pm-sa" style="margin-bottom:36px;animation-delay:.25s">
+      <div class="pm-sh"><div class="pm-shbar"></div>목표 달성 시뮬레이터</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:18px">
         <div>
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-            <label style="font-size:12px;color:var(--muted);font-weight:700;">월 추가 투자액</label>
-            <span id="simSavDisp" style="font-size:13px;font-weight:800;color:var(--accent);">0만원</span>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <label style="font-size:12px;color:var(--muted);font-weight:700">월 추가 투자액</label>
+            <span id="simSavD" style="font-size:13px;font-weight:800;color:var(--accent)">0만원</span>
           </div>
-          <input type="range" id="simSav" class="sim-sl" min="0" max="3000000" step="100000" value="0"/>
-          <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--muted);margin-top:4px;"><span>0</span><span>150만</span><span>300만</span></div>
+          <input type="range" id="simSav" class="pm-sl" min="0" max="3000000" step="100000" value="0">
+          <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--muted);margin-top:4px"><span>0</span><span>150만</span><span>300만</span></div>
         </div>
         <div>
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-            <label style="font-size:12px;color:var(--muted);font-weight:700;">연 기대 수익률</label>
-            <span id="simRateDisp" style="font-size:13px;font-weight:800;color:var(--accent);">10.0%</span>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <label style="font-size:12px;color:var(--muted);font-weight:700">연 기대 수익률</label>
+            <span id="simRateD" style="font-size:13px;font-weight:800;color:var(--accent)">10.0%</span>
           </div>
-          <input type="range" id="simRate" class="sim-sl" min="-5" max="30" step="0.5" value="10"/>
-          <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--muted);margin-top:4px;"><span>-5%</span><span>12.5%</span><span>30%</span></div>
+          <input type="range" id="simRate" class="pm-sl" min="-5" max="30" step="0.5" value="10">
+          <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--muted);margin-top:4px"><span>-5%</span><span>12.5%</span><span>30%</span></div>
         </div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:18px;">
-        <div id="scenC" style="border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center;background:var(--bg-soft);">
-          <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--clr-neg);margin-bottom:6px;">보수적</div>
-        </div>
-        <div id="scenR" style="border:1px solid var(--accent);border-radius:10px;padding:14px;text-align:center;background:var(--accent-soft);">
-          <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--accent);margin-bottom:6px;">현실적</div>
-        </div>
-        <div id="scenO" style="border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center;background:var(--bg-soft);">
-          <div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--clr-pos);margin-bottom:6px;">낙관적</div>
-        </div>
-      </div>
-      <div id="simChart" style="height:200px;"></div>
+      <div id="scenCards" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:18px"></div>
+      <div style="position:relative;height:220px"><div id="simChart"></div></div>
     </div>
 
-  </div><!-- /view -->
-</div><!-- /pmDashboard -->
+  </div>
+</div>
 
 <script is:inline src="https://cdn.jsdelivr.net/npm/apexcharts@3.45.1/dist/apexcharts.min.js"></script>
 <script is:inline define:vars={{ data: propertyData }}>
-// ── Auth ──────────────────────────────────────────────────────
-const HASH = 'ee6123683515b4605b92a9e8e3db97d3517f607f4a7a95583f821371ddd017a1';
-const SESSION_KEY = 'prop:auth';
-async function sha256(msg) {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(msg));
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+/* ── Auth ─────────────────────────────────────────────────── */
+const PW_HASH = 'ee6123683515b4605b92a9e8e3db97d3517f607f4a7a95583f821371ddd017a1';
+const SK = 'prop:auth';
+async function sha256(s) {
+  const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return Array.from(new Uint8Array(b)).map(x => x.toString(16).padStart(2,'0')).join('');
 }
 async function tryUnlock() {
-  const pw = document.getElementById('pwInput').value;
-  const errEl = document.getElementById('pwErr');
-  if (!pw) { errEl.textContent = '비밀번호를 입력해 주세요.'; return; }
-  const h = await sha256(pw);
-  if (h === HASH) {
-    sessionStorage.setItem(SESSION_KEY, '1');
+  const v = document.getElementById('pwInput').value, e = document.getElementById('pwErr');
+  if (!v) { e.textContent = '비밀번호를 입력하세요'; return; }
+  if (await sha256(v) === PW_HASH) {
+    sessionStorage.setItem(SK, '1');
     const ls = document.getElementById('lockScreen');
-    ls.style.transition = 'opacity .45s ease';
-    ls.style.opacity = '0'; ls.style.pointerEvents = 'none';
-    setTimeout(() => ls.style.display = 'none', 480);
-    const dash = document.getElementById('pmDashboard');
-    dash.style.display = 'block'; dash.style.opacity = '0';
-    dash.style.transition = 'opacity .35s ease';
-    setTimeout(() => { dash.style.opacity = '1'; }, 30);
-    if (typeof init === 'function') init();
+    ls.style.transition = 'opacity .4s'; ls.style.opacity = '0'; ls.style.pointerEvents = 'none';
+    setTimeout(() => ls.style.display = 'none', 450);
+    const wr = document.getElementById('pmWrap');
+    wr.style.display = 'block'; wr.style.opacity = '0'; wr.style.transition = 'opacity .35s';
+    setTimeout(() => wr.style.opacity = '1', 30);
+    init();
   } else {
-    const card = document.querySelector('.lock-card');
-    errEl.textContent = '비밀번호가 올바르지 않습니다.';
-    document.getElementById('pwInput').value = '';
-    card.style.animation = 'none'; void card.offsetWidth;
-    card.style.animation = 'shake .48s ease';
+    e.textContent = '비밀번호가 올바르지 않습니다';
+    document.querySelector('.pm-lkcard').style.animation = 'none';
+    void document.querySelector('.pm-lkcard').offsetWidth;
+    document.querySelector('.pm-lkcard').style.animation = 'pmShake .45s ease';
     const inp = document.getElementById('pwInput');
-    inp.style.borderBottomColor = '#ff4d6d';
-    setTimeout(() => { inp.style.borderBottomColor = 'rgba(255,255,255,0.1)'; errEl.textContent = ''; }, 1600);
+    inp.value = ''; inp.style.borderBottomColor = '#f87171';
+    setTimeout(() => { inp.style.borderBottomColor = 'rgba(255,255,255,.12)'; e.textContent = ''; }, 1500);
   }
 }
 document.getElementById('unlockBtn').addEventListener('click', tryUnlock);
 document.getElementById('pwInput').addEventListener('keydown', e => { if (e.key === 'Enter') tryUnlock(); });
-setTimeout(() => { const pw = document.getElementById('pwInput'); if (pw) pw.focus(); }, 80);
-if (sessionStorage.getItem(SESSION_KEY) === '1') {
+setTimeout(() => { const p = document.getElementById('pwInput'); if (p) p.focus(); }, 80);
+if (sessionStorage.getItem(SK) === '1') {
   document.getElementById('lockScreen').style.display = 'none';
-  document.getElementById('pmDashboard').style.display = 'block';
+  document.getElementById('pmWrap').style.display = 'block';
 }
 
-// ── Helpers ───────────────────────────────────────────────────
-const fmtW = v => { const a=Math.abs(v); if(a>=1e8) return (v/1e8).toFixed(2)+'억'; if(a>=1e4) return Math.round(v/1e4).toLocaleString()+'만'; return Math.round(v).toLocaleString(); };
-const fmtP = v => (v>=0?'+':'')+v.toFixed(2)+'%';
-const dC  = v => v>=0 ? 'var(--clr-pos)' : 'var(--clr-neg)';
-const dBg = v => v>=0 ? 'var(--clr-pos-bg)' : 'var(--clr-neg-bg)';
-const isDark = () => document.documentElement.dataset.theme === 'dark';
-function chartCfg() {
-  const d = isDark();
+/* ── Theme & hex colors for ApexCharts ─────────────────────── */
+const dark = () => document.documentElement.dataset.theme === 'dark';
+function CC() {
+  const d = dark();
   return {
-    theme: { mode: d ? 'dark' : 'light' },
-    chart: { background: 'transparent', toolbar: {show:false}, zoom: {enabled:false}, fontFamily: "'Pretendard', sans-serif" },
-    grid: { borderColor: d ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.06)', strokeDashArray: 3 },
-    tooltip: { theme: d ? 'dark' : 'light', style: {fontSize:'12px', fontFamily:"'Pretendard', sans-serif"} },
+    pos:  d ? '#10b981' : '#059669',
+    neg:  d ? '#f87171' : '#dc2626',
+    acc:  d ? '#60a5fa' : '#1d4ed8',
+    goal: d ? '#fbbf24' : '#d97706',
+    teal: d ? '#22d3ee' : '#0891b2',
+    text: d ? '#94a3b8' : '#374151',
+    grid: d ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.05)',
+    bg:   d ? '#131b2f' : '#ffffff',
+    soft: d ? '#1a253f' : '#f1f5f9',
   };
 }
-function calcCAGR(s0, s1, months) {
-  if (!s0 || s0 <= 0 || months < 1) return null;
-  return (Math.pow(s1/s0, 12/months) - 1) * 100;
+const PC = v => v >= 0 ? 'var(--fp)' : 'var(--fn)';
+const BC = v => v >= 0 ? 'var(--fp-bg)' : 'var(--fn-bg)';
+
+/* ── Formatters ───────────────────────────────────────────── */
+const fW = v => { const a = Math.abs(v); return a >= 1e8 ? (v/1e8).toFixed(2)+'억' : a >= 1e4 ? Math.round(v/1e4).toLocaleString()+'만' : Math.round(v).toLocaleString(); };
+const fP = v => (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+
+/* ── Chart registry ───────────────────────────────────────── */
+const charts = {};
+function mk(id, opts) {
+  if (charts[id]) { try { charts[id].destroy(); } catch(e) {} delete charts[id]; }
+  const el = document.getElementById(id); if (!el) return null;
+  const c = new ApexCharts(el, opts); c.render(); charts[id] = c; return c;
+}
+function apexBase(extra = {}) {
+  const c = CC();
+  return {
+    theme: { mode: dark() ? 'dark' : 'light' },
+    chart: {
+      background: 'transparent', toolbar: { show: false }, zoom: { enabled: false },
+      fontFamily: "'Pretendard', -apple-system, sans-serif", animations: { speed: 400 }, ...extra
+    },
+    grid: { borderColor: c.grid, strokeDashArray: 3 },
+    tooltip: { theme: dark() ? 'dark' : 'light', style: { fontSize: '12px', fontFamily: "'Pretendard',sans-serif" } },
+  };
 }
 
-// ── Chart instances ───────────────────────────────────────────
-let gC, tC, dC2, rGC, t5C, retC, grC, simC;
-function destroyAll() {
-  [gC,tC,dC2,rGC,t5C,retC,grC].forEach(c => { try { c?.destroy(); } catch(e){} });
-  gC=tC=dC2=rGC=t5C=retC=grC=null;
-}
-
-// ── Build charts ─────────────────────────────────────────────
+/* ── Charts ───────────────────────────────────────────────── */
 function buildGauge(pct) {
-  if (gC) { try{gC.destroy();}catch(e){} gC=null; }
-  const el = document.getElementById('gaugeChart'); if (!el) return;
-  const color = pct>=70?'var(--clr-pos)':pct>=40?'var(--accent)':'var(--clr-goal)';
-  gC = new ApexCharts(el, { ...chartCfg(), series:[parseFloat(pct)],
-    chart:{...chartCfg().chart,type:'radialBar',height:160},
-    plotOptions:{radialBar:{startAngle:-135,endAngle:135,hollow:{size:'68%',background:'transparent'},dataLabels:{show:false},track:{background: isDark()?'rgba(255,255,255,0.06)':'rgba(0,0,0,0.06)',strokeWidth:'100%'}}},
-    colors:[color], stroke:{lineCap:'round'}, legend:{show:false}, tooltip:{enabled:false} });
-  gC.render();
+  const c = CC(), col = pct >= 70 ? c.pos : pct >= 40 ? c.acc : c.goal;
+  mk('gaugeChart', {
+    ...apexBase({ type: 'radialBar', height: 155 }),
+    series: [parseFloat(pct)],
+    plotOptions: { radialBar: { startAngle: -135, endAngle: 135, hollow: { size: '68%', background: 'transparent' }, dataLabels: { show: false }, track: { background: c.soft, strokeWidth: '100%' } } },
+    colors: [col], stroke: { lineCap: 'round' }, legend: { show: false }, tooltip: { enabled: false },
+  });
 }
-function buildReturnGauge(rate) {
-  if (rGC) { try{rGC.destroy();}catch(e){} rGC=null; }
-  const el = document.getElementById('returnGaugeChart'); if(!el) return;
-  const norm = parseFloat(((Math.min(Math.max(rate,-50),100)+50)/150*100).toFixed(1));
-  const col = rate>=0 ? 'var(--clr-pos)' : 'var(--clr-neg)';
-  rGC = new ApexCharts(el, { ...chartCfg(), series:[norm],
-    chart:{...chartCfg().chart,type:'radialBar',height:90},
-    plotOptions:{radialBar:{startAngle:-90,endAngle:90,hollow:{size:'65%',background:'transparent'},dataLabels:{show:false},track:{background: isDark()?'rgba(255,255,255,0.06)':'rgba(0,0,0,0.06)',strokeWidth:'100%'}}},
-    colors:[col], stroke:{lineCap:'round'}, legend:{show:false}, tooltip:{enabled:false} });
-  rGC.render();
+function buildRetGauge(rate) {
+  const c = CC(), col = rate >= 0 ? c.pos : c.neg;
+  const norm = ((Math.min(Math.max(rate, -50), 100) + 50) / 150 * 100).toFixed(1);
+  mk('retGauge', {
+    ...apexBase({ type: 'radialBar', height: 90 }),
+    series: [parseFloat(norm)],
+    plotOptions: { radialBar: { startAngle: -90, endAngle: 90, hollow: { size: '65%', background: 'transparent' }, dataLabels: { show: false }, track: { background: c.soft, strokeWidth: '100%' } } },
+    colors: [col], stroke: { lineCap: 'round' }, legend: { show: false }, tooltip: { enabled: false },
+  });
 }
 function buildTrend() {
-  if (tC) { try{tC.destroy();}catch(e){} tC=null; }
-  const el = document.getElementById('trendChart'); if (!el) return;
-  tC = new ApexCharts(el, { ...chartCfg(),
-    series:[
-      {name:'총자산',data:data.snapshots.map(s=>Math.round(s.summary.totalAssets/10000))},
-      {name:'순자산',data:data.snapshots.map(s=>Math.round(s.summary.netWorth/10000))},
-      {name:'총부채',data:data.snapshots.map(s=>Math.round(s.summary.totalDebt/10000))},
+  const c = CC();
+  mk('trendChart', {
+    ...apexBase({ type: 'area', height: 280 }),
+    series: [
+      { name: '총자산', data: data.snapshots.map(s => Math.round(s.summary.totalAssets / 1e6)) },
+      { name: '순자산', data: data.snapshots.map(s => Math.round(s.summary.netWorth / 1e6)) },
+      { name: '총부채', data: data.snapshots.map(s => Math.round(s.summary.totalDebt / 1e6)) },
     ],
-    chart:{...chartCfg().chart,type:'area',height:280},
-    colors:['var(--accent)','var(--clr-pos)','var(--clr-neg)'],
-    stroke:{width:[2.5,2.5,2],curve:'smooth',dashArray:[0,0,5]},
-    fill:{type:'gradient',gradient:{shadeIntensity:.5,type:'vertical',opacityFrom:.15,opacityTo:0}},
-    xaxis:{categories:data.snapshots.map(s=>s.snapshotDate),labels:{style:{fontSize:'11px'}},axisBorder:{show:false},axisTicks:{show:false}},
-    yaxis:{labels:{style:{fontSize:'11px'},formatter:v=>(v/10000).toFixed(1)+'억'}},
-    markers:{size:5,strokeWidth:0,hover:{size:7}},
-    legend:{fontSize:'12px'},
-    tooltip:{...chartCfg().tooltip,y:{formatter:v=>(v/10000).toFixed(3)+'억원'}},
-    annotations:{yaxis:[{y:Math.round(data.goal.target/10000),borderColor:'var(--clr-goal)',strokeDashArray:4,borderWidth:1.5,label:{text:'목표 5억',style:{color:'var(--clr-goal)',background:isDark()?'rgba(10,18,40,.9)':'rgba(255,255,255,.9)',fontSize:'10px'}}}]},
+    colors: [c.acc, c.pos, c.neg],
+    stroke: { width: [2.5, 2.5, 2], curve: 'smooth', dashArray: [0, 0, 5] },
+    fill: { type: 'gradient', gradient: { shadeIntensity: .4, type: 'vertical', opacityFrom: .18, opacityTo: .02 } },
+    xaxis: { categories: data.snapshots.map(s => s.snapshotDate), labels: { style: { fontSize: '11px', colors: c.text } }, axisBorder: { show: false }, axisTicks: { show: false } },
+    yaxis: { labels: { style: { fontSize: '11px', colors: c.text }, formatter: v => (v / 100).toFixed(2) + '억' } },
+    markers: { size: 5, strokeWidth: 2, strokeColors: c.bg, hover: { size: 7 } },
+    legend: { fontSize: '12px', fontFamily: "'Pretendard',sans-serif", labels: { colors: c.text } },
+    tooltip: { ...apexBase().tooltip, y: { formatter: v => (v / 100).toFixed(3) + '억원' } },
+    annotations: { yaxis: [{ y: Math.round(data.goal.target / 1e6), borderColor: c.goal, strokeDashArray: 4, borderWidth: 1.5, label: { text: '목표 5억', style: { color: c.goal, background: c.bg, fontSize: '10px' } } }] },
   });
-  tC.render();
 }
 function buildDonut(sm) {
-  if (dC2) { try{dC2.destroy();}catch(e){} dC2=null; }
-  const el = document.getElementById('donutChart'); if (!el) return;
-  const slices = [{n:'부동산',v:sm.realEstate,c:'var(--accent)'},{n:'주식·투자',v:sm.investmentTotal,c:'var(--clr-pos)'},{n:'저축',v:sm.savings,c:'var(--clr-goal)'},{n:'현금',v:sm.cash,c:'var(--clr-teal)'}].filter(s=>s.v>0);
-  dC2 = new ApexCharts(el, { ...chartCfg(),
-    series:slices.map(s=>Math.round(s.v/10000)), labels:slices.map(s=>s.n),
-    chart:{...chartCfg().chart,type:'donut',height:230},
-    colors:slices.map(s=>s.c),
-    plotOptions:{pie:{donut:{size:'68%',labels:{show:true,total:{show:true,label:'총자산',formatter:()=>(sm.totalAssets/1e8).toFixed(2)+'억',fontSize:'14px',fontWeight:800},value:{fontSize:'13px',fontWeight:700,formatter:v=>(v/10000).toFixed(1)+'억'}}}}},
-    dataLabels:{enabled:false},
-    legend:{position:'bottom',fontSize:'11px',markers:{width:8,height:8,radius:2}},
-    tooltip:{...chartCfg().tooltip,y:{formatter:v=>(v/10000).toFixed(2)+'억'}},
-    stroke:{width:2,colors:[isDark()?'#0b1220':'#fff']},
+  const c = CC();
+  const sl = [{ n: '부동산', v: sm.realEstate, col: c.acc }, { n: '주식·투자', v: sm.investmentTotal, col: c.pos }, { n: '저축', v: sm.savings, col: c.goal }, { n: '현금', v: sm.cash, col: c.teal }].filter(s => s.v > 0);
+  mk('donutChart', {
+    ...apexBase({ type: 'donut', height: 230 }),
+    series: sl.map(s => Math.round(s.v / 1e4)), labels: sl.map(s => s.n),
+    colors: sl.map(s => s.col),
+    plotOptions: { pie: { donut: { size: '68%', labels: { show: true, total: { show: true, label: '총자산', formatter: () => (sm.totalAssets / 1e8).toFixed(2) + '억', fontSize: '14px', fontWeight: 800, color: c.text }, value: { fontSize: '13px', fontWeight: 700, color: c.text, formatter: v => (v / 10000).toFixed(1) + '억' } } } } },
+    dataLabels: { enabled: false },
+    legend: { position: 'bottom', fontSize: '11px', fontFamily: "'Pretendard',sans-serif", markers: { width: 8, height: 8, radius: 2 }, labels: { colors: c.text } },
+    tooltip: { ...apexBase().tooltip, y: { formatter: v => (v / 10000).toFixed(2) + '억' } },
+    stroke: { width: 2, colors: [c.bg] },
   });
-  dC2.render();
 }
 function buildTop5(invs) {
-  if (t5C) { try{t5C.destroy();}catch(e){} t5C=null; }
-  const el = document.getElementById('top5Chart'); if (!el) return;
-  const top5 = [...invs].sort((a,b)=>b.eval-a.eval).slice(0,5);
-  t5C = new ApexCharts(el, { ...chartCfg(),
-    series:[{name:'평가금액',data:top5.map(x=>Math.round(x.eval/10000))}],
-    chart:{...chartCfg().chart,type:'bar',height:230},
-    plotOptions:{bar:{horizontal:true,borderRadius:4,borderRadiusApplication:'end',distributed:true,dataLabels:{position:'top'}}},
-    colors:top5.map(x=>x.rate>=0?'var(--clr-pos)':'var(--clr-neg)'),
-    dataLabels:{enabled:true,formatter:v=>(v/10000).toFixed(1)+'억',style:{fontSize:'11px'},offsetX:8},
-    xaxis:{categories:top5.map(x=>x.name),labels:{style:{fontSize:'11px'},formatter:v=>(v/10000).toFixed(1)+'억'},axisBorder:{show:false},axisTicks:{show:false}},
-    yaxis:{labels:{style:{fontSize:'12px',fontWeight:700}}},
-    legend:{show:false},
-    tooltip:{...chartCfg().tooltip,y:{formatter:(v,{dataPointIndex})=>{const i=top5[dataPointIndex];return`${(v/10000).toFixed(2)}억 · 수익률 ${i.rate>=0?'+':''}${i.rate.toFixed(1)}%`;}}},
+  const c = CC();
+  const top5 = [...invs].sort((a, b) => b.eval - a.eval).slice(0, 5);
+  mk('top5Chart', {
+    ...apexBase({ type: 'bar', height: 230 }),
+    series: [{ name: '평가금액', data: top5.map(x => Math.round(x.eval / 1e4)) }],
+    colors: top5.map(x => x.rate >= 0 ? c.pos : c.neg),
+    plotOptions: { bar: { horizontal: true, borderRadius: 4, borderRadiusApplication: 'end', distributed: true, dataLabels: { position: 'top' } } },
+    dataLabels: { enabled: true, formatter: v => (v / 10000).toFixed(1) + '억', style: { fontSize: '11px', fontWeight: 700, colors: [c.text] }, offsetX: 8 },
+    xaxis: { categories: top5.map(x => x.name), labels: { style: { fontSize: '11px', colors: c.text }, formatter: v => (v / 10000).toFixed(1) + '억' }, axisBorder: { show: false }, axisTicks: { show: false } },
+    yaxis: { labels: { style: { fontSize: '12px', fontWeight: '700', colors: c.text } } },
+    legend: { show: false },
+    tooltip: { ...apexBase().tooltip, y: { formatter: (v, { dataPointIndex }) => { const i = top5[dataPointIndex]; return `${(v/10000).toFixed(2)}억 · ${fP(i.rate)}`; } } },
   });
-  t5C.render();
 }
 function buildReturn(invs) {
-  if (retC) { try{retC.destroy();}catch(e){} retC=null; }
-  const el = document.getElementById('returnChart'); if (!el) return;
-  const s = [...invs].sort((a,b)=>b.rate-a.rate);
-  retC = new ApexCharts(el, { ...chartCfg(),
-    series:[{name:'수익률',data:s.map(x=>parseFloat(x.rate.toFixed(1)))}],
-    chart:{...chartCfg().chart,type:'bar',height:280},
-    plotOptions:{bar:{horizontal:true,borderRadius:4,distributed:true,dataLabels:{position:'top'}}},
-    colors:s.map(x=>x.rate>=0?'var(--clr-pos)':'var(--clr-neg)'),
-    dataLabels:{enabled:true,formatter:v=>(v>=0?'+':'')+v.toFixed(1)+'%',style:{fontSize:'11px'},offsetX:8},
-    xaxis:{categories:s.map(x=>x.name),labels:{style:{fontSize:'11px'},formatter:v=>v+'%'},axisBorder:{show:false},axisTicks:{show:false}},
-    yaxis:{labels:{style:{fontSize:'11px'}}},
-    legend:{show:false},
-    annotations:{xaxis:[{x:0,borderColor:isDark()?'rgba(255,255,255,0.1)':'rgba(0,0,0,0.1)'}]},
-    tooltip:{...chartCfg().tooltip,y:{formatter:v=>(v>=0?'+':'')+v.toFixed(1)+'%'}},
+  const c = CC();
+  const s = [...invs].sort((a, b) => b.rate - a.rate);
+  mk('retChart', {
+    ...apexBase({ type: 'bar', height: 280 }),
+    series: [{ name: '수익률', data: s.map(x => parseFloat(x.rate.toFixed(1))) }],
+    colors: s.map(x => x.rate >= 0 ? c.pos : c.neg),
+    plotOptions: { bar: { horizontal: true, borderRadius: 4, distributed: true, dataLabels: { position: 'top' } } },
+    dataLabels: { enabled: true, formatter: v => (v >= 0 ? '+' : '') + v.toFixed(1) + '%', style: { fontSize: '11px', fontWeight: 700, colors: [c.text] }, offsetX: 8 },
+    xaxis: { categories: s.map(x => x.name), labels: { style: { fontSize: '11px', colors: c.text }, formatter: v => v + '%' }, axisBorder: { show: false }, axisTicks: { show: false } },
+    yaxis: { labels: { style: { fontSize: '11px', colors: c.text } } },
+    legend: { show: false },
+    annotations: { xaxis: [{ x: 0, borderColor: c.grid, borderWidth: 1.5 }] },
+    tooltip: { ...apexBase().tooltip, y: { formatter: v => (v >= 0 ? '+' : '') + v.toFixed(1) + '%' } },
   });
-  retC.render();
 }
 function buildGrowth() {
-  if (grC) { try{grC.destroy();}catch(e){} grC=null; }
-  const el = document.getElementById('growthChart'); if (!el) return;
-  grC = new ApexCharts(el, { ...chartCfg(),
-    series:[
-      {name:'순자산',data:data.snapshots.map(s=>Math.round(s.summary.netWorth/10000))},
-      {name:'총자산',data:data.snapshots.map(s=>Math.round(s.summary.totalAssets/10000))},
-      {name:'투자 평가',data:data.snapshots.map(s=>Math.round(s.summary.investmentTotal/10000))},
+  const c = CC();
+  mk('growthChart', {
+    ...apexBase({ type: 'bar', height: 240 }),
+    series: [
+      { name: '순자산', data: data.snapshots.map(s => Math.round(s.summary.netWorth / 1e6)) },
+      { name: '총자산', data: data.snapshots.map(s => Math.round(s.summary.totalAssets / 1e6)) },
+      { name: '투자평가', data: data.snapshots.map(s => Math.round(s.summary.investmentTotal / 1e6)) },
     ],
-    chart:{...chartCfg().chart,type:'bar',height:240},
-    colors:['var(--clr-pos)','var(--accent)','var(--clr-goal)'],
-    plotOptions:{bar:{borderRadius:4,columnWidth:'60%',borderRadiusApplication:'end'}},
-    xaxis:{categories:data.snapshots.map(s=>s.snapshotDate),labels:{style:{fontSize:'11px'}},axisBorder:{show:false},axisTicks:{show:false}},
-    yaxis:{labels:{style:{fontSize:'11px'},formatter:v=>(v/10000).toFixed(1)+'억'}},
-    legend:{fontSize:'11px'},
-    dataLabels:{enabled:false},
-    tooltip:{...chartCfg().tooltip,y:{formatter:v=>(v/10000).toFixed(3)+'억원'}},
+    colors: [c.pos, c.acc, c.goal],
+    plotOptions: { bar: { borderRadius: 4, columnWidth: '58%', borderRadiusApplication: 'end' } },
+    xaxis: { categories: data.snapshots.map(s => s.snapshotDate), labels: { style: { fontSize: '11px', colors: c.text } }, axisBorder: { show: false }, axisTicks: { show: false } },
+    yaxis: { labels: { style: { fontSize: '11px', colors: c.text }, formatter: v => (v / 100).toFixed(2) + '억' } },
+    legend: { fontSize: '11px', fontFamily: "'Pretendard',sans-serif", labels: { colors: c.text } },
+    dataLabels: { enabled: false },
+    tooltip: { ...apexBase().tooltip, y: { formatter: v => (v / 100).toFixed(3) + '억원' } },
   });
-  grC.render();
 }
 
-// ── Real-time (allorigins.win CORS proxy) ─────────────────────
-const TMAP = {'SK하이닉스':'000660.KS','삼성전자':'005930.KS','테슬라':'TSLA','KODEX 미국S&P500':'069500.KS','NAVER':'035420.KS','TIGER KRX금현물':'132030.KS','ACE 미국S&P500':'360750.KS','애플':'AAPL','쿠팡':'CPNG','유니티 소프트웨어':'U'};
-let _invs = [];
-async function fetchTk(ticker) {
-  const yaUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`;
-  const url = `https://api.allorigins.win/get?url=${encodeURIComponent(yaUrl)}`;
-  const resp = await fetch(url, { signal: AbortSignal.timeout(12000) });
-  if (!resp.ok) throw new Error(`proxy ${resp.status}`);
-  const wrap = await resp.json();
-  if (!wrap.contents) throw new Error('no contents');
-  const json = JSON.parse(wrap.contents);
-  const result = json.chart?.result?.[0];
-  if (!result) throw new Error('no result');
-  const meta = result.meta;
-  const price = meta.regularMarketPrice;
-  const prev = meta.previousClose ?? meta.chartPreviousClose ?? null;
-  const changePct = prev ? (price - prev) / prev * 100 : null;
-  return { price, changePct, isKRW: ticker.endsWith('.KS') };
-}
-async function fetchRealtime() {
-  const el = document.getElementById('liveRows'); if (!el || !_invs.length) return;
-  const top5 = [..._invs].sort((a,b)=>b.eval-a.eval).slice(0,5);
-  const rb = document.getElementById('liveRefBtn');
-  if (rb) { rb.disabled=true; rb.textContent='조회 중…'; }
-  // Show skeleton
-  el.innerHTML = top5.map(()=>`<div class="lm-row"><div class="lm-skel" style="width:110px"></div><div class="lm-skel" style="width:80px"></div></div>`).join('');
-  const results = await Promise.allSettled(top5.map(async inv => {
-    const ticker = TMAP[inv.name] ?? null;
-    if (!ticker) return { inv, ticker: null, price: null, changePct: null, error: 'no ticker' };
-    try {
-      const d = await fetchTk(ticker);
-      return { inv, ticker, ...d, error: null };
-    } catch(e) {
-      return { inv, ticker, price: null, changePct: null, error: e.message };
-    }
-  }));
-  el.innerHTML = results.map(r => {
-    const d = r.status==='fulfilled' ? r.value : { inv: top5[0], price: null, changePct: null };
-    const pos = d.changePct != null && d.changePct >= 0;
-    const priceStr = d.price != null
-      ? (d.isKRW ? Math.round(d.price).toLocaleString('ko-KR')+'원' : '$'+d.price.toFixed(2))
-      : '—';
-    const pctStr = d.changePct != null
-      ? `<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:5px;background:${dBg(d.changePct)};color:${dC(d.changePct)};">${d.changePct>=0?'+':''}${d.changePct.toFixed(2)}%</span>`
-      : `<span style="font-size:11px;color:var(--muted);">—</span>`;
-    return `<div class="lm-row">
-      <div><span class="lm-name">${d.inv.name}</span><span class="lm-ticker">${d.ticker||''}</span></div>
-      <div style="display:flex;align-items:center;gap:10px;flex-shrink:0;">
-        <span class="lm-price">${priceStr}</span>${pctStr}
-      </div>
-    </div>`;
-  }).join('');
-  if (rb) { rb.disabled=false; rb.textContent='새로고침'; }
-  const ua = document.getElementById('liveUpdated');
-  if (ua) ua.textContent = new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})+' 기준';
-}
-function initLive(invs) { _invs = Array.isArray(invs) ? invs : []; fetchRealtime(); }
-
-// ── KPI Ticker ────────────────────────────────────────────────
-function updateKPI(sm, prev) {
-  const nwD = prev ? sm.netWorth - prev.netWorth : null;
-  const gP = (sm.netWorth/data.goal.target*100).toFixed(1);
-  const kpis = [
-    { l:'순자산', v:fmtW(sm.netWorth), delta:nwD, vc:'var(--text)' },
-    { l:'총자산', v:fmtW(sm.totalAssets), delta:null, vc:'var(--text)' },
-    { l:'투자수익률', v:fmtP(sm.investmentGainRate||0), delta:null, vc:sm.investmentGainRate>=0?'var(--clr-pos)':'var(--clr-neg)' },
-    { l:'목표달성률', v:gP+'%', delta:null, vc:'var(--clr-goal)' },
-  ];
-  const items = document.getElementById('kpiItems');
-  if (items) items.innerHTML = kpis.map(k=>`<div class="kpi-item"><div class="kpi-lbl">${k.l}</div><div style="display:flex;align-items:center;"><span class="kpi-val" style="color:${k.vc}">${k.v}</span>${k.delta!=null?`<span class="kpi-delta" style="background:${dBg(k.delta)};color:${dC(k.delta)};">${k.delta>=0?'+':''}${fmtW(k.delta)}</span>`:''}</div></div>`).join('');
-  const upd = document.getElementById('kpiUpdated');
-  if (upd) upd.textContent = new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})+' 기준';
-}
-
-// ── Health Scorecard ──────────────────────────────────────────
-function buildHealth(sm, invs, loans, idx) {
-  const SECTORS = {'SK하이닉스':'반도체','삼성전자':'반도체','KODEX 미국S&P500':'ETF·글로벌','ACE 미국S&P500':'ETF·글로벌','TIGER KRX금현물':'대안·금','테슬라':'빅테크·EV','애플':'빅테크·EV','NAVER':'인터넷','유니티 소프트웨어':'게임·SW','쿠팡':'이커머스'};
-  const SCOLS = {'반도체':'var(--accent)','ETF·글로벌':'var(--clr-pos)','대안·금':'var(--clr-goal)','빅테크·EV':'#f59e0b','인터넷':'#8b5cf6','게임·SW':'var(--clr-neg)','이커머스':'#f97316'};
-  const USD = ['테슬라','애플','쿠팡','유니티 소프트웨어'];
-  const dr = sm.totalDebt/sm.totalAssets;
-  const sA = dr<.20?25:dr<.30?20:dr<.40?15:dr<.50?10:5;
-  const cov = sm.monthlyInterest>0?(sm.cash+sm.savings)/sm.monthlyInterest:99;
-  const sB = cov>=6?25:cov>=4?20:cov>=2?15:cov>=1?10:5;
-  const te = invs.reduce((s,x)=>s+(x.eval||0),0);
-  const hhi = te>0?invs.reduce((s,x)=>{const w=(x.eval||0)/te;return s+w*w;},0):1;
-  const sC = hhi<=.25?25:hhi<=.35?20:hhi<=.50?15:hhi<=.70?10:5;
-  const f0 = data.snapshots[0], cur = data.snapshots[idx];
-  const em = Math.max(1,Math.round((new Date(cur.snapshotDate)-new Date(f0.snapshotDate))/(1e3*60*60*24*30.5)));
-  const amg = idx>0?(sm.netWorth-f0.summary.netWorth)/em:0;
-  const rem = Math.max(1,Math.ceil((new Date(data.goal.deadline)-new Date(cur.snapshotDate))/(1e3*60*60*24*30.5)));
-  const mn = (data.goal.target-sm.netWorth)/rem;
-  const sD = mn>0?(amg/mn>=1.2?25:amg/mn>=1.0?20:amg/mn>=.8?15:amg/mn>=.5?10:5):25;
-  const tot = sA+sB+sC+sD;
-  const grade = tot>=80?'우수':tot>=60?'양호':tot>=40?'주의':'위험';
-  const gc = tot>=80?'var(--clr-pos)':tot>=60?'var(--accent)':tot>=40?'var(--clr-goal)':'var(--clr-neg)';
-  const ac = s => s>=20?'var(--clr-pos)':s>=15?'var(--accent)':s>=10?'var(--clr-goal)':'var(--clr-neg)';
-  const sm2 = {};
-  invs.forEach(i=>{const s=SECTORS[i.name]||'기타';sm2[s]=(sm2[s]||0)+(i.eval||0);});
-  const st = Object.values(sm2).reduce((s,v)=>s+v,0);
-  const sE = Object.entries(sm2).map(([k,v])=>({n:k,v,p:st>0?v/st*100:0})).sort((a,b)=>b.v-a.v);
-  let usd=0,krw=0;invs.forEach(i=>{if(USD.includes(i.name))usd+=(i.eval||0);else krw+=(i.eval||0);});
-  const ct=usd+krw;const up=ct>0?usd/ct*100:0;
-  const me = sm.monthlyInterest*3, fp = me*12*25>0?Math.min(100,sm.netWorth/(me*12*25)*100):0;
-  const fbc = fp>=100?'var(--clr-pos)':fp>=60?'var(--accent)':fp>=30?'var(--clr-goal)':'var(--clr-neg)';
-  const mRow=(l,s,d)=>`<div class="h-metric"><div class="h-metric-lbl">${l} <span style="float:right;color:${ac(s)};font-weight:900">${s}<span style="font-size:9px;color:var(--muted)">/25</span></span></div><div class="h-mbar"><div class="h-mbar-fill" style="width:${s/25*100}%;background:${ac(s)};"></div></div><div style="font-size:10px;color:var(--muted);margin-top:5px;">${d}</div></div>`;
-  document.getElementById('healthSection').innerHTML = `<div class="pcard">
-    <div class="sh">재무 건전성 분석</div>
-    <div style="display:grid;grid-template-columns:140px 1fr;gap:24px;margin-bottom:20px;align-items:start;">
-      <div class="h-score-wrap">
-        <div style="width:110px;height:110px;border-radius:50%;background:conic-gradient(${gc} ${tot}%,var(--bg-soft) 0%);display:flex;align-items:center;justify-content:center;">
-          <div style="width:80px;height:80px;border-radius:50%;background:var(--bg-card);display:flex;flex-direction:column;align-items:center;justify-content:center;">
-            <span style="font-size:26px;font-weight:900;color:var(--text);line-height:1;">${tot}</span>
-            <span style="font-size:9px;color:var(--muted);">/ 100</span>
-          </div>
-        </div>
-        <div style="margin-top:10px;font-size:15px;font-weight:800;color:${gc};">${grade}</div>
-        <div style="font-size:10px;color:var(--muted);margin-top:2px;">종합 등급</div>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-        ${mRow('부채비율',sA,`부채 ${(dr*100).toFixed(1)}% (권장 30% 미만)`)}
-        ${mRow('유동성',sB,`이자 대비 ${cov>=99?'충분':cov.toFixed(1)+'개월'} 준비금`)}
-        ${mRow('포트폴리오 분산',sC,`HHI ${hhi.toFixed(3)} — 낮을수록 분산`)}
-        ${mRow('목표 페이스',sD,`월 실적 ${fmtW(amg)} / 필요 ${fmtW(mn)}`)}
-      </div>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px;">
-      <div style="background:var(--bg-soft);border:1px solid var(--border);border-radius:10px;padding:14px 16px;">
-        <div style="font-size:10px;font-weight:700;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:12px;">섹터 분포</div>
-        ${sE.map(e=>{const c=SCOLS[e.n]||'var(--muted)';return`<div style="margin-bottom:7px;"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px;"><span style="color:var(--text-2);font-weight:600;">${e.n}</span><span style="color:${c};font-weight:700;">${e.p.toFixed(1)}%</span></div><div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden;"><div style="width:${e.p}%;height:100%;background:${c};"></div></div></div>`;}).join('')}
-        ${sE[0]&&sE[0].p>40?`<div style="margin-top:8px;padding:7px 10px;background:var(--clr-goal-bg);border:1px solid var(--clr-goal);border-radius:7px;font-size:10px;color:var(--clr-goal);">⚠ ${sE[0].n} ${sE[0].p.toFixed(1)}% — 집중 리스크</div>`:''}
-      </div>
-      <div style="background:var(--bg-soft);border:1px solid var(--border);border-radius:10px;padding:14px 16px;">
-        <div style="font-size:10px;font-weight:700;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:12px;">통화 익스포저</div>
-        <div style="display:flex;height:8px;border-radius:4px;overflow:hidden;margin-bottom:8px;"><div style="width:${100-up}%;background:var(--accent);"></div><div style="width:${up}%;background:var(--clr-goal);"></div></div>
-        <div style="display:flex;gap:14px;font-size:11px;margin-bottom:10px;"><span style="color:var(--accent);font-weight:700;">● KRW ${(100-up).toFixed(1)}%</span><span style="color:var(--clr-goal);font-weight:700;">● USD ${up.toFixed(1)}%</span></div>
-        <div style="margin-top:8px;padding:10px 12px;background:var(--clr-goal-bg);border:1px solid var(--clr-goal);border-radius:8px;">
-          <div style="font-size:10px;font-weight:700;color:var(--clr-goal);margin-bottom:5px;text-transform:uppercase;letter-spacing:0.8px;">FIRE 지수</div>
-          <div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden;margin-bottom:5px;"><div style="width:${Math.min(100,fp)}%;height:100%;background:${fbc};"></div></div>
-          <div style="font-size:11px;color:${fbc};font-weight:700;">${fp.toFixed(1)}% 달성${fp>=100?' — FIRE 가능':' — 계속 성장 중'}</div>
-        </div>
-      </div>
-    </div>
-  </div>`;
-}
-
-// ── Simulator ─────────────────────────────────────────────────
-let _simDone = false;
-function simProject(nw, sav, rate, m) { const mr=rate/12/100; let v=nw; for(let i=0;i<m;i++) v=v*(1+mr)+sav; return v; }
+/* ── Simulator ────────────────────────────────────────────── */
+let simChart = null, _simDone = false;
 function simFind(nw, sav, rate, goal, sd, max) {
-  const mr=rate/12/100; let v=nw;
-  for(let i=0;i<=max;i++){if(v>=goal){const d=new Date(sd);d.setMonth(d.getMonth()+i);return{ok:true,month:i,date:d,nw:v};}v=v*(1+mr)+sav;}
-  return{ok:false,nw:v};
+  const mr = rate / 1200; let v = nw;
+  for (let i = 0; i <= max; i++) {
+    if (v >= goal) { const d = new Date(sd); d.setMonth(d.getMonth() + i); return { ok: true, m: i, date: d, nw: v }; }
+    v = v * (1 + mr) + sav;
+  }
+  return { ok: false, nw: v };
+}
+function buildSimChart(snap, goal, sav, rate) {
+  const c = CC(), sm = snap.summary, sd = new Date(snap.snapshotDate), G = goal.target;
+  const dl = new Date(goal.deadline), mtd = Math.ceil((dl - sd) / (864e5 * 30.5)), cm = Math.max(mtd + 6, 24);
+  const labels = [], ca = [], ra = [], oa = [], gl = [];
+  let nc = sm.netWorth, nr = sm.netWorth, no_ = sm.netWorth;
+  const mc = Math.max(-5, rate * .5) / 1200, mr = rate / 1200, mo = rate * 1.5 / 1200;
+  for (let i = 0; i <= cm; i++) {
+    const d = new Date(sd); d.setMonth(d.getMonth() + i);
+    labels.push(d.toLocaleDateString('ko-KR', { year: '2-digit', month: 'short' }));
+    ca.push(Math.round(nc / 1e6)); ra.push(Math.round(nr / 1e6)); oa.push(Math.round(no_ / 1e6)); gl.push(Math.round(G / 1e6));
+    nc = nc * (1 + mc) + sav; nr = nr * (1 + mr) + sav; no_ = no_ * (1 + mo) + sav;
+  }
+  const opts = {
+    ...apexBase({ type: 'line', height: 220, animations: { speed: 250 } }),
+    series: [{ name: '보수적', data: ca }, { name: '현실적', data: ra }, { name: '낙관적', data: oa }, { name: '목표', data: gl }],
+    colors: [c.neg, c.acc, c.pos, c.goal],
+    stroke: { width: [2.5, 3, 2.5, 2], curve: 'smooth', dashArray: [0, 0, 0, 6] },
+    fill: { type: 'solid', opacity: 0 },
+    xaxis: { categories: labels, labels: { rotate: -35, style: { fontSize: '9px', colors: c.text }, formatter: (v, i) => i % Math.ceil(cm / 7) === 0 ? v : '' }, axisBorder: { show: false }, axisTicks: { show: false } },
+    yaxis: { labels: { style: { fontSize: '10px', colors: c.text }, formatter: v => (v / 100).toFixed(1) + '억' } },
+    legend: { fontSize: '11px', fontFamily: "'Pretendard',sans-serif", labels: { colors: c.text } },
+    markers: { size: 0 },
+    tooltip: { ...apexBase().tooltip, y: { formatter: v => (v * 1e6).toLocaleString() + '원' } },
+    annotations: { xaxis: [{ x: labels[Math.min(mtd, cm)], borderColor: c.goal, borderWidth: 1.5, strokeDashArray: 4, label: { text: '목표일', style: { color: c.goal, background: c.bg, fontSize: '10px' }, orientation: 'horizontal', position: 'top' } }] },
+  };
+  if (simChart) { simChart.updateOptions(opts, true, true); }
+  else { const el = document.getElementById('simChart'); if (el) { simChart = new ApexCharts(el, opts); simChart.render(); charts['simChart'] = simChart; } }
+}
+function updateSim(snap, goal) {
+  const c = CC(), sm = snap.summary, sd = new Date(snap.snapshotDate), G = goal.target;
+  const sav = parseInt(document.getElementById('simSav').value, 10);
+  const rate = parseFloat(document.getElementById('simRate').value);
+  document.getElementById('simSavD').textContent = sav === 0 ? '0만원' : (sav / 10000).toLocaleString() + '만원';
+  document.getElementById('simRateD').textContent = rate.toFixed(1) + '%';
+  const scens = [
+    { lbl: '보수적', rate: Math.max(-5, rate * .5), col: c.neg, bdCol: 'var(--fn)', bgCol: 'var(--fn-bg)' },
+    { lbl: '현실적', rate, col: c.acc, bdCol: 'var(--accent)', bgCol: 'rgba(219,234,254,.6)' },
+    { lbl: '낙관적', rate: rate * 1.5, col: c.pos, bdCol: 'var(--fp)', bgCol: 'var(--fp-bg)' },
+  ];
+  const el = document.getElementById('scenCards');
+  el.innerHTML = scens.map((sc, i) => {
+    const r = simFind(sm.netWorth, sav, sc.rate, G, sd, 84);
+    const cw = i === 1 ? '2px' : '1px';
+    const body = r.ok
+      ? `<div style="font-size:21px;font-weight:900;color:${sc.bdCol};letter-spacing:-.5px;margin:6px 0 3px">${r.date.getFullYear()}년 ${r.date.getMonth() + 1}월</div><div style="font-size:10px;color:var(--muted)">달성 · 연 ${sc.rate.toFixed(1)}%</div><div style="font-size:13px;font-weight:700;color:var(--text);margin-top:7px">${fW(r.nw)}</div>`
+      : `<div style="font-size:16px;font-weight:900;color:var(--fn);margin:6px 0 3px">84개월 내 미달</div><div style="font-size:10px;color:var(--muted)">연 ${sc.rate.toFixed(1)}%</div><div style="font-size:12px;font-weight:700;color:var(--fn);margin-top:6px">-${fW(G - r.nw)}</div>`;
+    return `<div style="border:${cw} solid ${sc.bdCol};border-radius:12px;padding:16px;text-align:center;background:${sc.bgCol}"><div style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${sc.bdCol};margin-bottom:2px">${sc.lbl}</div>${body}</div>`;
+  }).join('');
+  buildSimChart(snap, goal, sav, rate);
 }
 function initSim(snap, goal) {
   if (_simDone) return; _simDone = true;
-  const sm = snap.summary, sd = new Date(snap.snapshotDate), G = goal.target;
-  function upd() {
-    const sav = parseInt(document.getElementById('simSav').value,10);
-    const rate = parseFloat(document.getElementById('simRate').value);
-    document.getElementById('simSavDisp').textContent = sav===0?'0만원':(sav/10000).toLocaleString()+'만원';
-    document.getElementById('simRateDisp').textContent = rate.toFixed(1)+'%';
-    const scens = [
-      {id:'scenC',rate:Math.max(-5,rate*.5),color:'var(--clr-neg)'},
-      {id:'scenR',rate,color:'var(--accent)'},
-      {id:'scenO',rate:rate*1.5,color:'var(--clr-pos)'},
-    ];
-    const MAX = 72;
-    scens.forEach(sc => {
-      const r = simFind(sm.netWorth, sav, sc.rate, G, sd, MAX);
-      const hdr = document.getElementById(sc.id).children[0].outerHTML;
-      const el = document.getElementById(sc.id);
-      if (r.ok) {
-        const ds = `${r.date.getFullYear()}년 ${r.date.getMonth()+1}월`;
-        el.innerHTML = hdr+`<div style="font-size:20px;font-weight:900;color:${sc.color};letter-spacing:-.5px;margin:6px 0 3px">${ds}</div><div style="font-size:11px;color:var(--muted);">목표 달성 · 연 ${sc.rate.toFixed(1)}%</div><div style="font-size:12px;font-weight:700;color:var(--text);margin-top:7px">${fmtW(r.nw)}</div>`;
-      } else {
-        el.innerHTML = hdr+`<div style="font-size:16px;font-weight:900;color:var(--clr-neg);margin:6px 0 3px">6년 내 미달</div><div style="font-size:11px;color:var(--muted);">연 ${sc.rate.toFixed(1)}%로 부족</div><div style="font-size:12px;font-weight:700;color:var(--clr-neg);margin-top:7px">-${fmtW(G-r.nw)}</div>`;
-      }
-    });
-    const dl = new Date(goal.deadline), mtd = Math.ceil((dl-sd)/(1e3*60*60*24*30.5));
-    const cm = Math.max(mtd+6,24), labels=[], ca=[], ra=[], oa=[];
-    let nc=sm.netWorth,nr=sm.netWorth,no=sm.netWorth;
-    const mc=Math.max(-5,rate*.5)/12/100,mr=rate/12/100,mo=rate*1.5/12/100;
-    for(let i=0;i<=cm;i++){const d=new Date(sd);d.setMonth(d.getMonth()+i);labels.push(d.toLocaleDateString('ko-KR',{year:'2-digit',month:'short'}));ca.push(Math.round(nc/1e4));ra.push(Math.round(nr/1e4));oa.push(Math.round(no/1e4));nc=nc*(1+mc)+sav;nr=nr*(1+mr)+sav;no=no*(1+mo)+sav;}
-    const gl = Array(labels.length).fill(Math.round(G/1e4));
-    const opts = { ...chartCfg(),
-      series:[{name:'보수적',data:ca},{name:'현실적',data:ra},{name:'낙관적',data:oa},{name:'목표',data:gl}],
-      chart:{...chartCfg().chart,type:'line',height:200,animations:{speed:300}},
-      colors:['var(--clr-neg)','var(--accent)','var(--clr-pos)','var(--clr-goal)'],
-      stroke:{width:[2,2.5,2,1.5],curve:'smooth',dashArray:[0,0,0,6]},
-      fill:{type:'gradient',gradient:{shadeIntensity:.5,type:'vertical',opacityFrom:.1,opacityTo:0}},
-      xaxis:{categories:labels,labels:{rotate:-45,style:{fontSize:'9px'},formatter:(v,i)=>i%Math.ceil(cm/8)===0?v:''},axisBorder:{show:false},axisTicks:{show:false}},
-      yaxis:{labels:{style:{fontSize:'10px'},formatter:v=>(v/10000).toFixed(1)+'억'}},
-      legend:{fontSize:'11px'},tooltip:{...chartCfg().tooltip,y:{formatter:v=>Math.round(v*10000/10000).toLocaleString()+'만원'}},
-      markers:{size:0},
-      annotations:{xaxis:[{x:labels[Math.min(mtd,cm)],borderColor:'var(--clr-goal)',borderWidth:1.5,strokeDashArray:4,label:{text:'목표일',style:{color:'var(--clr-goal)',background:isDark()?'rgba(10,18,40,.9)':'rgba(255,255,255,.9)',fontSize:'10px'},orientation:'horizontal',position:'top'}}]},
-    };
-    if (simC) simC.updateOptions(opts,true,true);
-    else { simC = new ApexCharts(document.getElementById('simChart'),opts); simC.render(); }
-  }
-  document.getElementById('simSav').addEventListener('input', upd);
-  document.getElementById('simRate').addEventListener('input', upd);
-  upd();
+  const up = () => updateSim(snap, goal);
+  document.getElementById('simSav').addEventListener('input', up);
+  document.getElementById('simRate').addEventListener('input', up);
+  up();
 }
 
-// ── Main render ───────────────────────────────────────────────
-let curIdx = data.snapshots.length - 1;
-let cmpFrom = 0;
+/* ── Live Market ──────────────────────────────────────────── */
+const TMAP = { 'SK하이닉스': '000660.KS', '삼성전자': '005930.KS', '테슬라': 'TSLA', 'KODEX 미국S&P500': '069500.KS', 'NAVER': '035420.KS', 'TIGER KRX금현물': '132030.KS', 'ACE 미국S&P500': '360750.KS', '애플': 'AAPL', '쿠팡': 'CPNG', '유니티 소프트웨어': 'U' };
+let _liveInvs = [], _liveDone = false;
+async function fetchRealtime() {
+  const el = document.getElementById('liveRows'); if (!el || !_liveInvs.length) return;
+  // deduplicate by ticker, then take top5 by eval
+  const seen = new Set();
+  const top5 = _liveInvs.filter(inv => { const tk = TMAP[inv.name]; if (!tk || seen.has(tk)) return false; seen.add(tk); return true; }).sort((a, b) => b.eval - a.eval).slice(0, 5);
+  const rb = document.getElementById('liveRefBtn');
+  if (rb) { rb.disabled = true; rb.textContent = '조회 중…'; }
+  el.innerHTML = top5.map(() => `<div class="pm-lmrow"><div style="height:13px;width:100px;background:var(--bg-soft);border-radius:4px"></div><div style="height:13px;width:80px;background:var(--bg-soft);border-radius:4px"></div></div>`).join('');
+  const res = await Promise.allSettled(top5.map(async inv => {
+    const tk = TMAP[inv.name] ?? null; if (!tk) return { inv, tk, price: null, pct: null };
+    try {
+      const url = `https://api.allorigins.win/get?url=${encodeURIComponent('https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(tk) + '?interval=1d&range=1d')}`;
+      const r = await fetch(url, { signal: AbortSignal.timeout(12000) });
+      const w = await r.json(); const j = JSON.parse(w.contents);
+      const m = j.chart?.result?.[0]?.meta; if (!m) throw new Error('no meta');
+      const price = m.regularMarketPrice, prev = m.previousClose ?? m.chartPreviousClose ?? null;
+      return { inv, tk, price, pct: prev ? (price - prev) / prev * 100 : null, isKRW: tk.endsWith('.KS') };
+    } catch(e) { return { inv, tk, price: null, pct: null }; }
+  }));
+  el.innerHTML = res.map(r => {
+    const d = r.status === 'fulfilled' ? r.value : { inv: top5[0], tk: null, price: null, pct: null };
+    const pos = d.pct != null && d.pct >= 0;
+    const ps = d.price != null ? (d.isKRW ? Math.round(d.price).toLocaleString('ko-KR') + '원' : '$' + d.price.toFixed(2)) : '—';
+    const bc = pos ? '#059669' : '#dc2626', bbc = pos ? 'rgba(5,150,105,.09)' : 'rgba(220,38,38,.08)';
+    const bs = d.pct != null ? `<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;background:${bbc};color:${bc}">${d.pct >= 0 ? '+' : ''}${d.pct.toFixed(2)}%</span>` : `<span style="font-size:11px;color:var(--muted)">—</span>`;
+    return `<div class="pm-lmrow"><div style="min-width:0;flex:1"><span class="pm-lmname">${d.inv.name}</span><span class="pm-lmtk">${d.tk || ''}</span></div><div style="display:flex;align-items:center;gap:10px;flex-shrink:0"><span class="pm-lmprice">${ps}</span>${bs}</div></div>`;
+  }).join('');
+  if (rb) { rb.disabled = false; rb.textContent = '새로고침'; }
+  const ts = document.getElementById('liveTs');
+  if (ts) ts.textContent = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' 기준';
+}
+function initLive(invs) {
+  _liveInvs = Array.isArray(invs) ? invs : [];
+  if (!_liveDone) { _liveDone = true; fetchRealtime(); }
+}
+
+/* ── KPI Ticker ───────────────────────────────────────────── */
+function updateKPI(sm, prev) {
+  const nwD = prev ? sm.netWorth - prev.netWorth : null;
+  const gP = (sm.netWorth / data.goal.target * 100).toFixed(1);
+  const items = [
+    { l: '순자산', v: fW(sm.netWorth), d: nwD, vc: 'var(--text)' },
+    { l: '총자산', v: fW(sm.totalAssets), d: null, vc: 'var(--text)' },
+    { l: '투자수익률', v: fP(sm.investmentGainRate || 0), d: null, vc: sm.investmentGainRate >= 0 ? 'var(--fp)' : 'var(--fn)' },
+    { l: '목표달성률', v: gP + '%', d: null, vc: 'var(--fg)' },
+  ];
+  const sl = document.getElementById('kpiSlots');
+  if (sl) sl.innerHTML = items.map(k => `<div class="pm-kslot"><div class="pm-klbl">${k.l}</div><div class="pm-krow"><span class="pm-kval" style="color:${k.vc}">${k.v}</span>${k.d != null ? `<span class="pm-kdelta" style="background:${BC(k.d)};color:${PC(k.d)}">${k.d >= 0 ? '+' : ''}${fW(k.d)}</span>` : ''}</div></div>`).join('');
+  const ts = document.getElementById('kpiTs');
+  if (ts) ts.textContent = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) + ' 기준';
+}
+
+/* ── Health ───────────────────────────────────────────────── */
+function buildHealth(sm, invs, idx) {
+  const c = CC();
+  const dr = sm.totalDebt / sm.totalAssets;
+  const sA = dr < .20 ? 25 : dr < .30 ? 20 : dr < .40 ? 15 : dr < .50 ? 10 : 5;
+  const cov = sm.monthlyInterest > 0 ? (sm.cash + sm.savings) / sm.monthlyInterest : 99;
+  const sB = cov >= 6 ? 25 : cov >= 4 ? 20 : cov >= 2 ? 15 : cov >= 1 ? 10 : 5;
+  const te = invs.reduce((s, x) => s + (x.eval || 0), 0);
+  const hhi = te > 0 ? invs.reduce((s, x) => { const w = (x.eval || 0) / te; return s + w * w; }, 0) : 1;
+  const sC = hhi <= .25 ? 25 : hhi <= .35 ? 20 : hhi <= .50 ? 15 : hhi <= .70 ? 10 : 5;
+  const f0 = data.snapshots[0], cur = data.snapshots[idx];
+  const em = Math.max(1, Math.round((new Date(cur.snapshotDate) - new Date(f0.snapshotDate)) / (864e5 * 30.5)));
+  const amg = idx > 0 ? (sm.netWorth - f0.summary.netWorth) / em : 0;
+  const rem = Math.max(1, Math.ceil((new Date(data.goal.deadline) - new Date(cur.snapshotDate)) / (864e5 * 30.5)));
+  const mn = (data.goal.target - sm.netWorth) / rem;
+  const sD = mn > 0 ? (amg / mn >= 1.2 ? 25 : amg / mn >= 1.0 ? 20 : amg / mn >= .8 ? 15 : amg / mn >= .5 ? 10 : 5) : 25;
+  const tot = sA + sB + sC + sD;
+  const grade = tot >= 80 ? '우수' : tot >= 60 ? '양호' : tot >= 40 ? '주의' : '위험';
+  const gc = tot >= 80 ? c.pos : tot >= 60 ? c.acc : tot >= 40 ? c.goal : c.neg;
+  const gcv = tot >= 80 ? 'var(--fp)' : tot >= 60 ? 'var(--accent)' : tot >= 40 ? 'var(--fg)' : 'var(--fn)';
+  const aC = s => s >= 20 ? c.pos : s >= 15 ? c.acc : s >= 10 ? c.goal : c.neg;
+  const aCv = s => s >= 20 ? 'var(--fp)' : s >= 15 ? 'var(--accent)' : s >= 10 ? 'var(--fg)' : 'var(--fn)';
+  const mRow = (l, s, desc) => `<div class="pm-hm"><div class="pm-hml">${l} <span style="float:right;color:${aCv(s)};font-weight:900">${s}<span style="font-size:9px;opacity:.7">/25</span></span></div><div class="pm-hmbar"><div class="pm-hmfill" style="width:${s / 25 * 100}%;background:${aC(s)}"></div></div><div class="pm-hmtxt">${desc}</div></div>`;
+  document.getElementById('healthSection').innerHTML = `<div class="pm-card"><div class="pm-sh"><div class="pm-shbar"></div>재무 건전성</div>
+  <div style="display:grid;grid-template-columns:130px 1fr;gap:20px;align-items:start">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
+      <div style="width:100px;height:100px;border-radius:50%;background:conic-gradient(${gc} ${tot}%,var(--bg-soft) 0);display:flex;align-items:center;justify-content:center">
+        <div style="width:72px;height:72px;border-radius:50%;background:var(--bg-card);display:flex;flex-direction:column;align-items:center;justify-content:center">
+          <span style="font-size:24px;font-weight:900;color:var(--text);line-height:1">${tot}</span>
+          <span style="font-size:9px;color:var(--muted)">/100</span>
+        </div>
+      </div>
+      <div style="font-size:16px;font-weight:800;color:${gcv}">${grade}</div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">
+      ${mRow('부채비율', sA, `부채 ${(dr * 100).toFixed(1)}% · 권장 30% 미만`)}
+      ${mRow('유동성', sB, `준비금 ${cov >= 99 ? '충분' : cov.toFixed(1) + '개월'}`)}
+      ${mRow('포트폴리오 분산', sC, `HHI ${hhi.toFixed(3)}`)}
+      ${mRow('목표 달성 페이스', sD, `실적 ${fW(amg)}/월 · 필요 ${fW(mn)}/월`)}
+    </div>
+  </div></div>`;
+}
+
+/* ── Render ───────────────────────────────────────────────── */
+let curIdx = data.snapshots.length - 1, cmpFrom = 0;
 
 function render(idx) {
   curIdx = idx;
-  const s = data.snapshots[idx];
-  const sm = s.summary;
-  const prev = idx > 0 ? data.snapshots[idx-1].summary : null;
-  const pct = (sm.netWorth/data.goal.target*100).toFixed(1);
-  const firstSnap = data.snapshots[0];
-  const months = Math.max(1, Math.round((new Date(s.snapshotDate)-new Date(firstSnap.snapshotDate))/(1e3*60*60*24*30.5)));
-  const cagr = idx > 0 ? calcCAGR(firstSnap.summary.netWorth, sm.netWorth, months) : null;
+  const s = data.snapshots[idx], sm = s.summary;
+  const prev = idx > 0 ? data.snapshots[idx - 1].summary : null;
+  const pct = sm.netWorth / data.goal.target * 100;
+  const c = CC();
 
   // KPI
   updateKPI(sm, prev);
 
-  // Date button label
-  const nwD = prev ? sm.netWorth-prev.netWorth : null;
-  const dl = document.getElementById('datePickerLabel');
-  if (dl) dl.innerHTML = s.snapshotDate + (nwD!=null ? ` <span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:5px;margin-left:5px;background:${dBg(nwD)};color:${dC(nwD)}">${nwD>=0?'+':''}${fmtW(nwD)}</span>` : '');
+  // Date label
+  const nwD = prev ? sm.netWorth - prev.netWorth : null;
+  const dlEl = document.getElementById('dateLbl');
+  if (dlEl) dlEl.innerHTML = s.snapshotDate + (nwD != null ? ` <span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:5px;background:${BC(nwD)};color:${PC(nwD)}">${nwD >= 0 ? '+' : ''}${fW(nwD)}</span>` : '');
 
-  // Goal hero
-  document.getElementById('heroNW').textContent = fmtW(sm.netWorth);
-  document.getElementById('gaugePct').textContent = pct+'%';
-  document.getElementById('goalBarFill').style.width = Math.min(pct,100)+'%';
-  document.getElementById('heroTarget').innerHTML = `목표 <strong style="color:var(--clr-goal)">5억원</strong> · <span style="color:var(--accent)">2027년 2월까지</span>`;
-  document.getElementById('goalBarMid').textContent = `현재 ${pct}%`;
-
-  // Milestone markers
-  const milestones = [{v:1e8,l:'1억'},{v:2e8,l:'2억'},{v:3e8,l:'3억'},{v:4e8,l:'4억'}];
-  document.getElementById('goalMilestones').innerHTML = milestones.map(m=>{
-    const p=m.v/data.goal.target*100, reached=sm.netWorth>=m.v;
-    const col=reached?'var(--clr-pos)':'var(--muted)';
-    return `<div class="ms" style="left:${p}%"><div class="ms-line" style="background:${col}"></div><div class="ms-lbl" style="color:${col}">${m.l}</div></div>`;
-  }).join('');
-
-  // Goal pills
-  const remain = data.goal.target - sm.netWorth;
-  const remMo = Math.max(0, Math.ceil((new Date(data.goal.deadline)-new Date(s.snapshotDate))/(1e3*60*60*24*30.5)));
-  const mneed = remMo > 0 ? Math.round(remain/remMo) : 0;
-  document.getElementById('goalPills').innerHTML = [
-    ['var(--accent)',`총자산 ${fmtW(sm.totalAssets)}`],
-    ['var(--clr-neg)',`총부채 ${fmtW(sm.totalDebt)}`],
-    ['var(--clr-goal)',`목표까지 ${fmtW(remain)}`],
-    ['var(--muted)',`월 필요 ${fmtW(mneed)}`],
-  ].map(([c,t])=>`<span class="gpill"><span style="width:6px;height:6px;border-radius:50%;background:${c};display:inline-block;"></span>${t}</span>`).join('');
-
-  // Goal stats
-  document.getElementById('goalStats').innerHTML = [
-    ['목표까지','<span style="color:var(--clr-neg)">−'+fmtW(remain)+'</span>'],
-    ['남은 기간',remMo>0?`약 ${remMo}개월`:'마감'],
-    ['월 필요 증가',`<span style="color:var(--accent)">${fmtW(mneed)}/월</span>`],
-  ].map(([l,v])=>`<div class="gstat"><div class="gstat-lbl">${l}</div><div class="gstat-val">${v}</div></div>`).join('');
-
+  // Gauge
+  document.getElementById('gaugePct').textContent = pct.toFixed(1) + '%';
   buildGauge(pct);
 
-  // Stat: 총자산
-  const taD = prev ? sm.totalAssets-prev.totalAssets : null;
-  document.getElementById('statTotal').innerHTML = fmtW(sm.totalAssets)+(taD!=null?` <span style="font-size:14px;font-weight:700;color:${dC(taD)};">${taD>=0?'+':''}${fmtW(taD)}</span>`:'');
-  document.getElementById('statTotalSub').innerHTML = `순자산 ${fmtW(sm.netWorth)} · 부채비율 ${(sm.totalDebt/sm.totalAssets*100).toFixed(1)}%`;
-  const re=sm.realEstate/sm.totalAssets*100, inv2=sm.investmentTotal/sm.totalAssets*100, cs=(sm.cash+sm.savings)/sm.totalAssets*100;
-  document.getElementById('statTotalBars').innerHTML = `<div class="sbar"><div style="flex:${re};background:var(--accent)"></div><div style="flex:${inv2};background:var(--clr-pos)"></div><div style="flex:${cs};background:var(--clr-goal)"></div></div><div class="sbar-leg"><span class="sbar-lbl"><span class="sbar-dot" style="background:var(--accent)"></span>부동산 ${re.toFixed(0)}%</span><span class="sbar-lbl"><span class="sbar-dot" style="background:var(--clr-pos)"></span>투자 ${inv2.toFixed(0)}%</span><span class="sbar-lbl"><span class="sbar-dot" style="background:var(--clr-goal)"></span>현금 ${cs.toFixed(0)}%</span></div>`;
+  // Hero
+  document.getElementById('heroNW').textContent = fW(sm.netWorth);
+  document.getElementById('heroSub').innerHTML = `목표 <strong style="color:var(--fg)">5억원</strong> · <span style="color:var(--accent)">2027년 2월</span>`;
+  document.getElementById('pbarFill').style.width = Math.min(pct, 100) + '%';
+  document.getElementById('pbarMid').textContent = `현재 ${pct.toFixed(1)}%`;
 
-  // Stat: 총부채
-  const tdD = prev ? sm.totalDebt-prev.totalDebt : null;
-  document.getElementById('statDebt').innerHTML = fmtW(sm.totalDebt)+(tdD!=null&&tdD!==0?` <span style="font-size:14px;font-weight:700;color:${dC(-tdD)};">${tdD>=0?'+':''}${fmtW(tdD)}</span>`:'');
-  document.getElementById('statDebtSub').textContent = `부채비율 ${(sm.totalDebt/sm.totalAssets*100).toFixed(1)}%`;
-  const lco = ['var(--clr-neg)','var(--clr-goal)','var(--accent)'];
-  const ti = s.loans.reduce((a,l)=>a+l.balance*(l.rate||0)/100/12,0);
-  document.getElementById('statDebtDetail').innerHTML = `<div class="sbar" style="margin-top:12px">${s.loans.map((l,i)=>`<div style="flex:${l.balance};background:${lco[i%3]};height:100%"></div>`).join('')}</div>${s.loans.map((l,i)=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);font-size:12px"><div><span style="font-weight:700;color:${lco[i%3]}">${l.name.slice(0,16)}</span>${l.rate?`<span style="margin-left:6px;font-size:10px;color:var(--clr-goal);font-weight:700">${l.rate}%</span>`:''}</div><span style="font-weight:700;color:var(--clr-neg)">${fmtW(l.balance)}</span></div>`).join('')}<div style="font-size:11px;color:var(--muted);margin-top:7px;text-align:right">월 이자 합계 <strong style="color:var(--clr-neg)">${Math.round(ti).toLocaleString()}원</strong></div>`;
+  // Milestone ticks
+  const ms = [{ v: 1e8, l: '1억' }, { v: 2e8, l: '2억' }, { v: 3e8, l: '3억' }, { v: 4e8, l: '4억' }];
+  document.getElementById('pbarTicks').innerHTML = ms.map(m => {
+    const p = m.v / data.goal.target * 100, hit = sm.netWorth >= m.v;
+    return `<div class="pm-ptick" style="left:${p}%"><div class="pm-tickline" style="height:18px;background:${hit ? c.pos : '#9ca3af'}"></div><div class="pm-ticklbl" style="color:${hit ? c.pos : '#9ca3af'}">${m.l}</div></div>`;
+  }).join('');
 
-  // Stat: 투자수익
+  // Pills
+  const dlDate = new Date(data.goal.deadline), rem = Math.max(0, Math.ceil((dlDate - new Date(s.snapshotDate)) / (864e5 * 30.5)));
+  const needMo = rem > 0 ? Math.round((data.goal.target - sm.netWorth) / rem) : 0;
+  document.getElementById('goalPills').innerHTML = [
+    ['var(--accent)', fW(sm.totalAssets), '총자산'],
+    ['var(--fn)', fW(sm.totalDebt), '총부채'],
+    ['var(--fg)', fW(data.goal.target - sm.netWorth), '목표까지'],
+    ['var(--muted)', fW(needMo) + '/월', '월 필요'],
+  ].map(([col, val, lbl]) => `<div class="pm-pill"><span class="pm-pdot" style="background:${col}"></span><span style="color:var(--muted)">${lbl}</span><strong style="color:var(--text)">${val}</strong></div>`).join('');
+  document.getElementById('gsCol').innerHTML = [
+    ['목표까지', `<span style="color:var(--fn);font-weight:800">−${fW(data.goal.target - sm.netWorth)}</span>`],
+    ['남은 기간', rem > 0 ? `약 ${rem}개월` : '마감'],
+    ['월 필요액', `<span style="color:var(--accent);font-weight:800">${fW(needMo)}/월</span>`],
+  ].map(([l, v]) => `<div class="pm-gs"><div class="pm-gsl">${l}</div><div class="pm-gsv">${v}</div></div>`).join('');
+
+  // 총자산 card
+  const taD = prev ? sm.totalAssets - prev.totalAssets : null;
+  const re = sm.realEstate / sm.totalAssets * 100, in2 = sm.investmentTotal / sm.totalAssets * 100, cs = (sm.cash + sm.savings) / sm.totalAssets * 100;
+  document.getElementById('s-ta').innerHTML = fW(sm.totalAssets) + (taD != null ? ` <span style="font-size:14px;font-weight:700;color:${PC(taD)}">${taD >= 0 ? '+' : ''}${fW(taD)}</span>` : '');
+  document.getElementById('s-ta-sub').textContent = `순자산 ${fW(sm.netWorth)} · 부채비율 ${(sm.totalDebt / sm.totalAssets * 100).toFixed(1)}%`;
+  document.getElementById('s-ta-bar').innerHTML = `<div class="pm-abar"><div class="pm-aseg" style="width:${re.toFixed(1)}%;background:${c.acc}"></div><div class="pm-aseg" style="width:${in2.toFixed(1)}%;background:${c.pos}"></div><div class="pm-aseg" style="width:${cs.toFixed(1)}%;background:${c.goal}"></div></div><div class="pm-aleg"><span class="pm-aitem"><span class="pm-adot" style="background:${c.acc}"></span>부동산 ${re.toFixed(0)}%</span><span class="pm-aitem"><span class="pm-adot" style="background:${c.pos}"></span>투자 ${in2.toFixed(0)}%</span><span class="pm-aitem"><span class="pm-adot" style="background:${c.goal}"></span>현금 ${cs.toFixed(0)}%</span></div>`;
+
+  // 총부채 card
+  const tdD = prev ? sm.totalDebt - prev.totalDebt : null;
+  const ti = s.loans.reduce((a, l) => a + l.balance * (l.rate || 0) / 100 / 12, 0);
+  document.getElementById('s-td').innerHTML = fW(sm.totalDebt) + (tdD != null && tdD !== 0 ? ` <span style="font-size:14px;font-weight:700;color:${PC(-tdD)}">${tdD >= 0 ? '+' : ''}${fW(tdD)}</span>` : '');
+  document.getElementById('s-td-sub').textContent = `부채비율 ${(sm.totalDebt / sm.totalAssets * 100).toFixed(1)}%`;
+  const lco = [c.neg, c.goal, c.acc];
+  document.getElementById('s-td-det').innerHTML = `<div class="pm-abar">${s.loans.map((l, i) => `<div class="pm-aseg" style="width:${(l.balance/sm.totalDebt*100).toFixed(1)}%;background:${lco[i%3]}"></div>`).join('')}</div>${s.loans.map((l, i) => `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);font-size:12px"><div><span style="font-weight:700;color:var(--text)">${l.name.slice(0, 18)}</span>${l.rate ? `<span style="margin-left:6px;font-size:10px;color:${c.goal};font-weight:700">${l.rate}%</span>` : ''}</div><span style="font-weight:700;color:var(--fn)">${fW(l.balance)}</span></div>`).join('')}<div style="font-size:11px;color:var(--muted);margin-top:7px;text-align:right">월 이자 합계 <strong style="color:var(--fn)">${Math.round(ti).toLocaleString()}원</strong></div>`;
+
+  // 투자수익 card
   const isPos = sm.investmentGain >= 0;
-  document.getElementById('statGain').innerHTML = `<span style="color:${isPos?'var(--clr-pos)':'var(--clr-neg)'}">${sm.investmentGain>=0?'+':''}${fmtW(sm.investmentGain)}</span>`;
-  document.getElementById('statGainSub').innerHTML = `수익률 <span style="color:${isPos?'var(--clr-pos)':'var(--clr-neg)'};">${fmtP(sm.investmentGainRate||0)}</span>`;
-  buildReturnGauge(parseFloat(sm.investmentGainRate)||0);
-  document.getElementById('returnGaugeLabel').innerHTML = `<span style="font-size:16px;font-weight:900;color:${isPos?'var(--clr-pos)':'var(--clr-neg)'};">${fmtP(sm.investmentGainRate||0)}</span> <span style="font-size:10px;color:var(--muted);">수익률</span>`;
-  if (cagr !== null) {
-    document.getElementById('cagrRow').innerHTML = `연환산 CAGR <strong style="color:${cagr>=0?'var(--clr-pos)':'var(--clr-neg)'};">${cagr>=0?'+':''}${cagr.toFixed(1)}%</strong> · 투자 ${Math.floor(months/12)}년 ${months%12}개월`;
-  } else {
-    document.getElementById('cagrRow').style.display = 'none';
-  }
+  document.getElementById('s-ig').innerHTML = `<span style="color:${isPos ? 'var(--fp)' : 'var(--fn)'}">${sm.investmentGain >= 0 ? '+' : ''}${fW(sm.investmentGain)}</span>`;
+  document.getElementById('s-ig-sub').innerHTML = `수익률 <span style="font-weight:700;color:${isPos ? 'var(--fp)' : 'var(--fn)'}">${fP(sm.investmentGainRate || 0)}</span>`;
+  buildRetGauge(parseFloat(sm.investmentGainRate) || 0);
+  document.getElementById('retGaugeLbl').innerHTML = `<span style="font-size:15px;font-weight:900;color:${isPos ? 'var(--fp)' : 'var(--fn)'}">${fP(sm.investmentGainRate || 0)}</span>`;
+  const f0 = data.snapshots[0];
+  const mon = Math.max(1, Math.round((new Date(s.snapshotDate) - new Date(f0.snapshotDate)) / (864e5 * 30.5)));
+  const cagrEl = document.getElementById('cagrRow');
+  if (idx >= 2 && mon >= 6) {
+    const cagr = (Math.pow(sm.netWorth / f0.summary.netWorth, 12 / mon) - 1) * 100;
+    const pt = mon >= 12 ? `${Math.floor(mon/12)}년 ${mon % 12 ? mon % 12 + '개월' : ''}` : `${mon}개월`;
+    cagrEl.innerHTML = `CAGR <strong style="color:${cagr >= 0 ? 'var(--fp)' : 'var(--fn)'}">${cagr >= 0 ? '+' : ''}${cagr.toFixed(1)}%</strong> · ${pt} 기준`;
+    cagrEl.style.display = '';
+  } else { cagrEl.style.display = 'none'; }
 
   // Charts
-  buildTrend();
-  buildDonut(sm);
+  buildTrend(); buildDonut(sm);
 
   // Investment table
   const invs = s.investments;
-  const te = invs.reduce((a,x)=>a+(x.eval||0),0), tc = invs.reduce((a,x)=>a+(x.cost||0),0);
-  document.getElementById('invTable').innerHTML = invs.map(inv=>{
-    const pnl=inv.eval-inv.cost, w=(inv.eval/te*100).toFixed(1);
-    return `<tr><td style="color:var(--text);font-weight:700">${inv.name}</td><td><span class="badge b-acc" style="font-size:10px">${inv.broker}</span></td><td class="r" style="color:var(--muted)">${inv.cost.toLocaleString()}</td><td class="r" style="color:var(--accent);font-weight:700">${inv.eval.toLocaleString()}</td><td class="r"><span style="color:${dC(pnl)};font-weight:700">${pnl>=0?'+':''}${Math.round(pnl).toLocaleString()}</span></td><td class="r"><span class="badge" style="background:${dBg(inv.rate)};color:${dC(inv.rate)}">${fmtP(inv.rate)}</span></td><td><div style="display:flex;align-items:center;gap:7px"><div style="flex:1;height:4px;background:var(--bg-soft);border-radius:99px;overflow:hidden"><div style="height:100%;width:${w}%;background:${dC(inv.rate)};border-radius:99px"></div></div><span style="font-size:10px;color:var(--muted)">${w}%</span></div></td></tr>`;
+  const tE = invs.reduce((a, x) => a + (x.eval || 0), 0), tC = invs.reduce((a, x) => a + (x.cost || 0), 0);
+  document.getElementById('invBody').innerHTML = invs.map(inv => {
+    const pnl = inv.eval - inv.cost, w = (inv.eval / tE * 100).toFixed(1);
+    return `<tr><td style="color:var(--text);font-weight:700">${inv.name}</td><td><span class="pm-bd pm-bda" style="font-size:10px">${inv.broker}</span></td><td class="r" style="color:var(--muted)">${inv.cost.toLocaleString()}</td><td class="r" style="color:var(--accent);font-weight:700">${inv.eval.toLocaleString()}</td><td class="r"><span style="color:${PC(pnl)};font-weight:700">${pnl >= 0 ? '+' : ''}${Math.round(pnl).toLocaleString()}</span></td><td class="r"><span class="pm-bd ${inv.rate >= 0 ? 'pm-bdp' : 'pm-bdn'}">${fP(inv.rate)}</span></td><td><div style="display:flex;align-items:center;gap:7px"><div style="flex:1;height:4px;background:var(--bg-soft);border-radius:99px;overflow:hidden"><div style="height:100%;width:${w}%;background:${inv.rate >= 0 ? c.pos : c.neg};border-radius:99px"></div></div><span style="font-size:10px;color:var(--muted)">${w}%</span></div></td></tr>`;
   }).join('');
-  const tg=te-tc,tp=tc>0?tg/tc*100:0;
-  document.getElementById('invTc').textContent=tc.toLocaleString();
-  document.getElementById('invTe').textContent=te.toLocaleString();
-  document.getElementById('invTg').innerHTML=`<span style="color:${dC(tg)};font-weight:700">${tg>=0?'+':''}${Math.round(tg).toLocaleString()}</span>`;
-  document.getElementById('invTr').innerHTML=`<span class="badge" style="background:${dBg(tp)};color:${dC(tp)}">${fmtP(tp)}</span>`;
+  const tG = tE - tC, tP = tC > 0 ? tG / tC * 100 : 0;
+  document.getElementById('inv-tc').textContent = tC.toLocaleString();
+  document.getElementById('inv-te').textContent = tE.toLocaleString();
+  document.getElementById('inv-tg').innerHTML = `<span style="color:${PC(tG)};font-weight:700">${tG >= 0 ? '+' : ''}${Math.round(tG).toLocaleString()}</span>`;
+  document.getElementById('inv-tr').innerHTML = `<span class="pm-bd ${tP >= 0 ? 'pm-bdp' : 'pm-bdn'}">${fP(tP)}</span>`;
 
-  buildTop5(invs);
-  buildReturn(invs);
-  buildGrowth();
+  buildTop5(invs); buildReturn(invs); buildGrowth();
 
-  // AI Opinion
-  const sEval=[...invs].sort((a,b)=>b.eval-a.eval), top=sEval[0], topW=te>0?top.eval/te*100:0;
-  const worst=[...invs].sort((a,b)=>a.rate-b.rate)[0];
-  const best=[...invs].sort((a,b)=>b.rate-a.rate)[0];
-  const conc=topW>=50, loss=worst&&worst.rate<-30;
-  const snapDt=new Date(s.snapshotDate), wd=Math.floor((snapDt-new Date('2023-01-01'))/86400000);
-  const wy=Math.floor(wd/365), wm=Math.floor((wd%365)/30);
-  const gn=sm.netWorth/data.goal.target*100;
-  const onP = months>1 && (sm.netWorth-firstSnap.summary.netWorth)/Math.max(1,months) >= mneed;
-  let riskTxt = conc&&loss?`${top.name} 집중(${topW.toFixed(1)}%) + ${worst.name} 손실(${fmtP(worst.rate)}) 이중 리스크`:conc?`${top.name} ${topW.toFixed(1)}% 집중 — 분산 필요`:loss?`${worst.name} ${fmtP(worst.rate)} 손실 주의`:best?`리스크 적정 — 최고 ${best.name} ${fmtP(best.rate)}`:'균형 잡힌 포트폴리오';
-  const cagrTxt = cagr!=null ? `CAGR ${cagr>=0?'+':''}${cagr.toFixed(1)}% ·` : '';
-  document.getElementById('aiBox').innerHTML = `<div class="ai-title">🤖 AI 투자 의견 · ${s.snapshotDate} 기준</div>
-    <div class="ai-row"><span class="ai-key">투자 경력</span><span class="ai-val">${wy}년 ${wm}개월 (2023.01 시작)</span></div>
-    <div class="ai-row"><span class="ai-key">성장 속도</span><span class="ai-val" style="color:${onP?'var(--clr-pos)':'var(--clr-goal)'}">${cagrTxt} ${onP?'목표 페이스 초과 ✓':'목표 페이스 미달 ⚠'}</span></div>
-    <div class="ai-row"><span class="ai-key">목표 달성률</span><span class="ai-val" style="color:${gn>=70?'var(--clr-pos)':gn>=40?'var(--accent)':'var(--muted)'};">${gn.toFixed(1)}% · 잔여 ${remMo}개월 · 월 ${fmtW(mneed)} 필요</span></div>
-    <div class="ai-row"><span class="ai-key">리스크 진단</span><span class="ai-val" style="color:${conc||loss?'var(--clr-goal)':'var(--text-2)'}">${riskTxt}</span></div>
-    <div style="font-size:12px;color:var(--text-2);margin-top:10px;padding-top:10px;border-top:1px solid var(--border);line-height:1.75">${gn>=70?`목표의 ${gn.toFixed(1)}%를 달성했습니다. 현 CAGR을 유지하면 목표 기간 내 충분히 도달 가능합니다.`:gn>=40?`절반을 넘어선 시점입니다. 월 ${fmtW(mneed)} 이상의 꾸준한 성장이 핵심입니다.`:`복리가 본격적으로 힘을 발휘할 시점입니다. 분산과 꾸준함이 무기입니다.`}</div>`;
+  // AI insight
+  const top = [...invs].sort((a, b) => b.eval - a.eval)[0];
+  const worst = [...invs].sort((a, b) => a.rate - b.rate)[0];
+  const best = [...invs].sort((a, b) => b.rate - a.rate)[0];
+  const topW = tE > 0 ? top.eval / tE * 100 : 0, conc = topW >= 50;
+  const onP = mon > 1 && (sm.netWorth - f0.summary.netWorth) / Math.max(1, mon) >= needMo;
+  document.getElementById('aiBox').innerHTML = `<div class="pm-aibox"><div class="pm-aititle">🤖 AI 자산 진단 · ${s.snapshotDate}</div><div class="pm-airow"><span class="pm-aik">최대 보유</span><span class="pm-aiv" style="color:${conc ? 'var(--fg)' : 'var(--text-2)'}">${top.name} ${topW.toFixed(1)}%${conc ? ' — 집중 리스크' : ''}</span></div><div class="pm-airow"><span class="pm-aik">베스트 종목</span><span class="pm-aiv" style="color:var(--fp)">${best.name} ${fP(best.rate)}</span></div>${worst.rate < 0 ? `<div class="pm-airow"><span class="pm-aik">손실 종목</span><span class="pm-aiv" style="color:var(--fn)">${worst.name} ${fP(worst.rate)}</span></div>` : ''}<div class="pm-airow"><span class="pm-aik">목표 페이스</span><span class="pm-aiv" style="color:${onP ? 'var(--fp)' : 'var(--fg)'}">${onP ? '✅ 초과 달성 중' : '⚠ 페이스 미달 — 적립 늘리기 권장'}</span></div><div class="pm-airow"><span class="pm-aik">달성률</span><span class="pm-aiv">${pct.toFixed(1)}% · 잔여 ${rem}개월 · 월 ${fW(needMo)} 필요</span></div></div>`;
 
   // Health
-  buildHealth(sm, s.investments, s.loans, idx);
+  buildHealth(sm, invs, idx);
 
-  // Snapshot comparison
+  // Comparison
   buildCmp();
 
   // Loans
-  const sortedLoans = [...s.loans].sort((a,b)=>(b.rate||0)-(a.rate||0));
-  const ti2 = s.loans.reduce((a,l)=>a+l.balance*(l.rate||0)/100/12,0);
-  document.getElementById('loanSection').innerHTML = `<div style="display:flex;justify-content:space-between;padding:12px 16px;background:var(--clr-neg-bg);border:1px solid var(--clr-neg);border-radius:10px;margin-bottom:14px"><div><div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:3px">총 대출</div><div style="font-size:22px;font-weight:900;color:var(--clr-neg)">${fmtW(s.loans.reduce((a,l)=>a+l.balance,0))}</div></div><div style="text-align:right"><div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:3px">월 이자</div><div style="font-size:16px;font-weight:700;color:var(--clr-neg)">${Math.round(ti2).toLocaleString()}원</div></div></div>
-  ${sortedLoans.map((l,i)=>{const mi=Math.round(l.balance*(l.rate||0)/100/12),rp=l.principal>0?Math.round((l.principal-l.balance)/l.principal*100):0;return`<div style="background:var(--bg-soft);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:10px"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:7px"><div><div style="font-size:13px;font-weight:700;color:var(--text)">${l.name.slice(0,24)}</div><div style="font-size:10px;color:var(--muted);margin-top:2px">${l.bank} · ${l.type}</div></div><div style="font-size:18px;font-weight:900;color:var(--clr-neg);text-align:right">${fmtW(l.balance)}</div></div><div style="display:flex;gap:14px;font-size:11px;color:var(--muted);flex-wrap:wrap;margin-bottom:8px">${l.rate?`<span style="color:var(--clr-goal);font-weight:700">금리 ${l.rate}%</span>`:''}${l.maturityDate?`<span>만기 <strong style="color:var(--text-2)">${l.maturityDate}</strong></span>`:''}<span>월 이자 <strong style="color:var(--clr-neg)">${mi.toLocaleString()}원</strong></span></div><div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden"><div style="height:100%;width:${100-rp}%;background:var(--clr-neg)"></div></div><div style="font-size:10px;color:var(--muted);margin-top:3px">잔여 ${(100-rp)}% · 상환 ${rp}%</div>${i===0?`<div style="margin-top:8px;padding:6px 10px;background:var(--accent-soft);border:1px solid var(--accent);border-radius:6px;font-size:10px;color:var(--accent);font-weight:700">📌 상환 우선순위 1위 — 금리가 가장 높습니다 (${l.rate}%)</div>`:''}</div>`;}).join('')}
-  <div style="margin-top:10px;padding:10px 14px;background:var(--bg-soft);border:1px solid var(--border);border-radius:8px;font-size:11px;color:var(--text-2)">💡 <strong style="color:var(--accent)">Avalanche 전략 추천:</strong> ${sortedLoans[0].name}(${sortedLoans[0].rate}%)을 먼저 갚으면 연 ${Math.round(sortedLoans[0].balance*((sortedLoans[0].rate||0)-(sortedLoans[sortedLoans.length-1].rate||0))/100/100*100).toLocaleString()}만원 이자 절감</div>`;
+  const sortedL = [...s.loans].sort((a, b) => (b.rate || 0) - (a.rate || 0));
+  const totalL = s.loans.reduce((a, l) => a + l.balance, 0);
+  document.getElementById('loanSect').innerHTML = `<div style="display:flex;justify-content:space-between;padding:12px 16px;background:var(--fn-bg);border:1px solid var(--fn-bd);border-radius:10px;margin-bottom:12px"><div><div style="font-size:9px;color:var(--muted);font-weight:700;text-transform:uppercase;margin-bottom:3px">총 대출</div><div style="font-size:21px;font-weight:900;color:var(--fn)">${fW(totalL)}</div></div><div style="text-align:right"><div style="font-size:9px;color:var(--muted);font-weight:700;text-transform:uppercase;margin-bottom:3px">월 이자</div><div style="font-size:15px;font-weight:700;color:var(--fn)">${Math.round(ti).toLocaleString()}원</div></div></div>${sortedL.map((l, i) => { const mi = Math.round(l.balance * (l.rate || 0) / 100 / 12); const rp = l.principal > 0 ? Math.round((l.principal - l.balance) / l.principal * 100) : 0; return `<div style="background:var(--bg-soft);border:1px solid var(--border);border-radius:10px;padding:13px 15px;margin-bottom:9px"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px"><div><div style="font-size:13px;font-weight:700;color:var(--text)">${l.name}</div><div style="font-size:10px;color:var(--muted);margin-top:2px">${l.bank} · ${l.type}</div></div><div style="font-size:17px;font-weight:900;color:var(--fn)">${fW(l.balance)}</div></div><div style="display:flex;gap:12px;font-size:11px;margin-bottom:8px">${l.rate ? `<span style="color:var(--fg);font-weight:700">금리 ${l.rate}%</span>` : ''}<span style="color:var(--muted)">월 이자 <strong style="color:var(--fn)">${mi.toLocaleString()}원</strong></span></div><div style="height:5px;background:var(--border);border-radius:3px;overflow:hidden"><div style="height:100%;width:${100 - rp}%;background:var(--fn)"></div></div>${i === 0 && sortedL.length > 1 ? `<div style="margin-top:8px;padding:5px 10px;background:rgba(29,78,216,.07);border:1px solid rgba(29,78,216,.2);border-radius:6px;font-size:10px;color:var(--accent);font-weight:700">📌 Avalanche 추천 — 최고 금리 ${l.rate}%</div>` : ''}</div>`; }).join('')}`;
 
-  // Live market
-  initLive(s.investments);
-
-  // Simulator
+  // Live + Simulator
+  initLive(invs);
   initSim(s, data.goal);
-
-  // Date dropdown update
   buildDateDd();
 }
 
-// ── Date dropdown ─────────────────────────────────────────────
+/* ── Date dropdown ────────────────────────────────────────── */
 function buildDateDd() {
-  const dd = document.getElementById('dateDropdown'); if (!dd) return;
-  dd.innerHTML = data.snapshots.map((ss,i)=>{
-    const pv = i>0?data.snapshots[i-1]:null, d2=pv?ss.summary.netWorth-pv.summary.netWorth:null;
-    const act = i===curIdx;
-    return `<div onclick="selectDate(${i})" style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;cursor:pointer;border-radius:8px;background:${act?'var(--accent-soft)':'transparent'};transition:background .12s" onmouseover="this.style.background='var(--bg-soft)'" onmouseout="this.style.background='${act?'var(--accent-soft)':'transparent'}'">
-      <span style="font-size:13px;font-weight:${act?700:500};color:${act?'var(--accent)':'var(--text-2)'};">${ss.snapshotDate}</span>
-      ${d2!=null?`<span style="font-size:11px;font-weight:700;padding:2px 7px;border-radius:5px;background:${dBg(d2)};color:${dC(d2)}">${d2>=0?'+':''}${fmtW(d2)}</span>`:''}
-      ${act?'<span style="color:var(--accent);font-size:12px;margin-left:4px">✓</span>':''}
+  const dd = document.getElementById('dateDd'); if (!dd) return;
+  dd.innerHTML = data.snapshots.map((ss, i) => {
+    const pv = i > 0 ? data.snapshots[i - 1] : null, d2 = pv ? ss.summary.netWorth - pv.summary.netWorth : null;
+    const act = i === curIdx;
+    return `<div onclick="selectDate(${i})" style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;cursor:pointer;border-radius:8px;background:${act ? 'rgba(219,234,254,.7)' : 'transparent'}" onmouseover="this.style.background='var(--bg-soft)'" onmouseout="this.style.background='${act ? 'rgba(219,234,254,.7)' : 'transparent'}'">
+      <span style="font-size:13px;font-weight:${act ? 700 : 500};color:${act ? 'var(--accent)' : 'var(--text-2)'}">${ss.snapshotDate}</span>
+      <div style="display:flex;align-items:center;gap:6px">${d2 != null ? `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:5px;background:${BC(d2)};color:${PC(d2)}">${d2 >= 0 ? '+' : ''}${fW(d2)}</span>` : ''}${act ? '<span style="color:var(--accent)">✓</span>' : ''}</div>
     </div>`;
   }).join('');
 }
 
-// ── Snapshot comparison ───────────────────────────────────────
+/* ── Snapshot comparison ──────────────────────────────────── */
 function buildCmp() {
   if (data.snapshots.length < 2) return;
   if (cmpFrom === curIdx) cmpFrom = curIdx > 0 ? 0 : 1;
   const btns = document.getElementById('cmpBtns');
-  if (btns) btns.innerHTML = data.snapshots.map((ss,i)=>{if(i===curIdx)return'';const a=i===cmpFrom;return`<button class="cmp-btn ${a?'active':''}" onclick="setCmp(${i})">${ss.snapshotDate}</button>`;}).join('');
+  if (btns) btns.innerHTML = data.snapshots.map((ss, i) => { if (i === curIdx) return ''; const a = i === cmpFrom; return `<button class="pm-cmpbtn${a ? ' active' : ''}" onclick="setCmp(${i})">${ss.snapshotDate}</button>`; }).join('');
   const from = data.snapshots[cmpFrom], to = data.snapshots[curIdx];
-  const nwD=to.summary.netWorth-from.summary.netWorth, nwP=from.summary.netWorth>0?nwD/from.summary.netWorth*100:0;
-  const mc=(l,fv,tv,d,inv2)=>`<div style="background:var(--bg-soft);border:1px solid var(--border);border-radius:9px;padding:12px 14px"><div style="font-size:9px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:7px">${l}</div><div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:5px"><div style="font-size:11px;color:var(--muted)">${fmtW(fv)} <span style="color:var(--muted)">→</span> <span style="font-weight:700;color:var(--text)">${fmtW(tv)}</span></div><span style="font-size:12px;font-weight:800;color:${dC(inv2?-d:d)}">${d>=0?'+':''}${fmtW(d)}</span></div></div>`;
+  const nwD = to.summary.netWorth - from.summary.netWorth, nwP = from.summary.netWorth > 0 ? nwD / from.summary.netWorth * 100 : 0;
+  const mc = (l, fv, tv, inv) => { const d = tv - fv; const col = (inv ? -d : d) >= 0 ? 'var(--fp)' : 'var(--fn)'; const bc = (inv ? -d : d) >= 0 ? 'var(--fp-bg)' : 'var(--fn-bg)'; return `<div class="pm-cmpmc"><div class="pm-cmpl">${l}</div><div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span style="font-size:11px;color:var(--muted)">${fW(fv)} → <strong style="color:var(--text)">${fW(tv)}</strong></span><span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;background:${bc};color:${col}">${d >= 0 ? '+' : ''}${fW(d)}</span></div></div>`; };
   const panel = document.getElementById('cmpPanel');
-  if (panel) panel.innerHTML = `<div style="display:grid;grid-template-columns:1fr auto 1fr;gap:16px;align-items:center;margin-bottom:12px;background:var(--bg-soft);border:1px solid var(--border);border-radius:12px;padding:16px">
-    <div><div style="font-size:9px;color:var(--muted);font-weight:700;letter-spacing:.8px;text-transform:uppercase;margin-bottom:4px">기준</div><div style="font-size:22px;font-weight:900;color:var(--text)">${fmtW(from.summary.netWorth)}</div><div style="font-size:11px;color:var(--muted);margin-top:3px">${from.snapshotDate}</div></div>
-    <div style="text-align:center"><div style="font-size:18px;color:var(--accent)">→</div><div style="font-size:13px;font-weight:800;color:${dC(nwD)}">${nwD>=0?'+':''}${fmtW(nwD)}</div><div style="font-size:10px;color:${dC(nwD)}">${nwP>=0?'+':''}${nwP.toFixed(1)}%</div></div>
-    <div><div style="font-size:9px;color:var(--accent);font-weight:700;letter-spacing:.8px;text-transform:uppercase;margin-bottom:4px">현재 <span style="background:var(--accent);color:#fff;padding:1px 6px;border-radius:3px;font-size:8px">NOW</span></div><div style="font-size:22px;font-weight:900;color:var(--accent)">${fmtW(to.summary.netWorth)}</div><div style="font-size:11px;color:var(--muted);margin-top:3px">${to.snapshotDate}</div></div>
+  if (panel) panel.innerHTML = `<div style="display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:center;background:var(--bg-soft);border:1px solid var(--border);border-radius:12px;padding:15px;margin-bottom:12px">
+    <div><div style="font-size:9px;color:var(--muted);font-weight:700;text-transform:uppercase;margin-bottom:4px">기준</div><div style="font-size:21px;font-weight:900;color:var(--text)">${fW(from.summary.netWorth)}</div><div style="font-size:10px;color:var(--muted);margin-top:2px">${from.snapshotDate}</div></div>
+    <div style="text-align:center"><div style="font-size:16px;color:var(--accent)">→</div><div style="font-size:12px;font-weight:800;padding:2px 8px;border-radius:6px;background:${BC(nwD)};color:${PC(nwD)};margin-top:3px">${nwD >= 0 ? '+' : ''}${fW(nwD)}</div><div style="font-size:10px;color:${PC(nwD)};margin-top:2px">${nwP >= 0 ? '+' : ''}${nwP.toFixed(1)}%</div></div>
+    <div><div style="font-size:9px;color:var(--accent);font-weight:700;text-transform:uppercase;margin-bottom:4px">현재 <span style="background:var(--accent);color:#fff;padding:1px 6px;border-radius:3px;font-size:8px">NOW</span></div><div style="font-size:21px;font-weight:900;color:var(--accent)">${fW(to.summary.netWorth)}</div><div style="font-size:10px;color:var(--muted);margin-top:2px">${to.snapshotDate}</div></div>
   </div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-    ${mc('총자산',from.summary.totalAssets,to.summary.totalAssets,to.summary.totalAssets-from.summary.totalAssets,false)}
-    ${mc('순자산',from.summary.netWorth,to.summary.netWorth,nwD,false)}
-    ${mc('총부채',from.summary.totalDebt,to.summary.totalDebt,to.summary.totalDebt-from.summary.totalDebt,true)}
-    ${mc('투자평가',from.summary.investmentTotal,to.summary.investmentTotal,to.summary.investmentTotal-from.summary.investmentTotal,false)}
+    ${mc('총자산', from.summary.totalAssets, to.summary.totalAssets, false)}
+    ${mc('순자산', from.summary.netWorth, to.summary.netWorth, false)}
+    ${mc('총부채', from.summary.totalDebt, to.summary.totalDebt, true)}
+    ${mc('투자평가', from.summary.investmentTotal, to.summary.investmentTotal, false)}
   </div>`;
 }
 
-// ── Init ──────────────────────────────────────────────────────
-window.selectDate = i => { curIdx=i; if(cmpFrom===curIdx)cmpFrom=curIdx>0?0:1; render(i); const dd=document.getElementById('dateDropdown'); if(dd)dd.style.display='none'; };
-window.setCmp     = i => { cmpFrom=i; buildCmp(); };
+/* ── Globals ──────────────────────────────────────────────── */
+window.selectDate = i => { curIdx = i; if (cmpFrom === curIdx) cmpFrom = curIdx > 0 ? 0 : 1; _liveDone = false; render(i); document.getElementById('dateDd').style.display = 'none'; };
+window.setCmp = i => { cmpFrom = i; buildCmp(); };
 
-document.getElementById('datePickerBtn').addEventListener('click', () => {
-  const dd = document.getElementById('dateDropdown');
-  dd.style.display = dd.style.display==='none' ? 'block' : 'none';
+document.getElementById('dateBtn').addEventListener('click', () => {
+  const dd = document.getElementById('dateDd'); dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
 });
 document.addEventListener('click', e => {
-  const dd=document.getElementById('dateDropdown'), btn=document.getElementById('datePickerBtn');
-  if (dd&&btn&&!btn.contains(e.target)&&!dd.contains(e.target)) dd.style.display='none';
+  const dd = document.getElementById('dateDd'), btn = document.getElementById('dateBtn');
+  if (dd && btn && !btn.contains(e.target) && !dd.contains(e.target)) dd.style.display = 'none';
 });
 
+/* ── Init ─────────────────────────────────────────────────── */
 function init() {
   if (typeof ApexCharts === 'undefined') { setTimeout(init, 100); return; }
-  buildDateDd();
-  render(curIdx);
+  buildDateDd(); render(curIdx);
 }
 
-// Re-render charts on theme toggle
+// Re-render all charts on theme toggle
 const _tObs = new MutationObserver(() => {
-  if (document.getElementById('pmDashboard').style.display !== 'none') {
-    destroyAll();
-    const s = data.snapshots[curIdx];
-    buildGauge((s.summary.netWorth/data.goal.target*100).toFixed(1));
-    buildReturnGauge(parseFloat(s.summary.investmentGainRate)||0);
-    buildTrend(); buildDonut(s.summary); buildTop5(s.investments);
-    buildReturn(s.investments); buildGrowth();
-    if (simC) { try{simC.destroy();}catch(e){} simC=null; _simDone=false; initSim(s, data.goal); }
+  if (document.getElementById('pmWrap').style.display !== 'none') {
+    Object.keys(charts).forEach(id => { try { charts[id]?.destroy(); } catch(e) {} delete charts[id]; });
+    simChart = null;
+    const s = data.snapshots[curIdx], sm = s.summary;
+    buildGauge((sm.netWorth / data.goal.target * 100).toFixed(1));
+    buildRetGauge(parseFloat(sm.investmentGainRate) || 0);
+    buildTrend(); buildDonut(sm);
+    buildTop5(s.investments); buildReturn(s.investments); buildGrowth();
+    _simDone = false; initSim(s, data.goal);
   }
 });
 _tObs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
-if (sessionStorage.getItem(SESSION_KEY) === '1') init();
+if (sessionStorage.getItem(SK) === '1') init();
 </script>
 </BaseLayout>
