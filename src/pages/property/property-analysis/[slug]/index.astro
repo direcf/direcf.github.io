@@ -3,13 +3,20 @@ import BaseLayout from "../../../../layouts/BaseLayout.astro";
 
 export async function getStaticPaths() {
   const files = import.meta.glob('../../../../data/properties/*.json', { eager: true });
+  const distFiles = import.meta.glob('../../../../data/districts/*.json', { eager: true });
+  const allDist: Record<string, any> = {};
+  for (const [path, mod] of Object.entries(distFiles)) {
+    const s = path.match(/\/(\w+)\.json$/)?.[1];
+    if (s) allDist[s] = (mod as any).default || mod;
+  }
   return (Object.entries(files) as [string, any][]).map(([path, mod]) => {
     const slug = path.match(/\/(\w[\w-]*)\.json$/)?.[1] || '';
-    return { params: { slug }, props: { p: mod.default || mod } };
+    const p = (mod as any).default || mod;
+    return { params: { slug }, props: { p, districtInfo: allDist[p.district] || null } };
   });
 }
 
-const { p } = Astro.props;
+const { p, districtInfo } = Astro.props;
 
 function gradeBg(g: string) {
   const u = (g || '').toUpperCase();
@@ -26,6 +33,28 @@ function scoreColor(s: number) {
   if (s >= 3) return '#fbbf24';
   return '#f87171';
 }
+
+// 지역 연동: 구 단지 비교
+function parseAeokLocal(s: string | null | undefined): number | null {
+  if (!s || s === '—') return null;
+  const v = parseFloat(String(s).replace('억', ''));
+  return isNaN(v) ? null : v;
+}
+const distComplexes = districtInfo
+  ? (districtInfo.complexAnalysis || []).map((c: any) => {
+      const sale = parseAeokLocal(c.sale);
+      const lease = parseAeokLocal(c.lease);
+      const gap = (sale && lease) ? +(sale - lease).toFixed(2) : null;
+      const rate = (sale && lease) ? Math.round(lease / sale * 100) : null;
+      return { ...c, saleNum: sale, leaseNum: lease, gap, rate };
+    })
+  : [];
+const sortedDistPlans = districtInfo
+  ? [...(districtInfo.developmentPlans || [])].sort((a: any, b: any) => (a.year || 9999) - (b.year || 9999)).slice(0, 4)
+  : [];
+const supply3yr = districtInfo?.quickStats?.supply3yr ?? null;
+const supplyColor = (supply3yr !== null && supply3yr < 1000) ? '#f87171' : '#4fc3f7';
+const incomeRank = districtInfo?.quickStats?.incomeRankAddress ?? null;
 
 const gapRateNum = p.gapRate || 0;
 const gapBarFill = Math.min(gapRateNum, 100);
@@ -417,6 +446,90 @@ const districtHref = p.district === 'dongdaemun'
     </div>
     <div class="district-link-arrow">→</div>
   </a>
+
+  <!-- 지역 연동 분석 -->
+  {districtInfo && (
+    <div class="card" style="margin-bottom:16px;">
+      <div class="card-accent"></div>
+      <div class="card-label">지역 연동 분석 — {p.districtName}</div>
+
+      <!-- 구 퀵 스탯 -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px;">
+        <div style="background:var(--fb-kpi-bg);border:1px solid var(--fb-border);border-radius:12px;padding:12px 14px;">
+          <div style="font-size:9px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--fb-muted);margin-bottom:5px;">투자매력도</div>
+          <div style="font-size:16px;font-weight:800;color:#4fc3f7;">{districtInfo.attraction || '—'}</div>
+        </div>
+        <div style="background:var(--fb-kpi-bg);border:1px solid var(--fb-border);border-radius:12px;padding:12px 14px;">
+          <div style="font-size:9px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--fb-muted);margin-bottom:5px;">교통 등급</div>
+          <div style="font-size:16px;font-weight:800;color:#4fc3f7;">{districtInfo.locationAnalysis?.traffic?.grade || '—'}</div>
+        </div>
+        <div style="background:var(--fb-kpi-bg);border:1px solid var(--fb-border);border-radius:12px;padding:12px 14px;">
+          <div style="font-size:9px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--fb-muted);margin-bottom:5px;">3년 공급</div>
+          <div style={`font-size:16px;font-weight:800;color:${supplyColor};`}>{supply3yr !== null ? supply3yr.toLocaleString() + '세대' : '—'}</div>
+        </div>
+        <div style="background:var(--fb-kpi-bg);border:1px solid var(--fb-border);border-radius:12px;padding:12px 14px;">
+          <div style="font-size:9px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--fb-muted);margin-bottom:5px;">소득순위</div>
+          <div style="font-size:16px;font-weight:800;color:#4fc3f7;">{incomeRank !== null ? `서울 ${incomeRank}위` : '—'}</div>
+        </div>
+      </div>
+
+      <!-- 구 내 단지 비교 -->
+      {distComplexes.length > 0 && (
+        <div style="margin-bottom:16px;">
+          <div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--fb-muted);margin-bottom:10px;">구 내 주요 단지 갭 비교</div>
+          {distComplexes.map((c: any) => {
+            const isThis = c.name === p.officialName || (p.officialName && c.name.includes(p.officialName));
+            const barPct = c.rate ? Math.min(c.rate, 100) : 0;
+            const rateColor = (c.rate || 0) >= 60 ? '#34d399' : (c.rate || 0) >= 50 ? '#fbbf24' : '#f87171';
+            const tierBg = c.tier === '대장' ? 'rgba(99,102,241,.15)' : c.tier === '중위' ? 'rgba(52,211,153,.12)' : 'rgba(79,195,247,.1)';
+            const tierColor = c.tier === '대장' ? '#a5b4fc' : c.tier === '중위' ? '#6ee7b7' : '#7dd8ff';
+            return (
+              <div style={`display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:10px;margin-bottom:6px;border:1px solid ${isThis ? 'rgba(79,195,247,.35)' : 'var(--fb-border)'};background:${isThis ? 'rgba(79,195,247,.06)' : 'transparent'};`}>
+                <div style="width:36px;flex-shrink:0;">
+                  <span style={`font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;background:${tierBg};color:${tierColor}`}>{c.tier}</span>
+                </div>
+                <div style="flex:1;min-width:0;">
+                  <div style={`font-size:12px;font-weight:${isThis ? 800 : 600};color:${isThis ? '#4fc3f7' : 'var(--fb-200)'};`}>{c.name}{isThis ? ' ← 이 단지' : ''}</div>
+                  <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
+                    <div style="flex:1;height:5px;background:rgba(255,255,255,.06);border-radius:3px;overflow:hidden;">
+                      <div style={`height:100%;width:${barPct}%;background:${rateColor};border-radius:3px;`}></div>
+                    </div>
+                    <span style={`font-size:10px;font-weight:700;color:${rateColor};width:28px;text-align:right;`}>{c.rate || '—'}%</span>
+                  </div>
+                </div>
+                <div style="text-align:right;flex-shrink:0;">
+                  <div style="font-size:12px;font-weight:700;color:var(--fb-gold);">{c.gap != null ? c.gap.toFixed(2) + '억' : '—'}</div>
+                  <div style="font-size:10px;color:var(--fb-muted);">갭</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <!-- 개발 호재 요약 -->
+      {sortedDistPlans.length > 0 && (
+        <div>
+          <div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--fb-muted);margin-bottom:10px;">구 내 주요 개발 호재</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            {sortedDistPlans.map((plan: any) => {
+              const yr = plan.year || 0;
+              const statusColor = yr < 2026 ? '#6b7280' : yr === 2026 ? '#2563eb' : '#059669';
+              return (
+                <div style="padding:10px 12px;border-radius:10px;border:1px solid var(--fb-border);background:rgba(79,195,247,.03);">
+                  <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+                    <span style={`font-size:9px;font-weight:700;color:${statusColor};`}>{yr || '미정'}</span>
+                    <span style="font-size:9px;color:var(--fb-muted);">{plan.type || ''}</span>
+                  </div>
+                  <div style="font-size:11px;font-weight:600;color:var(--fb-200);line-height:1.4;">{plan.label}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  )}
 
   <!-- 시세 히스토리 + 입지 분석 -->
   <div class="section-grid-60-40">

@@ -1,6 +1,9 @@
 ---
 import BaseLayout from "../../../layouts/BaseLayout.astro";
 import propertyData from "../../../data/property.json";
+
+const propFiles = import.meta.glob('../../../data/properties/*.json', { eager: true });
+const analyzedProps = Object.values(propFiles).map((m: any) => m.default || m);
 ---
 <BaseLayout title="자산 현황" activeSlug="property" crumbs={[{label:"Personal"},{label:"Property",href:"/property/"},{label:"자산 현황"}]}>
 
@@ -357,6 +360,18 @@ import propertyData from "../../../data/property.json";
       </div>
     </div>
 
+    <!-- 분석 매물 접근 가능성 -->
+    <div class="pm-card pm-sa" id="propReachCard" style="margin-bottom:18px;animation-delay:.23s;display:none;">
+      <div class="pm-sh"><div class="pm-shbar"></div>분석 매물 — 현재 자산 기준 접근 가능성</div>
+      <div id="propReachBody"></div>
+    </div>
+
+    <!-- 통합 타임라인 -->
+    <div class="pm-card pm-sa" id="timelineCard" style="margin-bottom:18px;animation-delay:.24s;display:none;">
+      <div class="pm-sh"><div class="pm-shbar"></div>통합 이벤트 타임라인</div>
+      <div id="timelineBody"></div>
+    </div>
+
     <!-- Simulator -->
     <div class="pm-card pm-sa" style="margin-bottom:36px;animation-delay:.25s">
       <div class="pm-sh"><div class="pm-shbar"></div>목표 달성 시뮬레이터</div>
@@ -386,7 +401,7 @@ import propertyData from "../../../data/property.json";
 </div>
 
 <script is:inline src="https://cdn.jsdelivr.net/npm/apexcharts@3.45.1/dist/apexcharts.min.js"></script>
-<script is:inline define:vars={{ data: propertyData }}>
+<script is:inline define:vars={{ data: propertyData, analyzedProps }}>
 /* ── Auth ─────────────────────────────────────────────────── */
 const PW_HASH = 'ee6123683515b4605b92a9e8e3db97d3517f607f4a7a95583f821371ddd017a1';
 const SK = 'prop:auth';
@@ -658,6 +673,110 @@ function initSim(snap, goal) {
   up();
 }
 
+/* ── 분석 매물 접근 가능성 ─────────────────────────────────── */
+function buildPropReach(snap) {
+  const card = document.getElementById('propReachCard');
+  const body = document.getElementById('propReachBody');
+  if (!card || !body || !analyzedProps.length) return;
+  card.style.display = '';
+  const sm = snap.summary;
+  const liquid = sm.cash + sm.savings;
+  const invest = sm.investmentTotal;
+  const scens = [
+    { key:'A', label:'현금만', budget: liquid, color:'var(--muted)' },
+    { key:'B', label:'주식 30%', budget: liquid + invest * 0.3, color:'var(--fp)' },
+    { key:'C', label:'주식 60%', budget: liquid + invest * 0.6, color:'var(--accent)' },
+    { key:'D', label:'영끌', budget: liquid + 1e8 + 6e8, color:'var(--fg)' },
+  ];
+  function parseGap(s) {
+    if (!s) return null;
+    const v = parseFloat(String(s).replace('억',''));
+    return isNaN(v) ? null : v * 1e8;
+  }
+  function scenBadge(propGapW) {
+    for (const sc of scens) {
+      if (propGapW <= sc.budget) {
+        return `<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:5px;background:${sc.key==='A'?'var(--bg-soft)':sc.key==='B'?'var(--fp-bg)':sc.key==='C'?'rgba(219,234,254,.7)':'var(--fg-bg)'};color:${sc.color}">${sc.label} 진입 가능</span>`;
+      }
+    }
+    return `<span style="font-size:10px;color:var(--fn);font-weight:700">자금 부족</span>`;
+  }
+  body.innerHTML = `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;padding:10px 12px;background:var(--bg-soft);border-radius:10px;">
+      ${scens.map(sc => `<div style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:6px;background:var(--bg-card);border:1px solid var(--border);color:${sc.color}">${sc.label}: ${fW(sc.budget)}</div>`).join('')}
+    </div>
+    ${analyzedProps.map(p => {
+      const gapW = parseGap(p.gap);
+      if (!gapW) return '';
+      const rateColor = (p.gapRate||0) >= 60 ? 'var(--fp)' : (p.gapRate||0) >= 50 ? 'var(--fg)' : 'var(--fn)';
+      return `<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border:1px solid var(--border);border-radius:12px;margin-bottom:8px;gap:12px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:160px;">
+          <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:3px;">${p.name}</div>
+          <div style="font-size:10px;color:var(--muted);">${p.districtName} · ${p.mainSize} · 전세가율 <span style="font-weight:700;color:${rateColor}">${p.gapRate}%</span></div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;">
+          <div style="font-size:16px;font-weight:900;color:var(--fg);letter-spacing:-.5px;">${p.gap}</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:2px;margin-bottom:4px;">갭 필요금액</div>
+          ${scenBadge(gapW)}
+        </div>
+      </div>`;
+    }).join('')}
+    <div style="text-align:right;margin-top:4px;">
+      <a href="/property/property-analysis/" style="font-size:11px;color:var(--accent);text-decoration:none;font-weight:600;">매물 분석 전체 보기 →</a>
+    </div>`;
+}
+
+/* ── 통합 타임라인 ────────────────────────────────────────── */
+function buildTimeline(snap) {
+  const card = document.getElementById('timelineCard');
+  const body = document.getElementById('timelineBody');
+  if (!card || !body) return;
+  card.style.display = '';
+  const events = [];
+  // 대출 만기
+  (snap.loans || []).forEach(l => {
+    if (l.maturityDate) events.push({ date: l.maturityDate, label: `${l.name} 만기`, sub: `${fW(l.balance)} · ${l.rate}%`, color:'var(--fn)', icon:'💳' });
+  });
+  // 목표 달성 예상 (현재 페이스)
+  const sm = snap.summary, sd = new Date(snap.snapshotDate), G = data.goal.target;
+  const remain = Math.max(0, Math.ceil((new Date(data.goal.deadline) - sd) / (864e5 * 30.5)));
+  if (remain > 0) {
+    const dl = new Date(data.goal.deadline);
+    events.push({ date: data.goal.deadline, label: '목표 달성 데드라인', sub: `5억 목표 · 현재 ${(sm.netWorth/1e8).toFixed(2)}억 (${Math.round(sm.netWorth/G*100)}%)`, color:'var(--fg)', icon:'🎯' });
+  }
+  // 분석 매물 재건축 연한
+  analyzedProps.forEach(p => {
+    if (p.completionYear) {
+      const reconYear = p.completionYear + 30;
+      events.push({ date: reconYear + '-01-01', label: `${p.name} 재건축 연한`, sub: `${p.completionYear}년 준공 → ${reconYear}년 도래`, color:'var(--accent)', icon:'🔨' });
+    }
+  });
+  // 정렬
+  events.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  const now = new Date();
+  body.innerHTML = `<div style="position:relative;padding-left:28px;">
+    <div style="position:absolute;left:10px;top:0;bottom:0;width:2px;background:var(--border);border-radius:1px;"></div>
+    ${events.map(ev => {
+      const evDate = new Date(ev.date);
+      const isPast = evDate < now;
+      const isCurrent = Math.abs(evDate.getFullYear() - now.getFullYear()) < 1;
+      const yr = evDate.getFullYear(), mo = evDate.getMonth()+1;
+      const dLabel = `${yr}.${String(mo).padStart(2,'0')}`;
+      const dotColor = isPast ? '#6b7280' : ev.color;
+      return `<div style="position:relative;margin-bottom:18px;">
+        <div style="position:absolute;left:-22px;top:2px;width:10px;height:10px;border-radius:50%;background:${dotColor};border:2px solid var(--bg-card);${isCurrent?'box-shadow:0 0 0 3px '+dotColor+'40':''};"></div>
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+          <div>
+            <div style="font-size:9px;font-weight:700;color:${isPast?'var(--muted)':dotColor};letter-spacing:.5px;margin-bottom:2px;">${dLabel}${isPast?' · 완료':''}</div>
+            <div style="font-size:13px;font-weight:700;color:${isPast?'var(--muted)':'var(--text)'};">${ev.icon} ${ev.label}</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:1px;">${ev.sub}</div>
+          </div>
+        </div>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
 /* ── Live Market ──────────────────────────────────────────── */
 const TMAP = { 'SK하이닉스': '000660.KS', '삼성전자': '005930.KS', '테슬라': 'TSLA', 'KODEX 미국S&P500': '069500.KS', 'NAVER': '035420.KS', 'TIGER KRX금현물': '132030.KS', 'ACE 미국S&P500': '360750.KS', '애플': 'AAPL', '쿠팡': 'CPNG', '유니티 소프트웨어': 'U' };
 let _liveInvs = [], _liveDone = false;
@@ -925,6 +1044,8 @@ function render(idx) {
   initLive(invs);
   initSim(s, data.goal);
   buildDateDd();
+  buildPropReach(s);
+  buildTimeline(s);
 }
 
 /* ── Date dropdown ────────────────────────────────────────── */
