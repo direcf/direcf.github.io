@@ -47,16 +47,43 @@ const priceColors: Record<string, string> = {
   '팔로우': 'color:#1d4ed8',
 };
 const devTypeIcon: Record<string, string> = {
-  '교통': '🚇',
-  '재개발': '🏗️',
-  '뉴타운': '🏗️',
-  '정비': '🏗️',
-  '산업': '🏭',
-  '공원': '🌿',
+  '교통': '🚇', '재개발': '🏗️', '뉴타운': '🏗️', '정비': '🏗️',
+  '산업': '🏭', '공원': '🌿', '재건축': '🔨', '복합개발': '🏙️',
 };
-const devTypeGreen = new Set(['재개발', '뉴타운', '정비', '공원']);
+
+// M4: Gap bar — computed at build time, no runtime JS
+function parseAeok(s) {
+  if (!s || s === '—') return null;
+  const v = parseFloat(String(s).replace('억', ''));
+  return isNaN(v) ? null : v;
+}
+const complexData = (d.complexAnalysis || []).map(c => {
+  const sale = parseAeok(c.sale);
+  const lease = parseAeok(c.lease);
+  const gap = (sale && lease) ? +(sale - lease).toFixed(2) : null;
+  const rate = (sale && lease) ? Math.round(lease / sale * 100) : null;
+  return { ...c, gap, rate };
+});
+
+// M5: Development timeline — sort by year, type colors
+const sortedPlans = [...(d.developmentPlans || [])].sort((a, b) => (a.year || 9999) - (b.year || 9999));
+const CURRENT_YEAR = 2026;
+const devTypeColors: Record<string, { bg: string; border: string; text: string; dot: string }> = {
+  '교통':    { bg:'#eff6ff', border:'#bfdbfe', text:'#1d4ed8', dot:'#2563eb' },
+  '재개발':  { bg:'#fff7ed', border:'#fed7aa', text:'#c2410c', dot:'#ea580c' },
+  '뉴타운':  { bg:'#fff7ed', border:'#fed7aa', text:'#c2410c', dot:'#ea580c' },
+  '재건축':  { bg:'#fff7ed', border:'#fed7aa', text:'#c2410c', dot:'#ea580c' },
+  '산업':    { bg:'#f0fdf4', border:'#bbf7d0', text:'#166534', dot:'#16a34a' },
+  '복합개발':{ bg:'#faf5ff', border:'#e9d5ff', text:'#6b21a8', dot:'#9333ea' },
+  '정비':    { bg:'#f0fdf4', border:'#bbf7d0', text:'#166534', dot:'#16a34a' },
+};
+const devFallback = { bg:'#eff6ff', border:'#bfdbfe', text:'#1d4ed8', dot:'#2563eb' };
 ---
+
 <BaseLayout title={`${d.name} 분석`} activeSlug="property" crumbs={[{label:"Personal"},{label:"Property",href:"/property/"},{label:"지역 분석",href:"/property/region-analysis/"},{label:d.name}]}>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
 <style>
 #prop-root{background:var(--bg);color:var(--text);min-height:100vh;padding:28px 32px 72px;}
 #lockScreen{position:fixed;inset:0;z-index:9999;background:radial-gradient(ellipse at 30% 40%,rgba(20,60,130,.6),transparent 65%),radial-gradient(ellipse at 75% 70%,rgba(10,40,100,.45),transparent 60%),#060d1e;display:flex;align-items:center;justify-content:center;}
@@ -72,7 +99,12 @@ const devTypeGreen = new Set(['재개발', '뉴타운', '정비', '공원']);
 .lock-err{font-size:12px;color:#f87171;margin-top:10px;min-height:18px;}
 .lock-hint{font-size:11px;color:#6a96ba;margin-top:20px;}
 #dashboard{display:none;}
+@keyframes tl-pulse{0%,100%{box-shadow:0 0 0 0 rgba(37,99,235,.4);}50%{box-shadow:0 0 0 6px rgba(37,99,235,0);}}
+.tl-dot-current{animation:tl-pulse 2s ease-in-out infinite;}
 </style>
+
+<!-- District data for client-side chart/map init -->
+<div id="districtDataEl" data-json={JSON.stringify(d)} style="display:none;"></div>
 
 <div id="prop-root">
 
@@ -171,47 +203,114 @@ const devTypeGreen = new Set(['재개발', '뉴타운', '정비', '공원']);
     </div>
   </div>
 
-  <!-- 입지 분석 -->
+  <!-- 입지 분석 (M3: 레이더 차트 + M2: 교통 증명 패널) -->
   <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:20px;padding:24px 26px 28px;margin-bottom:16px;box-shadow:var(--shadow-sm);">
     <h2 style="font-size:15px;font-weight:800;color:var(--text);margin:0 0 18px;letter-spacing:-.3px;">🚇 입지 분석</h2>
-    <div style="display:flex;flex-direction:column;gap:14px;">
-      {[
-        { key: 'workplace', label: '직장 접근성' },
-        { key: 'traffic',   label: '교통' },
-        { key: 'school',    label: '학군' },
-        { key: 'environment', label: '환경' },
-      ].map(({ key, label }) => {
-        const item = d.locationAnalysis?.[key];
-        if (!item) return null;
-        return (
-          <div style="display:flex;align-items:flex-start;gap:14px;">
-            <div style={`width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;flex-shrink:0;text-align:center;line-height:1.2;${gradeBg(item.grade)}`}>{item.grade || '—'}</div>
-            <div>
-              <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:3px;">{label}</div>
-              <div style="font-size:12px;color:var(--muted);line-height:1.6;">{item.desc}</div>
+    <div style="display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap;">
+      <!-- Radar chart -->
+      <div style="flex-shrink:0;width:260px;min-width:200px;">
+        <canvas id="radarChart" style="display:block;max-width:260px;max-height:260px;"></canvas>
+      </div>
+      <!-- Grade items -->
+      <div style="flex:1;min-width:220px;display:flex;flex-direction:column;gap:16px;">
+        {[
+          { key: 'workplace', label: '직장 접근성' },
+          { key: 'traffic',   label: '교통' },
+          { key: 'school',    label: '학군' },
+          { key: 'environment', label: '환경' },
+        ].map(({ key, label }) => {
+          const item = d.locationAnalysis?.[key];
+          if (!item) return null;
+          return (
+            <div style="display:flex;align-items:flex-start;gap:14px;">
+              <div style={`width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;flex-shrink:0;text-align:center;line-height:1.2;${gradeBg(item.grade)}`}>{item.grade || '—'}</div>
+              <div style="flex:1;">
+                <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:3px;">{label}</div>
+                {key === 'traffic' && d.transitData ? (
+                  <div style="margin-top:4px;">
+                    <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px;">
+                      {d.transitData.lines.map((line) => (
+                        <div style={`border-left:3px solid ${line.color};background:${line.color}18;border-radius:4px;padding:4px 8px;`}>
+                          <span style={`font-size:11px;font-weight:800;color:${line.color};margin-right:5px;`}>{line.name}</span>
+                          <span style="font-size:10px;color:var(--muted);">{line.keyStations.join(' · ')}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div style="background:var(--bg);border-radius:8px;padding:8px 12px;">
+                      <div style="font-size:10px;color:var(--muted);margin-bottom:7px;">기준역 {d.transitData.travelTimes.referenceStation}</div>
+                      {[
+                        { tLabel:'강남역', tKey:'gangnam' },
+                        { tLabel:'여의도역', tKey:'yeouido' },
+                        { tLabel:'종로3가역', tKey:'jongno' },
+                      ].map(({ tLabel, tKey }) => {
+                        const mins = d.transitData.travelTimes[tKey];
+                        if (!mins) return null;
+                        const pct = Math.min(Math.round(mins / 90 * 100), 100);
+                        const tColor = mins < 30 ? '#16a34a' : mins < 50 ? '#d97706' : '#dc2626';
+                        return (
+                          <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;">
+                            <div style="font-size:10px;color:var(--muted);width:64px;flex-shrink:0;">{tLabel}</div>
+                            <div style="flex:1;height:5px;background:#e5e7eb;border-radius:3px;overflow:hidden;">
+                              <div style={`height:100%;border-radius:3px;background:${tColor};width:${pct}%;`}></div>
+                            </div>
+                            <div style={`font-size:11px;font-weight:700;color:${tColor};width:28px;text-align:right;`}>{mins}분</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div style="font-size:12px;color:var(--muted);line-height:1.6;">{item.desc}</div>
+                )}
+              </div>
             </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   </div>
 
-  <!-- 개발 호재 -->
-  {d.developmentPlans && d.developmentPlans.length > 0 && (
+  <!-- 단지 위치 지도 (M1: Leaflet, shown only when lat/lng exist) -->
+  <div id="mapSection" style="background:var(--bg-card);border:1px solid var(--border);border-radius:20px;padding:24px 26px 28px;margin-bottom:16px;box-shadow:var(--shadow-sm);">
+    <h2 style="font-size:15px;font-weight:800;color:var(--text);margin:0 0 16px;letter-spacing:-.3px;">📍 단지 위치 지도</h2>
+    <div id="complexMap" style="height:340px;border-radius:12px;overflow:hidden;border:1px solid var(--border);"></div>
+    <div style="font-size:10px;color:var(--muted);margin-top:8px;text-align:right;">대장 · 중위 · 팔로우 단지 위치 — 마커 클릭 시 상세 정보</div>
+  </div>
+
+  <!-- 개발 호재 (M5: 타임라인) -->
+  {sortedPlans.length > 0 && (
     <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:20px;padding:24px 26px 28px;margin-bottom:16px;box-shadow:var(--shadow-sm);">
-      <h2 style="font-size:15px;font-weight:800;color:var(--text);margin:0 0 16px;letter-spacing:-.3px;">⚡ 개발 호재</h2>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;">
-        {d.developmentPlans.map((plan) => {
-          const isGreen = devTypeGreen.has(plan.type);
-          const icon = devTypeIcon[plan.type] || '⚡';
-          const cardStyle = isGreen
-            ? 'background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1px solid rgba(34,197,94,.18);border-radius:12px;padding:14px 16px;'
-            : 'background:linear-gradient(135deg,#eff6ff,#dbeafe);border:1px solid rgba(59,130,246,.18);border-radius:12px;padding:14px 16px;';
-          const labelColor = isGreen ? 'color:#166534' : 'color:#1d4ed8';
+      <h2 style="font-size:15px;font-weight:800;color:var(--text);margin:0 0 22px;letter-spacing:-.3px;">⚡ 개발 호재 타임라인</h2>
+      <div style="position:relative;padding-left:32px;">
+        <div style="position:absolute;left:10px;top:4px;bottom:0;width:2px;background:linear-gradient(to bottom,#bfdbfe,rgba(229,231,235,.3) 90%);border-radius:1px;"></div>
+        {sortedPlans.map((plan) => {
+          const clr = devTypeColors[plan.type] || devFallback;
+          const yr = plan.year;
+          const isPast = yr && yr < CURRENT_YEAR;
+          const isCurrent = yr === CURRENT_YEAR;
+          const dotBg = isPast ? '#e5e7eb' : (isCurrent ? clr.dot : '#fff');
+          const dotBorder = isPast ? '#9ca3af' : clr.dot;
+          const dotShadow = isPast ? 'rgba(156,163,175,.2)' : clr.dot + '33';
           return (
-            <div style={cardStyle}>
-              <div style={`font-size:11px;font-weight:700;margin-bottom:5px;${labelColor}`}>{icon} {plan.label}</div>
-              <div style="font-size:12px;color:var(--text);line-height:1.5;">{plan.detail}</div>
+            <div style="position:relative;margin-bottom:20px;">
+              <div
+                style={`position:absolute;left:-26px;top:13px;width:14px;height:14px;border-radius:50%;background:${dotBg};border:2.5px solid ${dotBorder};box-shadow:0 0 0 3px ${dotShadow};`}
+                class={isCurrent ? 'tl-dot-current' : ''}
+              ></div>
+              {yr && (
+                <div style="font-size:10px;font-weight:700;color:var(--muted);margin-bottom:5px;letter-spacing:.3px;">
+                  {yr}년&nbsp;
+                  <span style={`font-size:9px;padding:1px 6px;border-radius:10px;font-weight:700;background:${isPast?'#f3f4f6':isCurrent?'#dbeafe':'var(--bg)'};color:${isPast?'#6b7280':isCurrent?'#1d4ed8':clr.text};`}>
+                    {isPast ? '완료' : isCurrent ? '진행중' : '예정'}
+                  </span>
+                </div>
+              )}
+              <div style={`background:${clr.bg};border:1px solid ${clr.border};border-radius:12px;padding:12px 16px;`}>
+                <div style={`font-size:11px;font-weight:800;color:${clr.text};margin-bottom:4px;`}>
+                  {devTypeIcon[plan.type] || '⚡'}&nbsp;[{plan.type}]&nbsp;{plan.label}
+                </div>
+                <div style="font-size:12px;color:var(--text);line-height:1.6;">{plan.detail}</div>
+              </div>
             </div>
           );
         })}
@@ -308,12 +407,12 @@ const devTypeGreen = new Set(['재개발', '뉴타운', '정비', '공원']);
     )}
   </div>
 
-  <!-- 단지 분석 -->
-  {d.complexAnalysis && d.complexAnalysis.length > 0 && (
+  <!-- 단지 분석 (M4: 갭 투자 분석 바 포함) -->
+  {complexData.length > 0 && (
     <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:20px;padding:24px 26px 28px;margin-bottom:16px;box-shadow:var(--shadow-sm);">
       <h2 style="font-size:15px;font-weight:800;color:var(--text);margin:0 0 18px;letter-spacing:-.3px;">🏢 단지 분석</h2>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px;">
-        {d.complexAnalysis.map((c) => (
+        {complexData.map((c) => (
           <div style={`${tierColors[c.tier] || tierColors['팔로우']};border-radius:16px;padding:20px;`}>
             <div style={`font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px;${tierTextColors[c.tier] || tierTextColors['팔로우']}`}>{c.tier} 단지</div>
             <div style="font-size:15px;font-weight:800;color:var(--text);margin-bottom:4px;line-height:1.3;">{c.name}</div>
@@ -329,6 +428,21 @@ const devTypeGreen = new Set(['재개발', '뉴타운', '정비', '공원']);
                 <span style="font-size:11px;color:var(--muted);">전세</span>
                 <span style="font-size:14px;font-weight:700;color:var(--text);">{orDash(c.lease)}</span>
               </div>
+              {c.gap != null && (
+                <div style="margin-bottom:10px;">
+                  <div style="position:relative;height:7px;border-radius:4px;background:#e5e7eb;overflow:hidden;margin-bottom:5px;">
+                    <div style={`position:absolute;left:0;top:0;height:100%;border-radius:4px 0 0 4px;background:#60a5fa;width:${c.rate}%;`}></div>
+                    <div style={`position:absolute;left:${c.rate}%;top:0;height:100%;background:#fbbf24;width:${100-c.rate}%;`}></div>
+                  </div>
+                  <div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:8px;">
+                    <span style="color:#2563eb;font-weight:700;">전세 {c.rate}%</span>
+                    <span style="color:#b45309;font-weight:700;">갭 {100-c.rate}%</span>
+                  </div>
+                  <div style={`display:inline-block;padding:4px 11px;border-radius:8px;font-size:11px;font-weight:700;background:${c.rate>=60?'#f0fdf4':c.rate>=40?'#fffbeb':'#fff1f2'};color:${c.rate>=60?'#166534':c.rate>=40?'#92400e':'#991b1b'};border:1px solid ${c.rate>=60?'rgba(34,197,94,.25)':c.rate>=40?'rgba(251,191,36,.35)':'rgba(239,68,68,.25)'};`}>
+                    갭투자 필요금액 {c.gap}억
+                  </div>
+                </div>
+              )}
               {c.note && <div style="font-size:10px;color:var(--muted);line-height:1.6;">{c.note}</div>}
             </div>
           </div>
@@ -345,13 +459,104 @@ const devTypeGreen = new Set(['재개발', '뉴타운', '정비', '공원']);
 </div><!-- /dashboard -->
 </div><!-- /prop-root -->
 
+<!-- Script 1: Auth (no session check — handled in Script 4 after initModules is defined) -->
 <script is:inline>
 const HASH='ee6123683515b4605b92a9e8e3db97d3517f607f4a7a95583f821371ddd017a1';
 const SESSION_KEY='prop:auth';
 async function sha256(msg){const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(msg));return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');}
-async function tryUnlock(){const pw=document.getElementById('pwInput').value;const h=await sha256(pw);if(h===HASH){sessionStorage.setItem(SESSION_KEY,'1');document.getElementById('lockScreen').style.display='none';document.getElementById('dashboard').style.display='block';}else{document.getElementById('pwErr').textContent='비밀번호가 올바르지 않습니다.';document.getElementById('pwInput').value='';}}
+async function tryUnlock(){const pw=document.getElementById('pwInput').value;const h=await sha256(pw);if(h===HASH){sessionStorage.setItem(SESSION_KEY,'1');document.getElementById('lockScreen').style.display='none';document.getElementById('dashboard').style.display='block';if(typeof initModules==='function')initModules();}else{document.getElementById('pwErr').textContent='비밀번호가 올바르지 않습니다.';document.getElementById('pwInput').value='';}}
 document.getElementById('unlockBtn').addEventListener('click',tryUnlock);
-document.getElementById('pwInput').addEventListener('keydown',e=>{if(e.key==='Enter')tryUnlock();});
-if(sessionStorage.getItem(SESSION_KEY)==='1'){document.getElementById('lockScreen').style.display='none';document.getElementById('dashboard').style.display='block';}
+document.getElementById('pwInput').addEventListener('keydown',function(e){if(e.key==='Enter')tryUnlock();});
 </script>
+
+<!-- Script 2: Chart.js CDN -->
+<script is:inline src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+
+<!-- Script 3: Leaflet JS CDN -->
+<script is:inline src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<!-- Script 4: Module init + session check (runs after CDNs loaded, initModules enters global scope) -->
+<script is:inline>
+var districtD=JSON.parse(document.getElementById('districtDataEl').dataset.json);
+
+function initRadar(district){
+  var ctx=document.getElementById('radarChart');
+  if(!ctx||typeof Chart==='undefined')return;
+  var gs={S:5,'A+':5,A:4,'B+':4,B:3,'B-':3,C:2,D:1};
+  var la=district.locationAnalysis||{};
+  var rank=district.quickStats&&district.quickStats.incomeRankAddress;
+  var inc=!rank?3:rank<=5?5:rank<=10?4:rank<=15?3:rank<=20?2:1;
+  var isDark=document.documentElement.dataset.theme==='dark';
+  var gridColor=isDark?'rgba(100,150,220,.12)':'rgba(100,160,220,.15)';
+  var labelColor=isDark?'#94a3b8':'#475569';
+  new Chart(ctx,{
+    type:'radar',
+    data:{
+      labels:['직장접근성','교통','학군','환경','소득수준'],
+      datasets:[{
+        label:district.name,
+        data:[gs[la.workplace&&la.workplace.grade]||3,gs[la.traffic&&la.traffic.grade]||3,gs[la.school&&la.school.grade]||3,gs[la.environment&&la.environment.grade]||3,inc],
+        backgroundColor:'rgba(37,116,228,.15)',borderColor:'#2574e4',borderWidth:2.5,pointBackgroundColor:'#2574e4',pointRadius:4
+      },{
+        label:'서울 평균',
+        data:[3,3,3,3,3],
+        backgroundColor:'rgba(156,163,175,.08)',borderColor:'rgba(156,163,175,.5)',borderWidth:1.5,borderDash:[4,3],pointBackgroundColor:'rgba(156,163,175,.5)',pointRadius:3
+      }]
+    },
+    options:{
+      scales:{r:{min:0,max:5,ticks:{stepSize:1,display:false},grid:{color:gridColor},angleLines:{color:gridColor},pointLabels:{font:{size:11,weight:'700'},color:labelColor}}},
+      plugins:{legend:{position:'bottom',labels:{font:{size:11},color:labelColor}}}
+    }
+  });
+}
+
+function initMap(district){
+  var sec=document.getElementById('mapSection');
+  var el=document.getElementById('complexMap');
+  if(!el||typeof L==='undefined'){if(sec)sec.style.display='none';return;}
+  var complexes=(district.complexAnalysis||[]).filter(function(c){return c.lat&&c.lng;});
+  if(!complexes.length){if(sec)sec.style.display='none';return;}
+  var isDark=document.documentElement.dataset.theme==='dark';
+  var map=L.map('complexMap',{zoomControl:true,scrollWheelZoom:false});
+  L.tileLayer(
+    isDark?'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png':'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+    {attribution:'&copy; OpenStreetMap &copy; CARTO',maxZoom:18}
+  ).addTo(map);
+  var tc={'대장':{c:'#7c3aed',i:'대장'},'중위':{c:'#2563eb',i:'중위'},'팔로우':{c:'#6b7280',i:'팔로우'}};
+  var coords=[];
+  complexes.forEach(function(c){
+    var cfg=tc[c.tier]||tc['팔로우'];
+    var icon=L.divIcon({
+      className:'',
+      html:'<div style="width:34px;height:34px;border-radius:50%;background:'+cfg.c+';border:3px solid #fff;box-shadow:0 2px 10px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff;font-weight:800;text-align:center;line-height:1.2;">'+cfg.i+'</div>',
+      iconSize:[34,34],iconAnchor:[17,17],popupAnchor:[0,-20]
+    });
+    var popup='<div style="min-width:160px;font-size:12px;font-family:system-ui,sans-serif;">'
+      +'<div style="font-weight:800;color:'+cfg.c+';font-size:13px;margin-bottom:2px;">'+c.name+'</div>'
+      +'<div style="color:#6b7280;font-size:11px;margin-bottom:6px;">'+c.tier+' &middot; '+(c.year||'')+'년 &middot; '+(c.units?c.units.toLocaleString():'?')+'세대</div>'
+      +'<div style="margin-bottom:2px;">매매 <strong>'+(c.sale||'—')+'</strong></div>'
+      +'<div>전세 <strong>'+(c.lease||'—')+'</strong></div>'
+      +(c.size?'<div style="color:#6b7280;margin-top:4px;font-size:11px;">'+c.size+'</div>':'')
+      +'</div>';
+    L.marker([c.lat,c.lng],{icon:icon}).addTo(map).bindPopup(popup);
+    coords.push([c.lat,c.lng]);
+  });
+  if(coords.length===1)map.setView(coords[0],15);
+  else map.fitBounds(L.latLngBounds(coords).pad(0.3));
+}
+
+function initModules(){
+  requestAnimationFrame(function(){
+    initRadar(districtD);
+    initMap(districtD);
+  });
+}
+
+if(sessionStorage.getItem(SESSION_KEY)==='1'){
+  document.getElementById('lockScreen').style.display='none';
+  document.getElementById('dashboard').style.display='block';
+  initModules();
+}
+</script>
+
 </BaseLayout>
