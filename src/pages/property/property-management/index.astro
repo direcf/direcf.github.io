@@ -478,19 +478,29 @@ function buildGauge(pct) {
   });
 }
 function buildRetGauge(rate) {
+  const el = document.getElementById('retGauge'); if (!el) return;
   const c = CC(), col = rate >= 0 ? c.pos : c.neg;
-  const norm = ((Math.min(Math.max(rate, -50), 100) + 50) / 150 * 100).toFixed(1);
-  mk('retGauge', {
-    ...apexBase({ type: 'radialBar', height: 96 }),
-    series: [parseFloat(norm)],
-    plotOptions: { radialBar: { startAngle: -90, endAngle: 90, hollow: { size: '65%', background: 'transparent' }, dataLabels: { show: false }, track: { background: c.soft, strokeWidth: '100%' } } },
-    colors: [col], stroke: { lineCap: 'round' }, legend: { show: false }, tooltip: { enabled: false },
-  });
+  const p = Math.min(Math.max((rate + 50) / 150, 0), 1);
+  const R = 70, cx = 100, cy = 78;
+  const len = +(Math.PI * R).toFixed(2);
+  const dash = +(len * p).toFixed(2);
+  const lbl = (rate >= 0 ? '+' : '') + rate.toFixed(1) + '%';
+  el.innerHTML = `<svg viewBox="0 0 200 84" style="width:100%;display:block">
+    <path d="M${cx-R} ${cy} A${R} ${R} 0 0 1 ${cx+R} ${cy}"
+      fill="none" stroke="${c.soft}" stroke-width="12" stroke-linecap="round"/>
+    <path d="M${cx-R} ${cy} A${R} ${R} 0 0 1 ${cx+R} ${cy}"
+      fill="none" stroke="${col}" stroke-width="12" stroke-linecap="round"
+      stroke-dasharray="${dash} ${len}"/>
+    <text x="${cx}" y="${cy-20}" text-anchor="middle" dominant-baseline="middle"
+      fill="${col}" font-size="22" font-weight="900" font-family="Pretendard,sans-serif">${lbl}</text>
+    <text x="${cx}" y="${cy-4}" text-anchor="middle" dominant-baseline="middle"
+      fill="${c.text}" font-size="9" font-family="Pretendard,sans-serif" opacity="0.5">투자수익률</text>
+  </svg>`;
 }
 function buildTrend() {
   const c = CC();
   mk('trendChart', {
-    ...apexBase({ type: 'area', height: 280 }),
+    ...apexBase({ type: 'area', height: 320 }),
     series: [
       { name: '총자산', data: data.snapshots.map(s => Math.round(s.summary.totalAssets / 1e6)) },
       { name: '순자산', data: data.snapshots.map(s => Math.round(s.summary.netWorth / 1e6)) },
@@ -863,7 +873,7 @@ function render(idx) {
   document.getElementById('s-ig').innerHTML = `<span style="color:${isPos ? 'var(--fp)' : 'var(--fn)'}">${sm.investmentGain >= 0 ? '+' : ''}${fW(sm.investmentGain)}</span>`;
   document.getElementById('s-ig-sub').innerHTML = `수익률 <span style="font-weight:700;color:${isPos ? 'var(--fp)' : 'var(--fn)'}">${fP(sm.investmentGainRate || 0)}</span>`;
   buildRetGauge(parseFloat(sm.investmentGainRate) || 0);
-  document.getElementById('retGaugeLbl').innerHTML = `<span style="font-size:15px;font-weight:900;color:${isPos ? 'var(--fp)' : 'var(--fn)'}">${fP(sm.investmentGainRate || 0)}</span>`;
+  document.getElementById('retGaugeLbl').innerHTML = `<span style="color:var(--muted)">총 손익 <strong style="color:${isPos ? 'var(--fp)' : 'var(--fn)'}">${isPos ? '+' : ''}${fW(sm.investmentGain)}</strong></span>`;
   const f0 = data.snapshots[0];
   const mon = Math.max(1, Math.round((new Date(s.snapshotDate) - new Date(f0.snapshotDate)) / (864e5 * 30.5)));
   const cagrEl = document.getElementById('cagrRow');
