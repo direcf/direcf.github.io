@@ -301,6 +301,38 @@ const districtHref = p.district === 'dongdaemun'
   border-radius:20px;font-size:9px;font-weight:700;color:var(--fb-400);
   letter-spacing:.05em;white-space:nowrap;}
 .hoga-note-cell{text-align:center;font-size:11px;color:var(--fb-muted);}
+
+/* ── PHOTO CAROUSEL ─────────────────────────────────────────── */
+.photo-card{padding:0;overflow:hidden;}
+.photo-carousel{position:relative;width:100%;height:300px;border-radius:18px;overflow:hidden;background:#0a1628;}
+.carousel-inner{display:flex;height:100%;transition:transform .42s cubic-bezier(.16,1,.3,1);}
+.carousel-slide{flex:0 0 100%;height:100%;position:relative;overflow:hidden;}
+.carousel-slide img{width:100%;height:100%;object-fit:cover;display:block;}
+.carousel-overlay{position:absolute;bottom:0;left:0;right:0;padding:12px 18px;
+  background:linear-gradient(transparent,rgba(0,0,0,.65));pointer-events:none;}
+.carousel-btn{position:absolute;top:50%;transform:translateY(-50%);
+  width:38px;height:38px;border-radius:50%;z-index:3;
+  background:rgba(5,18,45,.82);border:1px solid rgba(79,195,247,.35);
+  color:#7dd8ff;font-size:22px;line-height:1;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;transition:all .15s;}
+.carousel-btn:hover{background:rgba(79,195,247,.2);border-color:var(--fb-400);}
+.carousel-prev{left:10px;}
+.carousel-next{right:10px;}
+.carousel-dots{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);
+  display:flex;gap:6px;z-index:3;}
+.carousel-dot{width:6px;height:6px;border-radius:3px;
+  background:rgba(255,255,255,.3);cursor:pointer;transition:all .2s;}
+.carousel-dot.active{background:#4fc3f7;width:20px;}
+
+/* ── NAVER MAP ──────────────────────────────────────────────── */
+.map-card{padding:0;overflow:hidden;}
+.map-inner-label{padding:16px 22px 10px;font-size:9px;font-weight:700;letter-spacing:1.5px;
+  text-transform:uppercase;color:var(--fb-muted);
+  display:flex;align-items:center;justify-content:space-between;}
+#naverMap{width:100%;height:350px;}
+.map-legend{padding:10px 18px 14px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;}
+.map-leg-item{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--fb-text);}
+.map-leg-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
 </style>
 
 <!-- Property data for client-side chart init -->
@@ -369,6 +401,29 @@ const districtHref = p.district === 'dongdaemun'
       </div>
     </div>
   </div>
+
+  <!-- 단지 외관 사진 -->
+  {p.photos && p.photos.length > 0 && (
+    <div class="card photo-card" style="margin-bottom:16px;">
+      <div class="card-accent"></div>
+      <div style="padding:14px 22px 10px;font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--fb-muted);">단지 외관 사진</div>
+      <div class="photo-carousel" id="photoCarousel">
+        <div class="carousel-inner" id="carouselInner">
+          {(p.photos as string[]).map((src: string, i: number) => (
+            <div class="carousel-slide">
+              <img src={src} alt={`${p.name} 외관 ${i+1}`} loading="lazy" />
+              <div class="carousel-overlay">
+                <div style="font-size:11px;color:rgba(255,255,255,.7);">{p.name} · 외관 {i+1}/{p.photos.length}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <button class="carousel-btn carousel-prev" id="carouselPrev">&#8249;</button>
+        <button class="carousel-btn carousel-next" id="carouselNext">&#8250;</button>
+        <div class="carousel-dots" id="carouselDots"></div>
+      </div>
+    </div>
+  )}
 
   <!-- 단지 기본 정보 -->
   <div class="card" style="margin-bottom:16px;">
@@ -444,6 +499,29 @@ const districtHref = p.district === 'dongdaemun'
     </div>
     <div class="district-link-arrow">→</div>
   </a>
+
+  <!-- 위치 & 주변 단지 지도 -->
+  <div class="card map-card" style="margin-bottom:16px;">
+    <div class="card-accent"></div>
+    <div class="map-inner-label">
+      <span>위치 &amp; 주변 단지 비교</span>
+      <a href={`https://land.naver.com/search/?searchQuery=${encodeURIComponent(p.name)}`} target="_blank" rel="noopener" style="font-size:11px;color:var(--fb-400);text-decoration:none;font-weight:600;letter-spacing:0;text-transform:none;">네이버 부동산 →</a>
+    </div>
+    <div id="naverMap"></div>
+    <div class="map-legend">
+      <div class="map-leg-item">
+        <div class="map-leg-dot" style="background:#4fc3f7;box-shadow:0 0 5px rgba(79,195,247,.6);"></div>
+        <span style="color:var(--fb-300);font-weight:700;">{p.name}</span>
+      </div>
+      {(p.nearbyComplexes || []).map((c: any) => (
+        <div class="map-leg-item">
+          <div class="map-leg-dot" style="background:rgba(251,191,36,.75);"></div>
+          <span>{c.name}</span>
+          <span style="color:var(--fb-muted);font-size:10px;">&nbsp;· {c.salePrice}</span>
+        </div>
+      ))}
+    </div>
+  </div>
 
   <!-- 지역 연동 분석 -->
   {districtInfo && (
@@ -703,7 +781,10 @@ document.getElementById('unlockBtn').addEventListener('click',tryUnlock);
 document.getElementById('pwInput').addEventListener('keydown',function(e){if(e.key==='Enter')tryUnlock();});
 </script>
 
-<!-- Script 2: Chart.js CDN -->
+<!-- Script 2: Naver Maps API -->
+<script is:inline src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpClientId=s4on5umd6e"></script>
+
+<!-- Script 3: Chart.js CDN -->
 <script is:inline src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 
 <!-- Script 3: Init + session check (theme-aware charts) -->
@@ -720,6 +801,8 @@ function initCharts(){
   var tipBdy =dark?'#7dd8ff':'#2c3e5d';
   initPriceChart(cText,cGrid,tipBg,tipBd,tipTtl,tipBdy);
   initRadarChart(cText,cGrid,tipBg,tipBd,tipBdy);
+  initNaverMap();
+  initCarousel();
 }
 
 function initPriceChart(cText,cGrid,tipBg,tipBd,tipTtl,tipBdy){
@@ -777,6 +860,71 @@ function initRadarChart(cText,cGrid,tipBg,tipBd,tipBdy){
         tooltip:{backgroundColor:tipBg,borderColor:tipBd,borderWidth:1,titleColor:tipBdy,bodyColor:tipBdy}}
     }
   });
+}
+
+function initNaverMap(){
+  var el=document.getElementById('naverMap');
+  if(!el||el._nm)return;
+  if(typeof naver==='undefined'||!naver.maps){setTimeout(initNaverMap,300);return;}
+  el._nm=true;
+  var map=new naver.maps.Map(el,{
+    center:new naver.maps.LatLng(propData.lat,propData.lng),
+    zoom:15,
+    mapTypeId:naver.maps.MapTypeId.NORMAL,
+    logoControl:true,scaleControl:false,mapDataControl:false,
+    mapTypeControl:false,zoomControl:true,
+    zoomControlOptions:{position:naver.maps.Position.RIGHT_CENTER,style:naver.maps.ZoomControlStyle.SMALL}
+  });
+  /* 메인 단지 마커 */
+  var mc='<div style="background:rgba(3,18,50,.93);border:2px solid #4fc3f7;border-radius:12px;padding:8px 14px;box-shadow:0 0 16px rgba(79,195,247,.5);text-align:center;min-width:110px;pointer-events:none;">'
+    +'<div style="font-size:11px;font-weight:800;color:#e0f7ff;letter-spacing:-.3px;">'+propData.name+'</div>'
+    +'<div style="font-size:13px;font-weight:900;color:#4fc3f7;margin:2px 0;">'+propData.salePrice+'</div>'
+    +'<div style="font-size:10px;color:#7dd8ff;">갭 '+propData.gap+'</div>'
+    +'</div>';
+  new naver.maps.Marker({position:new naver.maps.LatLng(propData.lat,propData.lng),map:map,
+    icon:{content:mc,anchor:new naver.maps.Point(63,58)},zIndex:10});
+  /* 주변 단지 마커 */
+  (propData.nearbyComplexes||[]).forEach(function(c){
+    var nc='<div style="background:rgba(3,18,50,.85);border:1px solid rgba(251,191,36,.5);border-radius:8px;padding:5px 10px;cursor:pointer;text-align:center;">'
+      +'<div style="font-size:10px;font-weight:700;color:#fbbf24;">'+c.name+'</div>'
+      +'<div style="font-size:10px;color:#e0f7ff;">'+c.salePrice+'</div>'
+      +'</div>';
+    var m=new naver.maps.Marker({position:new naver.maps.LatLng(c.lat,c.lng),map:map,
+      icon:{content:nc,anchor:new naver.maps.Point(46,32)}});
+    var iw=new naver.maps.InfoWindow({
+      content:'<div style="padding:6px 10px;font-size:12px;font-weight:600;">'+c.name+'<br><span style="color:#1d4ed8;">'+c.salePrice+'</span></div>',
+      borderColor:'#4fc3f7',borderRadius:'8px'
+    });
+    naver.maps.Event.addListener(m,'click',function(){iw.open(map,m);});
+  });
+}
+
+function initCarousel(){
+  var inner=document.getElementById('carouselInner');
+  if(!inner)return;
+  var slides=inner.querySelectorAll('.carousel-slide');
+  var n=slides.length;
+  if(n===0)return;
+  var cur=0;
+  var dotsEl=document.getElementById('carouselDots');
+  var prevBtn=document.getElementById('carouselPrev');
+  var nextBtn=document.getElementById('carouselNext');
+  for(var i=0;i<n;i++){
+    var d=document.createElement('div');
+    d.className='carousel-dot'+(i===0?' active':'');
+    (function(idx){d.onclick=function(){go(idx);};})(i);
+    if(dotsEl)dotsEl.appendChild(d);
+  }
+  function go(i){
+    cur=(i+n)%n;
+    inner.style.transform='translateX(-'+(cur*100)+'%)';
+    if(dotsEl)dotsEl.querySelectorAll('.carousel-dot').forEach(function(d,j){
+      d.className='carousel-dot'+(j===cur?' active':'');
+    });
+  }
+  if(prevBtn)prevBtn.onclick=function(){go(cur-1);};
+  if(nextBtn)nextBtn.onclick=function(){go(cur+1);};
+  if(n>1)setInterval(function(){go(cur+1);},5000);
 }
 
 if(sessionStorage.getItem(SESSION_KEY)==='1'){
