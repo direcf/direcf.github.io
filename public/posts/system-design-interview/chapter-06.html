@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch6: Scalability &amp; Reliability Patterns — System Design Interview — direcf</title>
+  <meta name="description" content="로드밸런서, 레이트 리미터, 서킷 브레이커 등 프로덕션 시스템을 안정적으로 운영하는 핵심 패턴들을 배운다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/ai-engineering">System Design Interview</a><span class="sep">›</span>
+        <strong>Ch06 Scalability &amp; Reliability Patterns</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 06 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🔧</div>
+      <h1 class="chapter-title">Scalability &amp; Reliability Patterns</h1>
+      <div class="chapter-title-kr">확장성과 신뢰성 패턴</div>
+      <div class="chapter-tldr">로드밸런서, 레이트 리미터, 서킷 브레이커 등 프로덕션 시스템을 안정적으로 운영하는 핵심 패턴들을 배운다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-06.png" alt="Chapter 6 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 6 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>Load Balancer의 Layer 4 vs Layer 7 차이와 알고리즘(Round Robin, Least Connections, Consistent Hashing)을 설명할 수 있다</li><li>Token Bucket과 Leaky Bucket 레이트 리미터를 구현하고 차이를 설명할 수 있다</li><li>Circuit Breaker의 3가지 상태(Closed, Open, Half-Open)와 동작을 설명할 수 있다</li><li>Service Mesh와 API Gateway의 역할 차이를 설명할 수 있다</li><li>Auto Scaling과 예비 용량(Capacity Planning) 전략을 설명할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>아무리 잘 설계된 시스템도 프로덕션에서는 예상치 못한 일이 일어난다. 트래픽이 갑자기 10배 폭증하거나, 의존 서비스 중 하나가 느려지거나, 악의적 사용자가 API를 남용하거나. 이 챕터에서는 이런 상황에서 시스템이 버텨내는 <strong>신뢰성 패턴(Reliability Patterns)</strong>을 다룬다.</p>
+<p>확장성(Scalability)은 트래픽 증가에 따라 성능을 선형적으로 유지하는 능력이고, 신뢰성(Reliability)은 일부 컴포넌트가 실패해도 시스템이 올바르게 동작하는 능력이다. 두 가지 모두 빅테크 시스템에서 non-negotiable이다.</p>
+<p>이 챕터의 패턴들은 독립적으로 쓰이기도 하지만, 실제로는 <strong>여러 패턴을 계층적으로 조합</strong>하여 사용한다. API Gateway에서 Rate Limiting, 서비스 간 통신에 Circuit Breaker, 서버 풀에 Load Balancer, 자동화된 Scale-Out을 모두 함께 쓰는 것이 프로덕션 아키텍처다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>Load Balancing: 트래픽 분산의 기술</h2><p>Load Balancer는 들어오는 트래픽을 여러 서버에 분산하여 단일 서버가 과부하되지 않도록 하는 컴포넌트다.</p>
+<p><strong>Layer 4 vs Layer 7 Load Balancer:</strong></p>
+<ul>
+<li>
+<p><strong>L4 (Transport Layer)</strong> — IP/Port 기준으로 라우팅. 패킷 내용을 보지 않음. 매우 빠름. AWS NLB (Network Load Balancer).</p>
+</li>
+<li>
+<p><strong>L7 (Application Layer)</strong> — HTTP 헤더, URL, Cookie 기준으로 라우팅. 내용 기반 라우팅 가능. 약간 느리지만 훨씬 유연. AWS ALB (Application Load Balancer).</p>
+</li>
+</ul>
+<p><strong>로드 밸런싱 알고리즘:</strong></p>
+<table>
+<thead>
+<tr>
+<th>알고리즘</th>
+<th>동작</th>
+<th>적합한 경우</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Round Robin</td>
+<td>순서대로 순환</td>
+<td>요청 처리 시간이 균일할 때</td>
+</tr>
+<tr>
+<td>Weighted Round Robin</td>
+<td>가중치 비례</td>
+<td>서버 사양이 다를 때</td>
+</tr>
+<tr>
+<td>Least Connections</td>
+<td>현재 연결 수 가장 적은 서버</td>
+<td>처리 시간 편차가 클 때</td>
+</tr>
+<tr>
+<td>IP Hash</td>
+<td>같은 IP → 항상 같은 서버</td>
+<td>Session Affinity(Sticky Session) 필요 시</td>
+</tr>
+<tr>
+<td>Random</td>
+<td>무작위 선택</td>
+<td>부하가 균일하고 단순성 원할 때</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Health Check:</strong></p>
+<p>Load Balancer는 주기적으로 각 서버에 health check 요청을 보내 정상 서버만 트래픽을 받도록 한다. HTTP <code>/health</code> 엔드포인트에 200 응답이 오는 서버만 풀에 유지.</p></div><div class="sb-block"><h2>Rate Limiting: 시스템 보호와 공정한 사용</h2><p>Rate Limiting은 사용자 또는 클라이언트가 일정 시간 내에 보낼 수 있는 요청 수를 제한하는 것이다. 목적은 세 가지다: DDoS 방어, API 남용 방지, 공정한 자원 분배.</p>
+<p><strong>Token Bucket 알고리즘:</strong></p>
+<p>버킷에 토큰이 일정 속도로 채워진다. 요청 시 토큰을 소비. 버킷이 비면 요청 거절.</p>
+<ul>
+<li>토큰 보충 속도 = 허용 QPS (예: 초당 10개)</li>
+<li>버킷 용량 = 버스트 허용량 (예: 최대 20개)</li>
+<li>특징: 버스트 트래픽 허용. 평균 속도를 제한.</li>
+</ul>
+<p><strong>Leaky Bucket 알고리즘:</strong></p>
+<p>요청이 큐에 쌓이고 일정 속도로 처리된다. 큐가 가득 차면 새 요청 거절.</p>
+<ul>
+<li>
+<p>특징: 정확히 일정한 처리 속도 보장. 버스트 없음.</p>
+</li>
+<li>
+<p>사용: 처리 속도 평탄화가 중요한 경우 (예: 네트워크 패킷 처리)</p>
+</li>
+</ul>
+<p><strong>Sliding Window Log:</strong></p>
+<p>요청 타임스탬프를 log에 저장, 현재 시간 기준 윈도우 내 요청 수 계산. 가장 정확하지만 메모리 사용량 많음.</p>
+<p><strong>분산 Rate Limiting:</strong></p>
+<p>여러 서버에서 같은 사용자의 요청을 제한하려면 중앙 저장소 필요. Redis의 <code>INCR</code> + <code>EXPIRE</code> 또는 Sliding Window Counter로 구현. Redis는 단일 스레드이므로 원자적 연산이 가능하다.</p>
+<p><strong>Rate Limit Response:</strong>
+- HTTP 429 Too Many Requests
+- <code>Retry-After: 30</code> 헤더로 언제 재시도할지 알림
+- <code>X-RateLimit-Limit: 100</code>, <code>X-RateLimit-Remaining: 0</code> 헤더</p></div><div class="sb-block"><h2>Circuit Breaker: 장애 전파 방지</h2><p>서비스 A가 서비스 B를 호출하는 상황에서 B가 느려지면, A의 요청이 timeout까지 대기하면서 A의 모든 쓰레드가 B를 기다리는 데 소비된다. 이것이 <strong>Cascading Failure (연쇄 장애)</strong>다.</p>
+<p>Circuit Breaker는 전기 회로 차단기처럼, 문제가 생긴 downstream 서비스로의 호출을 빠르게 차단(fast-fail)하여 연쇄 장애를 방지한다.</p>
+<p><strong>Circuit Breaker의 3가지 상태:</strong></p>
+<p><strong>Closed (정상)</strong> — 모든 요청을 통과시킴. 실패율(error rate)을 추적. 실패율이 임계값(예: 50%)을 초과하면 Open으로 전환.</p>
+<p><strong>Open (차단)</strong> — 모든 요청을 즉시 실패로 반환 (fast-fail). downstream에 요청 없음. 지정 시간(예: 30초) 후 Half-Open으로 전환.</p>
+<p><strong>Half-Open (탐색)</strong> — 소수 요청만 통과. 성공하면 Closed로, 실패하면 다시 Open으로 전환.</p>
+<p><strong>Hystrix / Resilience4j</strong> — Netflix가 만든 Circuit Breaker 구현체 (Hystrix는 deprecated, Resilience4j가 후계자). Spring Boot 생태계에서 널리 사용.</p>
+<p><strong>Circuit Breaker + Fallback:</strong></p>
+<p>Open 상태에서 fast-fail 할 때 fallback을 제공할 수 있다. 추천 서비스가 다운됐을 때 캐시된 추천 목록을 반환하거나, 기본 추천 목록을 보여주는 것이 fallback의 예다.</p></div><div class="sb-block"><h2>API Gateway와 Service Mesh</h2><p>마이크로서비스 아키텍처에서 클라이언트가 각 서비스에 직접 접근하면 문제가 생긴다: 인증을 어디서 처리할까? 서비스가 수십 개면 클라이언트는 수십 개의 엔드포인트를 알아야 한다. Rate Limiting을 각 서비스에서 따로 구현해야 하나?</p>
+<p><strong>API Gateway</strong>는 클라이언트의 모든 요청이 통과하는 단일 진입점이다.</p>
+<p>역할:
+- 인증/인가 (JWT 검증, API Key 확인)
+- Rate Limiting
+- SSL Termination
+- Request Routing — <code>/api/users</code> → User Service, <code>/api/orders</code> → Order Service
+- Response Aggregation — 여러 서비스 응답을 합쳐 클라이언트에 반환
+- Request/Response 변환</p>
+<p><strong>AWS API Gateway, Kong, Nginx, Envoy</strong>가 대표적인 구현체다.</p>
+<p><strong>Service Mesh (예: Istio, Linkerd)</strong></p>
+<p>API Gateway가 North-South 트래픽(외부 → 내부)을 담당한다면, Service Mesh는 East-West 트래픽(서비스 → 서비스)을 담당한다. 각 서비스 옆에 <strong>sidecar proxy (예: Envoy)</strong>를 붙여 서비스 간 모든 통신을 중재한다.</p>
+<p>역할:
+- mTLS로 서비스 간 암호화
+- Circuit Breaker, Retry, Timeout 정책 적용
+- 트래픽 분할 (Canary Deploy — 1%만 새 버전으로)
+- 분산 추적(Distributed Tracing) — 요청이 어떤 서비스를 거쳤는지 추적</p>
+<p>Service Mesh는 강력하지만 운영 복잡도가 크다. 수십 개 이상의 서비스가 있을 때 유효하다.</p></div><div class="sb-block"><h2>Auto Scaling과 Capacity Planning</h2><p><strong>Horizontal Scaling (Scale-Out)</strong> 은 서버를 더 추가하는 것, <strong>Vertical Scaling (Scale-Up)</strong> 은 서버를 더 강력하게 업그레이드하는 것이다.</p>
+<table>
+<thead>
+<tr>
+<th>항목</th>
+<th>Horizontal</th>
+<th>Vertical</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>방법</td>
+<td>서버 추가</td>
+<td>CPU/RAM 업그레이드</td>
+</tr>
+<tr>
+<td>한계</td>
+<td>이론적 무제한</td>
+<td>단일 서버 최대 사양</td>
+</tr>
+<tr>
+<td>비용</td>
+<td>점진적 증가</td>
+<td>비선형 증가 (고급 서버 매우 비쌈)</td>
+</tr>
+<tr>
+<td>중단</td>
+<td>무중단 가능</td>
+<td>재시작 필요</td>
+</tr>
+<tr>
+<td>복잡도</td>
+<td>분산 시스템 복잡도</td>
+<td>단순</td>
+</tr>
+</tbody>
+</table>
+<p>빅테크는 Horizontal Scaling이 기본이다. 단, DB는 Vertical Scaling도 병행한다.</p>
+<p><strong>Auto Scaling:</strong></p>
+<ul>
+<li>
+<p><strong>Reactive Scaling</strong> — CPU &gt; 70% 지속 5분 → 인스턴스 추가. AWS Auto Scaling Group의 기본 방식.</p>
+</li>
+<li>
+<p><strong>Predictive Scaling</strong> — ML로 트래픽 패턴을 학습하여 선제적으로 스케일. 점심 시간 트래픽은 항상 증가하므로 11:30부터 미리 스케일아웃.</p>
+</li>
+</ul>
+<p><strong>Capacity Planning:</strong></p>
+<p>실제 프로덕션에서는 트래픽 증가 예측에 기반하여 인프라를 미리 준비한다. 핵심 지표:</p>
+<ul>
+<li>
+<p>p99 Latency — 99번째 백분위 요청 처리 시간. 평균보다 tail latency가 중요하다.</p>
+</li>
+<li>
+<p>Error Rate — 5xx 비율 0.1% 이하 유지</p>
+</li>
+<li>
+<p>CPU Utilization — 정상 운영 시 70% 이하. 70% 이상에서 스케일아웃.</p>
+</li>
+<li>
+<p>Queue Depth — 메시지 큐의 Consumer Lag이 증가하면 Consumer 수 늘리기</p>
+</li>
+</ul></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">고속도로 관리 시스템으로 보는 확장성 패턴</div>
+      <div class="a-body"><p>대규모 시스템의 확장성 패턴은 <strong>고속도로 관리</strong>와 같다. Load Balancer는 톨게이트 직전의 교통 안내 표지판이다. 1번 차선이 막히면 2, 3번으로 유도한다. Rate Limiting은 교통량 통제 시스템이다. 차량이 너무 많으면 진입을 제한한다. 그렇지 않으면 모두가 멈춘다.</p>
+<p>Circuit Breaker는 사고 발생 구간의 우회도로 안내다. 특정 구간(downstream 서비스)이 막히면 즉시 우회로를 안내하고, 구간이 뚫리면 다시 원래 길로 돌아온다. 무작정 기다리다 전체 교통이 마비되는 것을 방지한다.</p>
+<p>Auto Scaling은 러시아워 때 임시 차선을 추가하는 것이다. 트래픽이 늘면 차선을 추가(인스턴스 추가)하고, 심야에는 줄인다(인스턴스 종료). 비용을 절약하면서도 피크 타임에 성능을 유지한다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>Redis를 이용한 Sliding Window Rate Limiter를 구현한다. 이것은 Twitter, GitHub, Stripe 등이 실제로 사용하는 방식에 가까운 구현이다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import redis
+import time
+from typing import Tuple
+
+class SlidingWindowRateLimiter:
+    &quot;&quot;&quot;
+    Sliding Window Counter using Redis sorted set.
+    More accurate than fixed window, less memory than log-based.
+    &quot;&quot;&quot;
+    def __init__(self, redis_client: redis.Redis, limit: int, window_sec: int):
+        self.r = redis_client
+        self.limit = limit        # Max requests
+        self.window = window_sec  # Window size in seconds
+
+    def is_allowed(self, identifier: str) -&gt; Tuple[bool, int]:
+        now = time.time()
+        window_start = now - self.window
+        key = f&quot;rate_limit:{identifier}&quot;
+
+        pipe = self.r.pipeline()
+        # Remove entries older than the window
+        pipe.zremrangebyscore(key, &#x27;-inf&#x27;, window_start)
+        # Add current request with timestamp as score
+        pipe.zadd(key, {str(now): now})
+        # Count requests in the current window
+        pipe.zcard(key)
+        # Set key expiry to avoid memory leak
+        pipe.expire(key, self.window + 1)
+        _, _, count, _ = pipe.execute()
+
+        remaining = max(0, self.limit - count)
+        allowed = count &lt;= self.limit
+        return allowed, remaining
+
+# Token Bucket implementation for comparison
+class TokenBucketRateLimiter:
+    def __init__(self, redis_client: redis.Redis, capacity: int, refill_rate: float):
+        self.r = redis_client
+        self.capacity = capacity      # Max burst size
+        self.refill_rate = refill_rate  # Tokens per second
+
+    def is_allowed(self, identifier: str) -&gt; bool:
+        key = f&quot;token_bucket:{identifier}&quot;
+        now = time.time()
+
+        data = self.r.hgetall(key)
+        if data:
+            tokens = float(data[b&#x27;tokens&#x27;])
+            last_refill = float(data[b&#x27;last_refill&#x27;])
+            # Refill tokens based on elapsed time
+            elapsed = now - last_refill
+            tokens = min(self.capacity, tokens + elapsed * self.refill_rate)
+        else:
+            tokens = self.capacity  # First request: full bucket
+
+        if tokens &gt;= 1:
+            self.r.hset(key, mapping={&#x27;tokens&#x27;: tokens - 1, &#x27;last_refill&#x27;: now})
+            self.r.expire(key, int(self.capacity / self.refill_rate) + 1)
+            return True
+        return False
+
+# Usage
+r = redis.Redis()
+limiter = SlidingWindowRateLimiter(r, limit=100, window_sec=60)
+
+allowed, remaining = limiter.is_allowed(&quot;user:1001&quot;)
+if not allowed:
+    print(&quot;429 Too Many Requests&quot;)
+else:
+    print(f&quot;Request allowed. {remaining} remaining in this window.&quot;)</code></pre>
+      <div class="c-walk"><p>Sliding Window Counter는 Redis Sorted Set을 사용한다. score가 timestamp이므로 window_start보다 오래된 요청을 <code>zremrangebyscore</code>로 자동 정리한다. Pipeline을 써서 4개 명령을 원자적으로 실행하여 race condition을 방지한다. 이 구현은 Fixed Window (정각에 limit이 초기화되는 문제)의 단점 없이 더 공정한 rate limiting을 제공한다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">확장성과 신뢰성 패턴은 시스템 설계 면접 Deep Dive 구간에서 자주 등장한다. 특히 Rate Limiting, Circuit Breaker, Load Balancing은 어떤 시스템 설계에서도 논의해야 한다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>단일 장애점(SPOF)을 식별하고 제거하는 설계를 하는가</li><li>Rate Limiting 구현 방법과 분산 환경에서의 한계를 아는가</li><li>Circuit Breaker가 없을 때 어떤 장애가 발생하는지 설명할 수 있는가</li><li>Auto Scaling의 한계와 워밍 시간 문제를 인지하는가</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>Load Balancer가 없는 단일 서버 설계</li><li>Rate Limiting 없는 Public API 설계</li><li>Circuit Breaker 없는 마이크로서비스 간 동기 호출</li><li>&quot;서버를 더 늘리면 됩니다&quot;만 말하고 구체적 스케일링 전략 없음</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>Twitter API에 Rate Limiting을 구현한다면 어떤 알고리즘과 저장소를 쓰겠어?</li><li>Circuit Breaker의 Half-Open 상태가 왜 필요한지 설명해봐.</li><li>L4 Load Balancer와 L7 Load Balancer의 차이와 각각 언제 쓰는지 말해봐.</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 익숙한 수준은 Load Balancer, Circuit Breaker, Rate Limiter의 개념을 설명하는 것이다. 마스터 수준은 이 패턴들을 계층적으로 조합하는 전략을 알고 (API Gateway → Rate Limit → Service Mesh Circuit Breaker), 각 계층의 트레이드오프를 설명하며 실제 장애 시나리오에서 어떻게 동작하는지 추적할 수 있는 것이다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>L7 LB가 더 유연</h3><p>URL, 헤더 기반 라우팅이 필요하면 L7 LB. 단순 TCP 로드 분산이면 L4 LB가 더 빠르다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>Token Bucket = 버스트 허용</h3><p>Token Bucket은 평균 속도를 제한하면서 버스트를 허용한다. API Rate Limiting의 표준 방식.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>Circuit Breaker = Fast Fail</h3><p>Downstream이 느릴 때 빠르게 실패하여 cascading failure를 방지한다. Fallback을 함께 설계하라.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>API Gateway = 외부 진입점</h3><p>인증, Rate Limiting, SSL, 라우팅을 API Gateway에서 일괄 처리한다. 각 서비스가 중복 구현하지 않아도 된다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>Service Mesh = 내부 통신</h3><p>서비스 간 통신의 신뢰성, 보안, 관찰성은 Service Mesh sidecar가 담당한다. 애플리케이션 코드 수정 불필요.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>p99가 평균보다 중요</h3><p>사용자 경험은 평균이 아닌 tail latency(p99, p999)에 좌우된다. 모니터링 지표에 p99를 포함하라.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>Scale Out이 기본</h3><p>수평 확장을 염두에 두고 설계하라. 상태(state)를 서버에 두지 않는 stateless 서버가 scale-out의 전제 조건이다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>Health Check는 필수</h3><p>Load Balancer의 health check로 죽은 서버를 자동으로 제거한다. /health 엔드포인트를 항상 구현하라.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-05.html">← Messaging &amp; Event-Driven Architecture</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-07.html">Classic System Design Problems →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

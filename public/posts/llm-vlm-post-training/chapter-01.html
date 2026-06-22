@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch1: The Post-Training Landscape &amp; SFT Deep Dive — LLM &amp; VLM Post-Training Mastery — direcf</title>
+  <meta name="description" content="Pre-training이 세상 지식을 쌓는다면, post-training은 그 지식을 사람이 원하는 방식으로 꺼내 쓰는 인터페이스를 만드는 과정이다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/multimodal-ai">LLM &amp; VLM Post-Training Mastery</a><span class="sep">›</span>
+        <strong>Ch01 The Post-Training Landscape &amp; SFT Deep Dive</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 01 <span style="opacity:.3">·</span> 15 chapters
+      </div>
+      <div class="chapter-emoji">🗺️</div>
+      <h1 class="chapter-title">The Post-Training Landscape &amp; SFT Deep Dive</h1>
+      <div class="chapter-title-kr">Post-Training 전체 맵 &amp; SFT 심화</div>
+      <div class="chapter-tldr">Pre-training이 세상 지식을 쌓는다면, post-training은 그 지식을 사람이 원하는 방식으로 꺼내 쓰는 인터페이스를 만드는 과정이다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-01.png" alt="Chapter 1 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 1 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>Post-training 스택 전체 그림을 설명하고 각 단계의 목적을 구분할 수 있다</li><li>SFT에서 chat template이 왜 필수인지, 잘못 설정했을 때 어떤 문제가 생기는지 설명할 수 있다</li><li>NLL loss를 response token에만 적용하는 이유와 구현 방법을 설명할 수 있다</li><li>Packing의 장점과 attention mask 처리 방법을 설명할 수 있다</li><li>SFT 하이퍼파라미터 선택 기준을 데이터 규모와 모델 크기에 맞게 제시할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>Pre-training은 방대한 인터넷 텍스트를 통해 모델에 세상 지식을 압축하는 과정이다. 하지만 raw pre-trained 모델은 다음 토큰을 예측하도록만 훈련되어 있어, 사람의 질문에 대답하거나 특정 형식의 출력을 내는 인터페이스를 갖추지 못했다. Post-training은 이 간극을 메우는 일련의 과정 전체를 지칭한다.</p>
+<p>Post-training 스택은 보통 세 단계로 구성된다: <strong>(1) Supervised Fine-Tuning (SFT)</strong> — 사람이 작성한 고품질 instruction-response 쌍으로 모델이 원하는 포맷과 스타일을 학습한다. <strong>(2) Preference Optimization</strong> — RLHF, DPO, ORPO 등을 통해 모델이 더 선호되는 응답을 선택하도록 정렬한다. <strong>(3) Task-specific RL</strong> — GRPO, VAPO 등 RL 방법으로 수학적 추론, 코딩, 비디오 이해 등 특정 능력을 극대화한다.</p>
+<p>SFT는 post-training의 출발점이자 foundation이다. SFT의 품질이 이후 alignment 단계의 상한선을 결정하기 때문에, 데이터 포맷·손실함수·하이퍼파라미터 설계를 정확히 이해하는 것이 중요하다. 이 챕터에서는 SFT의 핵심 메커니즘을 깊이 파고들어 이후 챕터들의 기반을 다진다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>Pre-training이 충분하지 않은 이유</h2><p>Pre-training 목표인 causal language modeling은 단순히 다음 토큰을 예측하는 것이다. 이 과정에서 모델은 방대한 지식을 습득하지만, 질문-응답 형식으로 사용자와 대화하는 방법을 배우지는 않는다. Raw GPT-2나 Llama base 모델을 직접 사용해보면 질문을 이어서 유사한 질문을 생성하거나, 문서를 계속 이어서 생성하는 경향이 있다.</p>
+<p>SFT는 이런 모델에 <strong>인터페이스 레이어</strong>를 입힌다. 특정 instruction 형식으로 데이터를 구성하고 훈련함으로써, 모델은 '이런 형태의 입력이 오면 이런 형태의 응답을 생성해야 한다'는 패턴을 학습한다. 이 과정은 지식을 새로 쌓는 게 아니라 이미 가진 지식을 올바른 방식으로 표현하도록 '출력 분포를 재형성'하는 것이다.</p>
+<p>중요한 함의가 있다: <strong>SFT로는 pre-training에 없는 지식을 만들어낼 수 없다.</strong> 사실이 아닌 내용을 SFT 데이터에 포함시키면 모델은 그 포맷을 학습할 뿐, 지식을 교정하지 않는다. 따라서 SFT 데이터는 모델이 이미 알고 있는 내용을 올바른 방식으로 표현하도록 설계되어야 한다.</p></div><div class="sb-block"><h2>Chat Template과 토큰 마스킹</h2><p>SFT에서 가장 흔히 실수하는 부분 중 하나가 chat template이다. Chat template은 system, user, assistant 역할을 구분하는 특수 토큰 시퀀스다. Qwen3의 경우 <code>&lt;|im_start|&gt;system\n...\n&lt;|im_end|&gt;</code> 형식을 사용한다.</p>
+<p><strong>왜 중요한가?</strong> 모델은 추론 시 정확히 이 포맷으로 입력을 받기 때문에, 훈련 시 동일한 포맷을 사용하지 않으면 distribution mismatch가 발생한다. 실제로 chat template을 잘못 적용한 모델은 추론 시 instruction을 따르지 않거나, 응답 도중에 user 메시지를 생성하는 등의 이상 행동을 보인다.</p>
+<p><strong>토큰 마스킹</strong>은 SFT에서 핵심이다: loss는 assistant 응답 토큰에만 계산해야 한다. System과 user 토큰에 loss를 적용하면 모델이 '질문을 생성하는 것'도 학습하게 되어 비효율적이다. TRL의 <code>SFTTrainer</code>는 기본적으로 <code>completion_only_loss=True</code> 옵션을 통해 이를 처리한다.</p>
+<table>
+<thead>
+<tr>
+<th>역할</th>
+<th>Loss 적용 여부</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>System</td>
+<td>✗ (마스킹)</td>
+</tr>
+<tr>
+<td>User</td>
+<td>✗ (마스킹)</td>
+</tr>
+<tr>
+<td>Assistant</td>
+<td>✓ (학습)</td>
+</tr>
+</tbody>
+</table></div><div class="sb-block"><h2>Pack Training과 효율성</h2><p>SFT 데이터의 길이 분포는 일반적으로 heavy-tailed이다: 대부분의 샘플은 짧고 일부 샘플만 매우 길다. 각 샘플을 개별적으로 패딩하면 짧은 샘플들의 배치에 패딩 토큰이 가득 차 GPU 연산이 낭비된다.</p>
+<p><strong>Packing</strong>은 여러 샘플을 하나의 시퀀스로 이어 붙여 최대 시퀀스 길이를 꽉 채우는 방식이다. 예를 들어 max_length=4096인 경우, 256 토큰 샘플 16개를 하나로 묶는다. GPU 활용률이 크게 높아지고 throughput이 2-3배 향상된다.</p>
+<p>주의사항이 있다: 서로 다른 샘플이 이어붙여진 위치에서 attention이 cross-sample로 흐르면 안 된다. TRL 최신 버전은 <strong>sequence-level attention mask</strong>를 자동으로 처리한다 (<code>dataset_kwargs={"skip_prepare_dataset": False}</code> 설정 필요). Flash Attention 2는 이 variable-length attention을 효율적으로 처리한다.</p></div><div class="sb-block"><h2>SFT 하이퍼파라미터 전략</h2><p>SFT의 핵심 하이퍼파라미터는 세 가지다: <strong>학습률</strong>, <strong>에폭 수</strong>, <strong>warmup ratio</strong>.</p>
+<p><strong>학습률</strong>: Pre-training보다 1-2 오더 낮게 설정한다. Qwen3-7B 기준으로 1e-5~5e-5가 일반적이다. 학습률이 너무 높으면 catastrophic forgetting이 발생해 pre-training에서 습득한 일반 능력이 손실된다. Cosine schedule이 linear보다 대부분 더 좋은 성능을 보인다.</p>
+<p><strong>에폭 수</strong>: 데이터 규모에 반비례한다. 100K 이하 샘플에서는 2-5 epoch, 1M 이상에서는 1-2 epoch이 전형적이다. Overfitting 징후는 evaluation loss의 증가와 diversity 감소로 확인할 수 있다.</p>
+<p><strong>Warmup ratio</strong>: 전체 스텝의 3-10%를 warmup으로 사용한다. Warmup 없이 시작하면 초기 학습률 스파이크로 인한 loss spike가 발생할 수 있다.</p>
+<table>
+<thead>
+<tr>
+<th>데이터 규모</th>
+<th>권장 LR</th>
+<th>권장 에폭</th>
+<th>Batch Size</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>&lt; 10K</td>
+<td>1e-5</td>
+<td>3-5</td>
+<td>32-64</td>
+</tr>
+<tr>
+<td>10K-100K</td>
+<td>2e-5</td>
+<td>2-3</td>
+<td>64-128</td>
+</tr>
+<tr>
+<td>&gt; 100K</td>
+<td>5e-5</td>
+<td>1-2</td>
+<td>128-256</td>
+</tr>
+</tbody>
+</table></div><div class="sb-block"><h2>LoRA vs Full Fine-tuning 선택 기준</h2><p><strong>Full fine-tuning</strong>은 모든 파라미터를 업데이트한다. 최고 성능을 내지만 메모리와 연산 비용이 크다. 7B 모델을 bf16으로 full fine-tuning하면 단순 weight 저장만 14GB, optimizer state(AdamW) 추가 28GB, gradient 14GB로 총 56GB 이상이 필요하다.</p>
+<p><strong>LoRA</strong>는 weight matrix의 저랭크 분해를 통해 소수의 파라미터만 훈련한다. <span class="math-inline">\(W&#x27; = W_0 + BA\)</span> 형태로, <span class="math-inline">\(B \in \mathbb{R}^{d \times r}\)</span>, <span class="math-inline">\(A \in \mathbb{R}^{r \times k}\)</span>, rank <span class="math-inline">\(r \ll \min(d,k)\)</span>. 일반적으로 전체 파라미터의 0.1-1%만 훈련하므로 메모리가 크게 줄어든다.</p>
+<p>LLM SFT에서는 특히 고품질 데이터 소량(&lt; 50K)으로 특정 도메인 적응 시 LoRA가 효과적이다. 다만 해외 빅테크 production 환경에서는 full fine-tuning이 여전히 선호된다 — LoRA merge 후 작은 표현 저하가 발생하기 때문이다. rank=64, alpha=128 설정이 good default로 알려져 있다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">외국어 원어민 화자를 회사 매너로 교육하기</div>
+      <div class="a-body"><p>Pre-training을 마친 LLM은 마치 방대한 책을 모두 읽은 원어민 화자와 같다. 영어, 수학, 법률, 의학 — 모든 것을 알고 있다. 하지만 이 사람에게 '고객 상담사로 근무해달라'고 부탁하면 문제가 생긴다. 고객의 질문을 들으면 비슷한 질문들을 나열하거나, 관련 없는 이야기를 늘어놓을 수 있다.</p>
+<p>SFT는 이 원어민 화자에게 '비즈니스 매너 교육'을 시키는 과정이다. '고객이 X를 물으면 Y 형식으로 답해야 한다'는 규칙을 직접 보여주고 연습시킨다. 중요한 점은 이 교육이 사람의 언어 능력을 향상시키는 게 아니라, 그 능력을 특정 상황에서 올바르게 발휘하는 방법을 가르치는 것이다.</p>
+<p>Chat template은 이 과정에서 '회사 유니폼'에 해당한다. 근무 시에는 반드시 유니폼을 입어야 하고, 교육(SFT) 중에도 유니폼을 입고 연습해야 실제 근무(추론)에서 혼동이 없다. 유니폼 없이 교육을 시키고 근무 시 유니폼을 입히면 어색하게 행동하는 것처럼, chat template 불일치는 모델 성능 저하로 직결된다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>Qwen3-7B 모델을 TRL의 SFTTrainer로 fine-tuning하는 예시다. Chat template 적용, response-only loss 마스킹, packing, LoRA 설정을 모두 포함한다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">from datasets import load_dataset
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from trl import SFTTrainer, SFTConfig
+from peft import LoraConfig, get_peft_model
+
+model_name = &quot;Qwen/Qwen3-7B&quot;
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModelForCausalLM.from_pretrained(
+    model_name, torch_dtype=&quot;bfloat16&quot;, device_map=&quot;auto&quot;
+)
+
+# LoRA config: attention + ffn 모두 커버
+lora_config = LoraConfig(
+    r=64,
+    lora_alpha=128,
+    target_modules=[&quot;q_proj&quot;, &quot;k_proj&quot;, &quot;v_proj&quot;, &quot;o_proj&quot;,
+                    &quot;gate_proj&quot;, &quot;up_proj&quot;, &quot;down_proj&quot;],
+    lora_dropout=0.05,
+    bias=&quot;none&quot;,
+    task_type=&quot;CAUSAL_LM&quot;,
+)
+model = get_peft_model(model, lora_config)
+
+dataset = load_dataset(&quot;your_dataset&quot;, split=&quot;train&quot;)
+
+def format_chat(example):
+    # Qwen3 chat template 적용
+    messages = [
+        {&quot;role&quot;: &quot;system&quot;, &quot;content&quot;: example[&quot;system&quot;]},
+        {&quot;role&quot;: &quot;user&quot;,   &quot;content&quot;: example[&quot;instruction&quot;]},
+        {&quot;role&quot;: &quot;assistant&quot;, &quot;content&quot;: example[&quot;response&quot;]},
+    ]
+    return {&quot;text&quot;: tokenizer.apply_chat_template(
+        messages, tokenize=False, add_generation_prompt=False
+    )}
+
+dataset = dataset.map(format_chat)
+
+training_args = SFTConfig(
+    output_dir=&quot;./qwen3-sft&quot;,
+    max_seq_length=4096,
+    packing=True,              # sequence packing for efficiency
+    per_device_train_batch_size=4,
+    gradient_accumulation_steps=8,
+    learning_rate=2e-5,
+    lr_scheduler_type=&quot;cosine&quot;,
+    warmup_ratio=0.05,
+    num_train_epochs=2,
+    bf16=True,
+    logging_steps=10,
+    save_steps=500,
+)
+
+trainer = SFTTrainer(
+    model=model,
+    tokenizer=tokenizer,
+    args=training_args,
+    train_dataset=dataset,
+)
+trainer.train()</code></pre>
+      <div class="c-walk"><p><code>lora_config</code>에서 <code>r=64</code>는 rank, <code>lora_alpha=128</code>는 scaling factor (<span class="math-inline">\(\alpha / r = 2.0\)</span>). target_modules에 attention뿐 아니라 FFN(gate/up/down_proj)까지 포함하면 성능이 향상된다. <code>packing=True</code>는 여러 샘플을 하나의 4096 토큰 시퀀스로 묶어 GPU 활용률을 높인다. <code>apply_chat_template</code>은 Qwen3의 <code>&lt;|im_start|&gt;/&lt;|im_end|&gt;</code> 포맷을 자동으로 처리한다. SFTTrainer는 내부적으로 assistant 토큰에만 loss를 계산하는 마스킹을 처리한다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">해외 빅테크 면접에서 SFT 관련 질문은 단순한 &#x27;무엇을 사용했나&#x27;가 아니라 &#x27;왜 그 선택을 했나&#x27;를 파고든다. 특히 데이터 품질 보장 방법, overfitting 탐지와 대응, chat template 구현 세부 사항을 구체적으로 물어본다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>Chat template 불일치 문제를 실제로 경험하고 디버깅한 경험</li><li>Response-only loss masking 구현을 코드 레벨에서 설명할 수 있는 능력</li><li>데이터 규모에 따른 하이퍼파라미터 스케일링 직관</li><li>Catastrophic forgetting을 모니터링하는 방법론</li><li>LoRA rank/alpha 선택의 근거를 제시할 수 있는 능력</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>Chat template 없이 단순 text concatenation으로 SFT를 구현한 경우</li><li>Evaluation set 없이 training loss만으로 overfitting을 판단하는 경우</li><li>모든 상황에 같은 하이퍼파라미터를 사용하는 경우 (데이터 규모, 모델 크기 무관)</li><li>Response-only loss와 full sequence loss의 차이를 설명하지 못하는 경우</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>SFT에서 system/user 토큰에도 loss를 적용하면 어떤 문제가 생기나요? 실제로 경험한 적 있나요?</li><li>Packing 사용 시 서로 다른 샘플 사이의 attention이 흐르지 않도록 어떻게 처리하나요?</li><li>SFT 후 모델이 이전 능력(예: 수학 풀이)을 잃었을 때 어떻게 접근하시겠나요?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 친숙함 수준은 SFTTrainer를 실행할 수 있는 것이다. 숙련 수준은 chat template 토큰 마스킹 구현을 직접 작성할 수 있고, packing 시 attention mask 처리 방법을 Flash Attention 2와 연계해 설명할 수 있으며, 데이터 품질 필터링 파이프라인을 SFT와 통합할 수 있는 것이다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>Post-training은 3단계 스택</h3><p>SFT → Preference Optimization → Task-specific RL 순서로 각 단계가 이전 단계의 출력에 의존한다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>SFT = 지식 습득이 아닌 표현 재형성</h3><p>SFT로는 pre-training에 없는 지식을 만들 수 없다. 이미 아는 것을 올바른 포맷으로 표현하도록 출력 분포를 재형성하는 것이다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>Chat template은 유니폼이다</h3><p>훈련과 추론에서 동일한 chat template을 사용해야 한다. 불일치는 distribution mismatch로 성능 저하를 유발한다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>Response-only loss가 핵심</h3><p>Assistant 응답 토큰에만 loss를 계산해야 한다. System/user 토큰에 loss를 적용하면 불필요한 학습 방향이 생긴다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>Packing으로 GPU 활용률 향상</h3><p>다중 샘플을 하나의 시퀀스로 묶어 padding 낭비를 제거한다. Cross-sample attention 방지를 위한 attention mask 처리는 필수다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>LR은 pre-training보다 1-2 오더 낮게</h3><p>높은 학습률은 catastrophic forgetting을 유발한다. 데이터 규모가 클수록 LR을 높이고, 작을수록 낮춘다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>LoRA r=64, alpha=128이 good default</h3><p>Attention과 FFN 모두에 적용하고 scaling factor α/r = 2.0으로 시작한다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>Overfitting은 eval loss로 모니터링</h3><p>Training loss 감소만으로 과적합을 판단하지 말 것. 별도 eval set에서의 perplexity와 downstream task 성능을 함께 추적해야 한다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <span></span>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-02.html">RLHF &amp; PPO Deep Dive →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

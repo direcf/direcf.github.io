@@ -1,0 +1,793 @@
+{
+  "topic": "System Design Interview",
+  "topicKr": "빅테크 시스템 디자인 인터뷰",
+  "topicSlug": "system-design-interview",
+  "categorySlug": "ai-engineering",
+  "level": "intermediate",
+  "codeLanguage": "Python",
+  "description": "Google, Amazon, Meta 등 해외 빅테크 AI Engineering 직군 면접을 위한 시스템 설계 완전 정복 과정. 분산 시스템 이론과 핵심 컴포넌트 기초부터 실전 서비스 설계 패턴, ML 파이프라인과 LLM 서빙 인프라까지 기초부터 심화까지 다룬다.",
+  "chapters": [
+    {
+      "number": 1,
+      "emoji": "🎯",
+      "title": "The System Design Interview Framework",
+      "titleKr": "시스템 설계 면접 프레임워크",
+      "tldr": "빅테크 시스템 설계 면접의 구조와 평가 기준을 이해하고, 어떤 문제에도 적용할 수 있는 체계적인 접근법을 익힌다.",
+      "topics": ["면접 구조와 평가 기준", "RESHADED 프레임워크", "요구사항 정의와 스코핑", "용량 추정(Capacity Estimation)", "API 설계 원칙"],
+      "learningGoals": [
+        "빅테크 시스템 설계 면접의 평가 기준 5가지를 설명할 수 있다",
+        "45분 면접을 시간 배분하여 진행할 수 있다",
+        "기능적/비기능적 요구사항을 구분하고 질문을 통해 명확히 할 수 있다",
+        "QPS, 스토리지, 대역폭을 빠르게 추정하는 방법을 안다",
+        "High-level 설계도를 그린 뒤 단계적으로 심화 설명할 수 있다"
+      ],
+      "overview": "시스템 설계 면접은 코딩 테스트와 근본적으로 다르다. 정답이 하나로 정해진 알고리즘 문제가 아니라, 수백만 명의 사용자를 감당하는 시스템을 제한된 시간 안에 설계하고 그 **왜** 를 설명하는 오픈엔드(open-ended) 대화다. 면접관은 여러분이 정확한 아키텍처를 그리는지를 보는 게 아니라, **문제를 구조화하는 방식**, **트레이드오프를 인식하는 깊이**, **실제 시스템 경험**을 평가한다.\n\n이 챕터에서는 면접 전반의 흐름과 구조를 이해하고, 어떤 문제가 주어지더라도 일관되게 적용할 수 있는 **RESHADED** 프레임워크를 소개한다. 또한 많은 지원자가 실수하는 구간인 **요구사항 정의와 용량 추정**을 제대로 다루는 법을 연습한다.\n\n중요한 점은, 시스템 설계 면접은 암기 과목이 아니라는 것이다. Twitter 설계를 외워봤자 YouTube 문제가 나오면 막힌다. 기초 원리와 컴포넌트에 대한 깊은 이해를 바탕으로, **어떤 문제에든 유연하게 적용하는 능력**이 진짜 목표다.",
+      "sections": [
+        {
+          "title": "면접 구조 이해하기: 무엇을 평가받는가",
+          "content": "구글, 아마존, 메타 같은 빅테크의 시스템 설계 면접은 보통 45분~60분 동안 진행된다. 면접관은 **\"URL 단축 서비스를 설계해봐\"** 또는 **\"인스타그램의 뉴스피드를 설계해봐\"** 같은 막연한 문제를 준다. 이 모호함 자체가 테스트의 일부다.\n\n평가 기준은 크게 다섯 가지다.\n\n**문제 명확화 능력** — 모호한 문제를 구체적인 요구사항으로 좁히는 능력. 무턱대고 그리기 시작하는 지원자는 즉시 감점이다.\n\n**Breadth-First 설계 능력** — 세부사항에 매몰되지 않고 전체 시스템을 먼저 조감하는 능력. 데이터베이스 스키마 한 줄에 10분을 쓰는 사람은 시스템 설계자가 아니다.\n\n**트레이드오프 인식** — \"왜 MySQL 대신 Cassandra를 썼어?\"라는 질문에 \"Cassandra는 write-heavy workload에 최적화되어 있고 horizontal scaling이 쉽기 때문\"이라고 답할 수 있어야 한다. 단순히 기술 이름을 아는 것 vs. 언제 쓰는지 아는 것의 차이.\n\n**실패 시나리오 대응** — \"서버 하나가 다운되면?\" \"트래픽이 갑자기 10배 증가하면?\"에 대한 답이 있어야 한다.\n\n**소통 능력** — 혼자 조용히 그리다가 5분 만에 완성된 다이어그램을 보여주는 건 나쁜 전략이다. 생각을 말하면서 진행하고, 면접관의 피드백을 적극적으로 유도해야 한다."
+        },
+        {
+          "title": "RESHADED: 45분 면접 진행 순서",
+          "content": "**RESHADED**는 시스템 설계 면접을 구조적으로 진행하기 위한 8단계 프레임워크다. 각 단계를 순서대로 진행하면 시간 관리와 깊이 모두를 잡을 수 있다.\n\n| 단계 | 내용 | 시간 |  \n|---|---|---|\n| **R** — Requirements | 기능/비기능 요구사항 명확화 | 5분 |\n| **E** — Estimation | QPS, 스토리지, 대역폭 추정 | 5분 |\n| **S** — Storage Schema | 데이터 모델 및 DB 선택 | 5분 |\n| **H** — High-Level Design | 전체 아키텍처 조감도 | 10분 |\n| **A** — API Design | 핵심 엔드포인트 정의 | 5분 |\n| **D** — Deep Dive | 병목 지점 심화 설계 | 10분 |\n| **E** — Edge Cases | 장애 시나리오, 보안, 모니터링 | 3분 |\n| **D** — Discussion | 면접관의 추가 질문 | 2분 |\n\n이 순서를 외우는 것보다 중요한 것은, **면접관이 어디로 가고 싶은지 파악하는 것**이다. \"데이터베이스 부분 더 자세히 설명해줄 수 있어?\"라는 신호가 오면 Deep Dive를 일찍 시작해야 한다. RESHADED는 가이드라인이지 체크리스트가 아니다.\n\n가장 흔한 실수는 **R 단계를 건너뛰는 것**이다. 요구사항을 명확히 하지 않으면 설계 전체가 흔들린다. 예를 들어 \"Twitter 같은 SNS를 설계해봐\"라는 문제에서:\n\n- DAU(Daily Active Users)는 얼마인가? 1M? 100M? 500M?\n- 쓰기(write)와 읽기(read) 비율은? (Twitter는 read-heavy — 1:100 정도)\n- 미디어 첨부(이미지, 동영상)를 지원하는가?\n- 글로벌 서비스인가, 특정 지역 서비스인가?\n- 실시간 피드인가, 약간의 지연(eventual consistency)을 허용하는가?"
+        },
+        {
+          "title": "요구사항 명확화: 올바른 질문 던지기",
+          "content": "요구사항은 **기능적(Functional) 요구사항**과 **비기능적(Non-functional) 요구사항**으로 나뉜다.\n\n**기능적 요구사항**은 시스템이 무엇을 해야 하는지다. URL 단축 서비스라면:\n\n- 긴 URL을 짧은 URL로 변환한다\n- 짧은 URL 접속 시 원본 URL로 리다이렉트한다\n- URL 만료 기능을 지원한다\n- 커스텀 단축 URL을 지원한다 (선택)\n\n**비기능적 요구사항**은 시스템이 어떻게 동작해야 하는지다. 이것이 아키텍처를 결정하는 핵심이다:\n\n- **가용성(Availability)**: 99.9%? 99.999%? → 다중화 전략이 달라진다\n- **지연시간(Latency)**: p99 100ms? → 캐시 전략이 달라진다\n- **일관성(Consistency)**: 강한 일관성(strong consistency)? 최종적 일관성(eventual consistency)? → DB 선택이 달라진다\n- **확장성(Scalability)**: 수평 확장? 수직 확장?\n- **내구성(Durability)**: 데이터를 절대 잃어선 안 되는가?\n\n빅테크 면접에서 가장 날카로운 지원자는 **트레이드오프를 명시적으로 이야기하는 사람**이다. \"가용성을 최우선으로 하되 짧은 시간의 데이터 불일치는 허용한다\" 또는 \"쓰기 지연시간보다 읽기 지연시간을 최소화한다\"처럼 우선순위를 명확히 하면 이후 설계 결정에 정당성이 생긴다."
+        },
+        {
+          "title": "용량 추정(Capacity Estimation): 빠른 계산법",
+          "content": "용량 추정은 두려워할 필요가 없다. 정확한 값이 아니라 **올바른 자릿수(order of magnitude)**를 얻는 게 목표다. 아래 기준값을 외워두자.\n\n| 단위 | 기준 |\n|---|---|\n| 1일 = 86,400초 ≈ $10^5$초 | DAU 100M, 각 1회 요청 → 1,000 QPS |\n| 1바이트 = 1B, 1KB = $10^3$B, 1MB = $10^6$B | 트윗 1개 ≈ 280자 ≈ 280B |\n| 1Gbps = $10^9$bps | 1MB/s = 8Mbps |\n\n**Twitter 뉴스피드 예시 추정:**\n\n- DAU 300M, 각 사용자 10개 트윗 읽기 → 3B 읽기/일 → **약 35,000 QPS (read)**\n- DAU 300M 중 1%가 트윗 작성, 1일 2회 → 6M 쓰기/일 → **약 70 QPS (write)**\n- Read:Write = **500:1** → 이 시스템은 극단적 read-heavy\n- 트윗 하나 = 280자 + 메타데이터 = 약 1KB\n- 쓰기 스토리지 = 70 * 1KB * 86,400 ≈ **약 6GB/일**, 10년 = **약 22TB**\n\n이 추정이 중요한 이유는 아키텍처 결정을 정당화하기 때문이다. \"Read가 압도적으로 많으니 Read 경로에 Redis 캐시를 두고, Write 경로는 단순하게 유지한다\"는 결정이 숫자에서 나온다."
+        },
+        {
+          "title": "면접관이 실제로 찾는 것: 주니어 vs. 시니어 설계의 차이",
+          "content": "같은 Twitter 뉴스피드 문제에서 주니어와 시니어 지원자의 차이는 크다.\n\n**주니어 지원자의 답변 패턴:**\n\n- MySQL 하나에 모든 데이터 저장\n- \"그냥 서버를 더 추가하면 됩니다\"\n- 모든 것을 monolithic application으로 구현\n- 캐시, 메시지 큐 언급 없음\n- 장애 시나리오를 생각하지 않음\n\n**시니어 지원자의 답변 패턴:**\n\n- \"트윗 팔로워 수에 따라 fan-out 전략을 다르게 가져가야 합니다. 팔로워 1000명 이하는 fan-out on write, 셀럽 계정(팔로워 수M 이상)은 fan-out on read로 hybrid 방식을 씁니다\"\n- \"Redis sorted set으로 타임라인을 캐싱하되, TTL을 24시간으로 설정하고 cache miss 시 DB에서 조회합니다\"\n- \"Kafka로 write 이벤트를 버퍼링하여 DB에 직접적인 write spike를 방지합니다\"\n- \"CDN으로 미디어 파일을 캐싱하면 origin 서버 부하를 95% 이상 줄일 수 있습니다\"\n\n핵심 차이는 **숫자와 트레이드오프**다. 시니어는 모든 결정에 \"왜\"가 있고, 대안이 무엇인지, 그 대안의 단점은 무엇인지를 같이 이야기한다."
+        }
+      ],
+      "analogy": {
+        "title": "도시 계획가의 관점으로 보는 시스템 설계",
+        "content": "시스템 설계 면접은 마치 **도시 계획가가 신도시를 설계하는 것**과 같다. 건물 하나를 짓는 것이 아니라, 도로(네트워크), 전력망(인프라), 상하수도(데이터 흐름), 주거/상업 구역(서비스 분리)을 고려하는 큰 그림이 필요하다.\n\n클라이언트에게 \"어떤 도시가 필요하세요?\"라고 먼저 물어야 한다. 인구 10만 명의 소도시와 1000만 명의 메가시티는 설계가 완전히 다르다. 인구 10만에 지하철을 깔면 낭비고, 1000만 명에 좁은 왕복 2차선 도로만 있으면 교통마비가 생긴다.\n\nRELD 면접에서 요구사항을 먼저 파악하는 것이 바로 이 \"어떤 도시인가\"를 묻는 단계다. 용량 추정은 도로 최대 교통량과 상하수도 용량을 계산하는 것이다. 그리고 High-level 설계는 도시 전체 구역 배치도를 그리는 것이며, Deep Dive는 교통 체증이 가장 심한 교차로를 최적화하는 것이다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "시스템 설계 면접 준비를 위한 용량 추정 계산기다. 면접 도중 빠르게 QPS, 스토리지, 대역폭을 추정할 때 머릿속으로 돌리는 계산을 코드로 표현했다.",
+        "code": "# Capacity Estimation Calculator for System Design Interviews\n\nclass CapacityEstimator:\n    SECONDS_PER_DAY = 86_400   # ≈ 10^5\n    BYTES_PER_KB = 1_024\n    BYTES_PER_MB = 1_024 ** 2\n    BYTES_PER_GB = 1_024 ** 3\n    BYTES_PER_TB = 1_024 ** 4\n\n    def __init__(self, dau: int, read_per_user: float, write_per_user: float):\n        self.dau = dau\n        self.read_per_user = read_per_user\n        self.write_per_user = write_per_user\n\n    def qps(self, requests_per_day: int) -> float:\n        \"\"\"Average QPS — peak is typically 2-3x this.\"\"\"\n        return requests_per_day / self.SECONDS_PER_DAY\n\n    def storage_per_year(self, record_size_bytes: int) -> float:\n        write_requests_per_day = self.dau * self.write_per_user\n        bytes_per_day = write_requests_per_day * record_size_bytes\n        return bytes_per_day * 365 / self.BYTES_PER_TB\n\n    def bandwidth_mbps(self, avg_response_bytes: int) -> float:\n        read_requests_per_sec = self.qps(self.dau * self.read_per_user)\n        return (read_requests_per_sec * avg_response_bytes) / self.BYTES_PER_MB\n\n    def report(self, record_size_bytes: int, avg_response_bytes: int):\n        read_qps = self.qps(self.dau * self.read_per_user)\n        write_qps = self.qps(self.dau * self.write_per_user)\n        storage_tb = self.storage_per_year(record_size_bytes)\n        bandwidth = self.bandwidth_mbps(avg_response_bytes)\n\n        print(f\"DAU: {self.dau:,}\")\n        print(f\"Read QPS: {read_qps:,.0f} (peak ~{read_qps*3:,.0f})\")\n        print(f\"Write QPS: {write_qps:,.0f} (peak ~{write_qps*3:,.0f})\")\n        print(f\"Read:Write ratio = {int(read_qps/max(write_qps,1))}:1\")\n        print(f\"Storage/year: {storage_tb:.1f} TB\")\n        print(f\"Outbound bandwidth: {bandwidth:.0f} MB/s\")\n\n# Twitter-like scenario\nestimator = CapacityEstimator(\n    dau=300_000_000,  # 300M DAU\n    read_per_user=10, # 10 tweet reads per user per day\n    write_per_user=0.02  # 1% of users write 2 tweets = avg 0.02\n)\nestimator.report(\n    record_size_bytes=1_000,    # 1KB per tweet\n    avg_response_bytes=5_000    # 5KB per API response (tweet list)\n)",
+        "walkthrough": "핵심 인사이트는 `Read:Write ratio`다. 이 계산을 하면 Twitter 같은 서비스가 극단적 read-heavy(500:1 이상)임을 알 수 있다. 이 숫자가 나오는 순간, Redis 캐시를 Read 경로에 두는 것이 얼마나 중요한지가 숫자로 정당화된다. 면접에서 이렇게 계산한 뒤 아키텍처 결정을 내리면 훨씬 설득력 있다."
+      },
+      "industryEvaluation": {
+        "overview": "구글 면접에서는 지원자가 모호한 문제를 얼마나 빠르고 정확하게 구체화하는지를 첫 번째 평가 기준으로 삼는다. 아마존은 Leadership Principles와 연계하여 \"Customer Obsession\" 관점에서 비기능 요구사항을 도출하는지 본다.",
+        "whatEngineersLookFor": [
+          "요구사항 명확화 없이 바로 설계에 뛰어들지 않는가",
+          "용량 추정 수치를 기반으로 아키텍처 결정을 정당화하는가",
+          "트레이드오프를 인지하고 명시적으로 이야기하는가",
+          "면접관을 파트너로 여기고 소통하며 진행하는가"
+        ],
+        "redFlags": [
+          "요구사항 없이 바로 MySQL + REST API 그리기 시작",
+          "용량 추정을 건너뛰거나 \"그냥 서버를 늘리면 됩니다\"",
+          "하나의 결정을 했을 때 \"왜\"를 설명하지 못함",
+          "면접관의 힌트성 질문을 무시하고 혼자 진행"
+        ],
+        "interviewQuestions": [
+          "Twitter의 DAU를 500M으로 가정할 때 필요한 Write QPS와 스토리지를 추정해봐.",
+          "뉴스피드 시스템에서 기능적 요구사항 3가지와 비기능적 요구사항 3가지를 말해봐.",
+          "Consistency와 Availability 중 어느 쪽을 우선할지 결정하려면 어떤 질문을 해야 해?"
+        ],
+        "masteryVsFamiliar": "익숙한(familiar) 수준은 RESHADED 같은 프레임워크를 외워서 순서대로 진행하는 것이다. 마스터 수준은 프레임워크를 자연스럽게 체화해서, 면접관의 질문 방향에 따라 순서를 유연하게 조정하면서도 놓치는 항목 없이 커버하는 것이다. 또한 마스터는 용량 추정 숫자에서 즉시 아키텍처 시사점을 읽어낸다."
+      },
+      "keyTakeaways": [
+        {"title": "RESHADED 프레임워크", "content": "Requirements → Estimation → Storage → High-level → API → Deep Dive → Edge cases → Discussion 8단계로 45분을 구조화한다."},
+        {"title": "요구사항이 전부다", "content": "비기능적 요구사항(가용성, 지연, 일관성)이 모든 아키텍처 결정의 근거가 된다. 이걸 건너뛰면 설계 전체가 흔들린다."},
+        {"title": "자릿수만 맞으면 된다", "content": "용량 추정은 정확한 수치가 아니라 order of magnitude가 목표다. 100M DAU → 1,000 QPS 수준의 빠른 계산이면 충분하다."},
+        {"title": "Read:Write 비율이 핵심", "content": "이 비율이 캐싱 전략, DB 선택, 확장 방향을 결정한다. 항상 이 숫자를 먼저 계산하라."},
+        {"title": "트레이드오프를 말로 해라", "content": "\"A 대신 B를 선택했는데, A는 이런 장점이 있지만 이 요구사항에서는 B가 맞습니다\"를 명시적으로 말하는 게 핵심이다."},
+        {"title": "면접관을 파트너로", "content": "혼자 조용히 그리는 건 나쁜 전략이다. 생각을 말하면서 진행하고 피드백을 유도하라."},
+        {"title": "Deep Dive는 병목을 파라", "content": "전체를 다 깊이 파는 게 아니라, 가장 어렵거나 흥미로운 부분 1~2개를 집중적으로 파는 게 좋은 전략이다."},
+        {"title": "암기가 아닌 원리", "content": "특정 서비스 설계를 외우지 말고 원리를 이해해라. 원리를 알면 처음 보는 문제도 풀 수 있다."}
+      ]
+    },
+    {
+      "number": 2,
+      "emoji": "⚡",
+      "title": "Distributed Systems Fundamentals",
+      "titleKr": "분산 시스템 핵심 이론",
+      "tldr": "CAP 정리, 일관성 모델, 장애 내성의 기초를 이해해야 모든 아키텍처 결정의 '왜'를 설명할 수 있다.",
+      "topics": ["CAP 정리와 PACELC", "Consistency 모델 (Strong, Eventual, Causal)", "Replication과 Consensus", "분산 시스템의 8가지 오류", "Failure Modes와 장애 내성"],
+      "learningGoals": [
+        "CAP 정리를 정확히 설명하고 CP/AP 시스템의 실제 예를 들 수 있다",
+        "Strong consistency, Eventual consistency, Causal consistency의 차이를 설명할 수 있다",
+        "Leader-Follower Replication의 동작 방식과 failover를 설명할 수 있다",
+        "Paxos/Raft consensus 알고리즘이 왜 필요한지 설명할 수 있다",
+        "분산 시스템에서 시간의 문제(Clock Skew, Vector Clock)를 이해한다"
+      ],
+      "overview": "분산 시스템은 **네트워크로 연결된 여러 독립 컴퓨터가 하나처럼 동작하는 것처럼 보이는 시스템**이다. 싱글 서버의 한계를 극복하기 위해 반드시 필요하지만, 분산 자체가 새로운 복잡성을 만들어낸다. 이 챕터에서 다루는 이론은 \"이 DB는 왜 이렇게 설계되었는가\", \"왜 이 캐시는 강한 일관성을 보장하지 못하는가\"에 대한 근본 답이다.\n\n빅테크 면접에서 \"왜 MySQL이 아니라 Cassandra를 썼어?\"라는 질문에 단순히 \"Cassandra는 빨라요\"라고 답하는 건 F다. \"Cassandra는 AP 시스템으로 availability를 일관성보다 우선합니다. 이 서비스는 read/write 모두 지연이 없어야 하고, 짧은 시간의 데이터 불일치를 허용하므로 Cassandra가 적합합니다\"가 A다.\n\n이 챕터의 내용은 처음에는 추상적으로 느껴질 수 있다. 하지만 챕터 3(스토리지), 챕터 4(캐시), 챕터 7(실전 설계)에서 구체적인 시스템에 적용하면서 자연스럽게 체화된다.",
+      "sections": [
+        {
+          "title": "CAP 정리: 분산 시스템의 삼각형 딜레마",
+          "content": "2000년 Eric Brewer가 제안하고 2002년 Gilbert와 Lynch가 증명한 **CAP 정리**는 분산 시스템에서 가장 유명한 이론이다.\n\n**Consistency (C)** = 모든 노드에서 동시에 같은 데이터를 읽는다. 쓰기 직후 어느 노드에서 읽어도 최신값이 보인다.\n\n**Availability (A)** = 노드 일부가 죽어도 시스템이 응답을 반환한다. 응답이 최신값이 아닐 수도 있다.\n\n**Partition Tolerance (P)** = 네트워크 단절(partition)이 발생해도 시스템이 계속 동작한다.\n\nCAP 정리의 핵심은 **P는 실제 분산 시스템에서 포기할 수 없다**는 것이다. 네트워크는 언제든 끊길 수 있다. 따라서 실제 선택은 **CP** (partition 시 consistency 우선, availability 포기) vs **AP** (partition 시 availability 우선, consistency 포기)다.\n\n| 분류 | 예시 시스템 | 특징 |\n|---|---|---|\n| CP | HBase, Zookeeper, Redis (single node) | 네트워크 분단 시 일부 요청 거절, 데이터 일관성 보장 |\n| AP | Cassandra, CouchDB, DynamoDB | 네트워크 분단 시에도 응답, 일시적 불일치 허용 |\n| CA | RDBMS (single node) | 분산 환경에선 실제로 CA는 존재하지 않음 |\n\n중요한 점은 CAP이 이분법이 아니라는 것이다. \"이 시스템은 무조건 CP\"가 아니라, 특정 연산에서 C와 A 사이의 지점을 선택하는 것이다."
+        },
+        {
+          "title": "Consistency 모델의 스펙트럼",
+          "content": "CAP의 Consistency는 사실 단순하지 않다. 실제로는 강도에 따른 스펙트럼이 존재한다.\n\n**Strong Consistency (선형화 가능성, Linearizability)** — 쓰기 완료 즉시 모든 읽기가 최신값을 반환한다. 가장 직관적이지만 지연시간이 크고 구현이 어렵다. Single-leader replication에서 synchronous follower 복제로 달성 가능하다. 예: Google Spanner.\n\n**Sequential Consistency** — 모든 프로세스가 같은 순서로 연산을 관찰한다. 물리적 시간 순서와는 다를 수 있다. Linearizability보다 약하지만 여전히 강한 모델이다.\n\n**Causal Consistency** — 인과 관계가 있는 연산(A가 B를 유발함)만 순서를 보장한다. 연관 없는 연산은 순서가 달라도 된다. 많은 분산 데이터베이스가 채택한 실용적 모델이다.\n\n**Eventual Consistency** — 충분한 시간이 지나면 모든 복제본이 같아진다. 언제 같아질지는 보장하지 않는다. 가용성과 성능에서 가장 유리하다. DynamoDB, Cassandra의 기본 모드.\n\n| 모델 | 지연 | 가용성 | 구현 복잡도 |\n|---|---|---|---|\n| Linearizability | 높음 | 낮음 | 매우 높음 |\n| Sequential | 중간 | 중간 | 높음 |\n| Causal | 낮음 | 높음 | 중간 |\n| Eventual | 최저 | 최고 | 낮음 |\n\n실제 빅테크 시스템에서 사용자 프로필, 계좌 잔액처럼 정확해야 하는 데이터는 strong consistency를, 소셜 미디어 좋아요 수, 조회수처럼 약간의 오차가 허용되는 데이터는 eventual consistency를 쓴다."
+        },
+        {
+          "title": "Replication: 데이터를 어떻게 복사하는가",
+          "content": "복제(Replication)는 같은 데이터를 여러 노드에 유지하는 것이다. 목적은 두 가지다: 가용성(노드 하나가 죽어도 됨)과 성능(읽기를 여러 노드에 분산).\n\n**Single-Leader Replication (Master-Slave)**\n\n쓰기는 오직 Leader(Master)로만 간다. Leader는 변경사항을 Replication Log에 기록하고 Follower(Replica)에 전송한다. Follower는 log를 적용해 자신을 업데이트한다.\n\n- Synchronous Replication: Leader가 최소 하나의 Follower에 쓰기 완료 확인을 받고 클라이언트에 응답 → 데이터 유실 없음, 쓰기 지연 증가\n- Asynchronous Replication: Leader가 Follower 확인 없이 즉시 응답 → 빠르지만 Leader 장애 시 데이터 유실 가능\n\n**Multi-Leader Replication**\n\n여러 Leader가 쓰기를 받고 서로 복제한다. 다중 데이터센터에서 지연시간을 줄이기 위해 쓴다. 단점은 **Write Conflict** — 두 리더에서 같은 데이터를 동시에 변경하면 어떻게 해결할까? Last-Write-Wins(LWW), Custom conflict resolution function 등의 전략이 필요하다.\n\n**Leaderless Replication (Dynamo-style)**\n\nLeader 없이 모든 노드에 쓰기 가능. Quorum 방식: 쓰기는 W개 노드에서 확인, 읽기는 R개 노드에서 읽어서 최신값 결정. $W + R > N$ (N = 총 노드 수) 이면 적어도 하나의 노드가 최신값을 가진다. Cassandra, DynamoDB가 이 방식."
+        },
+        {
+          "title": "Consensus 알고리즘: 분산 합의",
+          "content": "분산 시스템에서 여러 노드가 **하나의 값에 합의**하는 것은 놀랍도록 어렵다. 네트워크 지연, 노드 장애, 메시지 손실이 있는 환경에서 합의를 달성하는 알고리즘이 **Consensus 알고리즘**이다.\n\n**왜 필요한가?** Leader Election — 여러 노드 중 누가 Leader인지 합의해야 한다. 하나의 Leader만 있어야 하므로 (split-brain 방지), 합의 알고리즘 없이는 두 노드가 동시에 자신이 Leader라고 주장할 수 있다.\n\n**Paxos** — 2001년 Leslie Lamport가 설계한 최초의 실용적 consensus 알고리즘. 이론적으로 완벽하지만 이해하기 어렵고 구현이 복잡하다. Google Chubby, Apache Zookeeper에서 사용.\n\n**Raft** — 2014년 Diego Ongaro가 \"이해 가능성\"을 목표로 설계. Paxos와 동등한 안전성을 가지면서 훨씬 이해하기 쉽다. etcd, CockroachDB, TiKV 등 현대 분산 시스템에서 널리 사용된다.\n\nRaft의 핵심 아이디어는 세 가지로 분리된다:\n\n1. **Leader Election** — 타임아웃 후 Candidate가 되어 투표 요청, 과반수 투표 받으면 Leader\n2. **Log Replication** — Leader가 log entry를 모든 Follower에 복제, 과반수 확인 후 commit\n3. **Safety** — 이미 commit된 entry는 절대 덮어쓰지 않음\n\n면접에서 Paxos/Raft를 구현하라는 요청은 없다. 하지만 \"Zookeeper는 어떻게 leader election을 하나요?\", \"Kafka의 ISR (In-Sync Replicas)가 뭔가요?\"에 답할 수 있어야 한다."
+        },
+        {
+          "title": "분산 시스템의 8가지 오류와 시간 문제",
+          "content": "1994년 Peter Deutsch가 제시한 **분산 컴퓨팅의 8가지 오류(Fallacies of Distributed Computing)**는 지금도 유효하다:\n\n1. 네트워크는 신뢰할 수 있다\n2. 지연시간은 0이다\n3. 대역폭은 무한하다\n4. 네트워크는 안전하다\n5. 토폴로지는 변하지 않는다\n6. 관리자는 한 명이다\n7. 전송 비용은 0이다\n8. 네트워크는 균일하다\n\n이 오류들이 중요한 이유는 분산 시스템의 거의 모든 복잡성이 여기서 비롯되기 때문이다.\n\n특히 **시간의 문제**는 미묘하다. 분산 시스템에서 \"이 이벤트가 저 이벤트보다 먼저 일어났다\"를 확신하기 어렵다. 각 노드의 물리적 시계(clock)는 조금씩 다르게 간다(Clock Skew). NTP로 동기화해도 수 밀리초의 오차는 피할 수 없다.\n\n**Lamport Timestamp** — 물리적 시계 없이 인과 순서를 표현하는 논리 시계. 각 프로세스가 카운터를 유지하고, 메시지 전송 시 카운터를 포함. 받는 쪽은 자신의 카운터와 받은 카운터 중 큰 값 + 1로 업데이트.\n\n**Vector Clock** — Lamport Timestamp의 확장. 각 프로세스마다 카운터를 따로 관리하는 벡터. 두 이벤트의 인과 관계가 있는지 없는지(concurrent)를 판별할 수 있다. DynamoDB의 conflict detection에 사용됨.\n\n시스템 설계 면접에서 이 개념들은 \"두 사용자가 동시에 같은 데이터를 수정하면?\"이라는 질문에 답할 때 필요하다."
+        }
+      ],
+      "analogy": {
+        "title": "국제 은행 네트워크로 보는 분산 시스템",
+        "content": "분산 시스템은 **전 세계에 지점이 있는 국제 은행**과 같다. 서울 지점, 뉴욕 지점, 런던 지점이 있고 각 지점은 독립적으로 거래를 처리한다. 지점들은 네트워크(SWIFT 같은)로 연결되어 있다.\n\n이 은행에서 CAP 딜레마가 생기는 순간을 생각해보자. 서울-뉴욕 간 통신이 끊겼다(Partition). 이때 서울 고객이 100만원을 인출하면 어떻게 해야 하나? **Consistency를 선택하면**: 서울 지점은 \"죄송합니다, 현재 거래가 불가합니다\"라고 거절한다. 잔액이 정확하게 동기화될 때까지 서비스를 중단한다. **Availability를 선택하면**: 서울 지점은 자신이 알고 있는 잔액으로 거래를 처리한다. 통신이 복구되면 뉴욕 지점과 데이터를 조정한다. 이때 두 곳에서 동시에 출금이 됐다면 conflict가 발생한다.\n\n계좌 잔액처럼 정확성이 중요한 데이터는 CP를, 소셜 미디어 좋아요 수처럼 약간의 오차를 허용할 수 있는 데이터는 AP를 선택하는 이유가 여기에 있다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "Quorum 기반의 분산 Key-Value 스토어 시뮬레이션이다. Cassandra/DynamoDB의 W+R>N 원칙을 구현하여 eventual consistency와 quorum read가 어떻게 동작하는지 보여준다.",
+        "code": "import random\nimport time\nfrom dataclasses import dataclass, field\nfrom typing import Optional\n\n@dataclass\nclass VersionedValue:\n    value: str\n    timestamp: float\n    version: int\n\n@dataclass\nclass Node:\n    node_id: int\n    store: dict = field(default_factory=dict)\n    is_available: bool = True\n\n    def write(self, key: str, value: str, version: int) -> bool:\n        if not self.is_available:\n            return False\n        self.store[key] = VersionedValue(value, time.time(), version)\n        return True\n\n    def read(self, key: str) -> Optional[VersionedValue]:\n        if not self.is_available:\n            return None\n        # Simulate network latency\n        time.sleep(random.uniform(0.001, 0.01))\n        return self.store.get(key)\n\nclass QuorumKVStore:\n    def __init__(self, n: int, w: int, r: int):\n        self.nodes = [Node(i) for i in range(n)]\n        self.N, self.W, self.R = n, w, r\n        self._version = 0\n        assert w + r > n, \"W + R must be > N for strong consistency\"\n\n    def write(self, key: str, value: str) -> bool:\n        self._version += 1\n        successes = sum(\n            node.write(key, value, self._version)\n            for node in self.nodes\n        )\n        return successes >= self.W  # Quorum write success\n\n    def read(self, key: str) -> Optional[str]:\n        results = [\n            node.read(key) for node in self.nodes\n        ]\n        valid = [r for r in results if r is not None]\n        if len(valid) < self.R:\n            return None  # Quorum not met\n        # Return the value with the highest version (latest)\n        latest = max(valid, key=lambda v: v.version)\n        return latest.value\n\n# N=3, W=2, R=2 → W+R=4 > N=3 → quorum consistency guaranteed\nstore = QuorumKVStore(n=3, w=2, r=2)\nstore.nodes[2].is_available = False  # Simulate one node down\n\nstore.write(\"user:1001\", \"Alice\")\nprint(store.read(\"user:1001\"))  # Still works: 2 out of 3 nodes respond",
+        "walkthrough": "W=2, R=2, N=3에서 노드 하나가 죽어도 쓰기(2/3 성공)와 읽기(2/3 성공)가 모두 가능하다. W+R=4 > N=3이므로 최소 1개 노드가 최신 값을 반환한다. 노드가 2개 죽으면 서비스가 중단된다(CP 모드). W=1, R=1로 바꾸면 AP 모드 — 한 노드만 살아있어도 응답하지만 stale data를 반환할 수 있다."
+      },
+      "industryEvaluation": {
+        "overview": "분산 시스템 이론은 빅테크 면접에서 직접 질문으로 나오기보다, 아키텍처 결정의 '왜'를 설명할 때 요구된다. Cassandra vs MySQL, Kafka vs RabbitMQ 같은 선택에서 이 이론적 배경이 필요하다.",
+        "whatEngineersLookFor": [
+          "CAP을 정확히 알고, 실제 시스템에 어떻게 적용되는지 예를 들 수 있는가",
+          "Eventual consistency를 쓸 때 어떤 문제가 생길 수 있고 어떻게 해결하는가",
+          "Replication lag가 서비스에 미치는 영향을 설명할 수 있는가",
+          "Leader election이 실패하면 어떻게 되는지 알고 있는가"
+        ],
+        "redFlags": [
+          "\"Cassandra가 빠르기 때문에\"처럼 이유 없는 기술 선택",
+          "CAP을 외웠지만 구체적 시스템 예를 못 드는 경우",
+          "Eventual consistency의 trade-off를 모르는 경우",
+          "Single point of failure를 설계에 방치하는 경우"
+        ],
+        "interviewQuestions": [
+          "DynamoDB는 CAP의 어디에 위치하나? 그 이유는?",
+          "Multi-leader replication에서 write conflict를 어떻게 해결하나?",
+          "\"Read your own writes\" consistency를 어떻게 보장하나?"
+        ],
+        "masteryVsFamiliar": "익숙한 수준은 CAP을 설명하고 CP/AP 예시를 말하는 것이다. 마스터 수준은 PACELC(Partition 없을 때도 Latency vs Consistency 트레이드오프가 있다)까지 알고, 특정 서비스의 각 데이터 타입에 맞는 consistency 수준을 구체적으로 설계할 수 있는 것이다."
+      },
+      "keyTakeaways": [
+        {"title": "P는 포기 불가", "content": "실제 분산 시스템에서 Partition Tolerance는 포기할 수 없다. 선택은 항상 CP vs AP다."},
+        {"title": "Consistency는 스펙트럼", "content": "Strong → Sequential → Causal → Eventual 스펙트럼. 서비스의 데이터 특성에 맞는 수준을 선택하라."},
+        {"title": "Quorum: W+R>N", "content": "이 조건이 성립하면 최소 하나의 노드가 최신값을 반환한다. Cassandra의 기본 원리다."},
+        {"title": "Raft가 Paxos를 대체", "content": "현대 시스템은 대부분 이해하기 쉬운 Raft를 사용한다. etcd, CockroachDB, TiKV가 모두 Raft 기반."},
+        {"title": "시계는 믿을 수 없다", "content": "분산 시스템에서 물리적 시계의 Clock Skew 때문에 이벤트 순서를 시간으로 판단하면 위험하다. Lamport Timestamp나 Vector Clock을 쓴다."},
+        {"title": "Replication Lag를 인지하라", "content": "Async replication은 빠르지만 Leader 장애 시 데이터 유실 가능. Read Replica에서 읽으면 stale data를 볼 수 있다."},
+        {"title": "단일 장애점을 없애라", "content": "단일 Leader, 단일 DB, 단일 서버는 Single Point of Failure다. 항상 이중화를 고려하라."},
+        {"title": "이론은 결정의 근거", "content": "면접에서 기술을 선택할 때 반드시 이론적 근거로 정당화하라. 이것이 주니어와 시니어를 가른다."}
+      ]
+    },
+    {
+      "number": 3,
+      "emoji": "🗄️",
+      "title": "Storage Systems at Scale",
+      "titleKr": "대규모 스토리지 & 데이터베이스",
+      "tldr": "SQL과 NoSQL의 진짜 차이를 이해하고, 샤딩·복제·인덱싱으로 수억 건의 데이터를 다루는 법을 배운다.",
+      "topics": ["SQL vs NoSQL 선택 기준", "Database Sharding 전략", "Replication 패턴", "Indexing (B-Tree, LSM-Tree)", "NewSQL과 분산 SQL"],
+      "learningGoals": [
+        "SQL과 NoSQL의 트레이드오프를 구체적 시나리오에 적용할 수 있다",
+        "Horizontal Sharding의 3가지 전략과 각각의 장단점을 설명할 수 있다",
+        "B-Tree와 LSM-Tree 인덱스 구조의 차이와 적합한 사용 사례를 안다",
+        "Read Replica와 Master-Slave 구성의 한계와 failover 방법을 설명할 수 있다",
+        "Google Spanner/CockroachDB 같은 NewSQL이 왜 생겼는지 설명할 수 있다"
+      ],
+      "overview": "데이터베이스는 모든 시스템의 심장이다. 잘못된 데이터베이스 선택이나 설계는 나머지 아키텍처를 아무리 잘해도 극복하기 어려운 병목을 만든다. 시스템 설계 면접에서 \"왜 MySQL이 아닌 Cassandra를?\" \"왜 DynamoDB가 좋은 선택인가?\"를 정확히 답할 수 있어야 한다.\n\nSQL은 20년 넘게 검증된 ACID 트랜잭션과 rich query를 제공한다. NoSQL은 SQL의 확장성 한계를 극복하기 위해 다양한 형태로 발전했다. 하지만 핵심은 **어느 쪽이 더 좋은가가 아니라 이 요구사항에 무엇이 맞는가**다.\n\n샤딩은 단일 데이터베이스가 더 이상 감당할 수 없는 데이터를 여러 서버에 분산하는 기술이다. 개념은 단순하지만 실제 구현에는 데이터 분산, 쿼리 라우팅, 리밸런싱 같은 복잡한 문제가 따른다. 이 챕터에서 이 모든 것을 체계적으로 정리한다.",
+      "sections": [
+        {
+          "title": "SQL vs NoSQL: 언제 무엇을 선택하는가",
+          "content": "가장 흔한 면접 질문 중 하나는 \"이 서비스에 SQL을 쓸 건가요, NoSQL을 쓸 건가요?\"다. 잘못된 답은 \"NoSQL이 더 빠르니까 NoSQL\"이다.\n\n**SQL (관계형 데이터베이스)**이 맞는 경우:\n\n- 데이터 간의 관계가 복잡하고 JOIN이 필요한 경우 (주문, 사용자, 상품이 연결되는 e-커머스)\n- ACID 트랜잭션이 필수인 경우 (금융 거래, 재고 관리)\n- 데이터 스키마가 안정적이고 변경이 적은 경우\n- Rich query가 필요한 경우 (임의의 조건 조합 검색)\n\n**NoSQL**이 맞는 경우:\n\n- 스키마가 유동적이거나 nested structure가 많은 경우 (사용자 프로필, 이벤트 로그)\n- 수평 확장이 반드시 필요한 경우 (단일 노드로 감당 안 되는 규모)\n- Write throughput이 매우 높은 경우 (IoT 센서 데이터, 클릭스트림)\n- Key-based access pattern이 명확한 경우\n\nNoSQL의 유형은 크게 네 가지다:\n\n| 유형 | 대표 제품 | 사용 사례 |\n|---|---|---|\n| Document | MongoDB, Firestore | 사용자 프로필, 제품 카탈로그 |\n| Key-Value | Redis, DynamoDB | 세션, 캐시, 리더보드 |\n| Wide-Column | Cassandra, HBase | 시계열, 클릭스트림, IoT |\n| Graph | Neo4j, Amazon Neptune | 소셜 그래프, 추천, 사기 탐지 |\n\n빅테크에서는 사실 **다중 데이터베이스 전략**을 쓴다. 메인 데이터는 MySQL/PostgreSQL, 캐시는 Redis, 검색은 Elasticsearch, 이벤트 로그는 Cassandra처럼 각 역할에 맞는 DB를 조합한다."
+        },
+        {
+          "title": "Database Sharding: 수평 분할 전략",
+          "content": "데이터가 단일 서버를 넘어서면 수평 분할(Sharding)이 필요하다. 각 샤드는 전체 데이터의 부분 집합을 담당하는 독립 데이터베이스다.\n\n**Horizontal Sharding 전략 3가지:**\n\n**1. Range-based Sharding**\n\nKey의 범위에 따라 샤드를 배정한다. `user_id` 1~100만은 Shard 1, 100만~200만은 Shard 2.\n\n- 장점: Range query 효율적 (\"이번 달 가입 사용자 전체\")\n- 단점: Hotspot 발생 위험. 최신 데이터가 항상 마지막 샤드에 몰린다.\n\n**2. Hash-based Sharding**\n\n`shard_id = hash(key) % num_shards` 로 배정한다.\n\n- 장점: 균일한 데이터 분산\n- 단점: Range query 불가. **샤드 추가 시 대규모 데이터 이동 필요** (리밸런싱 문제)\n\n**3. Consistent Hashing**\n\nHash space를 링(ring) 형태로 배치하고 각 샤드가 링의 일부를 담당한다. 샤드 추가/제거 시 영향받는 데이터가 최소화된다.\n\n- 장점: 샤드 추가/제거 시 전체 데이터의 $K/N$ 만 이동 (K = key 수, N = 샤드 수)\n- 단점: 균일 분산이 보장되지 않음. 가상 노드(Virtual Node)로 보완.\n\n**샤딩의 단점:**\n\n- 여러 샤드에 걸친 JOIN, transaction이 어렵다\n- 샤드 간 데이터 불균형(Hot Shard) 문제\n- 운영 복잡도 증가\n- Application layer에서 샤딩 로직을 관리해야 함\n\n따라서 샤딩은 **마지막 수단**으로 생각해야 한다. 먼저 Vertical Scaling, Read Replica, Caching을 최대한 활용한 후 샤딩을 고려한다."
+        },
+        {
+          "title": "인덱스의 내부 구조: B-Tree vs LSM-Tree",
+          "content": "인덱스는 쿼리 성능의 핵심이다. 그런데 왜 MySQL(InnoDB)은 B-Tree를 쓰고, Cassandra는 LSM-Tree를 쓰는가? 내부 구조의 차이가 시스템의 특성을 결정한다.\n\n**B-Tree (Balanced Search Tree)**\n\nMySSQL, PostgreSQL, SQLite의 기본 인덱스 구조. 데이터를 정렬된 트리로 유지하며 모든 잎 노드(leaf node)는 실제 데이터를 가리킨다.\n\n- 읽기: $O(\\log n)$ 탐색. Range query에 효율적.\n- 쓰기: 삽입 시 트리 재균형이 필요. **Random write** → HDD에서 느리다.\n- Read-heavy workload에 최적.\n\n**LSM-Tree (Log-Structured Merge-Tree)**\n\nCassandra, RocksDB, LevelDB의 기본 인덱스 구조. 쓰기를 먼저 in-memory 구조(Memtable)에 저장, 일정 크기가 되면 정렬된 파일(SSTable)로 디스크에 flush.\n\n- 쓰기: **Sequential write** → 매우 빠름 (HDD에서도 빠름).\n- 읽기: 여러 SSTable을 병합하여 읽어야 해서 B-Tree보다 느릴 수 있음. Bloom filter로 보완.\n- Write-heavy workload에 최적.\n\n| 구조 | Read | Write | 사용 사례 |\n|---|---|---|---|\n| B-Tree | 빠름 | 중간 | OLTP, 범용 |\n| LSM-Tree | 느림 | 매우 빠름 | 로그, IoT, Write-heavy |\n\n면접에서 \"Cassandra는 왜 write가 빠른가?\"라는 질문에 LSM-Tree의 sequential write 덕분이라고 답할 수 있어야 한다."
+        },
+        {
+          "title": "Read Replica와 CQRS 패턴",
+          "content": "대부분의 웹 서비스는 read가 write보다 훨씬 많다. Read Replica는 이 특성을 활용해 읽기 부하를 분산하는 가장 간단하고 효과적인 방법이다.\n\n**Read Replica 구성:**\n\nPrimary(Write) → [비동기 복제] → Replica 1, Replica 2, Replica 3\n\n모든 쓰기는 Primary로, 모든 읽기는 Replica로 라우팅한다. MySQL, PostgreSQL, RDS 모두 지원한다.\n\n**주의사항:**\n\n- Replication lag: 쓰기 직후 같은 데이터를 읽으면 old data를 볼 수 있다.\n- \"Read your own writes\" 문제: 자신이 방금 쓴 데이터를 읽으려면 Primary에서 읽거나, session-based consistency를 구현해야 한다.\n\n**CQRS (Command Query Responsibility Segregation)**\n\nRead Replica의 논리적 확장. 쓰기(Command)와 읽기(Query)를 완전히 다른 데이터 모델로 분리한다.\n\n- Command Side: 정규화된 스키마, ACID 트랜잭션 (PostgreSQL)\n- Query Side: 비정규화된 읽기 최적화 스키마 (Elasticsearch, Redis, Read Replica)\n\n이벤트 소싱(Event Sourcing)과 자주 결합된다. 쓰기 시 이벤트를 발행하고, 읽기 모델은 이벤트를 구독하여 최적화된 뷰를 업데이트한다."
+        }
+      ],
+      "analogy": {
+        "title": "도서관으로 보는 데이터베이스 설계",
+        "content": "데이터베이스는 거대한 도서관이다. SQL은 **분류 체계가 완벽하게 정비된 국립도서관**과 같다. 모든 책이 규칙에 따라 분류되어 있고, 어떤 조합의 검색도 정확하게 답을 줄 수 있다. 하지만 새 도서관을 지으려면(스케일 업) 엄청난 비용이 든다.\n\nNoSQL은 **목적에 최적화된 특수 도서관**들이다. Key-Value는 보관함만 있는 짐 보관소 (빠른 put/get), Document DB는 파일 캐비닛 (유연한 구조), Wide-Column은 스프레드시트 (시계열 데이터), Graph DB는 마인드맵 (관계 중심).\n\n샤딩은 도서관을 여러 건물로 나누는 것이다. 'A~M'은 1관, 'N~Z'는 2관처럼 나누면 각 관이 작아져 빠르다. 하지만 'A로 시작하는 책 중 N을 쓴 작가의 책'을 찾으려면 두 관을 다 뒤져야 한다. 이것이 샤딩에서 cross-shard query가 비싼 이유다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "Consistent Hashing을 Python으로 구현한다. 이것은 샤드 추가 시 최소 데이터만 이동시키는 핵심 알고리즘으로, Redis Cluster, Amazon DynamoDB, Apache Cassandra에서 사용된다.",
+        "code": "import hashlib\nfrom bisect import bisect_right, insort\nfrom collections import defaultdict\n\nclass ConsistentHashRing:\n    def __init__(self, virtual_nodes: int = 150):\n        self.virtual_nodes = virtual_nodes\n        self.ring: list[int] = []      # sorted hash positions\n        self.hash_to_node: dict[int, str] = {}\n        self.node_keys: dict[str, list[int]] = defaultdict(list)\n\n    def _hash(self, key: str) -> int:\n        return int(hashlib.md5(key.encode()).hexdigest(), 16)\n\n    def add_node(self, node: str):\n        for i in range(self.virtual_nodes):\n            vh = self._hash(f\"{node}#{i}\")\n            insort(self.ring, vh)\n            self.hash_to_node[vh] = node\n            self.node_keys[node].append(vh)\n        print(f\"Added node '{node}' with {self.virtual_nodes} virtual nodes\")\n\n    def remove_node(self, node: str):\n        for vh in self.node_keys.pop(node, []):\n            self.ring.remove(vh)\n            del self.hash_to_node[vh]\n        print(f\"Removed node '{node}'\")\n\n    def get_node(self, key: str) -> str:\n        if not self.ring:\n            raise Exception(\"No nodes in ring\")\n        h = self._hash(key)\n        # Find first position >= h (wrap around to 0 if needed)\n        idx = bisect_right(self.ring, h) % len(self.ring)\n        return self.hash_to_node[self.ring[idx]]\n\n# Demo: adding a new shard disrupts minimal data\nring = ConsistentHashRing(virtual_nodes=100)\nring.add_node(\"shard-1\")\nring.add_node(\"shard-2\")\nring.add_node(\"shard-3\")\n\n# Before adding shard-4\nkeys = [f\"user:{i}\" for i in range(1000)]\nbefore = {k: ring.get_node(k) for k in keys}\n\nring.add_node(\"shard-4\")  # Add new shard\n\nafter = {k: ring.get_node(k) for k in keys}\nmoved = sum(1 for k in keys if before[k] != after[k])\nprint(f\"Keys remapped: {moved}/1000 ({moved/10:.1f}%)\")  # ~25%, not 100%",
+        "walkthrough": "핵심은 마지막 출력이다. 샤드를 3개에서 4개로 늘렸을 때 이상적으로는 25%의 키만 이동해야 한다. Consistent Hashing 없이 단순 hash modulo를 쓰면 `hash(key) % 3 → hash(key) % 4`로 변경 시 75% 이상의 키가 다른 샤드로 이동한다. Virtual node 수를 늘릴수록 분산이 균일해진다."
+      },
+      "industryEvaluation": {
+        "overview": "데이터베이스 선택은 시스템 설계 면접에서 항상 나온다. 단순히 SQL/NoSQL을 고르는 게 아니라 구체적인 access pattern, consistency requirement, scale을 근거로 선택해야 한다.",
+        "whatEngineersLookFor": [
+          "데이터 모델과 access pattern에 맞는 DB를 선택하는가",
+          "샤딩 없이 스케일 가능한 방법(캐시, Read Replica)을 먼저 고려하는가",
+          "Sharding key 선택의 이유를 설명할 수 있는가",
+          "DB 장애 시 failover 전략이 있는가"
+        ],
+        "redFlags": [
+          "\"NoSQL은 빠르니까\" 같은 근거 없는 선택",
+          "Sharding key가 hotspot을 만드는 설계 (예: 타임스탬프를 sharding key로 사용)",
+          "단일 DB에 모든 데이터를 넣는 monolithic 설계",
+          "인덱스 없이 full-table scan으로 쿼리하는 설계"
+        ],
+        "interviewQuestions": [
+          "Instagram의 사진 메타데이터 저장소를 설계한다면 어떤 DB를 쓰고 어떻게 샤딩하겠어?",
+          "Sharding key를 user_id로 선택했을 때의 장단점은?",
+          "Read Replica에서 읽을 때 발생할 수 있는 문제와 해결 방법은?"
+        ],
+        "masteryVsFamiliar": "익숙한 수준은 SQL/NoSQL의 차이를 말하고 샤딩이 무엇인지 설명하는 것이다. 마스터 수준은 access pattern을 분석해서 최적의 인덱스 전략과 sharding key를 고르고, Hotspot이 생기는 경우를 미리 예측해서 Virtual Node나 Random Suffix로 분산시키는 방법을 제안할 수 있는 것이다."
+      },
+      "keyTakeaways": [
+        {"title": "SQL vs NoSQL = 트레이드오프", "content": "SQL은 ACID와 rich query, NoSQL은 horizontal scale과 유연성. 어느 쪽이 낫다가 아니라 요구사항에 맞는 것을 고른다."},
+        {"title": "샤딩은 마지막 수단", "content": "Vertical scaling → Read Replica → Caching → 마지막으로 샤딩. 샤딩은 complexity 대가가 크다."},
+        {"title": "Consistent Hashing이 핵심", "content": "Hash modulo 대신 Consistent Hashing을 쓰면 샤드 추가 시 ~K/N 데이터만 이동한다."},
+        {"title": "Sharding Key가 운명", "content": "잘못된 sharding key는 hotspot을 만들어 모든 스케일링 효과를 없앤다. 접근 패턴을 먼저 분석하라."},
+        {"title": "B-Tree vs LSM-Tree", "content": "Read-heavy는 B-Tree(MySQL), Write-heavy는 LSM-Tree(Cassandra, RocksDB)."},
+        {"title": "Read Replica는 공짜 점심", "content": "가장 간단한 read 스케일링 방법. Replication lag를 인지하고 설계하라."},
+        {"title": "다중 DB 전략", "content": "빅테크는 하나의 DB가 아니라 역할에 맞는 여러 DB를 조합한다. MySQL + Redis + Elasticsearch + Cassandra."},
+        {"title": "인덱스는 항상 write 비용", "content": "인덱스는 read를 빠르게 하지만 write overhead가 있다. 모든 컬럼에 인덱스를 걸면 write가 느려진다."}
+      ]
+    },
+    {
+      "number": 4,
+      "emoji": "⚡",
+      "title": "Caching & Content Delivery",
+      "titleKr": "캐시와 CDN — 성능의 핵심",
+      "tldr": "올바른 캐시 전략이 DB 부하를 90% 이상 줄인다. 캐시 패턴, 무효화 전략, CDN까지 완전 정복한다.",
+      "topics": ["Cache-Aside / Write-Through / Write-Back 패턴", "Cache Invalidation 전략", "Redis 내부 구조와 사용 패턴", "CDN 동작 방식", "캐시 워밍과 Thundering Herd"],
+      "learningGoals": [
+        "Cache-Aside, Write-Through, Write-Back, Write-Around의 차이와 적합한 사용 사례를 설명할 수 있다",
+        "Cache Invalidation의 어려움과 일반적 전략을 알고 있다",
+        "Redis의 자료구조(String, List, Set, Sorted Set, Hash)별 사용 사례를 안다",
+        "CDN이 원본 서버 부하를 줄이는 원리와 Cache-Control 헤더를 이해한다",
+        "Thundering Herd와 Cache Stampede를 방지하는 방법을 설명할 수 있다"
+      ],
+      "overview": "\"컴퓨터 과학에서 가장 어려운 두 가지가 있다: Cache Invalidation과 Naming Things\" — Phil Karlton의 이 농담은 캐시가 얼마나 어렵고 중요한지를 보여준다.\n\n캐시는 단순히 빠른 임시 저장소가 아니다. 올바른 캐시 전략은 DB 쿼리를 99% 줄이고, CDN은 원본 서버 트래픽을 95% 줄일 수 있다. 반대로 잘못된 캐시 전략은 **Stale Data(오래된 데이터)**, **Cache Stampede(동시 캐시 미스)**, **Cache Poisoning(악의적 데이터 주입)** 같은 심각한 문제를 만든다.\n\n이 챕터에서는 캐시 패턴의 종류와 트레이드오프, Redis의 실용적 사용법, CDN의 동작 원리를 다룬다. 특히 **Cache Invalidation**이 왜 어렵고 어떻게 다루어야 하는지를 집중적으로 다룬다.",
+      "sections": [
+        {
+          "title": "캐시 읽기/쓰기 패턴 4가지",
+          "content": "캐시를 어떻게 채우고 업데이트하는지에 따라 4가지 주요 패턴이 있다.\n\n**1. Cache-Aside (Lazy Loading)**\n\n애플리케이션이 캐시 관리를 직접 담당. 읽기 시 캐시 먼저 확인, Cache Miss 시 DB에서 읽고 캐시에 저장.\n\n- 장점: 실제로 사용되는 데이터만 캐시됨. DB 장애 시 캐시에서 서비스 가능.\n- 단점: Cache Miss 시 latency 증가. **Cache Stampede** 위험. 최초 요청은 항상 느리다.\n- 사용: Twitter 타임라인, 사용자 프로필처럼 read-heavy 데이터\n\n**2. Write-Through**\n\n쓰기 시 DB와 캐시를 동시에 업데이트. 데이터는 항상 최신.\n\n- 장점: 캐시 데이터가 항상 최신. 읽기 시 Cache Miss 없음.\n- 단점: 쓰기 latency 증가. 읽히지 않는 데이터도 캐시 → 공간 낭비.\n- 사용: 사용자 설정, 자주 수정되고 자주 읽히는 데이터\n\n**3. Write-Back (Write-Behind)**\n\n쓰기 시 캐시만 업데이트. 캐시에서 DB로의 동기화는 비동기 또는 주기적.\n\n- 장점: 쓰기 latency 최소화. write burst 흡수 가능.\n- 단점: 캐시 장애 시 데이터 유실 위험. DB와 캐시 불일치 기간 발생.\n- 사용: 좋아요 수, 조회수 같은 데이터 유실을 어느 정도 허용하는 카운터\n\n**4. Write-Around**\n\n쓰기는 DB로만, 읽기 시 Cache-Aside처럼 동작.\n\n- 장점: 한 번만 쓰는 데이터로 캐시가 오염되지 않음.\n- 단점: 읽기 시 초기에 Cache Miss 많음.\n- 사용: 로그, 한 번 쓰고 거의 안 읽는 데이터"
+        },
+        {
+          "title": "Cache Invalidation: 왜 어려운가",
+          "content": "캐시에서 가장 어려운 문제는 **언제 캐시된 데이터를 무효화(invalidate)할 것인가**다.\n\n**TTL (Time-To-Live) 기반 만료**\n\n가장 단순한 방법. 일정 시간이 지나면 자동 만료. Redis의 `EXPIRE` 명령.\n\n- 장점: 구현 간단.\n- 단점: TTL이 짧으면 Cache Hit Rate 낮아짐, 길면 Stale Data 기간이 길어짐.\n\n**Event-Driven Invalidation**\n\n데이터 변경 이벤트 발생 시 캐시를 직접 삭제. DB 업데이트 후 `cache.delete(key)` 또는 메시지 큐를 통한 비동기 삭제.\n\n- 장점: 즉각적인 캐시 일관성.\n- 단점: Race Condition — DB 업데이트와 캐시 삭제 사이 타이밍 문제.\n\n**Write-Through로 동기 업데이트**\n\n쓰기 시 캐시와 DB를 동시에 업데이트하여 불일치를 원천 방지.\n\n**Cache-Aside의 Race Condition 예시:**\n\n쓰레드 A가 DB 업데이트 후 캐시를 삭제하려는 순간, 쓰레드 B가 캐시 미스를 받고 DB에서 이전 값을 읽어 캐시에 저장하면? → 이전 값이 캐시에 남는다. 이 문제를 해결하기 위해 **Cache-Aside + TTL을 함께 쓰는 것**이 일반적인 해법이다. Invalidation이 실패해도 TTL이 결국 해결한다."
+        },
+        {
+          "title": "Redis: 캐시 그 이상의 도구",
+          "content": "Redis는 단순한 Key-Value 캐시가 아니다. 다양한 자료구조를 지원하는 **인메모리 데이터 구조 서버**로, 각 자료구조마다 최적화된 사용 사례가 있다.\n\n| 자료구조 | 커맨드 | 사용 사례 |\n|---|---|---|\n| String | GET/SET/INCR | 세션, 카운터, 캐시 |\n| List | LPUSH/RPOP | 메시지 큐, 최근 활동 피드 |\n| Hash | HGET/HSET | 사용자 프로필 (필드별 접근) |\n| Set | SADD/SMEMBERS | 유니크 방문자, 팔로워 목록 |\n| Sorted Set | ZADD/ZRANGE | 리더보드, 점수 기반 정렬 |\n| HyperLogLog | PFADD/PFCOUNT | 대략적 유니크 카운트 (공간 효율) |\n| Pub/Sub | PUBLISH/SUBSCRIBE | 실시간 알림, 채팅 |\n\n**Redis Sorted Set으로 리더보드 구현:**\n\n```\nZADD game:leaderboard 9500 \"alice\"\nZADD game:leaderboard 8700 \"bob\"\nZRANGE game:leaderboard 0 9 WITHSCORES REV  # Top 10\nZRANK game:leaderboard \"alice\"              # Rank of alice\n```\n\n**Redis Cluster를 통한 수평 확장:**\n\nRedis Cluster는 데이터를 16384개의 hash slot으로 나누고 각 노드가 일부를 담당한다. 자동 샤딩과 failover를 지원한다.\n\n**Redis vs Memcached:**\n\n| 항목 | Redis | Memcached |\n|---|---|---|\n| 자료구조 | 다양 | String만 |\n| 영속성 | RDB/AOF 지원 | 없음 |\n| 복제 | 지원 | 없음 |\n| Cluster | 지원 | 없음 |\n\n현대 시스템에서 Memcached보다 Redis를 선택하는 이유가 명확하다. 단, 단순 캐시만 필요하고 최대 성능이 필요할 때는 Memcached가 미세하게 빠를 수 있다."
+        },
+        {
+          "title": "CDN: 글로벌 콘텐츠 배포",
+          "content": "CDN(Content Delivery Network)은 전 세계에 분산된 엣지 서버(PoP, Point of Presence)에 정적 콘텐츠를 캐시하여, 사용자에게 가장 가까운 서버에서 콘텐츠를 제공하는 인프라다.\n\n**CDN이 해결하는 문제:**\n\n- 지리적 지연(Geographic Latency) — 한국 사용자가 미국 서버에 직접 요청하면 150ms+ 지연\n- Origin 서버 부하 — 전체 트래픽의 95%를 CDN이 처리하면 origin에는 5%만 도달\n- DDoS 흡수 — 엣지에서 악성 트래픽 필터링\n\n**CDN 동작 흐름:**\n\n1. 사용자가 `image.example.com/photo.jpg` 요청\n2. DNS가 사용자에게 가장 가까운 CDN PoP의 IP 반환\n3. CDN PoP에 캐시 있으면 즉시 반환 (Cache Hit)\n4. 없으면 Origin 서버에서 가져와 PoP에 저장 후 반환 (Cache Miss)\n\n**Cache-Control 헤더로 CDN 제어:**\n\n```\nCache-Control: public, max-age=86400    # 24시간 CDN/브라우저 캐시\nCache-Control: private, no-cache       # CDN 캐시 금지, 브라우저도 재검증\nCache-Control: no-store               # 어디에도 저장하지 않음\nSurrogate-Control: max-age=604800     # CDN만을 위한 7일 캐시\n```\n\n**Push vs Pull CDN:**\n\n- Push: 콘텐츠 업로드 시 미리 CDN에 배포. 대용량 파일, 변경이 드문 콘텐츠.\n- Pull: 사용자 요청 시 처음 한 번만 origin에서 가져와 캐시. 일반적인 웹사이트.\n\n**CDN 사용 사례:** 이미지, CSS/JS, 동영상 스트리밍(HLS segments), API 응답(일부), 정적 HTML"
+        },
+        {
+          "title": "Thundering Herd와 캐시 고급 패턴",
+          "content": "**Thundering Herd (Cache Stampede)** 는 캐시가 만료되는 순간 수천 개의 요청이 동시에 DB로 향하는 현상이다. 인기 콘텐츠의 캐시가 만료될 때 특히 심각하다.\n\n**해결 방법 1: Mutex Lock**\n\n첫 번째 Cache Miss 요청만 DB에서 읽고, 나머지는 락을 기다린다. Redis의 `SETNX` 또는 `SET ... NX` 명령으로 구현.\n\n**해결 방법 2: Probabilistic Early Expiration**\n\n캐시 만료 전에 확률적으로 미리 갱신. TTL이 줄어들수록 조기 갱신 확률이 증가하는 `XFetch` 알고리즘.\n\n**해결 방법 3: Background Refresh**\n\n캐시 만료 직전 백그라운드에서 미리 새로 고침. 사용자는 항상 캐시된 데이터를 받는다.\n\n**Hot Key 문제:**\n\nRedis에서 특정 key(예: 인기 아이템 재고)에 초당 수십만 요청이 몰리면 단일 Redis 노드가 병목이 된다.\n\n해결책:\n- **Local Cache**: 애플리케이션 서버의 인메모리 캐시(Caffeine, Guava Cache)를 1차 캐시로 사용\n- **Key Sharding**: `item:123:replica_0`, `item:123:replica_1` 처럼 여러 키로 분산\n- **Read-Through with replica**: Read Replica에서 읽기"
+        }
+      ],
+      "analogy": {
+        "title": "커피숍 선반으로 보는 캐시 계층",
+        "content": "커피숍에는 세 가지 저장 위치가 있다. 바리스타 손 옆 카운터(L1 캐시 = CPU Cache), 바 위 선반(L2 캐시 = Redis), 창고(DB).\n\n고객이 아메리카노를 주문하면 바리스타는 먼저 손 옆 카운터를 본다. 없으면 선반을 본다. 선반에도 없으면 창고까지 가서 가져온다. 창고를 왕복하는 시간(latency)이 가장 길다. 가장 자주 팔리는 원두는 항상 선반에 놓아두어야 한다.\n\nCache Invalidation 문제는 이렇다 — 창고에서 원두 등급이 바뀌었는데, 선반에는 여전히 이전 등급의 원두가 있다. 언제 선반을 교체할 것인가? 매일 자동 교체(TTL)? 창고 변경 알림 시 즉시 교체(Event-Driven)? CDN은 전국 각 도시에 분점을 두고 본점(origin)의 원두를 복사해두는 것이다. 서울 분점에서 부산 고객이 주문하면 본점까지 갈 필요가 없다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "Cache-Aside 패턴 + Thundering Herd 방지를 위한 Mutex Lock을 Redis로 구현한다. 실제 프로덕션에서 사용하는 패턴이다.",
+        "code": "import redis\nimport json\nimport time\nfrom typing import Optional, Callable, Any\n\nclass CacheAsideWithLock:\n    def __init__(self, redis_client: redis.Redis, default_ttl: int = 300):\n        self.redis = redis_client\n        self.default_ttl = default_ttl\n        self.lock_ttl = 5  # Lock expires in 5s to prevent deadlock\n\n    def get_or_load(\n        self,\n        key: str,\n        loader: Callable[[], Any],\n        ttl: Optional[int] = None\n    ) -> Any:\n        # 1. Try cache first\n        cached = self.redis.get(key)\n        if cached:\n            return json.loads(cached)\n\n        # 2. Cache miss — acquire distributed lock to prevent stampede\n        lock_key = f\"lock:{key}\"\n        acquired = self.redis.set(\n            lock_key, \"1\",\n            nx=True,           # Only set if Not eXists\n            ex=self.lock_ttl   # Expire lock to prevent deadlock\n        )\n\n        if not acquired:\n            # Another process is loading — wait and retry\n            for _ in range(10):\n                time.sleep(0.05)\n                cached = self.redis.get(key)\n                if cached:\n                    return json.loads(cached)\n            # Fallback: load directly (lock holder may have crashed)\n        \n        try:\n            # 3. Load from source (DB, external API, etc.)\n            value = loader()\n\n            # 4. Store in cache\n            self.redis.setex(\n                key,\n                ttl or self.default_ttl,\n                json.dumps(value)\n            )\n            return value\n        finally:\n            self.redis.delete(lock_key)  # Always release lock\n\n# Usage example\nr = redis.Redis(host='localhost', port=6379)\ncache = CacheAsideWithLock(r, default_ttl=600)\n\ndef fetch_user_from_db(user_id: int) -> dict:\n    # Simulated DB query (expensive)\n    return {\"id\": user_id, \"name\": \"Alice\", \"email\": \"alice@example.com\"}\n\nuser = cache.get_or_load(\n    key=\"user:1001\",\n    loader=lambda: fetch_user_from_db(1001),\n    ttl=300\n)\nprint(user)",
+        "walkthrough": "`SET ... NX`가 핵심이다. 여러 서버에서 동시에 같은 키가 만료되어도, 첫 번째 요청만 DB 쿼리를 하고 나머지는 0.05초씩 재시도한다. Lock이 죽으면(crash) 5초 후 자동 해제된다. 이 패턴 하나로 Cache Stampede를 방지하면서도 Stale Data를 최소화할 수 있다."
+      },
+      "industryEvaluation": {
+        "overview": "캐시 전략은 모든 시스템 설계 면접에서 등장한다. 단순히 Redis를 쓴다고 하는 게 아니라, 구체적 패턴과 invalidation 전략, TTL 설정의 근거를 설명해야 한다.",
+        "whatEngineersLookFor": [
+          "Cache hit rate를 높이는 전략과 실측 방법을 아는가",
+          "Cache Invalidation의 어려움과 구체적 해결 방법을 아는가",
+          "CDN을 언제 어떻게 활용할지 알고 있는가",
+          "캐시 레이어가 없을 때 DB 부하를 추정할 수 있는가"
+        ],
+        "redFlags": [
+          "\"Redis를 캐시로 쓰면 됩니다\"만 말하고 패턴을 설명 못 함",
+          "Cache Invalidation을 고려하지 않는 설계",
+          "모든 데이터를 캐시에 넣는 설계 (메모리 한계 무시)",
+          "TTL 없이 캐시 데이터를 영구 저장하는 설계"
+        ],
+        "interviewQuestions": [
+          "Twitter의 hot celebrity 계정 타임라인 캐시 전략을 설계해봐.",
+          "Cache hit rate가 갑자기 떨어졌다. 어떻게 디버깅하겠어?",
+          "Cache와 DB 사이의 데이터 불일치를 최소화하는 방법은?"
+        ],
+        "masteryVsFamiliar": "익숙한 수준은 Cache-Aside 패턴을 설명하고 Redis로 구현할 수 있는 것이다. 마스터 수준은 workload 특성에 따라 Write-Through, Write-Back, Write-Around 중 하나를 선택하고, Thundering Herd와 Hot Key 문제를 예측하여 미리 설계에 반영하는 것이다."
+      },
+      "keyTakeaways": [
+        {"title": "Cache-Aside가 기본", "content": "대부분의 read-heavy 서비스는 Cache-Aside + TTL의 조합으로 시작한다."},
+        {"title": "Invalidation이 진짜 문제", "content": "캐시를 쓰는 것보다 언제 지울지가 더 어렵다. TTL + Event-Driven Invalidation을 함께 써라."},
+        {"title": "Redis Sorted Set = 리더보드", "content": "O(log N)으로 순위를 계산하는 Redis Sorted Set은 리더보드, 타임라인 정렬의 정답이다."},
+        {"title": "CDN = Origin 부하 95% 절감", "content": "이미지, 동영상, 정적 파일은 반드시 CDN으로 서빙하라. Cache-Control 헤더로 세밀하게 제어한다."},
+        {"title": "Thundering Herd = Mutex Lock", "content": "인기 캐시가 만료될 때 동시 DB 쿼리 폭발 방지: Redis SETNX 락으로 첫 요청만 DB에 닿게 한다."},
+        {"title": "다층 캐시 (Multi-Level Cache)", "content": "Local Cache(인메모리) → Redis → DB 순으로 계층을 구성하면 Hot Key 문제도 해결된다."},
+        {"title": "Write-Back은 카운터에", "content": "좋아요 수, 조회수처럼 잦은 쓰기가 있고 약간의 유실을 허용하면 Write-Back이 DB 부하를 대폭 줄인다."},
+        {"title": "캐시는 DB 복사본이 아님", "content": "자주 접근하고 계산 비용이 비싼 데이터를 선택적으로 캐싱한다. 모든 데이터를 캐시에 넣으면 안 된다."}
+      ]
+    },
+    {
+      "number": 5,
+      "emoji": "📨",
+      "title": "Messaging & Event-Driven Architecture",
+      "titleKr": "메시지 큐와 이벤트 기반 아키텍처",
+      "tldr": "비동기 메시징으로 서비스를 분리하고, Kafka로 수백만 TPS의 이벤트를 처리하는 설계를 익힌다.",
+      "topics": ["메시지 큐의 역할과 장점", "Kafka 아키텍처 (Topic, Partition, Consumer Group)", "At-Least-Once vs Exactly-Once 전달 보장", "Event Sourcing과 CQRS", "Dead Letter Queue와 재처리"],
+      "learningGoals": [
+        "메시지 큐가 해결하는 문제(비동기, 버퍼링, 디커플링)를 설명할 수 있다",
+        "Kafka의 Topic, Partition, Offset, Consumer Group을 이해하고 설명할 수 있다",
+        "At-Least-Once와 Exactly-Once 전달 의미를 알고 각각의 구현 방법을 안다",
+        "Event Sourcing이 무엇이고 왜 쓰는지, 단점이 무엇인지 설명할 수 있다",
+        "Dead Letter Queue를 언제 왜 써야 하는지 안다"
+      ],
+      "overview": "현대 대규모 시스템의 핵심 패턴 중 하나는 **비동기 메시징**이다. 서비스들이 직접 HTTP로 통신하는 대신, 메시지 큐를 통해 간접적으로 통신한다. 이를 통해 **서비스 간의 결합도를 낮추고(Decoupling)**, **트래픽 스파이크를 흡수(Buffering)**하며, **독립적인 스케일링**을 가능하게 한다.\n\n메시지 큐를 쓰지 않으면 어떻게 될까? 사용자가 Netflix에서 업로드한 동영상을 처리할 때, 트랜스코딩 서비스가 잠깐 느려지면 업로드 API 서버까지 blocking된다. 하지만 Kafka를 사이에 두면, 업로드 API는 이벤트를 Kafka에 쓰고 즉시 응답한다. 트랜스코딩 서비스는 자신의 속도로 처리한다.\n\nApache Kafka는 LinkedIn에서 2011년 만들어진 이후 현대 데이터 인프라의 중심이 되었다. Uber는 초당 수백만 건의 이벤트를 Kafka로 처리하고, Airbnb, Netflix, Twitter도 핵심 인프라로 사용한다.",
+      "sections": [
+        {
+          "title": "메시지 큐의 역할: 3가지 핵심 가치",
+          "content": "메시지 큐가 해결하는 핵심 문제는 세 가지다.\n\n**1. 비동기 처리 (Async Processing)**\n\n이메일 발송, 이미지 리사이징, 동영상 트랜스코딩처럼 시간이 걸리는 작업을 동기적으로 처리하면 사용자가 기다려야 한다. 메시지 큐에 넣고 즉시 응답하면, 백그라운드 워커가 처리한다. 사용자 경험 향상 + 서버 자원 효율화.\n\n**2. 트래픽 버퍼링 (Traffic Buffering)**\n\n이벤트 트래픽: 평소 1,000 TPS → 이벤트 기간 10,000 TPS. 메시지 큐 없이 DB에 직접 쓰면 DB가 죽는다. 큐를 버퍼로 쓰면 큐는 10,000 TPS를 받아 저장하고, 소비자는 DB 처리 속도에 맞춰 1,000 TPS로 소비한다.\n\n**3. 서비스 디커플링 (Service Decoupling)**\n\n주문 서비스 → (직접 호출) → 결제, 재고, 알림, 포인트 서비스. 하나라도 느리거나 다운되면 주문이 실패한다. 주문 서비스가 \"OrderPlaced\" 이벤트를 메시지 큐에 발행하면, 각 서비스가 독립적으로 구독하여 처리한다. 각 서비스는 서로의 존재를 모른다.\n\n**RabbitMQ vs Kafka:**\n\n| 항목 | RabbitMQ | Kafka |\n|---|---|---|\n| 패러다임 | Message Queue (Push) | Distributed Log (Pull) |\n| 메시지 보존 | 소비 후 삭제 | 설정 기간 보존 |\n| 처리량 | 수만 TPS | 수백만 TPS |\n| 재처리 | 어려움 | Consumer Offset으로 쉬움 |\n| 사용 사례 | Task queue, RPC | Event streaming, 로그, CDC |"
+        },
+        {
+          "title": "Kafka 아키텍처 심층 분석",
+          "content": "Kafka는 분산 commit log다. 데이터는 **Topic** 안에 저장되고, Topic은 여러 **Partition**으로 나뉜다.\n\n**핵심 개념:**\n\n**Topic** — 메시지의 카테고리. 예: `user-clicks`, `order-events`, `payment-processed`.\n\n**Partition** — Topic의 분산 단위. 각 Partition은 순서가 보장된 immutable log. Partition이 많을수록 더 많은 Consumer가 병렬로 처리 가능.\n\n**Offset** — Partition 내 메시지의 순서 번호. Consumer는 자신이 어디까지 읽었는지(offset)를 관리한다. 이 덕분에 재처리(replay)가 가능하다.\n\n**Consumer Group** — 같은 Topic을 처리하는 Consumer 집합. 하나의 Partition은 Consumer Group 내 하나의 Consumer에게만 할당된다. 따라서 Consumer Group 내 Consumer 수는 Partition 수를 초과해도 의미없다.\n\n**Producer → Topic(Partition 1, 2, 3) → Consumer Group A (Consumer 1, 2, 3) + Consumer Group B (Consumer 1, 2)**\n\nConsumer Group A는 주문 처리, Consumer Group B는 분석 데이터 수집. 같은 이벤트를 두 목적으로 독립적으로 소비할 수 있다.\n\n**메시지 라우팅:**\n\n```\npartition = hash(message_key) % num_partitions\n```\n\n같은 `user_id`를 key로 쓰면 같은 사용자의 이벤트가 항상 같은 Partition에 들어간다 → 사용자 이벤트의 순서 보장."
+        },
+        {
+          "title": "전달 보장 의미론: At-Least-Once vs Exactly-Once",
+          "content": "메시지 전달 보장 수준은 세 가지다.\n\n**At-Most-Once** — 메시지를 한 번만 전송, 유실 가능. 가장 빠르고 간단. 로그처럼 일부 유실이 괜찮은 경우.\n\n**At-Least-Once** — 메시지가 반드시 전달됨, 중복 가능. Consumer가 처리 후 offset을 커밋하기 전에 crash하면 같은 메시지를 다시 받는다. 이를 처리하려면 Consumer가 **멱등성(Idempotent)** 을 가져야 한다.\n\n**Exactly-Once** — 메시지가 정확히 한 번 처리됨. 이론적으로 가장 이상적이지만 구현이 복잡하고 성능 overhead가 있다. Kafka는 Idempotent Producer + Transactional API로 exactly-once를 지원한다.\n\n**멱등성(Idempotency) 구현:**\n\n같은 메시지를 여러 번 처리해도 결과가 동일해야 한다.\n\n- DB UPSERT (INSERT ... ON CONFLICT UPDATE) — 같은 `event_id`로 여러 번 와도 한 번만 처리됨\n- 고유 이벤트 ID를 별도 테이블에 기록 후 중복 확인\n\n실제로 대부분의 시스템은 At-Least-Once + Idempotent Consumer로 구현한다. Exactly-Once는 Kafka의 financial transaction 같은 극히 중요한 경우에만 쓴다."
+        },
+        {
+          "title": "Event Sourcing과 CQRS",
+          "content": "**Event Sourcing**은 시스템 상태를 직접 저장하는 대신, **상태를 변경하는 이벤트의 시퀀스를 저장**하는 패턴이다.\n\n전통적 방식: `users` 테이블에 현재 잔액 저장 → UPDATE로 덮어쓰기 → 과거 이력 없음.\n\nEvent Sourcing 방식: `events` 테이블에 `{user_id: 1, type: 'Deposited', amount: 100, timestamp: ...}` 저장 → 모든 이벤트 재생(replay)으로 현재 잔액 계산.\n\n**장점:**\n- 완전한 감사 로그(Audit Log) — 언제 누가 무엇을 했는지 완전히 재현 가능\n- 특정 시점의 상태 재현 (Time Travel) — \"3일 전 오후 2시의 잔액은?\" 가능\n- 이벤트를 새로운 Consumer가 처리하여 새 기능 구현 가능\n\n**단점:**\n- 현재 상태 조회 시 이벤트 재생 비용 → Snapshot으로 완화\n- 이벤트 스키마 변경이 어려움\n- 시스템 복잡도 증가\n\n**CQRS (Command Query Responsibility Segregation)** 는 Event Sourcing의 단점인 \"현재 상태 조회 비용\"을 해결한다. Write 모델(이벤트 저장)과 Read 모델(조회 최적화 뷰)을 분리한다. 이벤트가 발행되면 읽기 모델(Read Model)이 이벤트를 소비하여 조회에 최적화된 뷰를 업데이트한다."
+        },
+        {
+          "title": "Dead Letter Queue와 실패 처리",
+          "content": "메시지 처리는 실패할 수 있다. DB가 일시적으로 느리거나, 외부 API가 에러를 반환하거나, 메시지 형식이 잘못됐거나. 이런 실패를 어떻게 처리할까?\n\n**Retry with Exponential Backoff**\n\n실패 시 즉시 재시도하면 이미 과부하 상태인 시스템에 더 부하를 준다. 지수 백오프로 간격을 늘리며 재시도:\n- 1회: 1초 후\n- 2회: 2초 후\n- 3회: 4초 후\n- N회: $2^N$초 후 (최대 한도 있음)\n\n**Dead Letter Queue (DLQ)**\n\n최대 재시도 횟수를 초과한 메시지를 별도 큐(DLQ)로 이동. DLQ의 메시지는:\n- 수동으로 검토 후 재처리\n- 알림 발송으로 즉각적인 대응\n- 분석하여 버그 수정 후 일괄 재처리\n\nDLQ 없이 실패 메시지를 그냥 버리면, 중요한 데이터가 조용히 사라진다. 결제 실패, 주문 처리 실패를 DLQ에 모아두고 나중에 재처리하는 것이 실제 프로덕션 패턴이다.\n\n**Circuit Breaker와의 결합:**\n\nDownstream 서비스가 계속 실패하면 Circuit Breaker가 열려서 (open state) 메시지 처리 시도 자체를 일시 중단한다. 서비스 복구 후 Circuit Breaker가 닫히면 DLQ의 메시지를 재처리한다."
+        }
+      ],
+      "analogy": {
+        "title": "우체국 시스템으로 보는 메시지 큐",
+        "content": "메시지 큐는 **우체국**과 같다. 편지를 쓰는 사람(Producer)은 우체국(Message Queue)에 편지를 맡기고 자신의 일을 계속한다. 받는 사람(Consumer)이 지금 자리에 없어도 편지는 우체국에 보관된다. 받는 사람은 자신이 편리한 시간에 편지를 찾아간다.\n\nKafka는 특별한 우체국이다. 편지를 배달해도 **원본을 보관한다(Retention)**. 다른 사람(Consumer Group)도 같은 편지를 읽을 수 있다. \"2주 전 편지부터 다시 읽어줘\"도 가능하다. 일반 우체국(RabbitMQ)은 배달 완료 즉시 파기한다.\n\nDead Letter Queue는 주소 불명으로 반송된 편지들을 모아두는 별도 보관함이다. 그냥 버리지 않고 모아뒀다가 나중에 직원이 확인하여 재처리한다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "Kafka Producer/Consumer 패턴과 At-Least-Once 보장, 멱등성 처리를 kafka-python 라이브러리로 구현한다. 실제 프로덕션 패턴에 가까운 코드다.",
+        "code": "from kafka import KafkaProducer, KafkaConsumer\nfrom kafka.errors import KafkaError\nimport json\nimport logging\n\n# --- Producer with retry and idempotent config ---\nproducer = KafkaProducer(\n    bootstrap_servers=['kafka:9092'],\n    value_serializer=lambda v: json.dumps(v).encode('utf-8'),\n    acks='all',           # Wait for all in-sync replicas\n    retries=3,            # Retry on transient errors\n    enable_idempotence=True,  # Exactly-once producer semantics\n    max_in_flight_requests_per_connection=5\n)\n\ndef publish_order_event(order_id: str, user_id: str, amount: float):\n    event = {\n        \"event_id\": f\"order-{order_id}\",  # Unique ID for idempotency\n        \"type\": \"OrderPlaced\",\n        \"order_id\": order_id,\n        \"user_id\": user_id,\n        \"amount\": amount,\n    }\n    future = producer.send(\n        topic='order-events',\n        key=user_id.encode(),  # Same user → same partition → ordered\n        value=event\n    )\n    try:\n        record_metadata = future.get(timeout=10)\n        logging.info(f\"Sent to {record_metadata.topic}:{record_metadata.partition}\")\n    except KafkaError as e:\n        logging.error(f\"Failed to send event: {e}\")\n        raise\n\n# --- Consumer with manual offset commit (At-Least-Once) ---\nconsumer = KafkaConsumer(\n    'order-events',\n    bootstrap_servers=['kafka:9092'],\n    group_id='payment-service',\n    enable_auto_commit=False,  # Manual commit for reliability\n    auto_offset_reset='earliest',\n    value_deserializer=lambda x: json.loads(x.decode('utf-8'))\n)\n\nprocessed_event_ids = set()  # Idempotency cache (use Redis in production)\n\nfor message in consumer:\n    event = message.value\n    event_id = event.get(\"event_id\")\n\n    # Idempotency check — skip if already processed\n    if event_id in processed_event_ids:\n        consumer.commit()  # Still commit to advance offset\n        continue\n\n    try:\n        # Process the event (e.g., charge payment)\n        process_payment(event)\n        processed_event_ids.add(event_id)\n        consumer.commit()  # Only commit AFTER successful processing\n    except Exception as e:\n        logging.error(f\"Failed to process {event_id}: {e}\")\n        # Do NOT commit — message will be redelivered",
+        "walkthrough": "핵심은 `enable_auto_commit=False`와 처리 완료 후 수동 커밋이다. 처리 전에 commit하면 실패 시 메시지가 유실된다(At-Most-Once). 처리 후 commit 전에 crash하면 같은 메시지를 다시 받는다(At-Least-Once). 멱등성 체크(`processed_event_ids`)로 중복을 처리한다. `key=user_id.encode()`로 같은 사용자의 이벤트가 항상 같은 Partition에 들어가 순서가 보장된다."
+      },
+      "industryEvaluation": {
+        "overview": "메시지 큐는 대규모 시스템 설계의 핵심 컴포넌트다. Kafka를 쓰는 이유, Partition 설계 전략, Consumer Group 구성, 실패 처리를 명확히 설명할 수 있어야 한다.",
+        "whatEngineersLookFor": [
+          "메시지 큐를 도입하는 시점과 이유를 명확히 설명하는가",
+          "Kafka Partition 수 결정 기준(Consumer 수 고려)을 아는가",
+          "At-Least-Once와 Exactly-Once의 트레이드오프를 설명할 수 있는가",
+          "Consumer lag 모니터링과 스케일링 전략을 아는가"
+        ],
+        "redFlags": [
+          "모든 서비스 간 통신에 메시지 큐를 넣으려는 over-engineering",
+          "Partition 수를 고려하지 않는 설계 (Consumer가 Partition보다 많으면 유휴 Consumer 발생)",
+          "메시지 처리 실패 시나리오를 다루지 않는 설계",
+          "\"Kafka를 쓰면 됩니다\"만 말하고 왜 Kafka인지 설명 못 함"
+        ],
+        "interviewQuestions": [
+          "결제 시스템에서 Kafka를 쓴다면 어떤 Topic과 Consumer Group 구성을 가져가겠어?",
+          "Consumer가 메시지를 두 번 처리하는 상황이 발생했다. 어떻게 해결하겠어?",
+          "Kafka에서 순서가 보장되는 단위는 무엇인가? Partition 설계를 어떻게 해야 하나?"
+        ],
+        "masteryVsFamiliar": "익숙한 수준은 Kafka를 써봤고 Topic/Consumer Group의 개념을 설명하는 것이다. 마스터 수준은 Partition 수 계산 (목표 처리량 / Consumer 1개 처리량), Exactly-Once 구현 방법, Consumer lag의 의미와 대응 전략, Kafka Connect/Streams 생태계까지 알고 설계에 활용하는 것이다."
+      },
+      "keyTakeaways": [
+        {"title": "큐의 3가지 가치", "content": "비동기 처리, 트래픽 버퍼링, 서비스 디커플링. 이 중 하나라도 필요하면 메시지 큐를 고려한다."},
+        {"title": "Kafka = 분산 로그", "content": "Kafka는 메시지를 소비 후에도 보존한다. 재처리, 여러 Consumer Group의 독립적 소비, 시간 여행 조회가 가능하다."},
+        {"title": "Partition이 병렬성 단위", "content": "Kafka의 병렬 처리 단위는 Partition이다. Consumer 수를 늘리려면 Partition 수를 먼저 늘려야 한다."},
+        {"title": "At-Least-Once + 멱등성", "content": "대부분의 시스템은 At-Least-Once + Idempotent Consumer로 구현한다. 처리 완료 후 offset commit이 핵심."},
+        {"title": "DLQ는 필수", "content": "실패한 메시지를 버리지 않는다. DLQ에 모아 알림을 받고 수동 검토 또는 재처리한다."},
+        {"title": "같은 Key → 같은 Partition", "content": "순서가 중요한 이벤트(같은 사용자의 주문 이벤트)는 user_id를 Kafka key로 써서 순서를 보장한다."},
+        {"title": "Event Sourcing = 이벤트 히스토리", "content": "상태가 아닌 이벤트를 저장하면 완전한 감사 로그와 시간 여행 조회가 가능하다. 단, 복잡도가 올라간다."},
+        {"title": "Consumer Lag을 모니터링", "content": "Consumer가 메시지를 소비하는 속도가 Producer보다 느리면 Consumer Lag가 증가한다. 이것이 알람 지표가 된다."}
+      ]
+    },
+    {
+      "number": 6,
+      "emoji": "🔧",
+      "title": "Scalability & Reliability Patterns",
+      "titleKr": "확장성과 신뢰성 패턴",
+      "tldr": "로드밸런서, 레이트 리미터, 서킷 브레이커 등 프로덕션 시스템을 안정적으로 운영하는 핵심 패턴들을 배운다.",
+      "topics": ["Load Balancing 알고리즘", "Rate Limiting (Token Bucket, Leaky Bucket)", "Circuit Breaker 패턴", "Service Discovery와 API Gateway", "Horizontal vs Vertical Scaling"],
+      "learningGoals": [
+        "Load Balancer의 Layer 4 vs Layer 7 차이와 알고리즘(Round Robin, Least Connections, Consistent Hashing)을 설명할 수 있다",
+        "Token Bucket과 Leaky Bucket 레이트 리미터를 구현하고 차이를 설명할 수 있다",
+        "Circuit Breaker의 3가지 상태(Closed, Open, Half-Open)와 동작을 설명할 수 있다",
+        "Service Mesh와 API Gateway의 역할 차이를 설명할 수 있다",
+        "Auto Scaling과 예비 용량(Capacity Planning) 전략을 설명할 수 있다"
+      ],
+      "overview": "아무리 잘 설계된 시스템도 프로덕션에서는 예상치 못한 일이 일어난다. 트래픽이 갑자기 10배 폭증하거나, 의존 서비스 중 하나가 느려지거나, 악의적 사용자가 API를 남용하거나. 이 챕터에서는 이런 상황에서 시스템이 버텨내는 **신뢰성 패턴(Reliability Patterns)**을 다룬다.\n\n확장성(Scalability)은 트래픽 증가에 따라 성능을 선형적으로 유지하는 능력이고, 신뢰성(Reliability)은 일부 컴포넌트가 실패해도 시스템이 올바르게 동작하는 능력이다. 두 가지 모두 빅테크 시스템에서 non-negotiable이다.\n\n이 챕터의 패턴들은 독립적으로 쓰이기도 하지만, 실제로는 **여러 패턴을 계층적으로 조합**하여 사용한다. API Gateway에서 Rate Limiting, 서비스 간 통신에 Circuit Breaker, 서버 풀에 Load Balancer, 자동화된 Scale-Out을 모두 함께 쓰는 것이 프로덕션 아키텍처다.",
+      "sections": [
+        {
+          "title": "Load Balancing: 트래픽 분산의 기술",
+          "content": "Load Balancer는 들어오는 트래픽을 여러 서버에 분산하여 단일 서버가 과부하되지 않도록 하는 컴포넌트다.\n\n**Layer 4 vs Layer 7 Load Balancer:**\n\n- **L4 (Transport Layer)** — IP/Port 기준으로 라우팅. 패킷 내용을 보지 않음. 매우 빠름. AWS NLB (Network Load Balancer).\n- **L7 (Application Layer)** — HTTP 헤더, URL, Cookie 기준으로 라우팅. 내용 기반 라우팅 가능. 약간 느리지만 훨씬 유연. AWS ALB (Application Load Balancer).\n\n**로드 밸런싱 알고리즘:**\n\n| 알고리즘 | 동작 | 적합한 경우 |\n|---|---|---|\n| Round Robin | 순서대로 순환 | 요청 처리 시간이 균일할 때 |\n| Weighted Round Robin | 가중치 비례 | 서버 사양이 다를 때 |\n| Least Connections | 현재 연결 수 가장 적은 서버 | 처리 시간 편차가 클 때 |\n| IP Hash | 같은 IP → 항상 같은 서버 | Session Affinity(Sticky Session) 필요 시 |\n| Random | 무작위 선택 | 부하가 균일하고 단순성 원할 때 |\n\n**Health Check:**\n\nLoad Balancer는 주기적으로 각 서버에 health check 요청을 보내 정상 서버만 트래픽을 받도록 한다. HTTP `/health` 엔드포인트에 200 응답이 오는 서버만 풀에 유지."
+        },
+        {
+          "title": "Rate Limiting: 시스템 보호와 공정한 사용",
+          "content": "Rate Limiting은 사용자 또는 클라이언트가 일정 시간 내에 보낼 수 있는 요청 수를 제한하는 것이다. 목적은 세 가지다: DDoS 방어, API 남용 방지, 공정한 자원 분배.\n\n**Token Bucket 알고리즘:**\n\n버킷에 토큰이 일정 속도로 채워진다. 요청 시 토큰을 소비. 버킷이 비면 요청 거절.\n\n- 토큰 보충 속도 = 허용 QPS (예: 초당 10개)\n- 버킷 용량 = 버스트 허용량 (예: 최대 20개)\n- 특징: 버스트 트래픽 허용. 평균 속도를 제한.\n\n**Leaky Bucket 알고리즘:**\n\n요청이 큐에 쌓이고 일정 속도로 처리된다. 큐가 가득 차면 새 요청 거절.\n\n- 특징: 정확히 일정한 처리 속도 보장. 버스트 없음.\n- 사용: 처리 속도 평탄화가 중요한 경우 (예: 네트워크 패킷 처리)\n\n**Sliding Window Log:**\n\n요청 타임스탬프를 log에 저장, 현재 시간 기준 윈도우 내 요청 수 계산. 가장 정확하지만 메모리 사용량 많음.\n\n**분산 Rate Limiting:**\n\n여러 서버에서 같은 사용자의 요청을 제한하려면 중앙 저장소 필요. Redis의 `INCR` + `EXPIRE` 또는 Sliding Window Counter로 구현. Redis는 단일 스레드이므로 원자적 연산이 가능하다.\n\n**Rate Limit Response:**\n- HTTP 429 Too Many Requests\n- `Retry-After: 30` 헤더로 언제 재시도할지 알림\n- `X-RateLimit-Limit: 100`, `X-RateLimit-Remaining: 0` 헤더"
+        },
+        {
+          "title": "Circuit Breaker: 장애 전파 방지",
+          "content": "서비스 A가 서비스 B를 호출하는 상황에서 B가 느려지면, A의 요청이 timeout까지 대기하면서 A의 모든 쓰레드가 B를 기다리는 데 소비된다. 이것이 **Cascading Failure (연쇄 장애)**다.\n\nCircuit Breaker는 전기 회로 차단기처럼, 문제가 생긴 downstream 서비스로의 호출을 빠르게 차단(fast-fail)하여 연쇄 장애를 방지한다.\n\n**Circuit Breaker의 3가지 상태:**\n\n**Closed (정상)** — 모든 요청을 통과시킴. 실패율(error rate)을 추적. 실패율이 임계값(예: 50%)을 초과하면 Open으로 전환.\n\n**Open (차단)** — 모든 요청을 즉시 실패로 반환 (fast-fail). downstream에 요청 없음. 지정 시간(예: 30초) 후 Half-Open으로 전환.\n\n**Half-Open (탐색)** — 소수 요청만 통과. 성공하면 Closed로, 실패하면 다시 Open으로 전환.\n\n**Hystrix / Resilience4j** — Netflix가 만든 Circuit Breaker 구현체 (Hystrix는 deprecated, Resilience4j가 후계자). Spring Boot 생태계에서 널리 사용.\n\n**Circuit Breaker + Fallback:**\n\nOpen 상태에서 fast-fail 할 때 fallback을 제공할 수 있다. 추천 서비스가 다운됐을 때 캐시된 추천 목록을 반환하거나, 기본 추천 목록을 보여주는 것이 fallback의 예다."
+        },
+        {
+          "title": "API Gateway와 Service Mesh",
+          "content": "마이크로서비스 아키텍처에서 클라이언트가 각 서비스에 직접 접근하면 문제가 생긴다: 인증을 어디서 처리할까? 서비스가 수십 개면 클라이언트는 수십 개의 엔드포인트를 알아야 한다. Rate Limiting을 각 서비스에서 따로 구현해야 하나?\n\n**API Gateway**는 클라이언트의 모든 요청이 통과하는 단일 진입점이다.\n\n역할:\n- 인증/인가 (JWT 검증, API Key 확인)\n- Rate Limiting\n- SSL Termination\n- Request Routing — `/api/users` → User Service, `/api/orders` → Order Service\n- Response Aggregation — 여러 서비스 응답을 합쳐 클라이언트에 반환\n- Request/Response 변환\n\n**AWS API Gateway, Kong, Nginx, Envoy**가 대표적인 구현체다.\n\n**Service Mesh (예: Istio, Linkerd)**\n\nAPI Gateway가 North-South 트래픽(외부 → 내부)을 담당한다면, Service Mesh는 East-West 트래픽(서비스 → 서비스)을 담당한다. 각 서비스 옆에 **sidecar proxy (예: Envoy)**를 붙여 서비스 간 모든 통신을 중재한다.\n\n역할:\n- mTLS로 서비스 간 암호화\n- Circuit Breaker, Retry, Timeout 정책 적용\n- 트래픽 분할 (Canary Deploy — 1%만 새 버전으로)\n- 분산 추적(Distributed Tracing) — 요청이 어떤 서비스를 거쳤는지 추적\n\nService Mesh는 강력하지만 운영 복잡도가 크다. 수십 개 이상의 서비스가 있을 때 유효하다."
+        },
+        {
+          "title": "Auto Scaling과 Capacity Planning",
+          "content": "**Horizontal Scaling (Scale-Out)** 은 서버를 더 추가하는 것, **Vertical Scaling (Scale-Up)** 은 서버를 더 강력하게 업그레이드하는 것이다.\n\n| 항목 | Horizontal | Vertical |\n|---|---|---|\n| 방법 | 서버 추가 | CPU/RAM 업그레이드 |\n| 한계 | 이론적 무제한 | 단일 서버 최대 사양 |\n| 비용 | 점진적 증가 | 비선형 증가 (고급 서버 매우 비쌈) |\n| 중단 | 무중단 가능 | 재시작 필요 |\n| 복잡도 | 분산 시스템 복잡도 | 단순 |\n\n빅테크는 Horizontal Scaling이 기본이다. 단, DB는 Vertical Scaling도 병행한다.\n\n**Auto Scaling:**\n\n- **Reactive Scaling** — CPU > 70% 지속 5분 → 인스턴스 추가. AWS Auto Scaling Group의 기본 방식.\n- **Predictive Scaling** — ML로 트래픽 패턴을 학습하여 선제적으로 스케일. 점심 시간 트래픽은 항상 증가하므로 11:30부터 미리 스케일아웃.\n\n**Capacity Planning:**\n\n실제 프로덕션에서는 트래픽 증가 예측에 기반하여 인프라를 미리 준비한다. 핵심 지표:\n\n- p99 Latency — 99번째 백분위 요청 처리 시간. 평균보다 tail latency가 중요하다.\n- Error Rate — 5xx 비율 0.1% 이하 유지\n- CPU Utilization — 정상 운영 시 70% 이하. 70% 이상에서 스케일아웃.\n- Queue Depth — 메시지 큐의 Consumer Lag이 증가하면 Consumer 수 늘리기"
+        }
+      ],
+      "analogy": {
+        "title": "고속도로 관리 시스템으로 보는 확장성 패턴",
+        "content": "대규모 시스템의 확장성 패턴은 **고속도로 관리**와 같다. Load Balancer는 톨게이트 직전의 교통 안내 표지판이다. 1번 차선이 막히면 2, 3번으로 유도한다. Rate Limiting은 교통량 통제 시스템이다. 차량이 너무 많으면 진입을 제한한다. 그렇지 않으면 모두가 멈춘다.\n\nCircuit Breaker는 사고 발생 구간의 우회도로 안내다. 특정 구간(downstream 서비스)이 막히면 즉시 우회로를 안내하고, 구간이 뚫리면 다시 원래 길로 돌아온다. 무작정 기다리다 전체 교통이 마비되는 것을 방지한다.\n\nAuto Scaling은 러시아워 때 임시 차선을 추가하는 것이다. 트래픽이 늘면 차선을 추가(인스턴스 추가)하고, 심야에는 줄인다(인스턴스 종료). 비용을 절약하면서도 피크 타임에 성능을 유지한다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "Redis를 이용한 Sliding Window Rate Limiter를 구현한다. 이것은 Twitter, GitHub, Stripe 등이 실제로 사용하는 방식에 가까운 구현이다.",
+        "code": "import redis\nimport time\nfrom typing import Tuple\n\nclass SlidingWindowRateLimiter:\n    \"\"\"\n    Sliding Window Counter using Redis sorted set.\n    More accurate than fixed window, less memory than log-based.\n    \"\"\"\n    def __init__(self, redis_client: redis.Redis, limit: int, window_sec: int):\n        self.r = redis_client\n        self.limit = limit        # Max requests\n        self.window = window_sec  # Window size in seconds\n\n    def is_allowed(self, identifier: str) -> Tuple[bool, int]:\n        now = time.time()\n        window_start = now - self.window\n        key = f\"rate_limit:{identifier}\"\n\n        pipe = self.r.pipeline()\n        # Remove entries older than the window\n        pipe.zremrangebyscore(key, '-inf', window_start)\n        # Add current request with timestamp as score\n        pipe.zadd(key, {str(now): now})\n        # Count requests in the current window\n        pipe.zcard(key)\n        # Set key expiry to avoid memory leak\n        pipe.expire(key, self.window + 1)\n        _, _, count, _ = pipe.execute()\n\n        remaining = max(0, self.limit - count)\n        allowed = count <= self.limit\n        return allowed, remaining\n\n# Token Bucket implementation for comparison\nclass TokenBucketRateLimiter:\n    def __init__(self, redis_client: redis.Redis, capacity: int, refill_rate: float):\n        self.r = redis_client\n        self.capacity = capacity      # Max burst size\n        self.refill_rate = refill_rate  # Tokens per second\n\n    def is_allowed(self, identifier: str) -> bool:\n        key = f\"token_bucket:{identifier}\"\n        now = time.time()\n\n        data = self.r.hgetall(key)\n        if data:\n            tokens = float(data[b'tokens'])\n            last_refill = float(data[b'last_refill'])\n            # Refill tokens based on elapsed time\n            elapsed = now - last_refill\n            tokens = min(self.capacity, tokens + elapsed * self.refill_rate)\n        else:\n            tokens = self.capacity  # First request: full bucket\n\n        if tokens >= 1:\n            self.r.hset(key, mapping={'tokens': tokens - 1, 'last_refill': now})\n            self.r.expire(key, int(self.capacity / self.refill_rate) + 1)\n            return True\n        return False\n\n# Usage\nr = redis.Redis()\nlimiter = SlidingWindowRateLimiter(r, limit=100, window_sec=60)\n\nallowed, remaining = limiter.is_allowed(\"user:1001\")\nif not allowed:\n    print(\"429 Too Many Requests\")\nelse:\n    print(f\"Request allowed. {remaining} remaining in this window.\")",
+        "walkthrough": "Sliding Window Counter는 Redis Sorted Set을 사용한다. score가 timestamp이므로 window_start보다 오래된 요청을 `zremrangebyscore`로 자동 정리한다. Pipeline을 써서 4개 명령을 원자적으로 실행하여 race condition을 방지한다. 이 구현은 Fixed Window (정각에 limit이 초기화되는 문제)의 단점 없이 더 공정한 rate limiting을 제공한다."
+      },
+      "industryEvaluation": {
+        "overview": "확장성과 신뢰성 패턴은 시스템 설계 면접 Deep Dive 구간에서 자주 등장한다. 특히 Rate Limiting, Circuit Breaker, Load Balancing은 어떤 시스템 설계에서도 논의해야 한다.",
+        "whatEngineersLookFor": [
+          "단일 장애점(SPOF)을 식별하고 제거하는 설계를 하는가",
+          "Rate Limiting 구현 방법과 분산 환경에서의 한계를 아는가",
+          "Circuit Breaker가 없을 때 어떤 장애가 발생하는지 설명할 수 있는가",
+          "Auto Scaling의 한계와 워밍 시간 문제를 인지하는가"
+        ],
+        "redFlags": [
+          "Load Balancer가 없는 단일 서버 설계",
+          "Rate Limiting 없는 Public API 설계",
+          "Circuit Breaker 없는 마이크로서비스 간 동기 호출",
+          "\"서버를 더 늘리면 됩니다\"만 말하고 구체적 스케일링 전략 없음"
+        ],
+        "interviewQuestions": [
+          "Twitter API에 Rate Limiting을 구현한다면 어떤 알고리즘과 저장소를 쓰겠어?",
+          "Circuit Breaker의 Half-Open 상태가 왜 필요한지 설명해봐.",
+          "L4 Load Balancer와 L7 Load Balancer의 차이와 각각 언제 쓰는지 말해봐."
+        ],
+        "masteryVsFamiliar": "익숙한 수준은 Load Balancer, Circuit Breaker, Rate Limiter의 개념을 설명하는 것이다. 마스터 수준은 이 패턴들을 계층적으로 조합하는 전략을 알고 (API Gateway → Rate Limit → Service Mesh Circuit Breaker), 각 계층의 트레이드오프를 설명하며 실제 장애 시나리오에서 어떻게 동작하는지 추적할 수 있는 것이다."
+      },
+      "keyTakeaways": [
+        {"title": "L7 LB가 더 유연", "content": "URL, 헤더 기반 라우팅이 필요하면 L7 LB. 단순 TCP 로드 분산이면 L4 LB가 더 빠르다."},
+        {"title": "Token Bucket = 버스트 허용", "content": "Token Bucket은 평균 속도를 제한하면서 버스트를 허용한다. API Rate Limiting의 표준 방식."},
+        {"title": "Circuit Breaker = Fast Fail", "content": "Downstream이 느릴 때 빠르게 실패하여 cascading failure를 방지한다. Fallback을 함께 설계하라."},
+        {"title": "API Gateway = 외부 진입점", "content": "인증, Rate Limiting, SSL, 라우팅을 API Gateway에서 일괄 처리한다. 각 서비스가 중복 구현하지 않아도 된다."},
+        {"title": "Service Mesh = 내부 통신", "content": "서비스 간 통신의 신뢰성, 보안, 관찰성은 Service Mesh sidecar가 담당한다. 애플리케이션 코드 수정 불필요."},
+        {"title": "p99가 평균보다 중요", "content": "사용자 경험은 평균이 아닌 tail latency(p99, p999)에 좌우된다. 모니터링 지표에 p99를 포함하라."},
+        {"title": "Scale Out이 기본", "content": "수평 확장을 염두에 두고 설계하라. 상태(state)를 서버에 두지 않는 stateless 서버가 scale-out의 전제 조건이다."},
+        {"title": "Health Check는 필수", "content": "Load Balancer의 health check로 죽은 서버를 자동으로 제거한다. /health 엔드포인트를 항상 구현하라."}
+      ]
+    },
+    {
+      "number": 7,
+      "emoji": "🌐",
+      "title": "Classic System Design Problems",
+      "titleKr": "실전 서비스 설계 — 4대 클래식 문제",
+      "tldr": "URL Shortener, Twitter Feed, YouTube, Uber — 빅테크 면접에서 가장 자주 나오는 4가지 문제를 완전 분해한다.",
+      "topics": ["URL Shortener (해시 충돌, Base62)", "Twitter 뉴스피드 (Fan-out on Write/Read)", "YouTube 동영상 스트리밍 (HLS, CDN)", "Uber 실시간 위치 추적 (Geospatial Indexing, WebSocket)"],
+      "learningGoals": [
+        "URL Shortener의 핵심 설계 결정 (해시 함수, DB 선택, 캐시 전략)을 설명할 수 있다",
+        "Twitter 뉴스피드의 Fan-out on Write vs Read 트레이드오프를 설명할 수 있다",
+        "YouTube 동영상 스트리밍의 전체 파이프라인(업로드 → 트랜스코딩 → 배포 → 재생)을 설계할 수 있다",
+        "Uber의 실시간 위치 추적과 드라이버-승객 매칭 알고리즘을 설명할 수 있다",
+        "각 문제에서 요구사항 추정과 병목 지점 심화 설계를 연결하여 설명할 수 있다"
+      ],
+      "overview": "앞의 6개 챕터에서 배운 이론과 컴포넌트를 실전 문제에 적용한다. URL Shortener는 비교적 단순하지만 해시 충돌, 캐시, 리다이렉트 성능 최적화 같은 흥미로운 세부 문제가 있다. Twitter 뉴스피드는 Fan-out 전략이 핵심으로, read-heavy 시스템의 표준 설계 패턴을 담고 있다.\n\nYouTube는 미디어 처리 파이프라인, 분산 스토리지, CDN, 적응형 스트리밍을 모두 다루는 복잡한 문제다. Uber는 실시간 위치 데이터, 지리공간 인덱싱, WebSocket 통신이 핵심이다.\n\n각 문제를 RESHADED 프레임워크로 접근하면서, 이전 챕터의 개념들이 어떻게 조합되는지를 보는 것이 이 챕터의 목표다. 단순히 정답을 외우는 게 아니라, 각 설계 결정의 '왜'를 이해하는 것이 중요하다.",
+      "sections": [
+        {
+          "title": "URL Shortener: bit.ly 설계",
+          "content": "**요구사항:**\n- 긴 URL → 짧은 URL 변환\n- 짧은 URL → 원본 URL 리다이렉트\n- DAU 100M, 쓰기:읽기 = 1:100\n\n**용량 추정:**\n- Write QPS: `100M * 0.1 / 86400 ≈ 100 QPS`\n- Read QPS: `100 * 100 = 10,000 QPS`\n- 5년 스토리지: `100 QPS * 86400 * 365 * 5 * 500B ≈ 7TB`\n\n**핵심 설계 결정 1: 단축 URL 생성 방법**\n\n**해시 방식** — MD5/SHA256의 앞 7자리 사용. `md5(longUrl)[:7]` → `7자리 Base62` = $62^7 ≈ 3.5억$ 개 가능. 충돌(collision) 문제: 같은 7자리가 나오면? 충돌 감지 후 +1 suffix 추가 재시도.\n\n**Base62 카운터 방식** — DB auto-increment ID를 Base62로 인코딩. `1 → \"1\"`, `62 → \"10\"`, `63 → \"11\"`. 충돌 없음. 하지만 ID 예측 가능성 → URL enumeration 공격 위험. Snowflake ID처럼 분산 환경에서 unique ID 생성기 필요.\n\n**핵심 설계 결정 2: 리다이렉트 최적화**\n\n읽기가 쓰기의 100배. 단축 URL 조회는 **Redis 캐시** 필수. LRU 캐시로 인기 URL은 항상 메모리에.\n\n301(영구 리다이렉트) vs 302(임시 리다이렉트): 301은 브라우저가 캐시하여 다음엔 서버 요청 없음 → 클릭 추적 불가. 302는 매번 서버를 거침 → 클릭 통계 가능. 통계가 필요하면 302.\n\n**전체 아키텍처:** Client → LB → API Servers (stateless) → Redis (캐시) → MySQL (URL 매핑) + Snowflake (ID 생성)"
+        },
+        {
+          "title": "Twitter 뉴스피드: Fan-out 전략",
+          "content": "**요구사항:**\n- 트윗 작성\n- 팔로워의 타임라인에서 팔로잉 계정 트윗 보기\n- DAU 300M, 평균 팔로워 수 200명\n\n**핵심: Fan-out이란?**\n\n사용자 A(팔로워 200명)가 트윗을 쓰면, 200명의 타임라인에 이 트윗이 추가되어야 한다. 이를 \"Fan-out\"이라 한다.\n\n**Fan-out on Write (Push Model)**\n\n트윗 저장 시 팔로워 200명의 타임라인(Redis Sorted Set)에 미리 추가한다.\n\n- 장점: 읽기 빠름 — 타임라인 조회 시 Redis에서 즉시 반환\n- 단점: 팔로워 2M명(셀럽)이면 한 번의 쓰기가 2M번의 Redis 업데이트 → 쓰기 지연, 스토리지 비용\n\n**Fan-out on Read (Pull Model)**\n\n타임라인 조회 시 팔로잉 목록을 가져와 각자의 최신 트윗을 DB에서 조회, 병합, 정렬한다.\n\n- 장점: 쓰기 빠름, 스토리지 효율적\n- 단점: 읽기 느림 — 팔로잉 수 * DB 쿼리\n\n**실제 Twitter의 해법: Hybrid Approach**\n\n- 일반 사용자(팔로워 < 1000): Fan-out on Write\n- 셀럽 계정(팔로워 > 1M): Fan-out on Read\n- 일반 사용자 타임라인에 셀럽 트윗을 실시간으로 합치는 방식\n\n**타임라인 캐시:**\n\nRedis Sorted Set: `key = timeline:{user_id}`, `score = tweet_timestamp`, `value = tweet_id`. 최근 800개 트윗만 유지. 오래된 트윗은 DB에서 조회."
+        },
+        {
+          "title": "YouTube: 동영상 업로드 및 스트리밍",
+          "content": "**요구사항:**\n- 동영상 업로드 및 트랜스코딩\n- 전 세계 스트리밍\n- DAU 2B, 500시간/분 업로드\n\n**업로드 파이프라인:**\n\n1. **사전 서명 URL (Pre-signed URL)**: 클라이언트가 직접 S3에 업로드. API 서버를 거치지 않음 → 대용량 파일도 서버 부하 없음\n2. **업로드 완료 이벤트**: S3 → Lambda 트리거 → Kafka에 `VideoUploaded` 이벤트 발행\n3. **트랜스코딩 워커**: Kafka 메시지 소비 → 720p, 1080p, 4K, 480p 여러 해상도로 인코딩\n4. **CDN 배포**: 인코딩 완료 파일 → CloudFront/Akamai CDN에 업로드\n\n**HLS (HTTP Live Streaming):**\n\n동영상을 10초짜리 작은 `.ts` 세그먼트로 분할. `.m3u8` 플레이리스트 파일이 세그먼트 목록 관리.\n\n```\n# playlist.m3u8\n#EXTM3U\n#EXT-X-TARGETDURATION:10\nsegment001.ts  # 0-10초\nsegment002.ts  # 10-20초\n...\n```\n\n클라이언트는 현재 버퍼 상태와 네트워크 속도를 보고 해상도를 자동으로 전환 → **Adaptive Bitrate Streaming (ABR)**.\n\n**스토리지 아키텍처:**\n\n- 원본 파일: S3 (비용 효율적, 거의 안 읽힘)\n- 트랜스코딩 중간 파일: EFS 또는 S3 임시 버킷\n- 최종 서빙 파일: CDN에 캐시\n- 메타데이터 (조회수, 제목, 설명): MySQL\n- 댓글: Cassandra (write-heavy, 시계열 패턴)"
+        },
+        {
+          "title": "Uber: 실시간 위치 추적과 매칭",
+          "content": "**요구사항:**\n- 드라이버 실시간 위치 전송 (4초마다)\n- 승객이 근처 드라이버 보기\n- 드라이버-승객 실시간 매칭\n- 예상 도착 시간 계산\n\n**실시간 위치 전송:**\n\nHTTP polling은 비효율적 — 4초마다 클라이언트가 요청. 더 좋은 방법은 **WebSocket** — 드라이버 앱과 서버 간 양방향 지속 연결. 위치 변경 시 서버로 push. 서버는 승객 앱으로 드라이버 위치 push.\n\nUber는 초당 수백만 위치 업데이트 처리. 이것을 Kafka로 버퍼링하고 여러 소비자(매칭, 가격 계산, ETA 계산)가 병렬 처리.\n\n**지리공간 인덱싱 (Geospatial Indexing):**\n\n근처 드라이버를 어떻게 빠르게 찾을까? 단순 좌표 쿼리는 느리다.\n\n**Geohash** — 지구 표면을 재귀적으로 격자로 나누고 각 격자에 문자열 ID 부여. 같은 prefix = 같은 지역. `dr5ru` = 뉴욕 맨해튼. Redis로 Geohash prefix 기반 근접 드라이버 조회. Redis `GEOSEARCH` 명령어 직접 지원.\n\n**Quadtree** — 지역을 4분면으로 재귀 분할. 빈 영역은 세분화 안 함 → 공간 효율적. 승객 주변 K개 드라이버를 $O(\\log n)$에 찾기.\n\n**드라이버-승객 매칭:**\n\n1. 승객 요청 → Geohash로 반경 2km 드라이버 조회\n2. 드라이버별 ETA 계산 (도로 그래프 + 실시간 교통 정보)\n3. 가장 빠른 ETA의 드라이버에게 요청 발송\n4. 드라이버 수락/거절 → 거절 시 다음 드라이버에게\n\n동시에 여러 승객이 같은 드라이버에 매칭되지 않도록 **분산 락(Distributed Lock)** 필요. Redis SETNX로 드라이버 ID를 잠금."
+        }
+      ],
+      "analogy": {
+        "title": "레스토랑으로 보는 4가지 서비스",
+        "content": "URL Shortener는 **축약 명함 서비스**다. 복잡한 주소를 간단한 코드로 바꾼다. 코드를 보여주면 직원이 진짜 주소로 안내한다. 손님이 많으니 단골 주소는 카운터 앞에 붙여놓는다(캐시).\n\nTwitter 뉴스피드는 **조식 뷔페 배달 서비스**다. 유명인(셀럽)이 요리를 만들면, 10만 명 팔로워에게 일일이 배달하면 너무 느리다(Fan-out on Write 한계). 대신 팔로워가 아침에 뷔페에 오면 유명인의 요리를 바로 가져가는 것이 Fan-out on Read다.\n\nYouTube는 **영화 배급사**다. 촬영 완료 필름을 여러 상영 형식(4K, HD, SD)으로 편집하고(트랜스코딩), 전국 영화관(CDN)에 배포한다. 고객은 가장 가까운 영화관(PoP)에서 본다.\n\nUber는 **콜택시 지역 배차 센터**다. 기사들이 자신의 위치를 4초마다 센터에 보고한다. 고객이 호출하면 센터는 지역 지도에서 가장 가까운 기사를 즉시 찾아 연결한다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "Base62 인코딩을 이용한 URL Shortener의 핵심 로직과, Redis Sorted Set을 이용한 Twitter 타임라인 Fan-out 구현이다.",
+        "code": "import hashlib\nimport redis\nimport string\nfrom typing import Optional\n\n# --- URL Shortener: Base62 encoding ---\nBASE62_CHARS = string.digits + string.ascii_letters  # 0-9, a-z, A-Z\n\ndef encode_base62(num: int) -> str:\n    if num == 0:\n        return BASE62_CHARS[0]\n    result = []\n    while num:\n        result.append(BASE62_CHARS[num % 62])\n        num //= 62\n    return ''.join(reversed(result))\n\ndef decode_base62(s: str) -> int:\n    return sum(BASE62_CHARS.index(c) * (62 ** i)\n               for i, c in enumerate(reversed(s)))\n\n# URL Shortener service\nclass UrlShortener:\n    def __init__(self, redis_client: redis.Redis):\n        self.r = redis_client\n        self._counter_key = \"url:counter\"\n\n    def shorten(self, long_url: str) -> str:\n        # Check if already shortened\n        existing_id = self.r.hget(\"url:long_to_id\", long_url)\n        if existing_id:\n            return encode_base62(int(existing_id))\n\n        url_id = self.r.incr(self._counter_key)  # Atomic increment\n        short_code = encode_base62(url_id)\n\n        # Bidirectional mapping\n        self.r.hset(\"url:id_to_long\", url_id, long_url)\n        self.r.hset(\"url:long_to_id\", long_url, url_id)\n        return short_code\n\n    def resolve(self, short_code: str) -> Optional[str]:\n        url_id = decode_base62(short_code)\n        return self.r.hget(\"url:id_to_long\", url_id)\n\n# --- Twitter Timeline Fan-out on Write ---\nclass TimelineService:\n    TIMELINE_MAX = 800  # Keep last 800 tweets per user\n\n    def __init__(self, redis_client: redis.Redis):\n        self.r = redis_client\n\n    def post_tweet(self, user_id: str, tweet_id: str, timestamp: float,\n                   follower_ids: list[str]):\n        # Fan-out: push tweet to all followers' timelines\n        pipe = self.r.pipeline()\n        for follower_id in follower_ids:\n            key = f\"timeline:{follower_id}\"\n            pipe.zadd(key, {tweet_id: timestamp})  # score = timestamp\n            pipe.zremrangebyrank(key, 0, -(self.TIMELINE_MAX + 1))  # Keep max\n        pipe.execute()\n\n    def get_timeline(self, user_id: str, count: int = 20) -> list[str]:\n        key = f\"timeline:{user_id}\"\n        # ZRANGE with REV returns newest first\n        return self.r.zrange(key, 0, count - 1, rev=True)\n\n# Demo\nr = redis.Redis()\nshortener = UrlShortener(r)\ncode = shortener.shorten(\"https://example.com/very/long/url\")\nprint(f\"Short code: {code}\")\nprint(f\"Resolved: {shortener.resolve(code)}\")",
+        "walkthrough": "`self.r.incr()`는 Redis의 원자적 연산이라 분산 환경에서도 중복 없이 카운터를 증가시킨다. Fan-out에서 `pipeline()`을 써서 팔로워 수만큼의 Redis 명령을 한 번의 네트워크 요청으로 일괄 처리한다. `ZREMRANGEBYRANK`로 오래된 트윗을 자동 정리하여 메모리를 절약한다."
+      },
+      "industryEvaluation": {
+        "overview": "클래식 문제들은 면접에서 변형 버전으로 나온다. 정답을 외우는 것보다 각 문제의 핵심 설계 결정과 그 이유를 이해하고, 새로운 조건에 맞게 변형할 수 있어야 한다.",
+        "whatEngineersLookFor": [
+          "암기가 아닌 요구사항 분석에서 설계가 나오는가",
+          "각 설계 결정의 트레이드오프를 명확히 설명하는가",
+          "변형 조건(DAU가 10배 증가하면? 미디어 지원 추가하면?)에 유연하게 대응하는가",
+          "병목 지점을 식별하고 구체적 최적화 방법을 제안하는가"
+        ],
+        "redFlags": [
+          "문제를 보자마자 이전에 외운 아키텍처를 그대로 그리기 시작",
+          "왜 그 DB를, 왜 그 캐시 전략을 썼는지 설명 못 함",
+          "Fan-out on Write만 알고 셀럽 계정의 문제를 인지 못 함",
+          "동영상 트랜스코딩 과정이나 HLS를 모르면서 YouTube를 설계하는 경우"
+        ],
+        "interviewQuestions": [
+          "Instagram DM(Direct Message) 시스템을 설계해봐. Twitter Feed와 무엇이 다른가?",
+          "YouTube의 동영상 추천 시스템을 뉴스피드 설계에 어떻게 통합할 것인가?",
+          "Uber에서 surge pricing(할증 요금)을 실시간으로 계산하는 시스템을 설계해봐."
+        ],
+        "masteryVsFamiliar": "익숙한 수준은 이 4가지 문제의 표준 답안을 재현하는 것이다. 마스터 수준은 \"DM 시스템을 설계해봐\"처럼 처음 보는 변형 문제에서도 비슷한 패턴(Fan-out, 메시징, 실시간 통신)을 빠르게 인식하고 적용할 수 있는 것이다."
+      },
+      "keyTakeaways": [
+        {"title": "URL Shortener = Base62 + Redis", "content": "ID auto-increment → Base62 인코딩으로 충돌 없는 단축 URL 생성. Redis로 10,000 QPS 읽기 처리."},
+        {"title": "Fan-out on Write vs Read", "content": "일반 사용자는 Write, 셀럽(팔로워 수백만)은 Read. Twitter는 Hybrid로 두 방식을 조합한다."},
+        {"title": "YouTube = 비동기 파이프라인", "content": "업로드 → Kafka → 트랜스코딩 워커 → CDN. 각 단계를 비동기로 분리해 업로드 API는 즉시 응답한다."},
+        {"title": "Uber = WebSocket + Geohash", "content": "실시간 위치는 WebSocket, 근접 검색은 Geohash/Quadtree, 매칭은 Distributed Lock."},
+        {"title": "읽기:쓰기 비율이 설계를 결정", "content": "비율을 먼저 계산하라. 100:1 read-heavy면 캐시 최우선, 1:100 write-heavy면 LSM-Tree DB + 비동기 큐."},
+        {"title": "단일 설계는 없다", "content": "같은 서비스도 요구사항에 따라 설계가 달라진다. DAU가 10배 다르면 아키텍처도 다르다."},
+        {"title": "HLS가 스트리밍 표준", "content": "10초 세그먼트 분할 + m3u8 플레이리스트 + Adaptive Bitrate Streaming이 현대 동영상 스트리밍의 기본."},
+        {"title": "Pre-signed URL로 대용량 업로드", "content": "클라이언트가 S3에 직접 업로드하면 API 서버를 거치지 않아 대역폭과 서버 부하 문제가 사라진다."}
+      ]
+    },
+    {
+      "number": 8,
+      "emoji": "🤖",
+      "title": "ML System Design Fundamentals",
+      "titleKr": "ML 시스템 설계 기초",
+      "tldr": "ML 모델을 단순히 학습시키는 것을 넘어, 프로덕션에서 안정적으로 운영되는 ML 시스템을 설계하는 방법을 익힌다.",
+      "topics": ["ML 시스템의 전체 라이프사이클", "Feature Engineering과 Feature Store", "Training Pipeline vs Serving Pipeline", "Model Versioning과 A/B Testing", "ML Observability (데이터 드리프트, 모델 모니터링)"],
+      "learningGoals": [
+        "ML 시스템을 단순 모델을 넘어 데이터 수집 → 처리 → 학습 → 배포 → 모니터링의 파이프라인으로 설계할 수 있다",
+        "Feature Store의 역할과 Online/Offline Feature Store의 차이를 설명할 수 있다",
+        "Batch Serving과 Online Serving의 트레이드오프를 알고 적합한 사용 사례를 설명할 수 있다",
+        "Model drift, Data drift를 감지하고 대응하는 시스템을 설계할 수 있다",
+        "Shadow Mode, Canary Release, A/B Test를 활용한 안전한 모델 배포 전략을 설명할 수 있다"
+      ],
+      "overview": "\"머신러닝 모델이 전체 ML 시스템의 5%에 불과하다\"라는 말이 있다. 나머지 95%는 데이터 수집, 피처 처리, 서빙 인프라, 모니터링, 재학습 파이프라인이다. 구글은 이것을 [Machine Learning: The High-Interest Credit Card of Technical Debt](https://proceedings.neurips.cc/paper/2015/file/86df7dcfd896fcaf2674f757a2463eba-Paper.pdf) 논문에서 명확히 설명했다.\n\n빅테크 AI Engineering 면접에서는 이 95%를 설계하는 능력을 본다. 단순히 \"BERT 모델을 fine-tuning 해서 배포한다\"가 아니라, 학습 데이터는 어떻게 수집하고 정제하는가, 피처는 어떻게 계산하고 저장하는가, 배포는 어떻게 하고 실패하면 어떻게 롤백하는가, 운영 중 모델이 나빠지면 어떻게 감지하는가.\n\n이 챕터는 일반 ML 시스템의 설계 패턴을 다룬다. 챕터 9에서 추천 시스템, 챕터 10에서 LLM 인프라로 심화한다.",
+      "sections": [
+        {
+          "title": "ML 시스템 아키텍처: 전체 라이프사이클",
+          "content": "ML 시스템은 크게 **학습 경로(Training Path)**와 **서빙 경로(Serving Path)**로 나뉜다. 두 경로가 공유하는 것은 **피처 처리 로직(Feature Engineering)**이다.\n\n**학습 경로:**\n\n1. **데이터 수집** — 이벤트 로그, DB 덤프, 외부 데이터 소스. Kafka/Kinesis로 실시간 수집, S3/GCS에 raw 데이터 저장.\n2. **데이터 처리** — 결측치 처리, 이상치 제거, 정규화, 인코딩. Apache Spark, Beam으로 대규모 배치 처리.\n3. **피처 엔지니어링** — 원시 데이터에서 모델에 유용한 표현 생성. 이 결과물이 Feature Store에 저장됨.\n4. **모델 학습** — GPU 클러스터에서 학습. 학습 결과(가중치, 메타데이터)는 Model Registry에 저장.\n5. **모델 평가** — Offline metrics (AUC, F1, RMSE). 기준을 통과해야 다음 단계로.\n6. **모델 배포** → 서빙 경로로 전달.\n\n**서빙 경로:**\n\n실시간 요청 → 피처 조회 → 모델 추론 → 응답 반환. p99 latency가 수십~수백ms 이하여야 하는 경우가 많다.\n\n**훈련-서빙 불일치 (Training-Serving Skew):**\n\nML 시스템의 가장 흔한 버그 중 하나. 학습 시 피처 계산 방법과 서빙 시 피처 계산 방법이 달라서 모델이 프로덕션에서 나쁜 성능을 내는 문제. Feature Store가 이 문제를 해결한다 — 학습과 서빙이 동일한 피처 계산 로직을 공유하므로."
+        },
+        {
+          "title": "Feature Store: ML의 데이터 레이어",
+          "content": "Feature Store는 **ML 피처를 중앙에서 관리, 저장, 제공**하는 플랫폼이다. Uber의 Michelangelo, Google의 Feast, AWS SageMaker Feature Store가 대표적이다.\n\n**왜 Feature Store가 필요한가?**\n\n- 피처 재사용: 팀 A가 만든 \"사용자 7일 구매 금액\" 피처를 팀 B도 바로 사용\n- Training-Serving Skew 방지: 같은 피처 계산 코드를 학습/서빙 모두 사용\n- 피처 공유: 여러 모델이 같은 피처를 공유하여 중복 계산 제거\n- Point-in-time Correct: 학습 시 미래 데이터가 새지 않도록 시점 기준 조회\n\n**Offline Feature Store:**\n\n- 배치 학습 데이터 생성에 사용\n- 히스토리컬 피처 저장 (수개월~수년)\n- 낮은 QPS, 높은 처리량\n- 저장소: S3, BigQuery, Hive\n\n**Online Feature Store:**\n\n- 실시간 서빙에 사용 (추론 시 피처 조회)\n- 최근 피처만 저장 (수일~수주)\n- 초저지연 (p99 < 10ms), 높은 QPS (초당 수십만)\n- 저장소: Redis, DynamoDB, Cassandra\n\n**Streaming Feature Store:**\n\n실시간으로 들어오는 이벤트에서 피처를 즉시 계산. 예: 지난 1시간 클릭 수, 마지막 검색어. Kafka + Flink로 실시간 피처 계산 → Online Feature Store에 저장."
+        },
+        {
+          "title": "Model Serving: Batch vs Online",
+          "content": "**Batch Serving:**\n\n미리 예측을 계산해두고 DB/캐시에 저장. 요청 시 미리 계산된 결과 반환.\n\n- 적합한 경우: 예측 대상이 제한적 (활성 사용자 100M명), 실시간성 불필요 (매일 갱신되는 추천 목록), 모델 추론이 매우 무거운 경우\n- 예: Netflix의 매일 갱신되는 홈 화면 추천\n- 장점: 서빙 인프라 단순. 응답 latency 최소 (DB 조회만).\n- 단점: 최신 컨텍스트 반영 불가 (방금 본 영상 반영 안 됨)\n\n**Online Serving (Real-Time Inference):**\n\n요청 시 실시간으로 모델 추론.\n\n- 적합한 경우: 개인화가 중요하고 최신 컨텍스트가 필요한 경우, 추론 latency가 수십ms 이하인 경우\n- 예: Google 검색, 실시간 CTR 예측\n- 장점: 최신 컨텍스트 반영, 진정한 개인화\n- 단점: 서빙 인프라 복잡. 높은 QPS에서 GPU 비용 증가.\n\n**Hybrid Serving:**\n\n실제로는 두 방식을 계층으로 조합한다:\n- Batch로 사전 계산한 후보군 생성 (수천 개)\n- Online으로 실시간 re-ranking (최신 컨텍스트 반영)\n- 최종 결과 반환\n\n**모델 서빙 최적화:**\n\n- **모델 압축**: 양자화(Quantization), 지식 증류(Knowledge Distillation), Pruning으로 모델 크기 축소\n- **배치 추론**: 여러 요청을 묶어 GPU 처리 효율 극대화\n- **모델 캐싱**: 같은 입력에 대한 결과 캐시 (Semantic Cache for LLM)\n- **하드웨어 가속**: NVIDIA Triton Inference Server, TensorRT로 GPU 최적화"
+        },
+        {
+          "title": "Model Registry와 MLOps 파이프라인",
+          "content": "Model Registry는 학습된 모델의 **버전, 메타데이터, 아티팩트를 중앙에서 관리**하는 시스템이다. MLflow, SageMaker Model Registry, Weights & Biases가 대표적.\n\n**Model Registry에 저장되는 것:**\n- 모델 가중치 (Artifacts)\n- 학습에 사용된 데이터셋 버전\n- 학습 하이퍼파라미터\n- Offline 평가 지표 (AUC, F1, RMSE)\n- 데이터 스키마 (피처 이름, 타입, 범위)\n\n**MLOps 파이프라인 (CI/CD for ML):**\n\n소프트웨어 CI/CD처럼 ML 모델도 자동화된 파이프라인으로 테스트하고 배포한다.\n\n1. 코드 변경 → Git push\n2. CI: 데이터 validation, 코드 테스트\n3. 학습 파이프라인 실행 (Kubeflow, MLflow, Airflow)\n4. 자동 모델 평가 — 기준 미달 시 자동 실패\n5. Model Registry에 등록\n6. 스테이징 환경 배포 → Integration test\n7. Shadow Mode 배포 → 트래픽 미전환 상태에서 실제 요청으로 예측 (결과는 로그만)\n8. Canary Release → 1% 트래픽으로 시작, 점진적 증가\n9. 전체 배포 or 롤백\n\n이 파이프라인이 없으면 데이터 과학자가 모델을 수동으로 배포하는 \"것 같은 모델\"이 만들어진다. 코드도 아니고, 데이터도 아니고, 재현 불가능하다."
+        },
+        {
+          "title": "ML Observability: 모델 모니터링",
+          "content": "모델을 배포한 후에도 지속적으로 상태를 모니터링해야 한다. 시간이 지남에 따라 데이터 분포나 사용자 행동이 변하면 모델 성능이 저하되는 **Model Drift**가 발생한다.\n\n**Data Drift (Feature Drift):**\n\n프로덕션에서 들어오는 입력 데이터의 분포가 학습 데이터와 달라지는 현상. 예: COVID로 사용자 행동 패턴이 갑자기 변함.\n\n감지 방법: KS test, Population Stability Index (PSI) 등 통계적 검정으로 분포 변화 감지.\n\n**Concept Drift:**\n\n입력(X)과 출력(Y) 사이의 관계 자체가 변하는 현상. 사기 탐지 모델은 사기 패턴이 계속 변하므로 concept drift가 빠르다.\n\n**Model Monitoring 지표:**\n\n| 지표 | 설명 |\n|---|---|\n| Prediction Distribution | 예측값의 분포 변화 |\n| Feature Distribution | 입력 피처의 통계 변화 |\n| Business Metrics | CTR, 전환율, 매출 — Ground Truth와 연결 |\n| Latency/Error Rate | 서빙 시스템의 성능 |\n\n**모니터링 시스템 아키텍처:**\n\n서빙 로그 → Kafka → 통계 계산 (Spark Streaming) → 대시보드 (Grafana, Looker) → 알람 (PagerDuty)\n\n**Retraining 트리거:**\n- 성능 지표가 임계값 아래로 떨어짐\n- Data drift 감지\n- 주기적 재학습 (시간 기반: 매주, 매월)\n- 이벤트 기반 (특정 사건 후 즉시)"
+        }
+      ],
+      "analogy": {
+        "title": "공장 자동화 라인으로 보는 ML 시스템",
+        "content": "ML 시스템은 **자동차 공장 생산 라인**과 같다. 원자재(데이터)가 공장에 들어와 여러 가공 단계(데이터 처리, 피처 엔지니어링)를 거쳐 완성품(학습된 모델)이 나온다. 이것이 Training Pipeline이다.\n\nFeature Store는 **부품 창고**다. 생산 라인(학습)과 조립 라인(서빙) 모두 같은 창고에서 같은 규격의 부품을 가져간다. 창고가 없다면 각 라인이 같은 부품을 따로 만들고, 규격이 미세하게 달라서 문제가 생긴다.\n\nModel Monitoring은 **품질 관리 부서**다. 공장에서 자동차가 나와 시장에 출하된 후에도, 불량 신고(사용자 불만, 비즈니스 지표 하락)가 오면 즉시 파악하고 생산 라인을 조정한다. A/B Testing은 두 가지 설계의 자동차를 소수 고객에게 먼저 출하해보고 반응을 측정하는 것이다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "간단한 Feature Store와 ML Serving 파이프라인을 구현한다. Online Feature Store(Redis)에서 피처를 조회하여 모델 추론까지의 흐름을 보여준다.",
+        "code": "import redis\nimport json\nimport time\nfrom dataclasses import dataclass, asdict\nfrom typing import Optional\n\n# Feature definition with metadata\n@dataclass\nclass UserFeatures:\n    user_id: str\n    age: int\n    purchase_count_7d: int\n    avg_session_duration_min: float\n    last_category_viewed: str\n    computed_at: float  # Timestamp for staleness check\n\nclass OnlineFeatureStore:\n    \"\"\"Redis-backed Online Feature Store for real-time serving.\"\"\"\n    STALE_THRESHOLD_SEC = 3600  # 1 hour\n\n    def __init__(self, redis_client: redis.Redis):\n        self.r = redis_client\n\n    def save_features(self, features: UserFeatures, ttl: int = 86400):\n        key = f\"features:user:{features.user_id}\"\n        self.r.hset(key, mapping=asdict(features))\n        self.r.expire(key, ttl)\n\n    def get_features(self, user_id: str) -> Optional[UserFeatures]:\n        key = f\"features:user:{user_id}\"\n        data = self.r.hgetall(key)\n        if not data:\n            return None\n        # Check staleness\n        computed_at = float(data[b'computed_at'])\n        if time.time() - computed_at > self.STALE_THRESHOLD_SEC:\n            return None  # Trigger feature recomputation\n        return UserFeatures(\n            user_id=data[b'user_id'].decode(),\n            age=int(data[b'age']),\n            purchase_count_7d=int(data[b'purchase_count_7d']),\n            avg_session_duration_min=float(data[b'avg_session_duration_min']),\n            last_category_viewed=data[b'last_category_viewed'].decode(),\n            computed_at=computed_at\n        )\n\nclass MLServingPipeline:\n    def __init__(self, feature_store: OnlineFeatureStore, model):\n        self.fs = feature_store\n        self.model = model\n\n    def predict(self, user_id: str, item_id: str) -> float:\n        # 1. Retrieve features (fast — Redis, not DB)\n        features = self.fs.get_features(user_id)\n        if features is None:\n            return self._fallback_score()  # Graceful degradation\n\n        # 2. Assemble feature vector\n        feature_vector = [\n            features.age / 100.0,\n            min(features.purchase_count_7d / 50.0, 1.0),\n            min(features.avg_session_duration_min / 60.0, 1.0),\n        ]\n\n        # 3. Model inference\n        return self.model.predict([feature_vector])[0]\n\n    def _fallback_score(self) -> float:\n        return 0.5  # Default score for cold-start users",
+        "walkthrough": "온라인 서빙에서 피처 조회(Redis) → 모델 추론의 흐름이 핵심이다. `computed_at` 검사로 stale feature를 감지하고 재계산을 트리거한다. `_fallback_score()`는 피처가 없는 신규 사용자(cold start)에 대한 graceful degradation이다. 프로덕션에서 예외 처리 없는 ML 서빙은 피처 누락 시 서비스 전체가 영향을 받는다."
+      },
+      "industryEvaluation": {
+        "overview": "AI Engineering 면접에서는 코드 작성 능력보다 ML 시스템 전체를 설계하는 능력을 평가한다. 데이터 파이프라인부터 모델 배포, 모니터링까지 엔드 투 엔드를 보는 것이 핵심이다.",
+        "whatEngineersLookFor": [
+          "Training-Serving Skew 문제를 인지하고 Feature Store로 해결책을 제시하는가",
+          "A/B Testing과 Shadow Mode 배포를 언제 어떻게 쓰는지 아는가",
+          "Model drift 감지와 재학습 트리거 전략이 있는가",
+          "Cold Start 문제에 대한 fallback 전략이 있는가"
+        ],
+        "redFlags": [
+          "모델 학습만 설계하고 서빙, 모니터링은 \"나중에\"라고 미루는 설계",
+          "Feature Store 없이 각 서비스가 독립적으로 피처를 계산하는 설계",
+          "모델 배포 = docker 이미지 올리기로만 생각하는 경우",
+          "Offline 지표만 보고 Online A/B Test를 생략하는 설계"
+        ],
+        "interviewQuestions": [
+          "YouTube의 영상 조회수 예측 ML 시스템을 설계해봐.",
+          "Training-Serving Skew를 어떻게 감지하고 방지하겠어?",
+          "새 모델 버전을 안전하게 프로덕션에 배포하는 전략을 설명해봐."
+        ],
+        "masteryVsFamiliar": "익숙한 수준은 ML 파이프라인의 단계를 나열하는 것이다. 마스터 수준은 각 단계 간의 의존성과 실패 시나리오를 알고, Training-Serving Skew나 Feature Leakage 같은 미묘한 ML 특화 문제를 proactively 언급하고 해결책을 제시하는 것이다."
+      },
+      "keyTakeaways": [
+        {"title": "모델은 시스템의 5%", "content": "나머지 95%는 데이터 파이프라인, 피처 처리, 서빙, 모니터링, 재학습. 이것을 설계하는 것이 ML 시스템 설계다."},
+        {"title": "Feature Store가 Skew를 막는다", "content": "학습과 서빙이 동일한 피처 계산 로직을 공유. Training-Serving Skew의 가장 효과적인 해결책."},
+        {"title": "Online vs Offline Feature Store", "content": "Online(Redis) = 저지연 서빙용, Offline(S3/BigQuery) = 배치 학습용. 둘을 함께 사용."},
+        {"title": "Batch + Online Hybrid가 현실", "content": "순수 실시간 추론은 비용이 크다. Batch로 후보군 생성, Online으로 re-ranking하는 Hybrid가 표준."},
+        {"title": "Shadow Mode → Canary → 전체", "content": "새 모델을 바로 전체 배포하지 않는다. Shadow → 1% Canary → 점진적 증가 → 100%. 각 단계에서 롤백 준비."},
+        {"title": "Model Drift는 피할 수 없다", "content": "데이터와 세계는 변한다. 모니터링 없이 배포한 모델은 조용히 죽는다. 배포 전에 모니터링 시스템을 설계하라."},
+        {"title": "MLOps = ML의 CI/CD", "content": "코드 변경부터 프로덕션 배포까지 자동화. 수동 배포는 재현 불가능하고 오류가 많다."},
+        {"title": "Cold Start에 Fallback", "content": "신규 사용자나 신규 아이템은 피처가 없다. 항상 합리적인 fallback 전략을 설계하라."}
+      ]
+    },
+    {
+      "number": 9,
+      "emoji": "🎯",
+      "title": "Recommendation Systems",
+      "titleKr": "추천 시스템 설계",
+      "tldr": "YouTube, Netflix, TikTok의 핵심인 대규모 추천 시스템의 Two-Tower 아키텍처와 실시간 개인화 파이프라인을 완전 분해한다.",
+      "topics": ["추천 시스템의 전체 파이프라인", "Two-Tower Model 아키텍처", "Candidate Generation과 Ranking", "Cold Start 문제 해결", "실시간 vs 배치 추천"],
+      "learningGoals": [
+        "추천 시스템의 Retrieval → Candidate Generation → Ranking → Re-ranking 4단계를 설명할 수 있다",
+        "Two-Tower 모델의 구조와 사용하는 이유를 설명할 수 있다",
+        "Collaborative Filtering과 Content-Based Filtering의 차이와 장단점을 안다",
+        "Cold Start 문제의 두 가지 유형(User Cold Start, Item Cold Start)과 해결 전략을 설명할 수 있다",
+        "추천 시스템의 Online A/B Testing 설계와 평가 지표를 설명할 수 있다"
+      ],
+      "overview": "추천 시스템은 현대 빅테크의 핵심 수익 창출 엔진이다. YouTube는 시청 시간의 70%가 추천에서 시작하고, Netflix는 콘텐츠 소비의 80%가 추천 기반이다. TikTok의 For You Page는 사실상 전체 서비스 경험이다.\n\n추천 시스템 면접은 AI Engineering 직군에서 매우 자주 출제된다. \"YouTube의 홈 화면 추천을 설계해봐\", \"TikTok의 FYP를 설계해봐\", \"Amazon의 상품 추천을 설계해봐\"가 대표적이다.\n\n이 챕터는 단순한 알고리즘 설명이 아니라, 수억 명의 사용자와 수천만 개의 아이템을 실시간으로 처리하는 **프로덕션급 추천 시스템 아키텍처**를 다룬다. Two-Tower 모델이 왜 대규모 시스템의 표준이 되었는지, Feature Store가 어떻게 통합되는지, 실시간 개인화를 어떻게 달성하는지를 중점적으로 다룬다.",
+      "sections": [
+        {
+          "title": "추천 시스템의 4단계 파이프라인",
+          "content": "수억 개의 아이템을 개인에게 추천하는 것을 단계별로 분리하여 효율성을 높인다. 각 단계에서 후보를 좁혀간다.\n\n**단계 1: 데이터 수집 및 피처 처리**\n\n사용자 행동 로그(클릭, 시청, 구매, 좋아요), 아이템 메타데이터, 컨텍스트(시간, 위치, 디바이스)를 수집하여 Feature Store에 저장.\n\n**단계 2: Candidate Generation (후보 생성)**\n\n전체 아이템 중에서 사용자에게 관련성 있는 수백~수천 개의 후보를 생성. 이 단계는 **속도가 우선**이다. 수천만 개 아이템에서 수천 개로 좁히는 필터 역할.\n\n**단계 3: Ranking (순위 결정)**\n\n후보 수백~수천 개를 정교한 모델로 순위를 매김. 이 단계는 **정확성이 우선**이다. 더 많은 피처(사용자-아이템 상호작용 피처 포함)를 사용. CTR, 시청 완료율 등 다양한 목표 함수.\n\n**단계 4: Re-ranking (재순위)**\n\n비즈니스 규칙, 다양성(Diversity), 신선도(Freshness), 필터링(블랙리스트, 중복 제거) 적용. 순수 ML 점수와 비즈니스 목표의 균형.\n\n**단계별 후보 수:**\n\n- 전체 아이템: 10M+ → Candidate Generation → 1,000개 → Ranking → 100개 → Re-ranking → 20개 → 사용자에게 노출\n\n이 구조를 **Funnel Architecture**라고 부른다. 각 단계의 정확도와 속도 트레이드오프가 명확하다."
+        },
+        {
+          "title": "Two-Tower Model: 대규모 추천의 표준",
+          "content": "Two-Tower Model은 YouTube가 2019년에 발표한 이후 산업 표준이 된 추천 시스템 아키텍처다.\n\n**기본 아이디어:**\n\n사용자 타워(User Tower)와 아이템 타워(Item Tower) 두 개의 독립 신경망이 각각 사용자와 아이템을 동일한 임베딩 공간으로 인코딩한다. 사용자와 아이템의 관련성은 두 임베딩 벡터의 **내적(dot product) 또는 코사인 유사도**로 계산한다.\n\n**구조:**\n\n```\nUser Features → [User Tower DNN] → User Embedding (d차원)\nItem Features → [Item Tower DNN] → Item Embedding (d차원)\n\nScore = dot(User Embedding, Item Embedding)\n```\n\n**왜 Two-Tower인가?**\n\n- **사전 계산 가능**: Item Embedding은 실시간 요청 전에 미리 계산 → 빠른 Candidate Generation\n- **ANN(Approximate Nearest Neighbor)으로 빠른 검색**: 사용자 임베딩으로 가장 가까운 Item Embedding들을 FAISS, ScaNN으로 $O(\\log n)$에 검색\n- **독립적 업데이트**: User Tower는 실시간 행동으로 동적으로 업데이트, Item Tower는 배치로 업데이트\n\n**학습:**\n\n- Positive sample: 사용자가 실제 클릭/구매한 아이템\n- Negative sample: In-Batch Negatives (같은 배치 내 다른 사용자의 positive 아이템) + Hard Negatives (사용자가 노출됐지만 클릭 안 한 아이템)\n- 손실 함수: Softmax 또는 Binary Cross-Entropy"
+        },
+        {
+          "title": "Collaborative Filtering vs Content-Based Filtering",
+          "content": "**Collaborative Filtering (CF):**\n\n\"나와 비슷한 사람들이 좋아하는 것을 나도 좋아할 것이다\". 사용자 행동 데이터(클릭, 구매, 평점)만으로 추천.\n\n- Matrix Factorization: User-Item 행렬을 분해하여 Latent Factor 학습\n- Memory-Based CF: 유사 사용자를 찾아 그들이 본 것을 추천 (kNN)\n- Model-Based CF: Matrix Factorization, Two-Tower\n\n**장점:** 아이템에 대한 사전 지식 불필요. 놀라운 발견(Serendipity) 가능.\n**단점:** Cold Start — 새 사용자, 새 아이템 추천 어려움. 롱테일 아이템은 데이터 부족.\n\n**Content-Based Filtering:**\n\n아이템의 속성(장르, 감독, 태그, 텍스트 내용)이 비슷한 것을 추천.\n\n**장점:** 새 아이템도 추천 가능 (Item Cold Start 해결). 설명 가능성 높음 (\"이 장르를 보셨으므로...\").\n**단점:** 아이템 피처 추출 비용. 유사 아이템만 추천 → 다양성 부족. User Cold Start는 여전히 문제.\n\n**Hybrid 방식:**\n\n현대 추천 시스템은 두 방식을 결합한다:\n- CF로 Candidate Generation\n- Content-Based로 재순위 또는 Cold Start 보완\n- 딥러닝으로 두 신호를 함께 학습 (Wide & Deep, DeepFM, DIN)\n\n**평가 지표:**\n\n| 지표 | 설명 |\n|---|---|\n| Precision@K | 추천 K개 중 실제 관련 아이템 비율 |\n| Recall@K | 관련 아이템 중 추천에 포함된 비율 |\n| NDCG@K | 순위 고려한 품질 지표 |\n| Coverage | 전체 아이템 중 추천되는 비율 (다양성) |\n| CTR | 클릭율 (Online 평가) |"
+        },
+        {
+          "title": "Cold Start 문제와 해결 전략",
+          "content": "Cold Start는 추천 시스템의 가장 어려운 문제 중 하나다. 데이터가 없는 상황에서 추천을 해야 한다.\n\n**User Cold Start (신규 사용자):**\n\n행동 기록이 없는 새 사용자에게 무엇을 추천할까?\n\n**해결 방법:**\n- **Popularity-based fallback**: 전체 인기 아이템 추천 (가장 단순하고 효과적인 baseline)\n- **Onboarding 설문**: 가입 시 관심사 선택 (Netflix의 \"처음 보는 영상 3개 선택\")\n- **Demographic-based**: 나이, 성별, 지역 등 인구통계 기반 추천\n- **Cross-domain transfer**: 다른 서비스의 데이터 활용 (구글 계정으로 로그인 시)\n\n**Item Cold Start (신규 아이템):**\n\n새로운 콘텐츠를 누구에게 보여줄까? CF는 상호작용 데이터가 없어서 신규 아이템을 추천 못 한다.\n\n**해결 방법:**\n- **Content-based bootstrapping**: 아이템 속성 임베딩으로 유사 아이템 팬에게 추천\n- **Exploration budget**: 신규 아이템에 일정 비율의 트래픽을 강제 할당 (epsilon-greedy)\n- **Human curation**: 에디터가 신규 콘텐츠를 특정 사용자 세그먼트에 노출\n\n**Multi-Armed Bandit 접근:**\n\nExploration(새 아이템 노출) vs Exploitation(확실한 아이템 추천) 균형.\n- **Thompson Sampling**: 각 아이템의 CTR에 대한 Beta 분포를 업데이트하며 확률적 탐색\n- **UCB (Upper Confidence Bound)**: 불확실한(덜 노출된) 아이템에 보너스 점수 부여"
+        },
+        {
+          "title": "실시간 개인화와 Vector Database",
+          "content": "**실시간 컨텍스트 반영:**\n\n배치 추천의 한계는 \"방금 본 것\"을 모른다는 것이다. 실시간 개인화는 최근 세션 내 행동을 즉시 반영한다.\n\n**구현 방식:**\n\n1. 사용자 최근 행동 이벤트 → Kafka → 실시간 User Embedding 업데이트\n2. 업데이트된 User Embedding으로 ANN 검색\n3. 또는 세션 내 행동을 Short-Term Memory로 DIN(Deep Interest Network)에 입력\n\n**Vector Database (벡터 데이터베이스):**\n\nItem/User Embedding을 저장하고 빠른 유사도 검색을 제공하는 특수 DB.\n\n- **FAISS** (Facebook): CPU/GPU 기반 ANN 라이브러리. Billion-scale 지원.\n- **Milvus**: 분산 벡터 DB. Production-grade.\n- **Pinecone**: 완전관리형 벡터 DB. 빠른 시작.\n- **Weaviate, Qdrant**: 오픈소스 벡터 DB.\n\n**ANN (Approximate Nearest Neighbor) 알고리즘:**\n\n- **HNSW (Hierarchical Navigable Small World)**: 그래프 기반. 높은 정확도, 빠른 검색. 메모리 사용량 많음.\n- **IVF-PQ (Inverted File + Product Quantization)**: 클러스터링 + 양자화. 적은 메모리, 약간의 정확도 손실.\n\n임베딩 차원이 높아질수록(128~1024dim) 정확한 최근접 이웃(KNN)은 $O(n)$이라 불가능하다. ANN은 약간의 정확도를 포기하고 $O(\\log n)$에 근사 검색."
+        }
+      ],
+      "analogy": {
+        "title": "도서관 사서로 보는 추천 시스템",
+        "content": "추천 시스템은 **도서관 사서**와 같다. 당신이 도서관에 처음 오면 사서는 당신에 대해 아무것도 모른다(User Cold Start). 일단 베스트셀러 코너로 안내한다.\n\n몇 번 방문하면서 과학 소설을 주로 빌린다는 것을 사서가 알게 됐다. \"김씨와 비슷한 취향의 다른 손님들이 자주 빌리는 책\"을 추천한다. 이것이 Collaborative Filtering이다.\n\n새로 들어온 책(Item Cold Start)은 어떻게 추천할까? 표지, 목차, 장르를 보고 \"이 사람이 좋아할 것 같다\"고 판단한다. Content-Based Filtering이다. 두 가지를 모두 참고하는 것이 Hybrid 방식이다.\n\nFunnel Architecture는 사서가 \"이 손님에게 어울릴 것 같다\" → 100권 선별 → 그중 최근 인기 + 신선도 고려 → 10권 → 오늘 기분에 맞는 것 → 3권 추천하는 과정이다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "FAISS를 이용한 Two-Tower 추천 시스템의 Candidate Generation 단계를 구현한다. 실제 YouTube, Pinterest 등이 사용하는 방식을 단순화한 버전이다.",
+        "code": "import numpy as np\nimport faiss\nfrom dataclasses import dataclass\nfrom typing import List, Tuple\n\n@dataclass\nclass Item:\n    item_id: str\n    embedding: np.ndarray\n\nclass TwoTowerCandidateGenerator:\n    def __init__(self, embedding_dim: int = 64):\n        self.dim = embedding_dim\n        # HNSW index: high recall, fast query (good for production)\n        self.index = faiss.IndexHNSWFlat(embedding_dim, 32)  # 32 = M (connections)\n        self.item_ids: List[str] = []\n\n    def build_index(self, items: List[Item]):\n        \"\"\"Build FAISS index from item embeddings (run offline).\"\"\"\n        if not items:\n            return\n        embeddings = np.array(\n            [item.embedding for item in items],\n            dtype=np.float32\n        )\n        # Normalize for cosine similarity via dot product\n        faiss.normalize_L2(embeddings)\n        self.index.add(embeddings)\n        self.item_ids = [item.item_id for item in items]\n        print(f\"Indexed {len(items)} items\")\n\n    def get_candidates(\n        self,\n        user_embedding: np.ndarray,\n        top_k: int = 500\n    ) -> List[Tuple[str, float]]:\n        \"\"\"Real-time ANN search for candidate items.\"\"\"\n        query = user_embedding.reshape(1, -1).astype(np.float32)\n        faiss.normalize_L2(query)\n\n        scores, indices = self.index.search(query, top_k)\n\n        return [\n            (self.item_ids[idx], float(score))\n            for score, idx in zip(scores[0], indices[0])\n            if idx != -1\n        ]\n\n# Simulate 1M items with 64-dim embeddings\nnp.random.seed(42)\nitems = [\n    Item(item_id=f\"video:{i}\",\n         embedding=np.random.randn(64).astype(np.float32))\n    for i in range(1_000_000)\n]\n\ngenerator = TwoTowerCandidateGenerator(embedding_dim=64)\ngenerator.build_index(items)\n\n# Real-time: given a user embedding, find top 500 candidates\nuser_emb = np.random.randn(64).astype(np.float32)\ncandidates = generator.get_candidates(user_emb, top_k=500)\nprint(f\"Retrieved {len(candidates)} candidates\")\nprint(f\"Top-3: {candidates[:3]}\")",
+        "walkthrough": "100만 개 아이템에서 500개 후보를 찾는 ANN 검색이 수 밀리초 안에 완료된다. 브루트포스 KNN은 1M * 64dim 연산으로 수백ms가 걸리지만, HNSW는 로그 시간 복잡도로 처리한다. `faiss.normalize_L2`로 코사인 유사도를 내적으로 변환한다. 실제 프로덕션에서는 이 단계의 결과 500개가 다음 Ranking 단계로 넘어간다."
+      },
+      "industryEvaluation": {
+        "overview": "추천 시스템은 AI Engineering 면접의 핵심 주제다. Two-Tower 구조, Candidate Generation과 Ranking 분리, Feature Store 연동을 명확히 설명할 수 있어야 한다.",
+        "whatEngineersLookFor": [
+          "Funnel 아키텍처(Retrieval → Ranking → Re-ranking)를 명확히 설명하는가",
+          "Two-Tower 모델이 대규모 시스템에 적합한 이유를 설명하는가",
+          "Cold Start를 다양한 방법으로 해결할 수 있는가",
+          "Online A/B Test 설계와 평가 지표를 알고 있는가"
+        ],
+        "redFlags": [
+          "Collaborative Filtering만 말하고 대규모 환경에서의 한계를 인지 못 함",
+          "Candidate Generation과 Ranking의 구분이 없는 설계",
+          "Cold Start 문제를 언급하지 않는 경우",
+          "Offline metrics만 고려하고 Online A/B Test를 언급 안 하는 경우"
+        ],
+        "interviewQuestions": [
+          "TikTok의 For You Page 추천 시스템을 설계해봐.",
+          "Two-Tower 모델에서 Hard Negative Sampling이 왜 중요한가?",
+          "추천 시스템의 다양성(Diversity)을 어떻게 측정하고 높이겠어?"
+        ],
+        "masteryVsFamiliar": "익숙한 수준은 Collaborative Filtering과 Two-Tower를 설명하는 것이다. 마스터 수준은 Exploration vs Exploitation, Diversity vs Relevance, Short-term vs Long-term user interest 사이의 트레이드오프를 비즈니스 목표와 연결하여 설계하고, Vector DB 선택 기준과 ANN 인덱스 타입(HNSW vs IVF-PQ)의 메모리/속도/정확도 트레이드오프를 설명할 수 있는 것이다."
+      },
+      "keyTakeaways": [
+        {"title": "Funnel Architecture가 핵심", "content": "10M+ 아이템 → 1,000개(Candidate Generation) → 100개(Ranking) → 20개(Re-ranking). 각 단계의 속도/정확도 트레이드오프."},
+        {"title": "Two-Tower = 사전 계산 가능", "content": "Item Embedding을 미리 계산해두고 ANN 검색으로 실시간 서빙. 수억 아이템을 수밀리초에 검색하는 이유."},
+        {"title": "ANN이 KNN을 대체", "content": "수백만 임베딩에서 정확 KNN은 불가능. FAISS HNSW로 ~10ms에 근사 검색."},
+        {"title": "Cold Start에 두 가지 전략", "content": "User Cold Start: 인기 아이템 + 온보딩. Item Cold Start: Content-based + Exploration budget."},
+        {"title": "Offline과 Online 지표는 다르다", "content": "Offline에서 NDCG가 높아도 Online CTR이 낮을 수 있다. 반드시 A/B Test로 검증하라."},
+        {"title": "Diversity를 설계에 포함", "content": "같은 장르만 추천하면 User는 질린다. Re-ranking에서 다양성을 명시적으로 추가하라."},
+        {"title": "Feature Store가 실시간 개인화 가능하게", "content": "세션 내 최근 행동을 Online Feature Store에서 실시간으로 조회하여 즉각적인 개인화."},
+        {"title": "Exploration이 없으면 Echo Chamber", "content": "Exploitation만 하면 사용자는 같은 유형의 콘텐츠만 보게 된다. Multi-Armed Bandit으로 균형을 맞춰라."}
+      ]
+    },
+    {
+      "number": 10,
+      "emoji": "🚀",
+      "title": "LLM Infrastructure & AI-Native Systems",
+      "titleKr": "LLM 인프라와 AI 네이티브 시스템",
+      "tldr": "ChatGPT, Gemini 같은 서비스의 인프라 — LLM 서빙, RAG 시스템, AI Gateway, Vector DB를 완전히 설계한다.",
+      "topics": ["LLM Serving 아키텍처 (vLLM, PagedAttention)", "RAG (Retrieval-Augmented Generation) 시스템", "Vector Database 설계", "AI Gateway와 Multi-Model Routing", "LLM 평가 시스템 (LLM-as-a-Judge)"],
+      "learningGoals": [
+        "LLM 서빙의 핵심 병목(KV Cache, Batch Size, Latency/Throughput Trade-off)을 설명할 수 있다",
+        "RAG 시스템의 전체 파이프라인(인덱싱 → 검색 → 생성)을 설계할 수 있다",
+        "Vector DB의 청킹 전략, 임베딩 모델 선택, 검색 최적화를 설명할 수 있다",
+        "AI Gateway가 제공하는 기능(Rate Limiting, Caching, Routing, Observability)을 설명할 수 있다",
+        "LLM 기반 시스템의 평가 방법(LLM-as-a-Judge, Human Evaluation, Benchmark)을 설명할 수 있다"
+      ],
+      "overview": "2023년 ChatGPT의 등장으로 LLM을 프로덕션에 서빙하는 것이 AI Engineering의 핵심 과제가 됐다. LLM 서빙은 기존 ML 모델 서빙과 근본적으로 다르다 — 모델 크기가 수백 GB이고, 생성적(generative) 특성 때문에 latency 패턴이 완전히 다르며, KV Cache 관리가 핵심 병목이다.\n\n이 챕터에서는 LLM을 단순히 API로 쓰는 것을 넘어, **어떻게 수십만 사용자에게 동시에 안정적으로 서빙하는가**, **RAG로 지식 기반을 구축하는가**, **여러 모델을 전략적으로 조합하는가**를 다룬다.\n\n빅테크 AI Engineering 면접에서는 이 주제들이 점점 더 많이 출제되고 있다. \"ChatGPT 같은 서비스를 설계해봐\", \"기업 내부 문서 검색 AI를 설계해봐\", \"여러 LLM을 라우팅하는 시스템을 설계해봐\"가 대표적인 문제들이다.",
+      "sections": [
+        {
+          "title": "LLM Serving: 기존 ML과 무엇이 다른가",
+          "content": "LLM 서빙은 기존 모델 추론과 두 가지 핵심적인 차이가 있다.\n\n**1. Auto-Regressive 생성 = 순차적 토큰 생성**\n\nLLM은 한 번에 전체 출력을 만들지 않는다. 토큰을 하나씩 순차적으로 생성한다. 토큰 500개 = 500번의 forward pass. 각 pass마다 이전 모든 토큰의 Key-Value 벡터(KV Cache)가 필요하다.\n\n**2. KV Cache 메모리 병목**\n\nKV Cache는 각 Attention layer에서 계산된 Key와 Value 행렬이다. 시퀀스 길이가 길어질수록 KV Cache 크기가 선형으로 증가한다. 7B 파라미터 모델, 배치 크기 1, 시퀀스 길이 2048: KV Cache ≈ 수 GB. 긴 컨텍스트(32K, 128K tokens)에서는 KV Cache가 모델 파라미터보다 클 수도 있다.\n\n**vLLM과 PagedAttention:**\n\nvLLM은 UC Berkeley에서 2023년 발표한 LLM 서빙 프레임워크. 핵심 혁신은 **PagedAttention** — OS의 Virtual Memory 방식을 KV Cache 관리에 적용. 메모리를 고정 크기 \"Page\"로 분할, 필요할 때만 할당, 완료된 요청의 Page 즉시 해제. 기존 방식 대비 처리량 최대 24배 향상.\n\n**Latency vs Throughput Trade-off:**\n\n- **Time to First Token (TTFT)** — 첫 토큰이 나오기까지 시간. 사용자 체감 응답 속도.\n- **Time Per Output Token (TPOT)** — 이후 토큰 생성 간격. 스트리밍 속도.\n- **Throughput (Tokens/sec)** — 초당 처리 토큰 수. 시스템 전체 용량.\n\n배치 크기가 클수록 GPU 활용률이 높아져 Throughput 증가, 하지만 개별 요청 TTFT 증가. 실시간 챗봇은 TTFT 최소화, 배치 처리 API는 Throughput 최대화."
+        },
+        {
+          "title": "RAG 시스템 설계: 전체 파이프라인",
+          "content": "RAG(Retrieval-Augmented Generation)는 LLM의 두 가지 핵심 한계를 해결한다: 학습 이후 지식 업데이트 불가, 기업 내부 비공개 데이터 활용 불가.\n\n**RAG 파이프라인은 2단계:**\n\n**오프라인 인덱싱 파이프라인:**\n\n1. 문서 수집 (PDF, HTML, DB, API)\n2. 텍스트 추출 및 전처리\n3. 청킹 (Chunking) — 문서를 검색 단위로 분할\n4. 임베딩 생성 — 각 청크를 임베딩 모델로 벡터화\n5. Vector DB에 저장 (임베딩 + 원문 + 메타데이터)\n\n**온라인 검색-생성 파이프라인:**\n\n1. 사용자 쿼리 수신\n2. 쿼리 임베딩 생성\n3. Vector DB에서 ANN 검색 → Top-K 관련 청크 검색\n4. 선택적으로 BM25 키워드 검색과 결합 (Hybrid Search)\n5. Re-ranking 모델로 검색 결과 재정렬\n6. 검색된 청크 + 원본 쿼리 → LLM Prompt 구성\n7. LLM 응답 생성\n\n**청킹 전략:**\n\n| 전략 | 방법 | 적합한 경우 |\n|---|---|---|\n| Fixed-Size | 512 tokens마다 분할 | 단순, 일반 텍스트 |\n| Sentence-Based | 문장 단위 분할 | 문맥 보존 중요 시 |\n| Paragraph-Based | 단락 단위 분할 | 긴 문서 |\n| Semantic | 의미 단위로 분할 | 최고 품질, 비용 높음 |\n| Hierarchical | 작은 청크(검색) + 큰 청크(컨텍스트) | Parent-Child Retrieval |"
+        },
+        {
+          "title": "Vector Database 심층 설계",
+          "content": "Vector DB는 RAG의 핵심 컴포넌트다. 설계 시 고려해야 할 사항들:\n\n**임베딩 모델 선택:**\n\n| 모델 | 차원 | 특징 |\n|---|---|---|\n| text-embedding-3-small | 1536 | OpenAI, 다목적, 비용 효율 |\n| text-embedding-3-large | 3072 | OpenAI, 최고 품질 |\n| bge-m3 | 1024 | 다국어, 한국어 우수, 오픈소스 |\n| E5-mistral-7b | 4096 | 고품질, 무거움 |\n\n임베딩 모델은 나중에 바꾸기 어렵다. 모든 문서를 재임베딩해야 하므로 처음부터 신중히 선택.\n\n**메타데이터 필터링:**\n\nVector 검색 + 메타데이터 필터를 결합. \"법무팀 문서 중 2024년 이후 작성된 것\"처럼 도메인 필터 후 유사도 검색. Pinecone, Weaviate, Qdrant 모두 지원.\n\n**Hybrid Search (벡터 + BM25):**\n\n순수 벡터 검색은 키워드 검색에 약하다. 예: \"GDPR Article 17\" 같은 정확한 법률 조항 검색.\n\nHybrid = 벡터 검색 결과 + BM25(키워드) 결과를 RRF(Reciprocal Rank Fusion)로 결합.\n\n**Multi-Tenancy:**\n\n기업 환경에서는 팀별, 사용자별 데이터를 분리해야 한다.\n- Namespace 분리: 같은 Vector DB 내에서 논리적 분리\n- 컬렉션 분리: 팀별 별도 컬렉션\n- 인스턴스 분리: 민감한 데이터는 별도 인스턴스 (가장 강한 격리)"
+        },
+        {
+          "title": "AI Gateway: LLM 트래픽의 관제탑",
+          "content": "AI Gateway는 애플리케이션과 LLM 제공자(OpenAI, Anthropic, Google) 사이의 **중간 프록시**다. 기존 API Gateway의 LLM 특화 버전으로, LiteLLM, Portkey, Kong AI Gateway가 대표적이다.\n\n**AI Gateway의 핵심 기능:**\n\n**1. Semantic Cache (의미론적 캐시)**\n\n\"GPT-4 가격이 얼마야?\"와 \"GPT-4는 얼마야?\"는 같은 의도지만 다른 문자열이다. Exact-match 캐시로는 두 번 LLM을 호출한다. Semantic Cache는 두 쿼리의 임베딩 유사도를 계산해서, 유사한 쿼리에 캐시된 응답을 반환한다. LLM API 비용 30~50% 절감 가능.\n\n**2. Multi-Model Routing**\n\n모든 쿼리를 GPT-4로 보내면 비용이 크다. 쿼리 복잡도에 따라 모델을 선택:\n- 단순 쿼리 → GPT-4o-mini (빠르고 저렴)\n- 복잡한 추론 → Claude Opus 또는 GPT-4o\n- 코드 생성 → Deepseek-Coder 또는 Claude-Code\n\n**3. Rate Limiting과 비용 관리**\n\n사용자별/팀별 토큰 사용량 추적 및 한도 설정. 월 예산 초과 방지.\n\n**4. Fallback과 Retry**\n\nOpenAI API가 5xx 에러를 반환하면 자동으로 Anthropic Claude로 fallback. Circuit Breaker 패턴.\n\n**5. Observability**\n\n모든 LLM 호출의 입력/출력, latency, 비용, 토큰 수, 모델 버전을 로깅. 디버깅과 비용 분석에 필수."
+        },
+        {
+          "title": "LLM 평가 시스템: LLM-as-a-Judge",
+          "content": "LLM 기반 시스템은 기존 ML과 달리 **단일 숫자 지표로 품질을 측정하기 어렵다**. 언어 생성의 품질은 주관적이고 다차원적이다.\n\n**평가 방식의 계층:**\n\n**1. Rule-based (자동화, 가장 빠름)**\n\n형식 검사 (JSON 파싱 가능한가?), 키워드 포함 여부, 길이 제한 준수, 금지 단어 없음. 빠르고 결정론적. 하지만 품질의 일부만 측정.\n\n**2. Reference-based (Ground Truth 비교)**\n\n정답이 있는 태스크에서 LLM 응답과 비교. QA 시스템: 정답 포함 여부. 코드 생성: 테스트 케이스 통과 여부. F1, ROUGE, BLEU 같은 지표.\n\n**3. LLM-as-a-Judge (LLM으로 LLM 평가)**\n\n더 강력한 LLM(Judge)이 다른 LLM의 응답 품질을 평가. GPT-4가 다른 모델의 응답을 1~5점으로 채점.\n\n```\nPrompt: \"다음 답변의 정확성, 유용성, 간결함을 각각 1-5점으로 평가하고 이유를 설명해라.\"\n```\n\n장점: 주관적 품질도 측정 가능. 다양한 차원(정확성, 안전성, 형식) 동시 평가.\n단점: LLM 자체의 편향(Verbosity Bias — 긴 답변 선호). 비용. 비결정론적.\n\n**4. Human Evaluation (A/B Test)**\n\n실제 사용자가 두 모델의 응답을 비교하여 선택. 가장 신뢰도 높지만 비용과 시간이 많이 든다. Anthropic의 [Constitutional AI](https://arxiv.org/abs/2212.08073) 연구에서 이 방식을 활용했다.\n\n**평가 파이프라인:**\n\n모델 변경 PR → 자동 Rule-based + LLM-as-a-Judge → 기준 통과 → Shadow Mode 배포 → Human Evaluation Sample → 전체 배포"
+        }
+      ],
+      "analogy": {
+        "title": "도서관 사서 + 통역사로 보는 RAG",
+        "content": "LLM만 있는 시스템은 **모든 것을 외우려는 사람**과 같다. 아무리 똑똑해도 작년에 배운 것을 넘어설 수 없고, 회사 내부 문서는 전혀 모른다.\n\nRAG 시스템은 **책을 찾는 것과 읽는 것을 분리**한다. 질문이 들어오면 먼저 도서관(Vector DB)에서 가장 관련 있는 문서를 찾아온다. 그 문서를 읽고 이해한 후에 답변한다. 도서관(RAG)은 지식을 실시간으로 업데이트할 수 있다. 통역사(LLM)는 주어진 문서를 이해하고 질문에 답하는 능력이 있다.\n\nAI Gateway는 도서관 앞 안내 데스크다. \"법률 문서 질문이에요\" → 법률 전문 사서에게, \"코드 질문이에요\" → 기술 전문 사서에게 라우팅한다. 자주 묻는 질문(Semantic Cache)은 바로 답한다. 한 사서가 너무 바쁘면(Rate Limit) 다른 사서에게 연결한다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "RAG 시스템의 핵심인 문서 청킹, 임베딩, 벡터 검색을 구현하는 간단하지만 실용적인 RAG 파이프라인이다.",
+        "code": "from dataclasses import dataclass, field\nfrom typing import List, Optional\nimport numpy as np\n\n@dataclass\nclass Document:\n    content: str\n    metadata: dict = field(default_factory=dict)\n    embedding: Optional[np.ndarray] = None\n\nclass SimpleRAGPipeline:\n    \"\"\"Production-like RAG with chunking, embedding, and retrieval.\"\"\"\n\n    def __init__(self, chunk_size: int = 512, chunk_overlap: int = 50):\n        self.chunk_size = chunk_size\n        self.chunk_overlap = chunk_overlap\n        self.documents: List[Document] = []\n        self.embeddings: Optional[np.ndarray] = None\n\n    def chunk_text(self, text: str, metadata: dict) -> List[Document]:\n        \"\"\"Split text into overlapping chunks for better context preservation.\"\"\"\n        chunks = []\n        words = text.split()\n        step = self.chunk_size - self.chunk_overlap\n        for i in range(0, len(words), step):\n            chunk_words = words[i:i + self.chunk_size]\n            if len(chunk_words) < 50:  # Skip tiny trailing chunks\n                continue\n            chunks.append(Document(\n                content=' '.join(chunk_words),\n                metadata={**metadata, 'chunk_index': len(chunks)}\n            ))\n        return chunks\n\n    def embed(self, texts: List[str]) -> np.ndarray:\n        \"\"\"Stub: replace with real embedding model (OpenAI, bge-m3, etc.)\"\"\"\n        # In production: openai.embeddings.create(input=texts, model='text-embedding-3-small')\n        np.random.seed(hash(texts[0]) % 2**31)  # Deterministic for demo\n        return np.random.randn(len(texts), 128).astype(np.float32)\n\n    def index(self, raw_docs: List[dict]):\n        \"\"\"Offline indexing pipeline.\"\"\"\n        all_chunks = []\n        for doc in raw_docs:\n            chunks = self.chunk_text(doc['content'], doc.get('metadata', {}))\n            all_chunks.extend(chunks)\n\n        # Batch embed all chunks\n        texts = [chunk.content for chunk in all_chunks]\n        embeddings = self.embed(texts)\n        for i, chunk in enumerate(all_chunks):\n            chunk.embedding = embeddings[i]\n        self.documents = all_chunks\n        # Normalize for cosine similarity\n        norms = np.linalg.norm(embeddings, axis=1, keepdims=True)\n        self.embeddings = embeddings / (norms + 1e-8)\n        print(f\"Indexed {len(self.documents)} chunks\")\n\n    def retrieve(self, query: str, top_k: int = 5) -> List[Document]:\n        \"\"\"Online retrieval — called on every user query.\"\"\"\n        query_emb = self.embed([query])\n        query_emb /= (np.linalg.norm(query_emb) + 1e-8)\n        scores = (self.embeddings @ query_emb.T).squeeze()  # Cosine similarity\n        top_indices = np.argsort(scores)[::-1][:top_k]\n        return [self.documents[i] for i in top_indices]\n\n    def answer(self, query: str) -> str:\n        \"\"\"Full RAG pipeline: retrieve + generate.\"\"\"\n        retrieved = self.retrieve(query, top_k=5)\n        context = \"\\n\\n\".join(f\"[{i+1}] {doc.content}\" for i, doc in enumerate(retrieved))\n        # In production: send to LLM with context\n        return f\"[Prompt to LLM]\\nContext:\\n{context}\\n\\nQuestion: {query}\\n\\nAnswer:\"\n\n# Demo\nrag = SimpleRAGPipeline(chunk_size=100, chunk_overlap=20)\nrag.index([\n    {\"content\": \"Kubernetes is an open-source container orchestration system. \" * 10,\n     \"metadata\": {\"source\": \"k8s_docs\"}},\n    {\"content\": \"Docker containers package applications and dependencies together. \" * 10,\n     \"metadata\": {\"source\": \"docker_docs\"}},\n])\nresult = rag.answer(\"What is container orchestration?\")\nprint(result[:300])",
+        "walkthrough": "청킹에서 `chunk_overlap`이 중요하다. 오버랩 없이 분할하면 문장이 청크 경계에서 잘려 컨텍스트를 잃는다. 50 토큰 오버랩으로 연속성을 유지한다. 임베딩을 L2 정규화 후 내적으로 코사인 유사도를 계산한다 (내적 = cos similarity when normalized). 프로덕션에서는 `embed()` 함수를 OpenAI/Cohere/bge-m3 실제 API로 교체하고, `index()`는 오프라인 배치로, `retrieve()`는 온라인 FAISS로 교체한다."
+      },
+      "industryEvaluation": {
+        "overview": "LLM 인프라는 2023년 이후 AI Engineering 면접에서 급부상한 주제다. vLLM/PagedAttention, RAG 파이프라인, AI Gateway, LLM-as-a-Judge 평가까지 엔드 투 엔드를 설명할 수 있어야 한다.",
+        "whatEngineersLookFor": [
+          "LLM 서빙의 KV Cache 병목과 vLLM의 해결책을 설명할 수 있는가",
+          "RAG 파이프라인의 각 단계와 품질에 영향을 주는 요소를 아는가",
+          "AI Gateway를 통한 비용 최적화 전략을 제시할 수 있는가",
+          "LLM 시스템의 평가가 기존 ML보다 어려운 이유와 해결책을 설명하는가"
+        ],
+        "redFlags": [
+          "RAG = \"그냥 벡터 DB에 문서 넣고 검색\"이라고만 설명하는 경우",
+          "청킹 전략이나 임베딩 모델 선택의 중요성을 모르는 경우",
+          "LLM 서빙을 기존 API 서버 배포와 동일하게 보는 경우",
+          "평가 시스템 없이 \"프롬프트를 잘 쓰면 됩니다\"라고만 말하는 경우"
+        ],
+        "interviewQuestions": [
+          "기업 내부 문서 Q&A 시스템을 설계해봐. 수백만 문서, 수천 동시 사용자.",
+          "RAG 시스템의 품질이 낮다. 어떻게 개선하겠어?",
+          "LLM 서빙 비용을 절반으로 줄여야 한다. 어떻게 접근하겠어?"
+        ],
+        "masteryVsFamiliar": "익숙한 수준은 RAG 개념을 설명하고 기본 구현을 아는 것이다. 마스터 수준은 Chunking 전략의 트레이드오프, Hybrid Search(벡터 + BM25)의 필요성, PagedAttention의 동작 원리, Semantic Cache의 임계값 튜닝, LLM-as-a-Judge의 편향까지 알고, 비용/품질/지연 사이의 최적점을 찾는 전략을 시스템 레벨에서 설계할 수 있는 것이다."
+      },
+      "keyTakeaways": [
+        {"title": "KV Cache가 LLM 서빙의 핵심 병목", "content": "긴 시퀀스일수록 KV Cache가 커진다. vLLM의 PagedAttention이 메모리 단편화를 해결하여 처리량을 24배 향상."},
+        {"title": "TTFT vs Throughput", "content": "챗봇은 TTFT 최소화(첫 토큰까지 속도), 배치 API는 Throughput 최대화. 배치 크기로 균형을 맞춘다."},
+        {"title": "RAG = 검색 + 생성의 분리", "content": "LLM의 지식 한계를 Vector DB 검색으로 보완. 기업 내부 문서를 LLM이 활용하게 하는 표준 방법."},
+        {"title": "청킹이 RAG 품질 결정", "content": "청크가 너무 작으면 컨텍스트 부족, 너무 크면 노이즈 증가. Semantic chunking이 최고 품질이지만 비용이 높다."},
+        {"title": "Hybrid Search (벡터 + BM25)", "content": "정확한 키워드(법률 조항, 제품 코드)는 BM25, 의미 유사성은 벡터 검색. 두 가지를 RRF로 결합하면 더 좋다."},
+        {"title": "AI Gateway = LLM 관제탑", "content": "Semantic Cache로 비용 절감, Smart Routing으로 비용/품질 균형, Rate Limiting, Observability. 모든 LLM 트래픽이 거쳐야 한다."},
+        {"title": "LLM-as-a-Judge로 자동 평가", "content": "더 강한 모델이 약한 모델을 평가. 주관적 품질 측정 가능. 단 Verbosity Bias 등 편향을 인지하라."},
+        {"title": "Semantic Cache = LLM 비용 30~50% 절감", "content": "같은 의미의 다른 표현을 임베딩 유사도로 감지하여 캐시 재사용. 고정 비용 질문이 많은 서비스에서 효과적."}
+      ]
+    }
+  ]
+}

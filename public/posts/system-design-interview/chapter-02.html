@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch2: Distributed Systems Fundamentals — System Design Interview — direcf</title>
+  <meta name="description" content="CAP 정리, 일관성 모델, 장애 내성의 기초를 이해해야 모든 아키텍처 결정의 &#x27;왜&#x27;를 설명할 수 있다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/ai-engineering">System Design Interview</a><span class="sep">›</span>
+        <strong>Ch02 Distributed Systems Fundamentals</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 02 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">⚡</div>
+      <h1 class="chapter-title">Distributed Systems Fundamentals</h1>
+      <div class="chapter-title-kr">분산 시스템 핵심 이론</div>
+      <div class="chapter-tldr">CAP 정리, 일관성 모델, 장애 내성의 기초를 이해해야 모든 아키텍처 결정의 &#x27;왜&#x27;를 설명할 수 있다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-02.png" alt="Chapter 2 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 2 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>CAP 정리를 정확히 설명하고 CP/AP 시스템의 실제 예를 들 수 있다</li><li>Strong consistency, Eventual consistency, Causal consistency의 차이를 설명할 수 있다</li><li>Leader-Follower Replication의 동작 방식과 failover를 설명할 수 있다</li><li>Paxos/Raft consensus 알고리즘이 왜 필요한지 설명할 수 있다</li><li>분산 시스템에서 시간의 문제(Clock Skew, Vector Clock)를 이해한다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>분산 시스템은 <strong>네트워크로 연결된 여러 독립 컴퓨터가 하나처럼 동작하는 것처럼 보이는 시스템</strong>이다. 싱글 서버의 한계를 극복하기 위해 반드시 필요하지만, 분산 자체가 새로운 복잡성을 만들어낸다. 이 챕터에서 다루는 이론은 "이 DB는 왜 이렇게 설계되었는가", "왜 이 캐시는 강한 일관성을 보장하지 못하는가"에 대한 근본 답이다.</p>
+<p>빅테크 면접에서 "왜 MySQL이 아니라 Cassandra를 썼어?"라는 질문에 단순히 "Cassandra는 빨라요"라고 답하는 건 F다. "Cassandra는 AP 시스템으로 availability를 일관성보다 우선합니다. 이 서비스는 read/write 모두 지연이 없어야 하고, 짧은 시간의 데이터 불일치를 허용하므로 Cassandra가 적합합니다"가 A다.</p>
+<p>이 챕터의 내용은 처음에는 추상적으로 느껴질 수 있다. 하지만 챕터 3(스토리지), 챕터 4(캐시), 챕터 7(실전 설계)에서 구체적인 시스템에 적용하면서 자연스럽게 체화된다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>CAP 정리: 분산 시스템의 삼각형 딜레마</h2><p>2000년 Eric Brewer가 제안하고 2002년 Gilbert와 Lynch가 증명한 <strong>CAP 정리</strong>는 분산 시스템에서 가장 유명한 이론이다.</p>
+<p><strong>Consistency (C)</strong> = 모든 노드에서 동시에 같은 데이터를 읽는다. 쓰기 직후 어느 노드에서 읽어도 최신값이 보인다.</p>
+<p><strong>Availability (A)</strong> = 노드 일부가 죽어도 시스템이 응답을 반환한다. 응답이 최신값이 아닐 수도 있다.</p>
+<p><strong>Partition Tolerance (P)</strong> = 네트워크 단절(partition)이 발생해도 시스템이 계속 동작한다.</p>
+<p>CAP 정리의 핵심은 <strong>P는 실제 분산 시스템에서 포기할 수 없다</strong>는 것이다. 네트워크는 언제든 끊길 수 있다. 따라서 실제 선택은 <strong>CP</strong> (partition 시 consistency 우선, availability 포기) vs <strong>AP</strong> (partition 시 availability 우선, consistency 포기)다.</p>
+<table>
+<thead>
+<tr>
+<th>분류</th>
+<th>예시 시스템</th>
+<th>특징</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CP</td>
+<td>HBase, Zookeeper, Redis (single node)</td>
+<td>네트워크 분단 시 일부 요청 거절, 데이터 일관성 보장</td>
+</tr>
+<tr>
+<td>AP</td>
+<td>Cassandra, CouchDB, DynamoDB</td>
+<td>네트워크 분단 시에도 응답, 일시적 불일치 허용</td>
+</tr>
+<tr>
+<td>CA</td>
+<td>RDBMS (single node)</td>
+<td>분산 환경에선 실제로 CA는 존재하지 않음</td>
+</tr>
+</tbody>
+</table>
+<p>중요한 점은 CAP이 이분법이 아니라는 것이다. "이 시스템은 무조건 CP"가 아니라, 특정 연산에서 C와 A 사이의 지점을 선택하는 것이다.</p></div><div class="sb-block"><h2>Consistency 모델의 스펙트럼</h2><p>CAP의 Consistency는 사실 단순하지 않다. 실제로는 강도에 따른 스펙트럼이 존재한다.</p>
+<p><strong>Strong Consistency (선형화 가능성, Linearizability)</strong> — 쓰기 완료 즉시 모든 읽기가 최신값을 반환한다. 가장 직관적이지만 지연시간이 크고 구현이 어렵다. Single-leader replication에서 synchronous follower 복제로 달성 가능하다. 예: Google Spanner.</p>
+<p><strong>Sequential Consistency</strong> — 모든 프로세스가 같은 순서로 연산을 관찰한다. 물리적 시간 순서와는 다를 수 있다. Linearizability보다 약하지만 여전히 강한 모델이다.</p>
+<p><strong>Causal Consistency</strong> — 인과 관계가 있는 연산(A가 B를 유발함)만 순서를 보장한다. 연관 없는 연산은 순서가 달라도 된다. 많은 분산 데이터베이스가 채택한 실용적 모델이다.</p>
+<p><strong>Eventual Consistency</strong> — 충분한 시간이 지나면 모든 복제본이 같아진다. 언제 같아질지는 보장하지 않는다. 가용성과 성능에서 가장 유리하다. DynamoDB, Cassandra의 기본 모드.</p>
+<table>
+<thead>
+<tr>
+<th>모델</th>
+<th>지연</th>
+<th>가용성</th>
+<th>구현 복잡도</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Linearizability</td>
+<td>높음</td>
+<td>낮음</td>
+<td>매우 높음</td>
+</tr>
+<tr>
+<td>Sequential</td>
+<td>중간</td>
+<td>중간</td>
+<td>높음</td>
+</tr>
+<tr>
+<td>Causal</td>
+<td>낮음</td>
+<td>높음</td>
+<td>중간</td>
+</tr>
+<tr>
+<td>Eventual</td>
+<td>최저</td>
+<td>최고</td>
+<td>낮음</td>
+</tr>
+</tbody>
+</table>
+<p>실제 빅테크 시스템에서 사용자 프로필, 계좌 잔액처럼 정확해야 하는 데이터는 strong consistency를, 소셜 미디어 좋아요 수, 조회수처럼 약간의 오차가 허용되는 데이터는 eventual consistency를 쓴다.</p></div><div class="sb-block"><h2>Replication: 데이터를 어떻게 복사하는가</h2><p>복제(Replication)는 같은 데이터를 여러 노드에 유지하는 것이다. 목적은 두 가지다: 가용성(노드 하나가 죽어도 됨)과 성능(읽기를 여러 노드에 분산).</p>
+<p><strong>Single-Leader Replication (Master-Slave)</strong></p>
+<p>쓰기는 오직 Leader(Master)로만 간다. Leader는 변경사항을 Replication Log에 기록하고 Follower(Replica)에 전송한다. Follower는 log를 적용해 자신을 업데이트한다.</p>
+<ul>
+<li>Synchronous Replication: Leader가 최소 하나의 Follower에 쓰기 완료 확인을 받고 클라이언트에 응답 → 데이터 유실 없음, 쓰기 지연 증가</li>
+<li>Asynchronous Replication: Leader가 Follower 확인 없이 즉시 응답 → 빠르지만 Leader 장애 시 데이터 유실 가능</li>
+</ul>
+<p><strong>Multi-Leader Replication</strong></p>
+<p>여러 Leader가 쓰기를 받고 서로 복제한다. 다중 데이터센터에서 지연시간을 줄이기 위해 쓴다. 단점은 <strong>Write Conflict</strong> — 두 리더에서 같은 데이터를 동시에 변경하면 어떻게 해결할까? Last-Write-Wins(LWW), Custom conflict resolution function 등의 전략이 필요하다.</p>
+<p><strong>Leaderless Replication (Dynamo-style)</strong></p>
+<p>Leader 없이 모든 노드에 쓰기 가능. Quorum 방식: 쓰기는 W개 노드에서 확인, 읽기는 R개 노드에서 읽어서 최신값 결정. <span class="math-inline">\(W + R &gt; N\)</span> (N = 총 노드 수) 이면 적어도 하나의 노드가 최신값을 가진다. Cassandra, DynamoDB가 이 방식.</p></div><div class="sb-block"><h2>Consensus 알고리즘: 분산 합의</h2><p>분산 시스템에서 여러 노드가 <strong>하나의 값에 합의</strong>하는 것은 놀랍도록 어렵다. 네트워크 지연, 노드 장애, 메시지 손실이 있는 환경에서 합의를 달성하는 알고리즘이 <strong>Consensus 알고리즘</strong>이다.</p>
+<p><strong>왜 필요한가?</strong> Leader Election — 여러 노드 중 누가 Leader인지 합의해야 한다. 하나의 Leader만 있어야 하므로 (split-brain 방지), 합의 알고리즘 없이는 두 노드가 동시에 자신이 Leader라고 주장할 수 있다.</p>
+<p><strong>Paxos</strong> — 2001년 Leslie Lamport가 설계한 최초의 실용적 consensus 알고리즘. 이론적으로 완벽하지만 이해하기 어렵고 구현이 복잡하다. Google Chubby, Apache Zookeeper에서 사용.</p>
+<p><strong>Raft</strong> — 2014년 Diego Ongaro가 "이해 가능성"을 목표로 설계. Paxos와 동등한 안전성을 가지면서 훨씬 이해하기 쉽다. etcd, CockroachDB, TiKV 등 현대 분산 시스템에서 널리 사용된다.</p>
+<p>Raft의 핵심 아이디어는 세 가지로 분리된다:</p>
+<ol>
+<li><strong>Leader Election</strong> — 타임아웃 후 Candidate가 되어 투표 요청, 과반수 투표 받으면 Leader</li>
+<li><strong>Log Replication</strong> — Leader가 log entry를 모든 Follower에 복제, 과반수 확인 후 commit</li>
+<li><strong>Safety</strong> — 이미 commit된 entry는 절대 덮어쓰지 않음</li>
+</ol>
+<p>면접에서 Paxos/Raft를 구현하라는 요청은 없다. 하지만 "Zookeeper는 어떻게 leader election을 하나요?", "Kafka의 ISR (In-Sync Replicas)가 뭔가요?"에 답할 수 있어야 한다.</p></div><div class="sb-block"><h2>분산 시스템의 8가지 오류와 시간 문제</h2><p>1994년 Peter Deutsch가 제시한 <strong>분산 컴퓨팅의 8가지 오류(Fallacies of Distributed Computing)</strong>는 지금도 유효하다:</p>
+<ol>
+<li>네트워크는 신뢰할 수 있다</li>
+<li>지연시간은 0이다</li>
+<li>대역폭은 무한하다</li>
+<li>네트워크는 안전하다</li>
+<li>토폴로지는 변하지 않는다</li>
+<li>관리자는 한 명이다</li>
+<li>전송 비용은 0이다</li>
+<li>네트워크는 균일하다</li>
+</ol>
+<p>이 오류들이 중요한 이유는 분산 시스템의 거의 모든 복잡성이 여기서 비롯되기 때문이다.</p>
+<p>특히 <strong>시간의 문제</strong>는 미묘하다. 분산 시스템에서 "이 이벤트가 저 이벤트보다 먼저 일어났다"를 확신하기 어렵다. 각 노드의 물리적 시계(clock)는 조금씩 다르게 간다(Clock Skew). NTP로 동기화해도 수 밀리초의 오차는 피할 수 없다.</p>
+<p><strong>Lamport Timestamp</strong> — 물리적 시계 없이 인과 순서를 표현하는 논리 시계. 각 프로세스가 카운터를 유지하고, 메시지 전송 시 카운터를 포함. 받는 쪽은 자신의 카운터와 받은 카운터 중 큰 값 + 1로 업데이트.</p>
+<p><strong>Vector Clock</strong> — Lamport Timestamp의 확장. 각 프로세스마다 카운터를 따로 관리하는 벡터. 두 이벤트의 인과 관계가 있는지 없는지(concurrent)를 판별할 수 있다. DynamoDB의 conflict detection에 사용됨.</p>
+<p>시스템 설계 면접에서 이 개념들은 "두 사용자가 동시에 같은 데이터를 수정하면?"이라는 질문에 답할 때 필요하다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">국제 은행 네트워크로 보는 분산 시스템</div>
+      <div class="a-body"><p>분산 시스템은 <strong>전 세계에 지점이 있는 국제 은행</strong>과 같다. 서울 지점, 뉴욕 지점, 런던 지점이 있고 각 지점은 독립적으로 거래를 처리한다. 지점들은 네트워크(SWIFT 같은)로 연결되어 있다.</p>
+<p>이 은행에서 CAP 딜레마가 생기는 순간을 생각해보자. 서울-뉴욕 간 통신이 끊겼다(Partition). 이때 서울 고객이 100만원을 인출하면 어떻게 해야 하나? <strong>Consistency를 선택하면</strong>: 서울 지점은 "죄송합니다, 현재 거래가 불가합니다"라고 거절한다. 잔액이 정확하게 동기화될 때까지 서비스를 중단한다. <strong>Availability를 선택하면</strong>: 서울 지점은 자신이 알고 있는 잔액으로 거래를 처리한다. 통신이 복구되면 뉴욕 지점과 데이터를 조정한다. 이때 두 곳에서 동시에 출금이 됐다면 conflict가 발생한다.</p>
+<p>계좌 잔액처럼 정확성이 중요한 데이터는 CP를, 소셜 미디어 좋아요 수처럼 약간의 오차를 허용할 수 있는 데이터는 AP를 선택하는 이유가 여기에 있다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>Quorum 기반의 분산 Key-Value 스토어 시뮬레이션이다. Cassandra/DynamoDB의 W+R&gt;N 원칙을 구현하여 eventual consistency와 quorum read가 어떻게 동작하는지 보여준다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import random
+import time
+from dataclasses import dataclass, field
+from typing import Optional
+
+@dataclass
+class VersionedValue:
+    value: str
+    timestamp: float
+    version: int
+
+@dataclass
+class Node:
+    node_id: int
+    store: dict = field(default_factory=dict)
+    is_available: bool = True
+
+    def write(self, key: str, value: str, version: int) -&gt; bool:
+        if not self.is_available:
+            return False
+        self.store[key] = VersionedValue(value, time.time(), version)
+        return True
+
+    def read(self, key: str) -&gt; Optional[VersionedValue]:
+        if not self.is_available:
+            return None
+        # Simulate network latency
+        time.sleep(random.uniform(0.001, 0.01))
+        return self.store.get(key)
+
+class QuorumKVStore:
+    def __init__(self, n: int, w: int, r: int):
+        self.nodes = [Node(i) for i in range(n)]
+        self.N, self.W, self.R = n, w, r
+        self._version = 0
+        assert w + r &gt; n, &quot;W + R must be &gt; N for strong consistency&quot;
+
+    def write(self, key: str, value: str) -&gt; bool:
+        self._version += 1
+        successes = sum(
+            node.write(key, value, self._version)
+            for node in self.nodes
+        )
+        return successes &gt;= self.W  # Quorum write success
+
+    def read(self, key: str) -&gt; Optional[str]:
+        results = [
+            node.read(key) for node in self.nodes
+        ]
+        valid = [r for r in results if r is not None]
+        if len(valid) &lt; self.R:
+            return None  # Quorum not met
+        # Return the value with the highest version (latest)
+        latest = max(valid, key=lambda v: v.version)
+        return latest.value
+
+# N=3, W=2, R=2 → W+R=4 &gt; N=3 → quorum consistency guaranteed
+store = QuorumKVStore(n=3, w=2, r=2)
+store.nodes[2].is_available = False  # Simulate one node down
+
+store.write(&quot;user:1001&quot;, &quot;Alice&quot;)
+print(store.read(&quot;user:1001&quot;))  # Still works: 2 out of 3 nodes respond</code></pre>
+      <div class="c-walk"><p>W=2, R=2, N=3에서 노드 하나가 죽어도 쓰기(2/3 성공)와 읽기(2/3 성공)가 모두 가능하다. W+R=4 &gt; N=3이므로 최소 1개 노드가 최신 값을 반환한다. 노드가 2개 죽으면 서비스가 중단된다(CP 모드). W=1, R=1로 바꾸면 AP 모드 — 한 노드만 살아있어도 응답하지만 stale data를 반환할 수 있다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">분산 시스템 이론은 빅테크 면접에서 직접 질문으로 나오기보다, 아키텍처 결정의 &#x27;왜&#x27;를 설명할 때 요구된다. Cassandra vs MySQL, Kafka vs RabbitMQ 같은 선택에서 이 이론적 배경이 필요하다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>CAP을 정확히 알고, 실제 시스템에 어떻게 적용되는지 예를 들 수 있는가</li><li>Eventual consistency를 쓸 때 어떤 문제가 생길 수 있고 어떻게 해결하는가</li><li>Replication lag가 서비스에 미치는 영향을 설명할 수 있는가</li><li>Leader election이 실패하면 어떻게 되는지 알고 있는가</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>&quot;Cassandra가 빠르기 때문에&quot;처럼 이유 없는 기술 선택</li><li>CAP을 외웠지만 구체적 시스템 예를 못 드는 경우</li><li>Eventual consistency의 trade-off를 모르는 경우</li><li>Single point of failure를 설계에 방치하는 경우</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>DynamoDB는 CAP의 어디에 위치하나? 그 이유는?</li><li>Multi-leader replication에서 write conflict를 어떻게 해결하나?</li><li>&quot;Read your own writes&quot; consistency를 어떻게 보장하나?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 익숙한 수준은 CAP을 설명하고 CP/AP 예시를 말하는 것이다. 마스터 수준은 PACELC(Partition 없을 때도 Latency vs Consistency 트레이드오프가 있다)까지 알고, 특정 서비스의 각 데이터 타입에 맞는 consistency 수준을 구체적으로 설계할 수 있는 것이다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>P는 포기 불가</h3><p>실제 분산 시스템에서 Partition Tolerance는 포기할 수 없다. 선택은 항상 CP vs AP다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>Consistency는 스펙트럼</h3><p>Strong → Sequential → Causal → Eventual 스펙트럼. 서비스의 데이터 특성에 맞는 수준을 선택하라.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>Quorum: W+R&gt;N</h3><p>이 조건이 성립하면 최소 하나의 노드가 최신값을 반환한다. Cassandra의 기본 원리다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>Raft가 Paxos를 대체</h3><p>현대 시스템은 대부분 이해하기 쉬운 Raft를 사용한다. etcd, CockroachDB, TiKV가 모두 Raft 기반.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>시계는 믿을 수 없다</h3><p>분산 시스템에서 물리적 시계의 Clock Skew 때문에 이벤트 순서를 시간으로 판단하면 위험하다. Lamport Timestamp나 Vector Clock을 쓴다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>Replication Lag를 인지하라</h3><p>Async replication은 빠르지만 Leader 장애 시 데이터 유실 가능. Read Replica에서 읽으면 stale data를 볼 수 있다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>단일 장애점을 없애라</h3><p>단일 Leader, 단일 DB, 단일 서버는 Single Point of Failure다. 항상 이중화를 고려하라.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>이론은 결정의 근거</h3><p>면접에서 기술을 선택할 때 반드시 이론적 근거로 정당화하라. 이것이 주니어와 시니어를 가른다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-01.html">← The System Design Interview Framework</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-03.html">Storage Systems at Scale →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

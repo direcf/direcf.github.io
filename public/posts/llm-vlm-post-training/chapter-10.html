@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch10: Post-Training Data Curation &amp; Quality Management — LLM &amp; VLM Post-Training Mastery — direcf</title>
+  <meta name="description" content="데이터 품질이 알고리즘보다 더 중요하다는 것이 2025-2026년 연구의 일관된 발견이며, gradient effective rank가 새로운 정량적 품질 지표로 부상했다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/multimodal-ai">LLM &amp; VLM Post-Training Mastery</a><span class="sep">›</span>
+        <strong>Ch10 Post-Training Data Curation &amp; Quality Management</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 10 <span style="opacity:.3">·</span> 15 chapters
+      </div>
+      <div class="chapter-emoji">🔬</div>
+      <h1 class="chapter-title">Post-Training Data Curation &amp; Quality Management</h1>
+      <div class="chapter-title-kr">Post-Training 데이터 큐레이션 &amp; 품질 관리 — LLM &amp; VLM 통합</div>
+      <div class="chapter-tldr">데이터 품질이 알고리즘보다 더 중요하다는 것이 2025-2026년 연구의 일관된 발견이며, gradient effective rank가 새로운 정량적 품질 지표로 부상했다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-10.png" alt="Chapter 10 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 10 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>Gradient effective rank를 SVD 기반으로 계산하고 데이터 품질 지표로 해석할 수 있다</li><li>비디오 벤치마크의 40-60% text-only 편향 문제를 필터링하는 방법을 설명할 수 있다</li><li>MinHash/SimHash 기반 중복 제거를 구현할 수 있다</li><li>LLM/VLM 데이터 큐레이션 파이프라인의 주요 단계를 설계할 수 있다</li><li>다양성과 품질 간의 trade-off를 데이터 선택 전략으로 관리할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>'데이터 품질이 알고리즘 선택보다 중요하다'는 주장이 2025-2026년 다수의 연구에서 반복적으로 확인되었다. RLHF/DPO 방법론 간 성능 차이는 ~1pp에 불과하지만(<a href="https://arxiv.org/pdf/2603.19335">2603.19335</a>), 고품질 데이터로 교체하면 훨씬 큰 차이를 만들 수 있다. 이 챕터에서는 LLM과 VLM post-training을 위한 데이터 큐레이션 파이프라인을 체계적으로 다룬다.</p>
+<p>2026년에 특히 주목할 두 가지 발전이 있다. 첫째, <strong>Gradient Effective Rank</strong>(<a href="https://arxiv.org/html/2504.10766v1">arxiv 2504.10766</a>): reasoning 데이터(rank 361)가 instruction 데이터(rank 153)보다 훨씬 풍부한 gradient 구조를 생성한다는 것을 SVD로 측정. 둘째, <strong>비디오 벤치마크 텍스트 편향</strong>(<a href="https://arxiv.org/abs/2604.05117">arxiv 2604.05117</a>): VideoMME의 48.2%, MMVU의 57.1%가 텍스트만으로 답할 수 있는 질문. 이런 데이터로 훈련하면 모델이 시각적으로 이해하지 않고도 높은 점수를 낼 수 있는 단축키를 학습한다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>Gradient Effective Rank: 데이터 품질의 정량화</h2><p><a href="https://arxiv.org/html/2504.10766v1">ACL 2026</a> 논문은 SVD 기반 entropy effective rank를 사용하여 훈련 데이터의 품질을 정량화한다.</p>
+<p><strong>계산 방법</strong>: 훈련 배치에서 특정 레이어(Query projection)의 gradient matrix <span class="math-inline">\(G \in \mathbb{R}^{d_{out} \times d_{in}}\)</span>에 SVD를 수행한다:
+<span class="math-display">\[G = U\Sigma V^T, \quad \Sigma = \text{diag}(\sigma_1, \ldots, \sigma_r)\]</span></p>
+<p>Normalized singular value <span class="math-inline">\(\bar{\sigma}_i = \sigma_i / \sum_j \sigma_j\)</span>에 대해 effective rank:
+<span class="math-display">\[\rho(G) = \exp\left(-\sum_i \bar{\sigma}_i \log \bar{\sigma}_i\right)\]</span></p>
+<p>이 값이 높을수록 gradient가 더 다양한 방향으로 분산되어 더 풍부한 학습 신호를 제공한다.</p>
+<p><strong>실용적 의미</strong>: 같은 예산으로 데이터를 선택할 때 gradient rank가 높은 데이터를 우선 선택한다. Reasoning 데이터(수학, 코딩)는 rank ~361, 단순 instruction-following은 rank ~153. 데이터 혼합 비율 결정에 이 지표를 활용할 수 있다.</p></div><div class="sb-block"><h2>비디오 데이터의 텍스트 편향 필터링</h2><p><a href="https://arxiv.org/abs/2604.05117">arxiv 2604.05117</a> 'Watch Before You Answer'(April 2026)은 비디오 post-training 데이터의 심각한 문제를 지적한다: <strong>40-60%의 질문이 비디오를 보지 않고도 텍스트만으로 답할 수 있다.</strong></p>
+<p>측정 방법: GPT-5와 Gemini-3.1-Pro에게 비디오 없이 텍스트만으로 질문에 답하게 했을 때, VideoMME에서 48.2%, MMVU에서 57.1%를 맞췄다. 이런 데이터로 훈련하면 모델이 시각적 이해 없이 언어 패턴으로 답하는 것을 강화한다.</p>
+<p><strong>필터링 방법</strong>:</p>
+<ol>
+<li>비디오 없이 텍스트만으로 LLM에게 질문</li>
+<li>LLM이 높은 확신으로 답하면 '텍스트로 해결 가능' → 제거</li>
+<li>LLM이 확신이 없으면 '시각적 이해 필요' → 보존</li>
+</ol>
+<p><strong>결과</strong>: 263,071 샘플에서 181,710 샘플(69.1%)을 보존하면서 다양한 frame count에서 4.8-6.2점 개선.</p></div><div class="sb-block"><h2>중복 제거: MinHash와 텍스트/이미지 레벨</h2><p>훈련 데이터의 중복은 여러 문제를 일으킨다: 특정 패턴의 과다 학습, 데이터 다양성 감소, 비효율적 학습. 텍스트와 이미지/비디오 중복을 별도로 처리해야 한다.</p>
+<p><strong>텍스트 레벨 중복 제거 (MinHash LSH)</strong>:</p>
+<pre><code class="language-python">from datasketch import MinHash, MinHashLSH
+
+def text_to_minhash(text, num_perm=128):
+    m = MinHash(num_perm=num_perm)
+    words = set(text.lower().split())
+    for word in words:
+        m.update(word.encode('utf8'))
+    return m
+</code></pre>
+<p>Jaccard similarity &gt; 0.8이면 중복으로 판단하여 제거. 대규모(수백만 샘플)에서 O(n)으로 효율적.</p>
+<p><strong>이미지 레벨 중복 제거</strong>: Perceptual hash (pHash) 또는 CLIP embedding 코사인 유사도로 시각적 중복 제거. 동일 이미지에 다른 질문이 있는 경우는 유지한다.</p>
+<p><strong>비디오 레벨</strong>: 같은 소스 비디오에서 추출된 클립을 과도하게 포함하지 않도록 source-level subsampling. 예: 같은 영화에서 최대 N개 클립만 허용.</p></div><div class="sb-block"><h2>LLM 데이터 품질 필터링 파이프라인</h2><p>LLM SFT와 preference learning을 위한 데이터 품질 필터링 파이프라인의 주요 단계:</p>
+<p><strong>Step 1: 기본 필터</strong>
+- 최소/최대 길이 필터 (너무 짧거나 너무 긴 응답 제거)
+- 반복 패턴 제거 (같은 구문이 N회 이상 반복되는 응답)
+- 특수문자 과다 사용 제거 (스팸성 콘텐츠)</p>
+<p><strong>Step 2: 품질 모델</strong>
+- Perplexity 기반 필터: 모델이 낮은 perplexity로 처리하는 응답은 너무 단순하거나 이미 잘 알고 있는 내용
+- Classifier 기반: 훈련된 품질 분류기로 high/low quality 레이블
+- LLM-as-judge: GPT-4o 등으로 응답 품질을 자동 채점</p>
+<p><strong>Step 3: 다양성 확보</strong>
+- Instruction 유형 분류 후 각 유형별 샘플링
+- Embedding cluster 기반 다양성 샘플링
+- 어려운 샘플 우선 선택 (모델이 틀리는 케이스)</p>
+<p><strong>Step 4: Gradient Rank 기반 선택 (선택적)</strong>
+- 소규모 배치 실험으로 데이터 소스별 gradient rank 측정
+- Rank가 낮은 소스의 비율 줄이기</p></div><div class="sb-block"><h2>VLM 데이터 큐레이션의 고유한 도전</h2><p>VLM 데이터는 텍스트와 달리 시각 정보의 품질도 관리해야 한다.</p>
+<p><strong>이미지/비디오 품질 필터</strong>:</p>
+<ul>
+<li>해상도: 최소 224×224 이상 (너무 작으면 visual detail 부족)</li>
+<li>선명도: Laplacian variance로 blur 탐지 (임계값 100 미만 제거)</li>
+<li>밝기: 너무 어둡거나(&lt; 30) 너무 밝은(&gt; 225) 이미지 제거</li>
+</ul>
+<p><strong>시각-텍스트 alignment 품질</strong>:</p>
+<ul>
+<li>CLIP score: 이미지와 캡션의 cosine similarity (0.2 이상 보존)</li>
+<li>이미지에 없는 내용을 설명하는 텍스트 제거 (visual hallucination 방지)</li>
+</ul>
+<p><strong>비디오 특화 필터</strong>:</p>
+<ul>
+<li>정적 비디오 제거: 연속 프레임 간 MSE가 임계값 이하이면 거의 움직임 없는 정적 비디오</li>
+<li>화면 녹화/슬라이드 제거: 자연 동작보다 텍스트/슬라이드가 주를 이루는 비디오</li>
+<li>음악 비디오/애니메이션: 실사 비디오와 다른 분포이므로 별도 처리</li>
+</ul>
+<p><strong>Annotation 일관성 필터</strong>:</p>
+<pre><code class="language-python">def check_annotation_consistency(annotations):
+    # 같은 비디오 구간에 모순된 설명이 있는지 확인
+    # 타임스탬프가 비디오 duration을 초과하는지 확인
+    # IoU 일치도를 multi-annotator 데이터에서 계산
+    pass
+</code></pre></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">레스토랑 재료 검수 시스템</div>
+      <div class="a-body"><p>데이터 큐레이션은 셰프가 최고의 요리를 만들기 위해 재료를 엄선하는 과정이다. 아무리 뛰어난 조리 기술(알고리즘)이 있어도 재료(데이터)가 나쁘면 맛있는 요리를 만들 수 없다. 이것이 '데이터 품질 &gt; 알고리즘 선택'이라는 발견의 직관이다.</p>
+<p>Gradient effective rank는 재료의 '영양 밀도'와 같다. 같은 100g이라도 고기(rank 361)와 물(rank 153)은 영양 밀도가 다르다. 텍스트 편향 필터링은 '보기엔 좋아 보이지만 실제로는 영양이 없는' 재료를 걸러내는 것이다 — 비디오처럼 보이지만 텍스트만 읽어도 답할 수 있는 데이터.</p>
+<p>중복 제거는 같은 재료를 100kg씩 사는 것을 막는 것이다. 다양한 식재료 조합이 다채로운 영양을 제공하듯, 다양한 데이터 분포가 모델의 일반 능력을 향상시킨다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>비디오 post-training 데이터에서 텍스트 편향을 필터링하는 파이프라인과, gradient effective rank를 계산하는 유틸리티를 보여준다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import torch
+import numpy as np
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+# === 1. 텍스트 편향 필터링 (Watch Before You Answer 방법) ===
+def filter_text_answerable(
+    questions: list[dict],
+    judge_model_name: str = &quot;Qwen/Qwen3-7B-Instruct&quot;,
+    confidence_threshold: float = 0.8,
+) -&gt; list[dict]:
+    &quot;&quot;&quot;비디오 없이 텍스트만으로 답 가능한 질문 필터링&quot;&quot;&quot;
+    tokenizer = AutoTokenizer.from_pretrained(judge_model_name)
+    judge = AutoModelForCausalLM.from_pretrained(
+        judge_model_name, torch_dtype=torch.bfloat16, device_map=&quot;auto&quot;
+    )
+    filtered = []
+    for item in questions:
+        # 비디오 없이 텍스트만으로 프롬프트 구성
+        prompt = f&quot;다음 질문에 답하세요 (비디오 없이): {item[&#x27;question&#x27;]}\n&quot;
+        prompt += f&quot;선택지: {item.get(&#x27;options&#x27;, &#x27;&#x27;)}&quot;
+        # 모델 confidence 측정
+        inputs = tokenizer(prompt, return_tensors=&quot;pt&quot;).to(judge.device)
+        with torch.no_grad():
+            out = judge(**inputs)
+        log_probs = torch.log_softmax(out.logits[:, -1], dim=-1)
+        # top-1 token의 confidence
+        max_prob = torch.exp(log_probs.max()).item()
+        if max_prob &lt; confidence_threshold:  # 낮은 confidence = 시각 필요
+            filtered.append(item)
+    return filtered
+
+# === 2. Gradient Effective Rank 계산 ===
+def compute_gradient_effective_rank(model, dataloader, layer_name: str) -&gt; float:
+    &quot;&quot;&quot;특정 레이어의 gradient matrix에 대한 effective rank 계산&quot;&quot;&quot;
+    gradients = []
+    model.train()
+    for batch in dataloader:
+        model.zero_grad()
+        loss = model(**batch).loss
+        loss.backward()
+        # 특정 레이어의 gradient 수집
+        for name, param in model.named_parameters():
+            if layer_name in name and param.grad is not None:
+                gradients.append(param.grad.detach().cpu().float())
+                break
+        if len(gradients) &gt;= 100:  # 100 배치로 추정
+            break
+    G = torch.stack(gradients).mean(0)  # 평균 gradient matrix
+    # SVD로 effective rank 계산
+    _, S, _ = torch.svd(G)
+    S_norm = S / S.sum()  # 정규화
+    entropy = -(S_norm * torch.log(S_norm + 1e-10)).sum()
+    return torch.exp(entropy).item()
+
+# 사용: reasoning vs instruction 데이터 비교
+# rank_reasoning = compute_gradient_effective_rank(model, reasoning_loader, &#x27;q_proj&#x27;)
+# rank_instruction = compute_gradient_effective_rank(model, instruction_loader, &#x27;q_proj&#x27;)
+# print(f&quot;Reasoning rank: {rank_reasoning:.1f}, Instruction rank: {rank_instruction:.1f}&quot;)</code></pre>
+      <div class="c-walk"><p><code>filter_text_answerable</code>는 judge LLM(Qwen3-7B)에게 비디오 없이 질문에 답하게 하여 confidence가 높으면(0.8 이상) 시각이 필요 없는 질문으로 판단하고 제거한다. <code>compute_gradient_effective_rank</code>는 여러 배치의 gradient를 평균하여 SVD를 수행하고 Shannon entropy 기반 rank를 계산한다. 값이 높을수록 gradient가 다양한 방향으로 분산되어 더 풍부한 학습이 이루어진다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">데이터 큐레이션은 해외 빅테크에서 ML engineer의 핵심 역량으로 평가한다. 알고리즘 지식보다 &#x27;좋은 데이터를 어떻게 정의하고 선별하는가&#x27;의 실전 경험이 더 중요하다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>비디오 텍스트 편향 문제를 인식하고 필터링 방법을 제시하는 능력</li><li>Gradient effective rank를 데이터 선택 의사결정에 연결하는 능력</li><li>중복 제거 방법을 대규모에서 효율적으로 구현하는 경험</li><li>VLM 데이터 품질 지표(CLIP score, blur 탐지 등)를 파이프라인에 통합한 경험</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>데이터 큐레이션 없이 웹에서 크롤링한 데이터를 그대로 사용하는 경우</li><li>텍스트 편향 문제를 인식하지 못하고 VQA 데이터를 무분별하게 훈련에 사용하는 경우</li><li>중복 제거 없이 대규모 데이터로 훈련하는 경우</li><li>품질 필터 파라미터를 임의로 선택하고 ablation을 수행하지 않는 경우</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>비디오 post-training 데이터에서 텍스트 편향 문제를 발견한 경험이 있나요? 어떻게 탐지하고 처리했나요?</li><li>Gradient effective rank를 실제 데이터 선택에 사용한다면 어떤 파이프라인을 설계하겠나요?</li><li>수백만 개의 비디오 클립에서 중복을 제거하는 확장 가능한 방법을 설명해주세요.</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 친숙함 수준은 기본적인 필터(길이, 형식)를 적용하는 것이다. 숙련 수준은 gradient rank를 기반으로 데이터 혼합 비율을 동적으로 조정하고, 텍스트 편향 필터링 임계값을 ablation으로 최적화하며, 대규모 멀티모달 데이터 파이프라인을 Apache Beam 또는 Spark로 구현할 수 있는 것이다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>데이터 품질 &gt; 알고리즘 선택</h3><p>여러 연구의 일관된 결론: 알고리즘 차이 ~1pp, 데이터 품질 개선으로 수 점 향상 가능.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>Reasoning rank 361 &gt; Instruction rank 153</h3><p>ACL 2026: SVD 기반 gradient rank로 reasoning 데이터가 instruction 데이터보다 2.4배 풍부한 gradient 구조.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>비디오 데이터의 40-60%가 시각 불필요</h3><p>VideoMME 48.2%, MMVU 57.1%가 텍스트만으로 답 가능. GPT-5-mini 필터링으로 69.1% 보존, 4.8-6.2점 개선.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>MinHash로 텍스트 중복 제거 O(n)</h3><p>Jaccard similarity 0.8 이상이면 중복. 수백만 샘플에서 효율적으로 동작.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>CLIP score ≥ 0.2 = 시각-텍스트 alignment 기준</h3><p>이미지와 캡션의 CLIP cosine similarity가 낮으면 annotation 품질이 의심스럽다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>Blur 탐지: Laplacian variance &lt; 100</h3><p>흐린 이미지는 visual feature 품질이 낮다. Laplacian 분산으로 자동 필터링.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>Source-level subsampling으로 도메인 균형</h3><p>같은 소스 비디오에서 과도한 클립을 포함하면 특정 도메인에 bias. 소스별 최대 클립 수 제한 필수.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-09.html">← Video Data Preprocessing for VLM Training</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-11.html">VLM Evaluation &amp; Benchmark Strategy →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

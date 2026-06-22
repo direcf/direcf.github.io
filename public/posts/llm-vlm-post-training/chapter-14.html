@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch14: System Design: End-to-End Post-Training Pipeline — LLM &amp; VLM Post-Training Mastery — direcf</title>
+  <meta name="description" content="실제 post-training 파이프라인은 데이터 큐레이션 → 훈련 → 평가 → 이터레이션의 루프이며, 각 단계의 효율성이 전체 속도를 결정한다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/multimodal-ai">LLM &amp; VLM Post-Training Mastery</a><span class="sep">›</span>
+        <strong>Ch14 System Design: End-to-End Post-Training Pipeline</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 14 <span style="opacity:.3">·</span> 15 chapters
+      </div>
+      <div class="chapter-emoji">🏗️</div>
+      <h1 class="chapter-title">System Design: End-to-End Post-Training Pipeline</h1>
+      <div class="chapter-title-kr">시스템 설계 케이스 스터디 — Post-Training 파이프라인</div>
+      <div class="chapter-tldr">실제 post-training 파이프라인은 데이터 큐레이션 → 훈련 → 평가 → 이터레이션의 루프이며, 각 단계의 효율성이 전체 속도를 결정한다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-14.png" alt="Chapter 14 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 14 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>LLM/VLM post-training을 위한 end-to-end 파이프라인의 각 구성 요소를 설계할 수 있다</li><li>DeepSpeed ZeRO-2/3의 동작 원리와 언제 사용하는지 설명할 수 있다</li><li>FSDP vs DeepSpeed의 선택 기준을 제시할 수 있다</li><li>훈련 중 GPU utilization, throughput, 모델 품질 지표를 동시에 모니터링하는 방법을 설명할 수 있다</li><li>비디오 temporal grounding 파이프라인에서 bottleneck 위치와 최적화 방법을 설명할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>Post-training 파이프라인은 단순히 훈련 코드를 실행하는 것이 아니라, 데이터 수집과 큐레이션, 훈련 인프라 설정, 실험 추적, 평가, 그리고 이터레이션을 포괄하는 복합 시스템이다. 이 전체 루프의 효율이 연구 속도와 최종 모델 품질을 결정한다.</p>
+<p>해외 빅테크에서 post-training 시스템 설계 면접은 지원자가 단순히 개별 기술을 아는 것을 넘어, 전체 시스템을 트레이드오프를 고려하여 설계할 수 있는지를 평가한다. 특히 '주어진 리소스에서 가장 효율적으로 목표를 달성하는 방법'을 체계적으로 제시하는 능력이 중요하다.</p>
+<p>이 챕터에서는 VLM temporal grounding 파이프라인을 예시로, 실제 프로덕션 수준의 시스템을 설계하는 과정을 단계별로 다룬다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>데이터 파이프라인 설계</h2><p>Post-training 데이터 파이프라인의 핵심은 <strong>재현성</strong>, <strong>확장성</strong>, <strong>품질 추적성</strong>이다.</p>
+<p><strong>컴포넌트</strong>:</p>
+<p><em>원본 데이터 수집</em>: 저작권 확인된 비디오 소스, 기존 annotation 데이터셋, 자동 annotation 생성.</p>
+<p><em>전처리 파이프라인</em> (Apache Beam 또는 Spark):</p>
+<pre><code class="language-python"># 단계별 처리 (각 단계 독립적으로 재실행 가능)
+# 1. 비디오 분할 (scene detection)
+# 2. 프레임 추출 (uniform/adaptive)
+# 3. 품질 필터 (해상도, blur, 밝기)
+# 4. 텍스트 편향 필터
+# 5. 중복 제거 (MinHash)
+# 6. 파티셔닝 (train/val/test)
+</code></pre>
+<p><em>메타데이터 추적</em>: 각 샘플의 원본 소스, 전처리 버전, 품질 점수를 메타데이터로 저장. 특정 버전의 데이터로 재현 가능해야 한다.</p>
+<p><em>저장 포맷</em>: WebDataset(tar.gz 기반)이 분산 훈련에서 효율적. S3/GCS에 저장 후 streaming으로 로드.</p></div><div class="sb-block"><h2>분산 훈련: DeepSpeed vs FSDP</h2><p>7B 이상의 모델을 multi-GPU로 훈련할 때 분산 전략 선택이 중요하다.</p>
+<p><strong>DeepSpeed ZeRO</strong>:</p>
+<ul>
+<li>ZeRO-1: Optimizer state 분산 (메모리 ~4× 절감)</li>
+<li>ZeRO-2: + Gradient 분산 (~8× 절감)</li>
+<li>ZeRO-3: + Parameter 분산 (~64× 절감)</li>
+</ul>
+<p>7B 모델 훈련 시 ZeRO-2가 일반적 선택. ZeRO-3는 메모리 절감이 크지만 통신 overhead가 증가한다.</p>
+<p><strong>PyTorch FSDP (Fully Sharded Data Parallel)</strong>:</p>
+<ul>
+<li>ZeRO-3에 해당하는 전략</li>
+<li>PyTorch native → 통합 용이</li>
+<li>HuggingFace Accelerate와 잘 통합됨</li>
+</ul>
+<p><strong>선택 기준</strong>:</p>
+<ul>
+<li>TRL/HuggingFace 생태계 → Accelerate + FSDP</li>
+<li>veRL/OpenRLHF (RLHF 전용) → DeepSpeed + custom</li>
+<li>최대 메모리 효율 필요 → ZeRO-3 또는 FSDP</li>
+<li>시작하기 쉬운 것 → ZeRO-2</li>
+</ul>
+<p><strong>실전 계산</strong>: 7B bf16 모델 = 14GB. ZeRO-2로 8×A100(80GB)에서:
+- Model: 14GB × 1 (non-sharded) = 14GB
+- Optimizer(AdamW): 14GB × 2 (fp32) / 8 = 3.5GB per GPU
+- Gradient: 14GB / 8 = 1.75GB per GPU
+- 나머지 60GB: activation + batch</p></div><div class="sb-block"><h2>모니터링 &amp; 실험 관리</h2><p>Post-training에서 추적해야 할 핵심 지표들:</p>
+<p><strong>훈련 지표</strong> (매 스텝):
+- <code>train/loss</code>: 감소해야 함. Spike가 있으면 learning rate spike 또는 bad batch
+- <code>train/grad_norm</code>: 폭발하면 gradient clipping 필요
+- <code>train/learning_rate</code>: lr schedule 확인</p>
+<p><strong>모델 품질 지표</strong> (매 N 스텝):
+- <code>eval/loss</code>: 증가하면 overfitting
+- <code>eval/temporal_iou</code>: task-specific 지표
+- <code>eval/r1_iou07</code>: 엄격한 grounding 정확도</p>
+<p><strong>RLHF 전용 지표</strong>:</p>
+<ul>
+<li><code>rl/reward_mean</code>: 증가해야 함</li>
+<li><code>rl/kl_divergence</code>: 너무 높으면 reward hacking</li>
+<li><code>rl/entropy</code>: 너무 낮으면 mode collapse</li>
+</ul>
+<p><strong>인프라 지표</strong>:</p>
+<ul>
+<li><code>gpu_utilization</code>: 80% 이상 목표</li>
+<li><code>gpu_memory</code>: OOM 방지를 위해 90% 이하 유지</li>
+<li><code>tokens_per_second</code>: throughput 추적</li>
+</ul>
+<p><strong>Wandb 설정 권장 사항</strong>:</p>
+<pre><code class="language-python">import wandb
+wandb.init(project=&quot;vlm-post-training&quot;,
+           config={&quot;model&quot;: model_name, &quot;data_version&quot;: &quot;v2.1&quot;,
+                   &quot;lr&quot;: lr, &quot;batch_size&quot;: bs})
+# 자동 그룹화로 실험 비교 용이
+wandb.define_metric(&quot;eval/r1_iou07&quot;, summary=&quot;max&quot;)
+</code></pre></div><div class="sb-block"><h2>VLM 파이프라인의 병목과 최적화</h2><p>비디오 VLM 훈련에서 흔한 병목 지점들:</p>
+<p><strong>데이터 로딩 병목</strong>:
+비디오 디코딩이 CPU에서 느리게 이루어지면 GPU가 대기한다.</p>
+<ul>
+<li>해결: <code>dataloader_num_workers=8</code>, prefetch_factor=2</li>
+<li>미리 추출한 프레임 저장(pre-extracted frames)으로 런타임 디코딩 제거</li>
+<li>WebDataset streaming으로 I/O overhead 감소</li>
+</ul>
+<p><strong>메모리 병목</strong>:
+비디오는 이미지보다 훨씬 많은 visual token을 생성한다.</p>
+<ul>
+<li>해결: gradient_checkpointing=True (memory vs speed trade-off)</li>
+<li>Flash Attention 2 필수 (O(n) memory vs O(n²) for standard)</li>
+<li>Dynamic batch sizing: 짧은 시퀀스는 큰 batch, 긴 시퀀스는 작은 batch</li>
+</ul>
+<p><strong>훈련 불안정성</strong>:
+멀티모달 훈련에서 loss spike가 자주 발생한다.</p>
+<ul>
+<li>해결: gradient clipping (max_norm=1.0)</li>
+<li>Warmup 스텝 증가 (처음 10% 스텝)</li>
+<li>Bad batch 탐지: 특정 배치에서 loss가 sudden spike면 해당 배치 스킵</li>
+</ul>
+<p><strong>평가 병목</strong>:
+평가를 훈련과 같은 GPU에서 실행하면 throughput 손실.</p>
+<ul>
+<li>해결: dedicated evaluation node 또는 checkpoint 저장 후 별도 평가 실행</li>
+</ul></div><div class="sb-block"><h2>이터레이션 사이클 최적화</h2><p>모델 개선의 속도는 실험 이터레이션 속도에 비례한다. 빠른 이터레이션을 위한 전략:</p>
+<p><strong>Scale-down 먼저</strong>: 7B 대신 1.5B 또는 3B로 먼저 실험하여 하이퍼파라미터를 탐색한다. 1.5B는 7B보다 학습이 5-10배 빠르다.</p>
+<p><strong>Sanity check 자동화</strong>: 훈련 시작 전 자동으로 확인하는 항목들:</p>
+<pre><code class="language-python"># 체크리스트 자동화
+assert tokenizer.chat_template is not None, &quot;Chat template 누락!&quot;
+assert (train_data.map(format_chat)[0]['text']
+        .count('&lt;|im_start|&gt;assistant') &gt;= 1), &quot;Response 마스킹 오류!&quot;
+assert model.training, &quot;모델이 eval 모드!&quot;
+</code></pre>
+<p><strong>데이터 버전 관리</strong>: DVC(Data Version Control) 또는 S3 versioning으로 데이터 변경을 추적.</p>
+<p><strong>실험 템플릿</strong>: 표준 실험 설정을 YAML로 관리하고 변경점만 override:</p>
+<pre><code class="language-yaml"># base.yaml
+base_model: Qwen/Qwen3-7B
+lr: 2e-5
+epochs: 2
+# experiment_001.yaml (base.yaml 상속)
+lr: 5e-5  # override만
+data_filter: watch_before_you_answer  # 새 필터 추가
+</code></pre></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">자동차 공장 생산 라인</div>
+      <div class="a-body"><p>Post-training 파이프라인은 자동차 공장의 생산 라인과 같다. 원자재(원본 데이터) 입고 → 품질 검사(데이터 필터링) → 가공(전처리) → 조립(훈련) → 최종 검사(평가) → 출하(배포)의 단계가 있다.</p>
+<p>공장에서 특정 공정이 느리면 전체 생산 속도가 그 공정에 의해 결정된다(병목). VLM 파이프라인에서 비디오 디코딩이 병목이면, GPU 100개를 써도 I/O가 따라오지 못해 GPU가 idle 상태가 된다.</p>
+<p>이터레이션 속도 최적화는 빠른 프로토타이핑 라인을 별도로 운영하는 것이다. 양산 라인(7B 모델 전체 훈련)을 돌리기 전에 테스트 라인(1.5B 모델 소수 스텝)에서 공정을 검증한다. 문제를 조기에 발견할수록 수정 비용이 낮다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>DeepSpeed ZeRO-2로 VLM 분산 훈련을 설정하는 설정 파일과 Accelerate를 통한 통합 예시다. Wandb 모니터링도 포함한다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python"># deepspeed_config.json
+DEEPSPEED_CONFIG = {
+    &quot;zero_optimization&quot;: {
+        &quot;stage&quot;: 2,                    # ZeRO-2: optimizer + gradient 분산
+        &quot;overlap_comm&quot;: True,          # 통신과 연산 overlap
+        &quot;contiguous_gradients&quot;: True,  # 메모리 단편화 감소
+        &quot;reduce_scatter&quot;: True,
+        &quot;allgather_partitions&quot;: True,
+    },
+    &quot;gradient_accumulation_steps&quot;: 8,
+    &quot;gradient_clipping&quot;: 1.0,
+    &quot;bf16&quot;: {&quot;enabled&quot;: True},
+    &quot;zero_allow_untested_optimizer&quot;: True,
+    &quot;train_micro_batch_size_per_gpu&quot;: 1,
+}
+
+# Training script (train.py)
+from accelerate import Accelerator
+from accelerate.utils import DeepSpeedPlugin
+import wandb
+
+def train(config):
+    # DeepSpeed ZeRO-2 설정
+    ds_plugin = DeepSpeedPlugin(
+        zero_stage=2,
+        gradient_clipping=1.0,
+        offload_optimizer_device=&quot;none&quot;,  # GPU offload 없음 (속도 우선)
+    )
+    accelerator = Accelerator(
+        deepspeed_plugin=ds_plugin,
+        mixed_precision=&quot;bf16&quot;,
+        gradient_accumulation_steps=config.gradient_accumulation_steps,
+        log_with=&quot;wandb&quot;,
+    )
+    accelerator.init_trackers(
+        project_name=&quot;vlm-post-training&quot;,
+        config={
+            &quot;model&quot;: config.model_name,
+            &quot;data_version&quot;: config.data_version,
+            &quot;lr&quot;: config.lr,
+        },
+    )
+    model, optimizer, dataloader = setup(config)
+    model, optimizer, dataloader = accelerator.prepare(model, optimizer, dataloader)
+
+    for step, batch in enumerate(dataloader):
+        with accelerator.accumulate(model):
+            outputs = model(**batch)
+            loss = outputs.loss
+            accelerator.backward(loss)
+            optimizer.step()
+            optimizer.zero_grad()
+
+        # 핵심 지표 로깅
+        if step % 10 == 0:
+            metrics = {
+                &quot;train/loss&quot;: loss.item(),
+                &quot;train/lr&quot;: optimizer.param_groups[0][&quot;lr&quot;],
+            }
+            accelerator.log(metrics, step=step)
+
+        # 주기적 평가 (GPU utilization 추적 포함)
+        if step % 500 == 0:
+            eval_result = evaluate(model, eval_dataloader)
+            accelerator.log({
+                &quot;eval/r1_iou07&quot;: eval_result.r1_iou07,
+                &quot;eval/miou&quot;: eval_result.miou,
+            }, step=step)
+            # Best checkpoint 저장
+            if eval_result.r1_iou07 &gt; best_metric:
+                accelerator.save_model(model, f&quot;best_checkpoint&quot;)</code></pre>
+      <div class="c-walk"><p><code>DeepSpeedPlugin(zero_stage=2)</code>는 optimizer state와 gradient를 GPU 간에 분산시킨다. <code>accelerator.accumulate(model)</code>는 gradient_accumulation_steps 동안 backward를 누적한다. <code>accelerator.init_trackers</code>는 Wandb 연동을 자동으로 처리한다. <code>eval_result.r1_iou07 &gt; best_metric</code> 조건으로 성능이 향상된 checkpoint만 저장하면 스토리지를 절약한다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">시스템 설계 면접은 지원자가 &#x27;큰 그림&#x27;을 생각하는지를 평가한다. 개별 기술보다 전체 파이프라인의 효율성과 확장성을 어떻게 설계하는지가 중요하다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>병목 식별 능력: 시스템에서 가장 느린 부분을 찾고 우선 최적화하는 사고</li><li>Trade-off 인식: 메모리 vs 속도, 정확도 vs 이터레이션 속도</li><li>확장성 고려: 10배 더 많은 데이터나 GPU가 생겼을 때 어떻게 확장하는가</li><li>실제 경험: 추상적 설계가 아닌 구체적 구현 경험</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>데이터 파이프라인을 설계 없이 단순히 &#x27;데이터를 로드하면 된다&#x27;고 생각하는 경우</li><li>모니터링 없이 훈련을 실행하는 경우 (블랙박스 훈련)</li><li>ZeRO stage의 memory-communication trade-off를 설명하지 못하는 경우</li><li>이터레이션 속도 최적화를 고려하지 않는 경우</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>8×A100 클러스터에서 7B VLM의 비디오 temporal grounding post-training 파이프라인을 어떻게 설계하겠나요?</li><li>훈련 중 갑자기 loss가 spike했을 때 어떻게 진단하겠나요?</li><li>같은 실험을 100번 돌릴 때 재현성을 보장하기 위해 어떤 것들을 관리하겠나요?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 친숙함 수준은 TRL Trainer를 사용해 단일 GPU 훈련을 완료하는 것이다. 숙련 수준은 다중 노드 분산 훈련을 설정하고, 병목을 프로파일링하여 최적화하며, 완전히 재현 가능한 실험 환경(데이터 버전, 코드 버전, 시드 관리)을 구축하는 것이다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>End-to-end는 데이터→훈련→평가→이터레이션 루프</h3><p>각 단계의 효율이 전체 연구 속도를 결정한다. 가장 느린 단계가 병목이다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>ZeRO-2가 7B 훈련의 실용적 출발점</h3><p>Optimizer + Gradient 분산으로 메모리 효율. ZeRO-3는 통신 overhead 증가로 신중히 선택.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>Flash Attention 2는 VLM에서 필수</h3><p>O(n) 메모리로 긴 시퀀스(비디오 visual token)를 처리. 표준 Attention은 O(n²)이라 사용 불가.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>비디오 디코딩 병목은 pre-extracted frames로 해결</h3><p>런타임 비디오 디코딩이 CPU 병목을 일으킨다. 미리 프레임을 추출하여 저장하면 훈련 속도가 크게 향상된다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>Scale-down 먼저 실험 후 확장</h3><p>1.5B/3B로 하이퍼파라미터를 최적화한 후 7B로 확장. 이터레이션 속도가 5-10배 빠르다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>핵심 지표 3세트 동시 모니터링</h3><p>① 훈련 안정성(loss, grad_norm) ② 모델 품질(eval IoU, forgetting) ③ 인프라(GPU util, throughput).</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>데이터 버전 관리가 재현성의 기반</h3><p>어떤 버전의 데이터로 어떤 결과를 얻었는지 추적해야 한다. DVC 또는 S3 versioning 필수.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-13.html">← Overseas Big Tech Interview Preparation</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-15.html">Paper Reading Guide &amp; Research Direction →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

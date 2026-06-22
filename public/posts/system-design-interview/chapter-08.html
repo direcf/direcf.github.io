@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch8: ML System Design Fundamentals — System Design Interview — direcf</title>
+  <meta name="description" content="ML 모델을 단순히 학습시키는 것을 넘어, 프로덕션에서 안정적으로 운영되는 ML 시스템을 설계하는 방법을 익힌다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/ai-engineering">System Design Interview</a><span class="sep">›</span>
+        <strong>Ch08 ML System Design Fundamentals</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 08 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🤖</div>
+      <h1 class="chapter-title">ML System Design Fundamentals</h1>
+      <div class="chapter-title-kr">ML 시스템 설계 기초</div>
+      <div class="chapter-tldr">ML 모델을 단순히 학습시키는 것을 넘어, 프로덕션에서 안정적으로 운영되는 ML 시스템을 설계하는 방법을 익힌다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-08.png" alt="Chapter 8 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 8 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>ML 시스템을 단순 모델을 넘어 데이터 수집 → 처리 → 학습 → 배포 → 모니터링의 파이프라인으로 설계할 수 있다</li><li>Feature Store의 역할과 Online/Offline Feature Store의 차이를 설명할 수 있다</li><li>Batch Serving과 Online Serving의 트레이드오프를 알고 적합한 사용 사례를 설명할 수 있다</li><li>Model drift, Data drift를 감지하고 대응하는 시스템을 설계할 수 있다</li><li>Shadow Mode, Canary Release, A/B Test를 활용한 안전한 모델 배포 전략을 설명할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>"머신러닝 모델이 전체 ML 시스템의 5%에 불과하다"라는 말이 있다. 나머지 95%는 데이터 수집, 피처 처리, 서빙 인프라, 모니터링, 재학습 파이프라인이다. 구글은 이것을 <a href="https://proceedings.neurips.cc/paper/2015/file/86df7dcfd896fcaf2674f757a2463eba-Paper.pdf">Machine Learning: The High-Interest Credit Card of Technical Debt</a> 논문에서 명확히 설명했다.</p>
+<p>빅테크 AI Engineering 면접에서는 이 95%를 설계하는 능력을 본다. 단순히 "BERT 모델을 fine-tuning 해서 배포한다"가 아니라, 학습 데이터는 어떻게 수집하고 정제하는가, 피처는 어떻게 계산하고 저장하는가, 배포는 어떻게 하고 실패하면 어떻게 롤백하는가, 운영 중 모델이 나빠지면 어떻게 감지하는가.</p>
+<p>이 챕터는 일반 ML 시스템의 설계 패턴을 다룬다. 챕터 9에서 추천 시스템, 챕터 10에서 LLM 인프라로 심화한다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>ML 시스템 아키텍처: 전체 라이프사이클</h2><p>ML 시스템은 크게 <strong>학습 경로(Training Path)</strong>와 <strong>서빙 경로(Serving Path)</strong>로 나뉜다. 두 경로가 공유하는 것은 <strong>피처 처리 로직(Feature Engineering)</strong>이다.</p>
+<p><strong>학습 경로:</strong></p>
+<ol>
+<li>
+<p><strong>데이터 수집</strong> — 이벤트 로그, DB 덤프, 외부 데이터 소스. Kafka/Kinesis로 실시간 수집, S3/GCS에 raw 데이터 저장.</p>
+</li>
+<li>
+<p><strong>데이터 처리</strong> — 결측치 처리, 이상치 제거, 정규화, 인코딩. Apache Spark, Beam으로 대규모 배치 처리.</p>
+</li>
+<li>
+<p><strong>피처 엔지니어링</strong> — 원시 데이터에서 모델에 유용한 표현 생성. 이 결과물이 Feature Store에 저장됨.</p>
+</li>
+<li>
+<p><strong>모델 학습</strong> — GPU 클러스터에서 학습. 학습 결과(가중치, 메타데이터)는 Model Registry에 저장.</p>
+</li>
+<li>
+<p><strong>모델 평가</strong> — Offline metrics (AUC, F1, RMSE). 기준을 통과해야 다음 단계로.</p>
+</li>
+<li>
+<p><strong>모델 배포</strong> → 서빙 경로로 전달.</p>
+</li>
+</ol>
+<p><strong>서빙 경로:</strong></p>
+<p>실시간 요청 → 피처 조회 → 모델 추론 → 응답 반환. p99 latency가 수십~수백ms 이하여야 하는 경우가 많다.</p>
+<p><strong>훈련-서빙 불일치 (Training-Serving Skew):</strong></p>
+<p>ML 시스템의 가장 흔한 버그 중 하나. 학습 시 피처 계산 방법과 서빙 시 피처 계산 방법이 달라서 모델이 프로덕션에서 나쁜 성능을 내는 문제. Feature Store가 이 문제를 해결한다 — 학습과 서빙이 동일한 피처 계산 로직을 공유하므로.</p></div><div class="sb-block"><h2>Feature Store: ML의 데이터 레이어</h2><p>Feature Store는 <strong>ML 피처를 중앙에서 관리, 저장, 제공</strong>하는 플랫폼이다. Uber의 Michelangelo, Google의 Feast, AWS SageMaker Feature Store가 대표적이다.</p>
+<p><strong>왜 Feature Store가 필요한가?</strong></p>
+<ul>
+<li>피처 재사용: 팀 A가 만든 "사용자 7일 구매 금액" 피처를 팀 B도 바로 사용</li>
+<li>Training-Serving Skew 방지: 같은 피처 계산 코드를 학습/서빙 모두 사용</li>
+<li>피처 공유: 여러 모델이 같은 피처를 공유하여 중복 계산 제거</li>
+<li>Point-in-time Correct: 학습 시 미래 데이터가 새지 않도록 시점 기준 조회</li>
+</ul>
+<p><strong>Offline Feature Store:</strong></p>
+<ul>
+<li>배치 학습 데이터 생성에 사용</li>
+<li>히스토리컬 피처 저장 (수개월~수년)</li>
+<li>낮은 QPS, 높은 처리량</li>
+<li>저장소: S3, BigQuery, Hive</li>
+</ul>
+<p><strong>Online Feature Store:</strong></p>
+<ul>
+<li>실시간 서빙에 사용 (추론 시 피처 조회)</li>
+<li>최근 피처만 저장 (수일~수주)</li>
+<li>초저지연 (p99 &lt; 10ms), 높은 QPS (초당 수십만)</li>
+<li>저장소: Redis, DynamoDB, Cassandra</li>
+</ul>
+<p><strong>Streaming Feature Store:</strong></p>
+<p>실시간으로 들어오는 이벤트에서 피처를 즉시 계산. 예: 지난 1시간 클릭 수, 마지막 검색어. Kafka + Flink로 실시간 피처 계산 → Online Feature Store에 저장.</p></div><div class="sb-block"><h2>Model Serving: Batch vs Online</h2><p><strong>Batch Serving:</strong></p>
+<p>미리 예측을 계산해두고 DB/캐시에 저장. 요청 시 미리 계산된 결과 반환.</p>
+<ul>
+<li>적합한 경우: 예측 대상이 제한적 (활성 사용자 100M명), 실시간성 불필요 (매일 갱신되는 추천 목록), 모델 추론이 매우 무거운 경우</li>
+<li>예: Netflix의 매일 갱신되는 홈 화면 추천</li>
+<li>
+<p>장점: 서빙 인프라 단순. 응답 latency 최소 (DB 조회만).</p>
+</li>
+<li>
+<p>단점: 최신 컨텍스트 반영 불가 (방금 본 영상 반영 안 됨)</p>
+</li>
+</ul>
+<p><strong>Online Serving (Real-Time Inference):</strong></p>
+<p>요청 시 실시간으로 모델 추론.</p>
+<ul>
+<li>적합한 경우: 개인화가 중요하고 최신 컨텍스트가 필요한 경우, 추론 latency가 수십ms 이하인 경우</li>
+<li>예: Google 검색, 실시간 CTR 예측</li>
+<li>장점: 최신 컨텍스트 반영, 진정한 개인화</li>
+<li>단점: 서빙 인프라 복잡. 높은 QPS에서 GPU 비용 증가.</li>
+</ul>
+<p><strong>Hybrid Serving:</strong></p>
+<p>실제로는 두 방식을 계층으로 조합한다:
+- Batch로 사전 계산한 후보군 생성 (수천 개)
+- Online으로 실시간 re-ranking (최신 컨텍스트 반영)
+- 최종 결과 반환</p>
+<p><strong>모델 서빙 최적화:</strong></p>
+<ul>
+<li><strong>모델 압축</strong>: 양자화(Quantization), 지식 증류(Knowledge Distillation), Pruning으로 모델 크기 축소</li>
+<li><strong>배치 추론</strong>: 여러 요청을 묶어 GPU 처리 효율 극대화</li>
+<li><strong>모델 캐싱</strong>: 같은 입력에 대한 결과 캐시 (Semantic Cache for LLM)</li>
+<li><strong>하드웨어 가속</strong>: NVIDIA Triton Inference Server, TensorRT로 GPU 최적화</li>
+</ul></div><div class="sb-block"><h2>Model Registry와 MLOps 파이프라인</h2><p>Model Registry는 학습된 모델의 <strong>버전, 메타데이터, 아티팩트를 중앙에서 관리</strong>하는 시스템이다. MLflow, SageMaker Model Registry, Weights &amp; Biases가 대표적.</p>
+<p><strong>Model Registry에 저장되는 것:</strong>
+- 모델 가중치 (Artifacts)
+- 학습에 사용된 데이터셋 버전
+- 학습 하이퍼파라미터
+- Offline 평가 지표 (AUC, F1, RMSE)
+- 데이터 스키마 (피처 이름, 타입, 범위)</p>
+<p><strong>MLOps 파이프라인 (CI/CD for ML):</strong></p>
+<p>소프트웨어 CI/CD처럼 ML 모델도 자동화된 파이프라인으로 테스트하고 배포한다.</p>
+<ol>
+<li>코드 변경 → Git push</li>
+<li>CI: 데이터 validation, 코드 테스트</li>
+<li>학습 파이프라인 실행 (Kubeflow, MLflow, Airflow)</li>
+<li>자동 모델 평가 — 기준 미달 시 자동 실패</li>
+<li>Model Registry에 등록</li>
+<li>스테이징 환경 배포 → Integration test</li>
+<li>Shadow Mode 배포 → 트래픽 미전환 상태에서 실제 요청으로 예측 (결과는 로그만)</li>
+<li>Canary Release → 1% 트래픽으로 시작, 점진적 증가</li>
+<li>전체 배포 or 롤백</li>
+</ol>
+<p>이 파이프라인이 없으면 데이터 과학자가 모델을 수동으로 배포하는 "것 같은 모델"이 만들어진다. 코드도 아니고, 데이터도 아니고, 재현 불가능하다.</p></div><div class="sb-block"><h2>ML Observability: 모델 모니터링</h2><p>모델을 배포한 후에도 지속적으로 상태를 모니터링해야 한다. 시간이 지남에 따라 데이터 분포나 사용자 행동이 변하면 모델 성능이 저하되는 <strong>Model Drift</strong>가 발생한다.</p>
+<p><strong>Data Drift (Feature Drift):</strong></p>
+<p>프로덕션에서 들어오는 입력 데이터의 분포가 학습 데이터와 달라지는 현상. 예: COVID로 사용자 행동 패턴이 갑자기 변함.</p>
+<p>감지 방법: KS test, Population Stability Index (PSI) 등 통계적 검정으로 분포 변화 감지.</p>
+<p><strong>Concept Drift:</strong></p>
+<p>입력(X)과 출력(Y) 사이의 관계 자체가 변하는 현상. 사기 탐지 모델은 사기 패턴이 계속 변하므로 concept drift가 빠르다.</p>
+<p><strong>Model Monitoring 지표:</strong></p>
+<table>
+<thead>
+<tr>
+<th>지표</th>
+<th>설명</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Prediction Distribution</td>
+<td>예측값의 분포 변화</td>
+</tr>
+<tr>
+<td>Feature Distribution</td>
+<td>입력 피처의 통계 변화</td>
+</tr>
+<tr>
+<td>Business Metrics</td>
+<td>CTR, 전환율, 매출 — Ground Truth와 연결</td>
+</tr>
+<tr>
+<td>Latency/Error Rate</td>
+<td>서빙 시스템의 성능</td>
+</tr>
+</tbody>
+</table>
+<p><strong>모니터링 시스템 아키텍처:</strong></p>
+<p>서빙 로그 → Kafka → 통계 계산 (Spark Streaming) → 대시보드 (Grafana, Looker) → 알람 (PagerDuty)</p>
+<p><strong>Retraining 트리거:</strong>
+- 성능 지표가 임계값 아래로 떨어짐
+- Data drift 감지
+- 주기적 재학습 (시간 기반: 매주, 매월)
+- 이벤트 기반 (특정 사건 후 즉시)</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">공장 자동화 라인으로 보는 ML 시스템</div>
+      <div class="a-body"><p>ML 시스템은 <strong>자동차 공장 생산 라인</strong>과 같다. 원자재(데이터)가 공장에 들어와 여러 가공 단계(데이터 처리, 피처 엔지니어링)를 거쳐 완성품(학습된 모델)이 나온다. 이것이 Training Pipeline이다.</p>
+<p>Feature Store는 <strong>부품 창고</strong>다. 생산 라인(학습)과 조립 라인(서빙) 모두 같은 창고에서 같은 규격의 부품을 가져간다. 창고가 없다면 각 라인이 같은 부품을 따로 만들고, 규격이 미세하게 달라서 문제가 생긴다.</p>
+<p>Model Monitoring은 <strong>품질 관리 부서</strong>다. 공장에서 자동차가 나와 시장에 출하된 후에도, 불량 신고(사용자 불만, 비즈니스 지표 하락)가 오면 즉시 파악하고 생산 라인을 조정한다. A/B Testing은 두 가지 설계의 자동차를 소수 고객에게 먼저 출하해보고 반응을 측정하는 것이다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>간단한 Feature Store와 ML Serving 파이프라인을 구현한다. Online Feature Store(Redis)에서 피처를 조회하여 모델 추론까지의 흐름을 보여준다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import redis
+import json
+import time
+from dataclasses import dataclass, asdict
+from typing import Optional
+
+# Feature definition with metadata
+@dataclass
+class UserFeatures:
+    user_id: str
+    age: int
+    purchase_count_7d: int
+    avg_session_duration_min: float
+    last_category_viewed: str
+    computed_at: float  # Timestamp for staleness check
+
+class OnlineFeatureStore:
+    &quot;&quot;&quot;Redis-backed Online Feature Store for real-time serving.&quot;&quot;&quot;
+    STALE_THRESHOLD_SEC = 3600  # 1 hour
+
+    def __init__(self, redis_client: redis.Redis):
+        self.r = redis_client
+
+    def save_features(self, features: UserFeatures, ttl: int = 86400):
+        key = f&quot;features:user:{features.user_id}&quot;
+        self.r.hset(key, mapping=asdict(features))
+        self.r.expire(key, ttl)
+
+    def get_features(self, user_id: str) -&gt; Optional[UserFeatures]:
+        key = f&quot;features:user:{user_id}&quot;
+        data = self.r.hgetall(key)
+        if not data:
+            return None
+        # Check staleness
+        computed_at = float(data[b&#x27;computed_at&#x27;])
+        if time.time() - computed_at &gt; self.STALE_THRESHOLD_SEC:
+            return None  # Trigger feature recomputation
+        return UserFeatures(
+            user_id=data[b&#x27;user_id&#x27;].decode(),
+            age=int(data[b&#x27;age&#x27;]),
+            purchase_count_7d=int(data[b&#x27;purchase_count_7d&#x27;]),
+            avg_session_duration_min=float(data[b&#x27;avg_session_duration_min&#x27;]),
+            last_category_viewed=data[b&#x27;last_category_viewed&#x27;].decode(),
+            computed_at=computed_at
+        )
+
+class MLServingPipeline:
+    def __init__(self, feature_store: OnlineFeatureStore, model):
+        self.fs = feature_store
+        self.model = model
+
+    def predict(self, user_id: str, item_id: str) -&gt; float:
+        # 1. Retrieve features (fast — Redis, not DB)
+        features = self.fs.get_features(user_id)
+        if features is None:
+            return self._fallback_score()  # Graceful degradation
+
+        # 2. Assemble feature vector
+        feature_vector = [
+            features.age / 100.0,
+            min(features.purchase_count_7d / 50.0, 1.0),
+            min(features.avg_session_duration_min / 60.0, 1.0),
+        ]
+
+        # 3. Model inference
+        return self.model.predict([feature_vector])[0]
+
+    def _fallback_score(self) -&gt; float:
+        return 0.5  # Default score for cold-start users</code></pre>
+      <div class="c-walk"><p>온라인 서빙에서 피처 조회(Redis) → 모델 추론의 흐름이 핵심이다. <code>computed_at</code> 검사로 stale feature를 감지하고 재계산을 트리거한다. <code>_fallback_score()</code>는 피처가 없는 신규 사용자(cold start)에 대한 graceful degradation이다. 프로덕션에서 예외 처리 없는 ML 서빙은 피처 누락 시 서비스 전체가 영향을 받는다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">AI Engineering 면접에서는 코드 작성 능력보다 ML 시스템 전체를 설계하는 능력을 평가한다. 데이터 파이프라인부터 모델 배포, 모니터링까지 엔드 투 엔드를 보는 것이 핵심이다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>Training-Serving Skew 문제를 인지하고 Feature Store로 해결책을 제시하는가</li><li>A/B Testing과 Shadow Mode 배포를 언제 어떻게 쓰는지 아는가</li><li>Model drift 감지와 재학습 트리거 전략이 있는가</li><li>Cold Start 문제에 대한 fallback 전략이 있는가</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>모델 학습만 설계하고 서빙, 모니터링은 &quot;나중에&quot;라고 미루는 설계</li><li>Feature Store 없이 각 서비스가 독립적으로 피처를 계산하는 설계</li><li>모델 배포 = docker 이미지 올리기로만 생각하는 경우</li><li>Offline 지표만 보고 Online A/B Test를 생략하는 설계</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>YouTube의 영상 조회수 예측 ML 시스템을 설계해봐.</li><li>Training-Serving Skew를 어떻게 감지하고 방지하겠어?</li><li>새 모델 버전을 안전하게 프로덕션에 배포하는 전략을 설명해봐.</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 익숙한 수준은 ML 파이프라인의 단계를 나열하는 것이다. 마스터 수준은 각 단계 간의 의존성과 실패 시나리오를 알고, Training-Serving Skew나 Feature Leakage 같은 미묘한 ML 특화 문제를 proactively 언급하고 해결책을 제시하는 것이다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>모델은 시스템의 5%</h3><p>나머지 95%는 데이터 파이프라인, 피처 처리, 서빙, 모니터링, 재학습. 이것을 설계하는 것이 ML 시스템 설계다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>Feature Store가 Skew를 막는다</h3><p>학습과 서빙이 동일한 피처 계산 로직을 공유. Training-Serving Skew의 가장 효과적인 해결책.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>Online vs Offline Feature Store</h3><p>Online(Redis) = 저지연 서빙용, Offline(S3/BigQuery) = 배치 학습용. 둘을 함께 사용.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>Batch + Online Hybrid가 현실</h3><p>순수 실시간 추론은 비용이 크다. Batch로 후보군 생성, Online으로 re-ranking하는 Hybrid가 표준.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>Shadow Mode → Canary → 전체</h3><p>새 모델을 바로 전체 배포하지 않는다. Shadow → 1% Canary → 점진적 증가 → 100%. 각 단계에서 롤백 준비.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>Model Drift는 피할 수 없다</h3><p>데이터와 세계는 변한다. 모니터링 없이 배포한 모델은 조용히 죽는다. 배포 전에 모니터링 시스템을 설계하라.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>MLOps = ML의 CI/CD</h3><p>코드 변경부터 프로덕션 배포까지 자동화. 수동 배포는 재현 불가능하고 오류가 많다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>Cold Start에 Fallback</h3><p>신규 사용자나 신규 아이템은 피처가 없다. 항상 합리적인 fallback 전략을 설계하라.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-07.html">← Classic System Design Problems</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-09.html">Recommendation Systems →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

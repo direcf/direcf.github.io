@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch5: VLM Architecture &amp; Multimodal Alignment Fundamentals — LLM &amp; VLM Post-Training Mastery — direcf</title>
+  <meta name="description" content="VLM은 Vision Encoder + Projector + LLM의 세 모듈로 구성되며, Qwen3-VL은 동적 해상도와 3D RoPE로 이 구조를 발전시킨다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/multimodal-ai">LLM &amp; VLM Post-Training Mastery</a><span class="sep">›</span>
+        <strong>Ch05 VLM Architecture &amp; Multimodal Alignment Fundamentals</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 05 <span style="opacity:.3">·</span> 15 chapters
+      </div>
+      <div class="chapter-emoji">👁️</div>
+      <h1 class="chapter-title">VLM Architecture &amp; Multimodal Alignment Fundamentals</h1>
+      <div class="chapter-title-kr">VLM 아키텍처 기초 &amp; 멀티모달 Alignment 원리</div>
+      <div class="chapter-tldr">VLM은 Vision Encoder + Projector + LLM의 세 모듈로 구성되며, Qwen3-VL은 동적 해상도와 3D RoPE로 이 구조를 발전시킨다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-05.png" alt="Chapter 5 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 5 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>Vision Encoder, Projector, LLM 각 모듈의 역할과 상호작용을 설명할 수 있다</li><li>Qwen3-VL의 동적 해상도(Dynamic Resolution)와 Naive Dynamic Resolution의 차이를 설명할 수 있다</li><li>MRoPE(Multimodal Rotary Position Embedding)가 필요한 이유를 설명할 수 있다</li><li>Visual token compression 기법들의 trade-off를 설명할 수 있다</li><li>Post-training 관점에서 어떤 모듈을 freeze하고 어떤 모듈을 훈련해야 하는지 결정할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>Vision-Language Model(VLM)은 텍스트만 처리하는 LLM에 시각 정보를 이해하는 능력을 추가한 모델이다. 핵심 구조는 세 모듈의 연결이다: <strong>(1) Vision Encoder</strong> — 이미지/비디오 프레임을 feature vector로 변환한다. <strong>(2) Projector</strong> — vision feature를 LLM의 token embedding space로 변환한다. <strong>(3) LLM</strong> — visual token과 text token을 함께 처리하여 응답을 생성한다.</p>
+<p>이 구조는 단순해 보이지만 실전에서는 여러 설계 결정이 성능에 큰 영향을 미친다: 어떤 Vision Encoder를 사용하는가, Projector 아키텍처는 무엇인가, 이미지를 몇 개의 visual token으로 변환하는가, 해상도를 어떻게 처리하는가, 비디오의 경우 시간 차원을 어떻게 인코딩하는가.</p>
+<p>Qwen3-VL은 이러한 설계 고민의 최신 구현체로, 동적 해상도 처리와 MRoPE를 통해 고해상도 이미지와 장시간 비디오를 효율적으로 처리한다. Post-training에서는 각 모듈을 선택적으로 freeze하거나 훈련하는 전략이 성능에 결정적이다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>Vision Encoder: CLIP에서 SigLIP까지</h2><p>Vision Encoder는 이미지를 feature space로 매핑하는 역할이다. 가장 흔히 사용되는 기반 모델은 CLIP 계열이다. CLIP은 대규모 image-text 쌍으로 contrastive learning을 통해 vision representation을 학습했다.</p>
+<p>Gemma-3, LLaVA, Qwen2-VL 등 많은 VLM이 ViT-based vision encoder를 사용한다. 구체적으로:
+- <strong>CLIP ViT-L/14</strong> (224×224 patch 14×14): 256 visual tokens
+- <strong>SigLIP ViT-So400M</strong> (384×384): 고해상도에 더 적합
+- <strong>InternViT-6B</strong>: 더 큰 파라미터로 더 풍부한 시각 표현</p>
+<p>Vision encoder의 입력 해상도가 고정되면 고해상도 이미지 이해에 한계가 있다. 이미지를 고해상도 타일로 분할하여 각 타일을 별도로 인코딩하는 <strong>AnyRes</strong> 방식이 LLaVA-Next에서 도입되었다. Qwen3-VL은 이를 더 발전시킨 동적 해상도를 사용한다.</p>
+<p>Post-training에서 vision encoder는 일반적으로 <strong>freeze</strong>한다 — 대규모 image-text alignment pretraining이 이미 잘 되어 있고, task-specific tuning에서 encoder를 건드리면 일반 시각 표현이 손상될 수 있기 때문이다.</p></div><div class="sb-block"><h2>Projector: Vision과 Language를 연결하는 브릿지</h2><p>Projector는 vision encoder의 feature dimension(예: 1024-dim)을 LLM의 token embedding dimension(예: 4096-dim)으로 변환한다. 설계에 따라 성능과 효율이 크게 달라진다.</p>
+<p><strong>Linear Projector</strong>: 단순 선형 변환. 가장 빠르고 파라미터가 적지만 비선형 매핑 능력이 없다.</p>
+<p><strong>MLP Projector (2-layer)</strong>: 비선형 활성화를 추가한 2층 MLP. LLaVA-v1.5의 성공으로 널리 사용된다. 단순 linear보다 성능이 우수하면서 계산 비용이 낮다.</p>
+<p><strong>Cross-Attention Projector (Flamingo 스타일)</strong>: Visual feature를 key/value로, text query를 이용해 cross-attention을 수행. Visual token 수를 압축하기 용이하지만 추가 파라미터가 필요하다.</p>
+<p><strong>Q-Former (BLIP-2 스타일)</strong>: 고정된 수의 학습 가능한 query vector를 사용해 visual feature에서 정보를 추출. Visual token 수를 극도로 줄일 수 있다.</p>
+<p>Qwen3-VL은 MLP projector를 사용하되, dynamic resolution에서 나온 가변적인 수의 visual token을 효율적으로 처리한다. Post-training에서 projector는 보통 <strong>훈련</strong> — LLM과의 alignment가 task-specific으로 조정될 필요가 있기 때문이다.</p></div><div class="sb-block"><h2>Qwen3-VL 아키텍처 심화: 동적 해상도와 MRoPE</h2><p>Qwen3-VL은 두 가지 핵심 혁신으로 이전 VLM들의 한계를 극복한다.</p>
+<p><strong>Naive Dynamic Resolution (NDR)</strong>: 이미지를 고정 해상도로 resize하지 않고 원본 비율을 유지한다. 이미지를 14×14 픽셀 패치로 분할하고, 각 패치가 하나의 visual token이 된다. 224×224 이미지 → 256 tokens, 448×448 → 1024 tokens. 최대 token 수를 설정하여 너무 큰 이미지는 다운스케일된다.</p>
+<p>이 방식의 장점: 고해상도 이미지에서 fine-grained detail을 보존할 수 있다. 문서 OCR, 차트 이해, 물체 위치 파악 등에서 특히 효과적이다.</p>
+<p><strong>MRoPE (Multimodal Rotary Position Embedding)</strong>: 표준 RoPE는 1D 시퀀스 위치만 인코딩한다. MRoPE는 세 가지 차원을 별도로 인코딩한다:</p>
+<table>
+<thead>
+<tr>
+<th>차원</th>
+<th>인코딩 대상</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Temporal (t)</td>
+<td>비디오 프레임 번호 또는 이미지 0</td>
+</tr>
+<tr>
+<td>Height (h)</td>
+<td>이미지/비디오 내 세로 위치</td>
+</tr>
+<tr>
+<td>Width (w)</td>
+<td>이미지/비디오 내 가로 위치</td>
+</tr>
+</tbody>
+</table>
+<p>비디오의 경우 각 프레임의 각 패치가 (t, h, w) 3D 좌표를 가진다. 이를 통해 모델이 시공간 위치 관계를 명시적으로 학습할 수 있다.</p></div><div class="sb-block"><h2>비디오 처리: 시간 차원과 Visual Token 관리</h2><p>비디오는 이미지의 시간 시퀀스다. VLM에서 비디오를 처리하는 핵심 과제는 <strong>visual token 수 관리</strong>다. 30fps 비디오를 1분 처리하면 1800 프레임이고, 각 프레임당 256 visual token이면 총 460,800 visual token이 생성된다 — 현재 LLM의 context window 한계를 훨씬 초과한다.</p>
+<p>실용적 전략들:</p>
+<p><strong>균일 샘플링</strong>: 고정 FPS(예: 1fps)로 프레임을 선택. 단순하고 예측 가능하지만 빠른 액션을 놓칠 수 있다.</p>
+<p><strong>키프레임 추출</strong>: Scene change detection을 통해 장면 변화 지점의 프레임만 선택. Content-aware하지만 계산 비용이 높다.</p>
+<p><strong>적응적 샘플링</strong>: 동적 움직임 정도에 따라 샘플링 비율을 조절. 정적 장면은 적게, 동적 장면은 많이 샘플링한다.</p>
+<p>Qwen3-VL에서는 MRoPE의 temporal 차원이 프레임 간격을 인코딩하므로, 균일하지 않은 샘플링에서도 시간적 관계를 올바르게 표현할 수 있다. 챕터 9에서 실전 비디오 전처리 파이프라인을 다룬다.</p></div><div class="sb-block"><h2>Post-Training에서의 Freeze 전략</h2><p>VLM post-training에서 어떤 모듈을 훈련하고 어떤 것을 freeze하느냐는 성능과 효율의 핵심 결정이다.</p>
+<p><strong>표준 2-단계 접근법</strong>:</p>
+<p><em>Stage 1 — Projector-only training</em>: Vision encoder와 LLM을 모두 freeze하고 projector만 훈련. 목적은 vision feature와 language space의 기본 alignment 확립. 대규모 image-caption 데이터로 빠르게 훈련 가능.</p>
+<p><em>Stage 2 — Full fine-tuning (또는 LLM 포함)</em>: Projector + LLM을 모두 훈련 (vision encoder는 여전히 freeze). 고품질 instruction 데이터로 task-specific 능력 학습.</p>
+<table>
+<thead>
+<tr>
+<th>모듈</th>
+<th>Stage 1</th>
+<th>Stage 2 (SFT)</th>
+<th>Stage 2 (Task RL)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Vision Encoder</td>
+<td>🔒 Freeze</td>
+<td>🔒 Freeze</td>
+<td>🔒 Freeze</td>
+</tr>
+<tr>
+<td>Projector</td>
+<td>✓ 훈련</td>
+<td>✓ 훈련</td>
+<td>✓ 훈련</td>
+</tr>
+<tr>
+<td>LLM</td>
+<td>🔒 Freeze</td>
+<td>✓ 훈련 (LoRA)</td>
+<td>✓ 훈련</td>
+</tr>
+</tbody>
+</table>
+<p>Task-specific RL (예: temporal grounding)에서는 LLM을 LoRA로 업데이트하는 것이 일반적이다. 이유: 전체 LLM fine-tuning은 일반 능력을 손상시킬 수 있고, projector와 LLM adapter만 업데이트해도 충분한 task adaptation이 가능하다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">동시통역사와 회의실</div>
+      <div class="a-body"><p>VLM 구조를 동시통역 시스템으로 이해할 수 있다. Vision Encoder는 해외 발표자의 말을 실시간으로 받아적는 속기사다. 정확하게 내용을 포착하지만, 아직 다른 나라 언어로 번역되지 않은 원문 메모(visual feature)를 생성한다.</p>
+<p>Projector는 속기 메모를 통역사가 이해할 수 있는 형태로 변환하는 편집자다. 단순히 번역하는 것이 아니라, 통역사(LLM)가 처리할 수 있는 형식의 '브리핑 노트'로 재구성한다. 이 편집자의 능력에 따라 정보 손실이 달라진다.</p>
+<p>LLM은 최종 통역사로, 브리핑 노트(visual token)와 질문(text token)을 동시에 보면서 대화를 진행한다. 중요한 점은 통역사는 이미 수년간 언어 훈련을 받았기 때문에(pre-training), 편집자(projector) 교육을 통해 빠르게 새로운 발표 형식에 적응할 수 있다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>Qwen3-VL 모델을 로드하고 이미지와 비디오를 처리하는 기본 파이프라인을 보여준다. Visual token 수와 MRoPE 위치 인코딩을 직접 확인할 수 있다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
+from qwen_vl_utils import process_vision_info
+import torch
+
+# Qwen3-VL 모델 로드 (Qwen2-VL API 호환)
+model = Qwen2VLForConditionalGeneration.from_pretrained(
+    &quot;Qwen/Qwen2-VL-7B-Instruct&quot;,
+    torch_dtype=torch.bfloat16,
+    device_map=&quot;auto&quot;,
+    attn_implementation=&quot;flash_attention_2&quot;,
+)
+processor = AutoProcessor.from_pretrained(
+    &quot;Qwen/Qwen2-VL-7B-Instruct&quot;,
+    min_pixels=256*28*28,   # 최소 해상도 제한
+    max_pixels=1280*28*28,  # 최대 visual token 수 제한
+)
+
+# 이미지 처리 메시지 구성
+messages = [
+    {
+        &quot;role&quot;: &quot;user&quot;,
+        &quot;content&quot;: [
+            {&quot;type&quot;: &quot;image&quot;, &quot;image&quot;: &quot;path/to/image.jpg&quot;},
+            {&quot;type&quot;: &quot;text&quot;,  &quot;text&quot;: &quot;이 이미지에서 어떤 물체를 찾을 수 있나요?&quot;},
+        ],
+    }
+]
+
+# 비디오 처리 메시지 구성
+video_messages = [
+    {
+        &quot;role&quot;: &quot;user&quot;,
+        &quot;content&quot;: [
+            {
+                &quot;type&quot;: &quot;video&quot;,
+                &quot;video&quot;: &quot;path/to/video.mp4&quot;,
+                &quot;fps&quot;: 1.0,       # 초당 1 프레임 샘플링
+                &quot;max_pixels&quot;: 360*420,  # 프레임 해상도 제한
+            },
+            {&quot;type&quot;: &quot;text&quot;, &quot;text&quot;: &quot;비디오에서 주요 이벤트를 설명해주세요.&quot;},
+        ],
+    }
+]
+
+text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+image_inputs, video_inputs = process_vision_info(messages)
+inputs = processor(
+    text=[text], images=image_inputs, videos=video_inputs,
+    padding=True, return_tensors=&quot;pt&quot;
+).to(&quot;cuda&quot;)
+
+# Visual token 수 확인
+print(f&quot;Input token 수: {inputs[&#x27;input_ids&#x27;].shape[1]}&quot;)
+
+with torch.no_grad():
+    output_ids = model.generate(**inputs, max_new_tokens=256)
+response = processor.decode(output_ids[0], skip_special_tokens=True)
+print(response)</code></pre>
+      <div class="c-walk"><p><code>max_pixels=1280*28*28</code>은 최대 visual token 수를 제어한다. 28×28=784 픽셀이 하나의 patch이므로 1280 patches = 1280 visual tokens가 최대다. <code>fps=1.0</code>은 비디오를 1초당 1프레임으로 샘플링한다. <code>process_vision_info</code>는 qwen_vl_utils의 유틸리티로 이미지/비디오를 전처리한다. MRoPE position ID는 내부적으로 processor가 자동 계산한다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">VLM 아키텍처 관련 면접에서는 &#x27;각 모듈의 역할&#x27;보다 &#x27;모듈 간 상호작용&#x27;과 &#x27;post-training 시 설계 결정&#x27;에 대한 이해를 중요시한다. 특히 visual token 수 관리와 freeze 전략 결정 근거를 구체적으로 물어본다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>Dynamic resolution이 고정 해상도보다 유리한 태스크와 상황을 설명하는 능력</li><li>Projector 설계(Linear vs MLP vs Q-Former)의 trade-off를 태스크 유형과 연결하는 능력</li><li>Post-training 시 freeze 전략의 근거를 실험 결과와 함께 제시하는 능력</li><li>Visual token 수와 context window 한계의 관계를 수치로 설명하는 능력</li><li>비디오 프레임 샘플링 전략이 temporal grounding 성능에 미치는 영향</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>Vision encoder를 fine-tuning하는 것을 당연하게 생각하는 경우 (일반적으로 freeze가 표준)</li><li>모든 VLM에 동일한 projector를 쓰는 것이 적합하다고 생각하는 경우</li><li>Visual token 수가 context window에서 차지하는 비중을 계산하지 못하는 경우</li><li>MRoPE 없이 temporal grounding을 처리하는 방법을 설명하지 못하는 경우</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>고해상도 의료 이미지(2048×2048)를 처리하는 VLM을 설계한다면 visual token 수 관리를 어떻게 하겠나요?</li><li>Projector stage-1 training에서 LLM을 freeze하는 이유와 그 한계를 설명해주세요.</li><li>10분 비디오를 처리할 때 1fps vs 2fps 샘플링의 trade-off를 temporal grounding 태스크 관점에서 설명해주세요.</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 친숙함 수준은 VLM 모델을 로드하고 추론하는 것이다. 숙련 수준은 visual token 예산을 태스크에 맞게 설계하고, freeze 전략을 실험으로 검증하며, 동적 해상도와 고정 해상도의 성능 차이를 benchmark로 측정하고 설명할 수 있는 것이다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>VLM = Vision Encoder + Projector + LLM</h3><p>세 모듈의 역할: encoder(시각 특징 추출), projector(공간 변환), LLM(멀티모달 이해 및 생성).</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>Vision Encoder는 일반적으로 freeze</h3><p>대규모 사전 alignment가 이미 완료된 모듈. 태스크별 fine-tuning에서 건드리면 일반 시각 표현이 손상된다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>Dynamic Resolution은 detail 보존의 핵심</h3><p>고정 해상도 resize 대신 원본 비율 유지. 문서 OCR, 차트 이해, 물체 위치 파악에 결정적이다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>MRoPE는 시공간 위치를 3D로 인코딩</h3><p>Temporal(t), Height(h), Width(w) 3차원을 별도로 인코딩하여 비디오의 시공간 관계를 명시적으로 학습한다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>Visual token 예산이 context window를 결정</h3><p>1분 30fps 비디오 × 256 tokens/frame = 460K tokens. 현실적 처리를 위한 샘플링 전략이 필수다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>2-stage training: projector-first</h3><p>Stage 1에서 projector alignment, Stage 2에서 LLM(LoRA) fine-tuning이 표준 레시피다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>Q-Former는 token 압축에 효과적</h3><p>고정된 learnable query vector로 visual feature를 압축. 긴 비디오 처리에서 메모리 효율이 높다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-04.html">← LLM Post-Training Trends 2024-2026</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-06.html">Visual Instruction Tuning &amp; VLM SFT Strategy →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

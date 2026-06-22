@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch4: Caching &amp; Content Delivery — System Design Interview — direcf</title>
+  <meta name="description" content="올바른 캐시 전략이 DB 부하를 90% 이상 줄인다. 캐시 패턴, 무효화 전략, CDN까지 완전 정복한다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/ai-engineering">System Design Interview</a><span class="sep">›</span>
+        <strong>Ch04 Caching &amp; Content Delivery</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 04 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">⚡</div>
+      <h1 class="chapter-title">Caching &amp; Content Delivery</h1>
+      <div class="chapter-title-kr">캐시와 CDN — 성능의 핵심</div>
+      <div class="chapter-tldr">올바른 캐시 전략이 DB 부하를 90% 이상 줄인다. 캐시 패턴, 무효화 전략, CDN까지 완전 정복한다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-04.png" alt="Chapter 4 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 4 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>Cache-Aside, Write-Through, Write-Back, Write-Around의 차이와 적합한 사용 사례를 설명할 수 있다</li><li>Cache Invalidation의 어려움과 일반적 전략을 알고 있다</li><li>Redis의 자료구조(String, List, Set, Sorted Set, Hash)별 사용 사례를 안다</li><li>CDN이 원본 서버 부하를 줄이는 원리와 Cache-Control 헤더를 이해한다</li><li>Thundering Herd와 Cache Stampede를 방지하는 방법을 설명할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>"컴퓨터 과학에서 가장 어려운 두 가지가 있다: Cache Invalidation과 Naming Things" — Phil Karlton의 이 농담은 캐시가 얼마나 어렵고 중요한지를 보여준다.</p>
+<p>캐시는 단순히 빠른 임시 저장소가 아니다. 올바른 캐시 전략은 DB 쿼리를 99% 줄이고, CDN은 원본 서버 트래픽을 95% 줄일 수 있다. 반대로 잘못된 캐시 전략은 <strong>Stale Data(오래된 데이터)</strong>, <strong>Cache Stampede(동시 캐시 미스)</strong>, <strong>Cache Poisoning(악의적 데이터 주입)</strong> 같은 심각한 문제를 만든다.</p>
+<p>이 챕터에서는 캐시 패턴의 종류와 트레이드오프, Redis의 실용적 사용법, CDN의 동작 원리를 다룬다. 특히 <strong>Cache Invalidation</strong>이 왜 어렵고 어떻게 다루어야 하는지를 집중적으로 다룬다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>캐시 읽기/쓰기 패턴 4가지</h2><p>캐시를 어떻게 채우고 업데이트하는지에 따라 4가지 주요 패턴이 있다.</p>
+<p><strong>1. Cache-Aside (Lazy Loading)</strong></p>
+<p>애플리케이션이 캐시 관리를 직접 담당. 읽기 시 캐시 먼저 확인, Cache Miss 시 DB에서 읽고 캐시에 저장.</p>
+<ul>
+<li>
+<p>장점: 실제로 사용되는 데이터만 캐시됨. DB 장애 시 캐시에서 서비스 가능.</p>
+</li>
+<li>
+<p>단점: Cache Miss 시 latency 증가. <strong>Cache Stampede</strong> 위험. 최초 요청은 항상 느리다.</p>
+</li>
+<li>
+<p>사용: Twitter 타임라인, 사용자 프로필처럼 read-heavy 데이터</p>
+</li>
+</ul>
+<p><strong>2. Write-Through</strong></p>
+<p>쓰기 시 DB와 캐시를 동시에 업데이트. 데이터는 항상 최신.</p>
+<ul>
+<li>
+<p>장점: 캐시 데이터가 항상 최신. 읽기 시 Cache Miss 없음.</p>
+</li>
+<li>
+<p>단점: 쓰기 latency 증가. 읽히지 않는 데이터도 캐시 → 공간 낭비.</p>
+</li>
+<li>
+<p>사용: 사용자 설정, 자주 수정되고 자주 읽히는 데이터</p>
+</li>
+</ul>
+<p><strong>3. Write-Back (Write-Behind)</strong></p>
+<p>쓰기 시 캐시만 업데이트. 캐시에서 DB로의 동기화는 비동기 또는 주기적.</p>
+<ul>
+<li>
+<p>장점: 쓰기 latency 최소화. write burst 흡수 가능.</p>
+</li>
+<li>
+<p>단점: 캐시 장애 시 데이터 유실 위험. DB와 캐시 불일치 기간 발생.</p>
+</li>
+<li>
+<p>사용: 좋아요 수, 조회수 같은 데이터 유실을 어느 정도 허용하는 카운터</p>
+</li>
+</ul>
+<p><strong>4. Write-Around</strong></p>
+<p>쓰기는 DB로만, 읽기 시 Cache-Aside처럼 동작.</p>
+<ul>
+<li>
+<p>장점: 한 번만 쓰는 데이터로 캐시가 오염되지 않음.</p>
+</li>
+<li>
+<p>단점: 읽기 시 초기에 Cache Miss 많음.</p>
+</li>
+<li>
+<p>사용: 로그, 한 번 쓰고 거의 안 읽는 데이터</p>
+</li>
+</ul></div><div class="sb-block"><h2>Cache Invalidation: 왜 어려운가</h2><p>캐시에서 가장 어려운 문제는 <strong>언제 캐시된 데이터를 무효화(invalidate)할 것인가</strong>다.</p>
+<p><strong>TTL (Time-To-Live) 기반 만료</strong></p>
+<p>가장 단순한 방법. 일정 시간이 지나면 자동 만료. Redis의 <code>EXPIRE</code> 명령.</p>
+<ul>
+<li>
+<p>장점: 구현 간단.</p>
+</li>
+<li>
+<p>단점: TTL이 짧으면 Cache Hit Rate 낮아짐, 길면 Stale Data 기간이 길어짐.</p>
+</li>
+</ul>
+<p><strong>Event-Driven Invalidation</strong></p>
+<p>데이터 변경 이벤트 발생 시 캐시를 직접 삭제. DB 업데이트 후 <code>cache.delete(key)</code> 또는 메시지 큐를 통한 비동기 삭제.</p>
+<ul>
+<li>
+<p>장점: 즉각적인 캐시 일관성.</p>
+</li>
+<li>
+<p>단점: Race Condition — DB 업데이트와 캐시 삭제 사이 타이밍 문제.</p>
+</li>
+</ul>
+<p><strong>Write-Through로 동기 업데이트</strong></p>
+<p>쓰기 시 캐시와 DB를 동시에 업데이트하여 불일치를 원천 방지.</p>
+<p><strong>Cache-Aside의 Race Condition 예시:</strong></p>
+<p>쓰레드 A가 DB 업데이트 후 캐시를 삭제하려는 순간, 쓰레드 B가 캐시 미스를 받고 DB에서 이전 값을 읽어 캐시에 저장하면? → 이전 값이 캐시에 남는다. 이 문제를 해결하기 위해 <strong>Cache-Aside + TTL을 함께 쓰는 것</strong>이 일반적인 해법이다. Invalidation이 실패해도 TTL이 결국 해결한다.</p></div><div class="sb-block"><h2>Redis: 캐시 그 이상의 도구</h2><p>Redis는 단순한 Key-Value 캐시가 아니다. 다양한 자료구조를 지원하는 <strong>인메모리 데이터 구조 서버</strong>로, 각 자료구조마다 최적화된 사용 사례가 있다.</p>
+<table>
+<thead>
+<tr>
+<th>자료구조</th>
+<th>커맨드</th>
+<th>사용 사례</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>String</td>
+<td>GET/SET/INCR</td>
+<td>세션, 카운터, 캐시</td>
+</tr>
+<tr>
+<td>List</td>
+<td>LPUSH/RPOP</td>
+<td>메시지 큐, 최근 활동 피드</td>
+</tr>
+<tr>
+<td>Hash</td>
+<td>HGET/HSET</td>
+<td>사용자 프로필 (필드별 접근)</td>
+</tr>
+<tr>
+<td>Set</td>
+<td>SADD/SMEMBERS</td>
+<td>유니크 방문자, 팔로워 목록</td>
+</tr>
+<tr>
+<td>Sorted Set</td>
+<td>ZADD/ZRANGE</td>
+<td>리더보드, 점수 기반 정렬</td>
+</tr>
+<tr>
+<td>HyperLogLog</td>
+<td>PFADD/PFCOUNT</td>
+<td>대략적 유니크 카운트 (공간 효율)</td>
+</tr>
+<tr>
+<td>Pub/Sub</td>
+<td>PUBLISH/SUBSCRIBE</td>
+<td>실시간 알림, 채팅</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Redis Sorted Set으로 리더보드 구현:</strong></p>
+<pre><code>ZADD game:leaderboard 9500 &quot;alice&quot;
+ZADD game:leaderboard 8700 &quot;bob&quot;
+ZRANGE game:leaderboard 0 9 WITHSCORES REV  # Top 10
+ZRANK game:leaderboard &quot;alice&quot;              # Rank of alice
+</code></pre>
+<p><strong>Redis Cluster를 통한 수평 확장:</strong></p>
+<p>Redis Cluster는 데이터를 16384개의 hash slot으로 나누고 각 노드가 일부를 담당한다. 자동 샤딩과 failover를 지원한다.</p>
+<p><strong>Redis vs Memcached:</strong></p>
+<table>
+<thead>
+<tr>
+<th>항목</th>
+<th>Redis</th>
+<th>Memcached</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>자료구조</td>
+<td>다양</td>
+<td>String만</td>
+</tr>
+<tr>
+<td>영속성</td>
+<td>RDB/AOF 지원</td>
+<td>없음</td>
+</tr>
+<tr>
+<td>복제</td>
+<td>지원</td>
+<td>없음</td>
+</tr>
+<tr>
+<td>Cluster</td>
+<td>지원</td>
+<td>없음</td>
+</tr>
+</tbody>
+</table>
+<p>현대 시스템에서 Memcached보다 Redis를 선택하는 이유가 명확하다. 단, 단순 캐시만 필요하고 최대 성능이 필요할 때는 Memcached가 미세하게 빠를 수 있다.</p></div><div class="sb-block"><h2>CDN: 글로벌 콘텐츠 배포</h2><p>CDN(Content Delivery Network)은 전 세계에 분산된 엣지 서버(PoP, Point of Presence)에 정적 콘텐츠를 캐시하여, 사용자에게 가장 가까운 서버에서 콘텐츠를 제공하는 인프라다.</p>
+<p><strong>CDN이 해결하는 문제:</strong></p>
+<ul>
+<li>지리적 지연(Geographic Latency) — 한국 사용자가 미국 서버에 직접 요청하면 150ms+ 지연</li>
+<li>Origin 서버 부하 — 전체 트래픽의 95%를 CDN이 처리하면 origin에는 5%만 도달</li>
+<li>DDoS 흡수 — 엣지에서 악성 트래픽 필터링</li>
+</ul>
+<p><strong>CDN 동작 흐름:</strong></p>
+<ol>
+<li>사용자가 <code>image.example.com/photo.jpg</code> 요청</li>
+<li>DNS가 사용자에게 가장 가까운 CDN PoP의 IP 반환</li>
+<li>CDN PoP에 캐시 있으면 즉시 반환 (Cache Hit)</li>
+<li>없으면 Origin 서버에서 가져와 PoP에 저장 후 반환 (Cache Miss)</li>
+</ol>
+<p><strong>Cache-Control 헤더로 CDN 제어:</strong></p>
+<pre><code>Cache-Control: public, max-age=86400    # 24시간 CDN/브라우저 캐시
+Cache-Control: private, no-cache       # CDN 캐시 금지, 브라우저도 재검증
+Cache-Control: no-store               # 어디에도 저장하지 않음
+Surrogate-Control: max-age=604800     # CDN만을 위한 7일 캐시
+</code></pre>
+<p><strong>Push vs Pull CDN:</strong></p>
+<ul>
+<li>
+<p>Push: 콘텐츠 업로드 시 미리 CDN에 배포. 대용량 파일, 변경이 드문 콘텐츠.</p>
+</li>
+<li>
+<p>Pull: 사용자 요청 시 처음 한 번만 origin에서 가져와 캐시. 일반적인 웹사이트.</p>
+</li>
+</ul>
+<p><strong>CDN 사용 사례:</strong> 이미지, CSS/JS, 동영상 스트리밍(HLS segments), API 응답(일부), 정적 HTML</p></div><div class="sb-block"><h2>Thundering Herd와 캐시 고급 패턴</h2><p><strong>Thundering Herd (Cache Stampede)</strong> 는 캐시가 만료되는 순간 수천 개의 요청이 동시에 DB로 향하는 현상이다. 인기 콘텐츠의 캐시가 만료될 때 특히 심각하다.</p>
+<p><strong>해결 방법 1: Mutex Lock</strong></p>
+<p>첫 번째 Cache Miss 요청만 DB에서 읽고, 나머지는 락을 기다린다. Redis의 <code>SETNX</code> 또는 <code>SET ... NX</code> 명령으로 구현.</p>
+<p><strong>해결 방법 2: Probabilistic Early Expiration</strong></p>
+<p>캐시 만료 전에 확률적으로 미리 갱신. TTL이 줄어들수록 조기 갱신 확률이 증가하는 <code>XFetch</code> 알고리즘.</p>
+<p><strong>해결 방법 3: Background Refresh</strong></p>
+<p>캐시 만료 직전 백그라운드에서 미리 새로 고침. 사용자는 항상 캐시된 데이터를 받는다.</p>
+<p><strong>Hot Key 문제:</strong></p>
+<p>Redis에서 특정 key(예: 인기 아이템 재고)에 초당 수십만 요청이 몰리면 단일 Redis 노드가 병목이 된다.</p>
+<p>해결책:
+- <strong>Local Cache</strong>: 애플리케이션 서버의 인메모리 캐시(Caffeine, Guava Cache)를 1차 캐시로 사용
+- <strong>Key Sharding</strong>: <code>item:123:replica_0</code>, <code>item:123:replica_1</code> 처럼 여러 키로 분산
+- <strong>Read-Through with replica</strong>: Read Replica에서 읽기</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">커피숍 선반으로 보는 캐시 계층</div>
+      <div class="a-body"><p>커피숍에는 세 가지 저장 위치가 있다. 바리스타 손 옆 카운터(L1 캐시 = CPU Cache), 바 위 선반(L2 캐시 = Redis), 창고(DB).</p>
+<p>고객이 아메리카노를 주문하면 바리스타는 먼저 손 옆 카운터를 본다. 없으면 선반을 본다. 선반에도 없으면 창고까지 가서 가져온다. 창고를 왕복하는 시간(latency)이 가장 길다. 가장 자주 팔리는 원두는 항상 선반에 놓아두어야 한다.</p>
+<p>Cache Invalidation 문제는 이렇다 — 창고에서 원두 등급이 바뀌었는데, 선반에는 여전히 이전 등급의 원두가 있다. 언제 선반을 교체할 것인가? 매일 자동 교체(TTL)? 창고 변경 알림 시 즉시 교체(Event-Driven)? CDN은 전국 각 도시에 분점을 두고 본점(origin)의 원두를 복사해두는 것이다. 서울 분점에서 부산 고객이 주문하면 본점까지 갈 필요가 없다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>Cache-Aside 패턴 + Thundering Herd 방지를 위한 Mutex Lock을 Redis로 구현한다. 실제 프로덕션에서 사용하는 패턴이다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import redis
+import json
+import time
+from typing import Optional, Callable, Any
+
+class CacheAsideWithLock:
+    def __init__(self, redis_client: redis.Redis, default_ttl: int = 300):
+        self.redis = redis_client
+        self.default_ttl = default_ttl
+        self.lock_ttl = 5  # Lock expires in 5s to prevent deadlock
+
+    def get_or_load(
+        self,
+        key: str,
+        loader: Callable[[], Any],
+        ttl: Optional[int] = None
+    ) -&gt; Any:
+        # 1. Try cache first
+        cached = self.redis.get(key)
+        if cached:
+            return json.loads(cached)
+
+        # 2. Cache miss — acquire distributed lock to prevent stampede
+        lock_key = f&quot;lock:{key}&quot;
+        acquired = self.redis.set(
+            lock_key, &quot;1&quot;,
+            nx=True,           # Only set if Not eXists
+            ex=self.lock_ttl   # Expire lock to prevent deadlock
+        )
+
+        if not acquired:
+            # Another process is loading — wait and retry
+            for _ in range(10):
+                time.sleep(0.05)
+                cached = self.redis.get(key)
+                if cached:
+                    return json.loads(cached)
+            # Fallback: load directly (lock holder may have crashed)
+        
+        try:
+            # 3. Load from source (DB, external API, etc.)
+            value = loader()
+
+            # 4. Store in cache
+            self.redis.setex(
+                key,
+                ttl or self.default_ttl,
+                json.dumps(value)
+            )
+            return value
+        finally:
+            self.redis.delete(lock_key)  # Always release lock
+
+# Usage example
+r = redis.Redis(host=&#x27;localhost&#x27;, port=6379)
+cache = CacheAsideWithLock(r, default_ttl=600)
+
+def fetch_user_from_db(user_id: int) -&gt; dict:
+    # Simulated DB query (expensive)
+    return {&quot;id&quot;: user_id, &quot;name&quot;: &quot;Alice&quot;, &quot;email&quot;: &quot;alice@example.com&quot;}
+
+user = cache.get_or_load(
+    key=&quot;user:1001&quot;,
+    loader=lambda: fetch_user_from_db(1001),
+    ttl=300
+)
+print(user)</code></pre>
+      <div class="c-walk"><p><code>SET ... NX</code>가 핵심이다. 여러 서버에서 동시에 같은 키가 만료되어도, 첫 번째 요청만 DB 쿼리를 하고 나머지는 0.05초씩 재시도한다. Lock이 죽으면(crash) 5초 후 자동 해제된다. 이 패턴 하나로 Cache Stampede를 방지하면서도 Stale Data를 최소화할 수 있다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">캐시 전략은 모든 시스템 설계 면접에서 등장한다. 단순히 Redis를 쓴다고 하는 게 아니라, 구체적 패턴과 invalidation 전략, TTL 설정의 근거를 설명해야 한다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>Cache hit rate를 높이는 전략과 실측 방법을 아는가</li><li>Cache Invalidation의 어려움과 구체적 해결 방법을 아는가</li><li>CDN을 언제 어떻게 활용할지 알고 있는가</li><li>캐시 레이어가 없을 때 DB 부하를 추정할 수 있는가</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>&quot;Redis를 캐시로 쓰면 됩니다&quot;만 말하고 패턴을 설명 못 함</li><li>Cache Invalidation을 고려하지 않는 설계</li><li>모든 데이터를 캐시에 넣는 설계 (메모리 한계 무시)</li><li>TTL 없이 캐시 데이터를 영구 저장하는 설계</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>Twitter의 hot celebrity 계정 타임라인 캐시 전략을 설계해봐.</li><li>Cache hit rate가 갑자기 떨어졌다. 어떻게 디버깅하겠어?</li><li>Cache와 DB 사이의 데이터 불일치를 최소화하는 방법은?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 익숙한 수준은 Cache-Aside 패턴을 설명하고 Redis로 구현할 수 있는 것이다. 마스터 수준은 workload 특성에 따라 Write-Through, Write-Back, Write-Around 중 하나를 선택하고, Thundering Herd와 Hot Key 문제를 예측하여 미리 설계에 반영하는 것이다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>Cache-Aside가 기본</h3><p>대부분의 read-heavy 서비스는 Cache-Aside + TTL의 조합으로 시작한다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>Invalidation이 진짜 문제</h3><p>캐시를 쓰는 것보다 언제 지울지가 더 어렵다. TTL + Event-Driven Invalidation을 함께 써라.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>Redis Sorted Set = 리더보드</h3><p>O(log N)으로 순위를 계산하는 Redis Sorted Set은 리더보드, 타임라인 정렬의 정답이다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>CDN = Origin 부하 95% 절감</h3><p>이미지, 동영상, 정적 파일은 반드시 CDN으로 서빙하라. Cache-Control 헤더로 세밀하게 제어한다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>Thundering Herd = Mutex Lock</h3><p>인기 캐시가 만료될 때 동시 DB 쿼리 폭발 방지: Redis SETNX 락으로 첫 요청만 DB에 닿게 한다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>다층 캐시 (Multi-Level Cache)</h3><p>Local Cache(인메모리) → Redis → DB 순으로 계층을 구성하면 Hot Key 문제도 해결된다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>Write-Back은 카운터에</h3><p>좋아요 수, 조회수처럼 잦은 쓰기가 있고 약간의 유실을 허용하면 Write-Back이 DB 부하를 대폭 줄인다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>캐시는 DB 복사본이 아님</h3><p>자주 접근하고 계산 비용이 비싼 데이터를 선택적으로 캐싱한다. 모든 데이터를 캐시에 넣으면 안 된다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-03.html">← Storage Systems at Scale</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-05.html">Messaging &amp; Event-Driven Architecture →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

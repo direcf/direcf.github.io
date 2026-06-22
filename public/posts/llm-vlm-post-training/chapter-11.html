@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch11: VLM Evaluation &amp; Benchmark Strategy — LLM &amp; VLM Post-Training Mastery — direcf</title>
+  <meta name="description" content="벤치마크 점수 높이기보다 실제 사용 사례를 반영하는 평가 설계가 더 중요하며, 인기 벤치마크에는 시각 없이 풀 수 있는 오염 문제가 광범위하다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/multimodal-ai">LLM &amp; VLM Post-Training Mastery</a><span class="sep">›</span>
+        <strong>Ch11 VLM Evaluation &amp; Benchmark Strategy</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 11 <span style="opacity:.3">·</span> 15 chapters
+      </div>
+      <div class="chapter-emoji">📊</div>
+      <h1 class="chapter-title">VLM Evaluation &amp; Benchmark Strategy</h1>
+      <div class="chapter-title-kr">VLM Evaluation &amp; Benchmark 전략</div>
+      <div class="chapter-tldr">벤치마크 점수 높이기보다 실제 사용 사례를 반영하는 평가 설계가 더 중요하며, 인기 벤치마크에는 시각 없이 풀 수 있는 오염 문제가 광범위하다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-11.png" alt="Chapter 11 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 11 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>주요 VLM/Video 벤치마크(VideoMME, MMVU, QVHighlights, Charades-STA)의 특성과 한계를 설명할 수 있다</li><li>벤치마크 오염(텍스트 편향) 문제를 탐지하고 정량화하는 방법을 설명할 수 있다</li><li>Temporal grounding 평가 지표(R@k IoU@t, mIoU, mAP)를 계산하고 해석할 수 있다</li><li>내부 평가 세트 구축의 원칙과 방법을 제시할 수 있다</li><li>모델 선택 시 벤치마크 점수와 실제 성능의 gap을 고려하는 방법을 설명할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>벤치마크 점수는 모델 개발의 중요한 신호지만, 점수 자체가 목표가 되어선 안 된다. 특히 2026년 발견된 비디오 벤치마크의 광범위한 텍스트 편향 문제(<a href="https://arxiv.org/abs/2604.05117">arxiv 2604.05117</a>)는 인기 벤치마크에서 높은 점수를 얻는 것이 실제 시각 이해 능력을 보장하지 않는다는 것을 보여준다.</p>
+<p>효과적인 VLM 평가는 세 가지 레벨에서 이루어져야 한다. <strong>(1) 표준 벤치마크</strong>: 커뮤니티 비교와 논문 발표에 필요. <strong>(2) 내부 태스크 특화 평가</strong>: 실제 사용 사례를 반영한 평가 세트. <strong>(3) 실패 분석</strong>: 모델이 틀리는 사례의 패턴 분석.</p>
+<p>이 챕터에서는 주요 벤치마크의 특성과 한계를 이해하고, 자체 평가 시스템을 구축하는 방법을 다룬다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>General VLM 벤치마크 분석</h2><p>주요 일반 VLM 벤치마크:</p>
+<p><strong>MMBench / MME</strong>
+- 이미지 기반 VQA, reasoning, OCR, counting 등 다양한 카테고리
+- MCQ 형식으로 자동 평가 용이
+- 한계: 단순 yes/no나 단답형 질문 위주</p>
+<p><strong>MMMU</strong>
+- 대학 수준 멀티모달 이해 (과학, 의학, 예술 등)
+- 전문 지식 필요, 단순 pattern matching 통하지 않음
+- 더 엄격한 이해 평가</p>
+<p><strong>DocVQA</strong>
+- 문서 이미지 이해 (영수증, 보고서, 양식 등)
+- OCR + 문서 이해 능력 평가
+- 고해상도 모델에 유리</p>
+<p><strong>HallusionBench</strong>
+- 시각적 환각 탐지에 특화
+- 이미지에 없는 물체를 있다고 하는 경우 탐지
+- 신뢰성 평가에 중요</p></div><div class="sb-block"><h2>Video 벤치마크 오염과 대응</h2><p>VideoMME와 MMVU가 텍스트만으로 높은 점수를 낼 수 있다는 발견(<a href="https://arxiv.org/abs/2604.05117">arxiv 2604.05117</a>)은 비디오 벤치마크 설계의 근본적 문제를 드러낸다.</p>
+<p><strong>텍스트 편향 측정 방법</strong>:</p>
+<pre><code class="language-python"># 자체 벤치마크의 텍스트 편향 측정
+def measure_text_bias(benchmark_samples, judge_model):
+    correct_without_video = 0
+    total = len(benchmark_samples)
+    for sample in benchmark_samples:
+        # 비디오 없이 질문 + 선택지만으로 답 생성
+        response = judge_model.answer(sample['question'],
+                                      options=sample['options'],
+                                      video=None)
+        if response == sample['answer']:
+            correct_without_video += 1
+    text_bias_rate = correct_without_video / total
+    return text_bias_rate  # 40-60%이면 심각한 오염
+</code></pre>
+<p><strong>오염이 낮은 벤치마크 특성</strong>:</p>
+<ul>
+<li>질문이 비디오의 특정 시각적 detail에 의존</li>
+<li>텍스트 상식으로 추론 불가능한 질문</li>
+<li>Temporal 순서나 동작 인식 필요</li>
+</ul>
+<p><strong>권장 벤치마크</strong>: Video-MME의 '시각 의존 부분'만 선별하거나, NExT-QA(temporal causal reasoning 강조)를 대안으로 사용.</p></div><div class="sb-block"><h2>Temporal Grounding 평가 지표</h2><p>Temporal grounding 평가를 위한 지표들:</p>
+<p><strong>R@k IoU@t (Recall at Rank-k, IoU threshold t)</strong>
+- R@1 IoU@0.5: top-1 예측이 IoU ≥ 0.5인 경우의 비율
+- R@1 IoU@0.7: 더 엄격한 버전, IoU ≥ 0.7
+- 실전에서 IoU@0.7이 더 신뢰할 수 있는 지표</p>
+<p><strong>mIoU</strong>
+- 모든 테스트 샘플의 Temporal IoU 평균
+- 전반적 정확도 측정, 극단적 실수에 더 민감</p>
+<p><strong>mAP (mean Average Precision)</strong>
+- 여러 IoU threshold에서의 AP를 평균
+- 하이라이트 검출이나 다중 이벤트 탐지에 사용</p>
+<p><strong>계산 예시</strong>:</p>
+<pre><code>예측: [12.0, 24.0], 정답: [12.5, 24.8]
+Intersection: min(24.0, 24.8) - max(12.0, 12.5) = 24.0 - 12.5 = 11.5
+Union: max(24.0, 24.8) - min(12.0, 12.5) = 24.8 - 12.0 = 12.8
+IoU = 11.5 / 12.8 = 0.898 → IoU@0.7 통과 ✓, IoU@0.9 미통과 ✗
+</code></pre>
+<p><strong>Temporal Grounding 평가 순서</strong>: single interval에서 R@1 IoU@0.5/0.7 → mIoU → Charades-STA → QVHighlights 순으로 평가 난이도 증가.</p></div><div class="sb-block"><h2>내부 평가 세트 구축 원칙</h2><p>외부 벤치마크 오염 문제로 인해, 실제 태스크 성능을 측정하는 내부 평가 세트 구축이 중요하다.</p>
+<p><strong>설계 원칙</strong>:</p>
+<p><em>1. 실제 사용 케이스 반영</em>: 실제 사용자가 요청하는 유형의 질문을 포함. 편집된 시나리오가 아닌 실사 예시를 사용.</p>
+<p><em>2. 오염 방지</em>: 훈련 데이터와 겹치지 않는 소스. Temporal split(최신 데이터 사용) 또는 domain split 사용.</p>
+<p><em>3. 다양성 확보</em>: 비디오 도메인(스포츠, 음식, 인터뷰 등), 쿼리 유형(시작/종료 분리, 짧은/긴 이벤트), 비디오 길이 균형.</p>
+<p><em>4. 자동 평가 가능한 형식</em>: 자동으로 채점 가능한 포맷 설계. Temporal grounding은 IoU로 자동 채점, VQA는 MCQ로 자동 채점.</p>
+<p><em>5. 크기</em>: 통계적으로 유의미하면서도 평가 비용이 허용 가능한 크기. 보통 500-2000 샘플.</p></div><div class="sb-block"><h2>평가 Anti-patterns</h2><p>VLM 평가에서 피해야 할 반패턴:</p>
+<p><strong>Anti-pattern 1: 단일 벤치마크 의존</strong>
+하나의 벤치마크에서 높은 점수를 얻는 것을 목표로 최적화하면 다른 태스크에서 성능이 떨어지는 Goodhart's Law 현상이 발생한다.</p>
+<p><strong>Anti-pattern 2: 훈련 데이터와 벤치마크 오염</strong>
+공개 벤치마크(Charades-STA, ActivityNet)의 테스트 셋이 훈련 데이터에 포함되면 성능이 과장된다. 항상 사용한 데이터 소스와 벤치마크의 overlap을 확인해야 한다.</p>
+<p><strong>Anti-pattern 3: 텍스트 편향 무시</strong>
+비디오 없이도 높은 점수를 내는 모델이 '시각을 잘 이해하는 모델'로 오해될 수 있다. 반드시 비디오-absent 점수를 함께 측정해야 한다.</p>
+<p><strong>Anti-pattern 4: 정성 평가 부재</strong>
+정량 지표만으로 판단하면 모델의 질적 차이를 놓친다. 정기적인 샘플 리뷰(human evaluation)를 병행해야 한다.</p>
+<p><strong>Anti-pattern 5: 한 가지 task만 평가</strong>
+Temporal grounding SFT 후 일반 VQA 성능 저하를 측정하지 않으면 forgetting 문제를 놓친다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">학교 시험 점수와 실제 능력</div>
+      <div class="a-body"><p>벤치마크 오염 문제는 시험지를 미리 보고 외운 학생이 높은 점수를 받는 것과 같다. VideoMME에서 48.2%를 텍스트만으로 맞추는 것은, 수학 시험에서 풀이 없이 '보기 3번이 자주 정답이다'라는 패턴으로 점수를 올리는 것과 같다.</p>
+<p>진짜 능력을 측정하려면 매번 새로운 문제를 출제해야 한다 — 이것이 내부 평가 세트의 역할이다. 현실 세계의 다양한 상황에서 직접 테스트하는 것이 벤치마크 점수보다 신뢰할 수 있다.</p>
+<p>단일 벤치마크 최적화는 한 과목만 열심히 준비하는 것이다. 대학 입시에서 수학만 잘해서 다른 과목을 소홀히 한 학생이 수능에서 실패하는 것처럼, 특정 벤치마크에 과적합된 모델은 실제 사용 시 많은 케이스에서 실패한다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>Temporal grounding 평가의 완전한 구현이다. R@1 IoU@0.5/0.7, mIoU를 계산하고 텍스트 편향 비율도 함께 측정한다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">from dataclasses import dataclass
+from typing import Optional
+import numpy as np
+
+@dataclass
+class TemporalGroundingResult:
+    r1_iou05: float  # R@1 IoU@0.5
+    r1_iou07: float  # R@1 IoU@0.7
+    miou:     float  # mean IoU
+    text_bias_rate: Optional[float] = None  # 텍스트만으로 답 가능 비율
+
+def temporal_iou(pred, gt):
+    inter = max(0, min(pred[1], gt[1]) - max(pred[0], gt[0]))
+    union = max(pred[1], gt[1]) - min(pred[0], gt[0])
+    return inter / union if union &gt; 0 else 0.0
+
+def evaluate_temporal_grounding(
+    predictions: list[dict],  # {&quot;query&quot;: ..., &quot;pred&quot;: [start, end]}
+    ground_truths: list[dict], # {&quot;query&quot;: ..., &quot;gt&quot;: [start, end]}
+    text_preds: list[dict] | None = None,  # 텍스트만으로 예측한 결과
+) -&gt; TemporalGroundingResult:
+    ious = []
+    r1_05_hits, r1_07_hits = 0, 0
+    n = len(predictions)
+
+    for pred, gt in zip(predictions, ground_truths):
+        iou = temporal_iou(pred[&quot;pred&quot;], gt[&quot;gt&quot;])
+        ious.append(iou)
+        r1_05_hits += int(iou &gt;= 0.5)
+        r1_07_hits += int(iou &gt;= 0.7)
+
+    # 텍스트 편향 측정 (선택적)
+    text_bias_rate = None
+    if text_preds is not None:
+        text_correct = 0
+        for t_pred, gt in zip(text_preds, ground_truths):
+            iou = temporal_iou(t_pred[&quot;pred&quot;], gt[&quot;gt&quot;])
+            text_correct += int(iou &gt;= 0.5)
+        text_bias_rate = text_correct / n
+
+    return TemporalGroundingResult(
+        r1_iou05=r1_05_hits / n,
+        r1_iou07=r1_07_hits / n,
+        miou=np.mean(ious),
+        text_bias_rate=text_bias_rate,
+    )
+
+# 사용 예시
+predictions = [{&quot;pred&quot;: [12.0, 24.0]}, {&quot;pred&quot;: [5.0, 15.0]}, {&quot;pred&quot;: [0.0, 30.0]}]
+ground_truths = [{&quot;gt&quot;: [12.5, 24.8]}, {&quot;gt&quot;: [6.0, 14.0]}, {&quot;gt&quot;: [1.0, 25.0]}]
+result = evaluate_temporal_grounding(predictions, ground_truths)
+print(f&quot;R@1 IoU@0.5: {result.r1_iou05:.3f}&quot;)
+print(f&quot;R@1 IoU@0.7: {result.r1_iou07:.3f}&quot;)
+print(f&quot;mIoU: {result.miou:.3f}&quot;)</code></pre>
+      <div class="c-walk"><p><code>temporal_iou</code>는 예측 구간과 정답 구간의 시간 overlap을 측정한다. <code>r1_05_hits</code>와 <code>r1_07_hits</code>는 각각 IoU≥0.5와 IoU≥0.7 기준을 통과한 예측 수다. <code>text_bias_rate</code>는 비디오 없이 텍스트만으로 IoU@0.5를 달성한 비율로, 이 값이 높으면 평가 데이터가 텍스트 편향이 있음을 시사한다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">평가 설계 능력은 연구 경험이 있는 ML engineer의 핵심 역량이다. &#x27;벤치마크 점수를 어떻게 해석하는가&#x27;와 &#x27;자신의 모델 평가 방법을 어떻게 설계하는가&#x27;를 중점적으로 평가한다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>벤치마크 텍스트 편향 문제를 인식하고 측정 방법을 제시하는 능력</li><li>R@1 IoU@0.5와 IoU@0.7의 차이가 실전에서 어떤 의미인지 설명하는 능력</li><li>훈련 데이터와 벤치마크 오염 검사 방법</li><li>내부 평가 세트 설계 원칙과 샘플 수 결정 방법</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>단일 벤치마크 점수만 보고 모델 성능을 판단하는 경우</li><li>텍스트 편향 없이 비디오 벤치마크 점수가 높으면 좋은 모델이라고 생각하는 경우</li><li>훈련 데이터와 테스트 세트 overlap을 확인하지 않는 경우</li><li>정성 평가(human eval) 없이 자동 지표만으로 최종 결정을 내리는 경우</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>여러분의 temporal grounding 모델이 Charades-STA에서 좋은 점수를 얻었는데 실제 사용 시 성능이 낮았다면 어떻게 원인을 분석하겠나요?</li><li>비디오 벤치마크에서 텍스트 편향 비율을 측정하고 싶다면 어떤 방법을 사용하겠나요?</li><li>Temporal grounding 내부 평가 세트를 새로 구축한다면 무엇을 포함하겠나요?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 친숙함 수준은 표준 벤치마크를 실행하고 결과를 읽는 것이다. 숙련 수준은 벤치마크 오염을 탐지하고, 실제 사용 케이스를 반영한 내부 평가 세트를 설계하며, 정량 지표와 정성 평가를 결합하여 모델의 실제 능력을 종합적으로 판단하는 것이다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>R@1 IoU@0.7이 가장 신뢰할 수 있는 grounding 지표</h3><p>느슨한 IoU@0.5보다 엄격한 IoU@0.7에서의 성능이 실제 정밀도를 더 잘 반영한다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>VideoMME 48.2%, MMVU 57.1%가 텍스트만으로 답 가능</h3><p>높은 벤치마크 점수가 시각 이해를 보장하지 않는다. 반드시 텍스트 편향 비율을 함께 측정해야 한다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>훈련-테스트 오염 검사는 필수</h3><p>공개 벤치마크의 테스트 세트가 훈련 데이터에 포함되면 점수가 과장된다. 소스 레벨 overlap 검사 필수.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>내부 평가 세트 500-2000 샘플이 실용적 범위</h3><p>통계적 유의성과 평가 비용의 균형. 실제 사용 케이스를 반영하고 오염이 없는 데이터.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>단일 벤치마크 최적화는 Goodhart&#x27;s Law</h3><p>하나의 지표를 최적화하면 다른 능력이 희생된다. 다양한 벤치마크와 실사 평가를 병행해야 한다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>Task-specific forgetting 모니터링 필수</h3><p>SFT 후 일반 VQA 성능 저하를 추적하지 않으면 forgetting 문제를 놓친다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>정성 평가 병행이 신뢰도 높임</h3><p>자동 지표만으로 판단하지 말고 정기적인 샘플 리뷰로 질적 차이를 확인한다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-10.html">← Post-Training Data Curation &amp; Quality Management</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-12.html">VLM Post-Training Trends 2024-2026 →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch9: Recommendation Systems — System Design Interview — direcf</title>
+  <meta name="description" content="YouTube, Netflix, TikTok의 핵심인 대규모 추천 시스템의 Two-Tower 아키텍처와 실시간 개인화 파이프라인을 완전 분해한다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/ai-engineering">System Design Interview</a><span class="sep">›</span>
+        <strong>Ch09 Recommendation Systems</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 09 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🎯</div>
+      <h1 class="chapter-title">Recommendation Systems</h1>
+      <div class="chapter-title-kr">추천 시스템 설계</div>
+      <div class="chapter-tldr">YouTube, Netflix, TikTok의 핵심인 대규모 추천 시스템의 Two-Tower 아키텍처와 실시간 개인화 파이프라인을 완전 분해한다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-09.png" alt="Chapter 9 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 9 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>추천 시스템의 Retrieval → Candidate Generation → Ranking → Re-ranking 4단계를 설명할 수 있다</li><li>Two-Tower 모델의 구조와 사용하는 이유를 설명할 수 있다</li><li>Collaborative Filtering과 Content-Based Filtering의 차이와 장단점을 안다</li><li>Cold Start 문제의 두 가지 유형(User Cold Start, Item Cold Start)과 해결 전략을 설명할 수 있다</li><li>추천 시스템의 Online A/B Testing 설계와 평가 지표를 설명할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>추천 시스템은 현대 빅테크의 핵심 수익 창출 엔진이다. YouTube는 시청 시간의 70%가 추천에서 시작하고, Netflix는 콘텐츠 소비의 80%가 추천 기반이다. TikTok의 For You Page는 사실상 전체 서비스 경험이다.</p>
+<p>추천 시스템 면접은 AI Engineering 직군에서 매우 자주 출제된다. "YouTube의 홈 화면 추천을 설계해봐", "TikTok의 FYP를 설계해봐", "Amazon의 상품 추천을 설계해봐"가 대표적이다.</p>
+<p>이 챕터는 단순한 알고리즘 설명이 아니라, 수억 명의 사용자와 수천만 개의 아이템을 실시간으로 처리하는 <strong>프로덕션급 추천 시스템 아키텍처</strong>를 다룬다. Two-Tower 모델이 왜 대규모 시스템의 표준이 되었는지, Feature Store가 어떻게 통합되는지, 실시간 개인화를 어떻게 달성하는지를 중점적으로 다룬다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>추천 시스템의 4단계 파이프라인</h2><p>수억 개의 아이템을 개인에게 추천하는 것을 단계별로 분리하여 효율성을 높인다. 각 단계에서 후보를 좁혀간다.</p>
+<p><strong>단계 1: 데이터 수집 및 피처 처리</strong></p>
+<p>사용자 행동 로그(클릭, 시청, 구매, 좋아요), 아이템 메타데이터, 컨텍스트(시간, 위치, 디바이스)를 수집하여 Feature Store에 저장.</p>
+<p><strong>단계 2: Candidate Generation (후보 생성)</strong></p>
+<p>전체 아이템 중에서 사용자에게 관련성 있는 수백~수천 개의 후보를 생성. 이 단계는 <strong>속도가 우선</strong>이다. 수천만 개 아이템에서 수천 개로 좁히는 필터 역할.</p>
+<p><strong>단계 3: Ranking (순위 결정)</strong></p>
+<p>후보 수백~수천 개를 정교한 모델로 순위를 매김. 이 단계는 <strong>정확성이 우선</strong>이다. 더 많은 피처(사용자-아이템 상호작용 피처 포함)를 사용. CTR, 시청 완료율 등 다양한 목표 함수.</p>
+<p><strong>단계 4: Re-ranking (재순위)</strong></p>
+<p>비즈니스 규칙, 다양성(Diversity), 신선도(Freshness), 필터링(블랙리스트, 중복 제거) 적용. 순수 ML 점수와 비즈니스 목표의 균형.</p>
+<p><strong>단계별 후보 수:</strong></p>
+<ul>
+<li>전체 아이템: 10M+ → Candidate Generation → 1,000개 → Ranking → 100개 → Re-ranking → 20개 → 사용자에게 노출</li>
+</ul>
+<p>이 구조를 <strong>Funnel Architecture</strong>라고 부른다. 각 단계의 정확도와 속도 트레이드오프가 명확하다.</p></div><div class="sb-block"><h2>Two-Tower Model: 대규모 추천의 표준</h2><p>Two-Tower Model은 YouTube가 2019년에 발표한 이후 산업 표준이 된 추천 시스템 아키텍처다.</p>
+<p><strong>기본 아이디어:</strong></p>
+<p>사용자 타워(User Tower)와 아이템 타워(Item Tower) 두 개의 독립 신경망이 각각 사용자와 아이템을 동일한 임베딩 공간으로 인코딩한다. 사용자와 아이템의 관련성은 두 임베딩 벡터의 <strong>내적(dot product) 또는 코사인 유사도</strong>로 계산한다.</p>
+<p><strong>구조:</strong></p>
+<pre><code>User Features → [User Tower DNN] → User Embedding (d차원)
+Item Features → [Item Tower DNN] → Item Embedding (d차원)
+
+Score = dot(User Embedding, Item Embedding)
+</code></pre>
+<p><strong>왜 Two-Tower인가?</strong></p>
+<ul>
+<li><strong>사전 계산 가능</strong>: Item Embedding은 실시간 요청 전에 미리 계산 → 빠른 Candidate Generation</li>
+<li><strong>ANN(Approximate Nearest Neighbor)으로 빠른 검색</strong>: 사용자 임베딩으로 가장 가까운 Item Embedding들을 FAISS, ScaNN으로 <span class="math-inline">\(O(\log n)\)</span>에 검색</li>
+<li><strong>독립적 업데이트</strong>: User Tower는 실시간 행동으로 동적으로 업데이트, Item Tower는 배치로 업데이트</li>
+</ul>
+<p><strong>학습:</strong></p>
+<ul>
+<li>Positive sample: 사용자가 실제 클릭/구매한 아이템</li>
+<li>Negative sample: In-Batch Negatives (같은 배치 내 다른 사용자의 positive 아이템) + Hard Negatives (사용자가 노출됐지만 클릭 안 한 아이템)</li>
+<li>손실 함수: Softmax 또는 Binary Cross-Entropy</li>
+</ul></div><div class="sb-block"><h2>Collaborative Filtering vs Content-Based Filtering</h2><p><strong>Collaborative Filtering (CF):</strong></p>
+<p>"나와 비슷한 사람들이 좋아하는 것을 나도 좋아할 것이다". 사용자 행동 데이터(클릭, 구매, 평점)만으로 추천.</p>
+<ul>
+<li>Matrix Factorization: User-Item 행렬을 분해하여 Latent Factor 학습</li>
+<li>Memory-Based CF: 유사 사용자를 찾아 그들이 본 것을 추천 (kNN)</li>
+<li>Model-Based CF: Matrix Factorization, Two-Tower</li>
+</ul>
+<p><strong>장점:</strong> 아이템에 대한 사전 지식 불필요. 놀라운 발견(Serendipity) 가능.
+<strong>단점:</strong> Cold Start — 새 사용자, 새 아이템 추천 어려움. 롱테일 아이템은 데이터 부족.</p>
+<p><strong>Content-Based Filtering:</strong></p>
+<p>아이템의 속성(장르, 감독, 태그, 텍스트 내용)이 비슷한 것을 추천.</p>
+<p><strong>장점:</strong> 새 아이템도 추천 가능 (Item Cold Start 해결). 설명 가능성 높음 ("이 장르를 보셨으므로...").
+<strong>단점:</strong> 아이템 피처 추출 비용. 유사 아이템만 추천 → 다양성 부족. User Cold Start는 여전히 문제.</p>
+<p><strong>Hybrid 방식:</strong></p>
+<p>현대 추천 시스템은 두 방식을 결합한다:
+- CF로 Candidate Generation
+- Content-Based로 재순위 또는 Cold Start 보완
+- 딥러닝으로 두 신호를 함께 학습 (Wide &amp; Deep, DeepFM, DIN)</p>
+<p><strong>평가 지표:</strong></p>
+<table>
+<thead>
+<tr>
+<th>지표</th>
+<th>설명</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Precision@K</td>
+<td>추천 K개 중 실제 관련 아이템 비율</td>
+</tr>
+<tr>
+<td>Recall@K</td>
+<td>관련 아이템 중 추천에 포함된 비율</td>
+</tr>
+<tr>
+<td>NDCG@K</td>
+<td>순위 고려한 품질 지표</td>
+</tr>
+<tr>
+<td>Coverage</td>
+<td>전체 아이템 중 추천되는 비율 (다양성)</td>
+</tr>
+<tr>
+<td>CTR</td>
+<td>클릭율 (Online 평가)</td>
+</tr>
+</tbody>
+</table></div><div class="sb-block"><h2>Cold Start 문제와 해결 전략</h2><p>Cold Start는 추천 시스템의 가장 어려운 문제 중 하나다. 데이터가 없는 상황에서 추천을 해야 한다.</p>
+<p><strong>User Cold Start (신규 사용자):</strong></p>
+<p>행동 기록이 없는 새 사용자에게 무엇을 추천할까?</p>
+<p><strong>해결 방법:</strong>
+- <strong>Popularity-based fallback</strong>: 전체 인기 아이템 추천 (가장 단순하고 효과적인 baseline)
+- <strong>Onboarding 설문</strong>: 가입 시 관심사 선택 (Netflix의 "처음 보는 영상 3개 선택")
+- <strong>Demographic-based</strong>: 나이, 성별, 지역 등 인구통계 기반 추천
+- <strong>Cross-domain transfer</strong>: 다른 서비스의 데이터 활용 (구글 계정으로 로그인 시)</p>
+<p><strong>Item Cold Start (신규 아이템):</strong></p>
+<p>새로운 콘텐츠를 누구에게 보여줄까? CF는 상호작용 데이터가 없어서 신규 아이템을 추천 못 한다.</p>
+<p><strong>해결 방법:</strong>
+- <strong>Content-based bootstrapping</strong>: 아이템 속성 임베딩으로 유사 아이템 팬에게 추천
+- <strong>Exploration budget</strong>: 신규 아이템에 일정 비율의 트래픽을 강제 할당 (epsilon-greedy)
+- <strong>Human curation</strong>: 에디터가 신규 콘텐츠를 특정 사용자 세그먼트에 노출</p>
+<p><strong>Multi-Armed Bandit 접근:</strong></p>
+<p>Exploration(새 아이템 노출) vs Exploitation(확실한 아이템 추천) 균형.</p>
+<ul>
+<li><strong>Thompson Sampling</strong>: 각 아이템의 CTR에 대한 Beta 분포를 업데이트하며 확률적 탐색</li>
+<li><strong>UCB (Upper Confidence Bound)</strong>: 불확실한(덜 노출된) 아이템에 보너스 점수 부여</li>
+</ul></div><div class="sb-block"><h2>실시간 개인화와 Vector Database</h2><p><strong>실시간 컨텍스트 반영:</strong></p>
+<p>배치 추천의 한계는 "방금 본 것"을 모른다는 것이다. 실시간 개인화는 최근 세션 내 행동을 즉시 반영한다.</p>
+<p><strong>구현 방식:</strong></p>
+<ol>
+<li>사용자 최근 행동 이벤트 → Kafka → 실시간 User Embedding 업데이트</li>
+<li>업데이트된 User Embedding으로 ANN 검색</li>
+<li>또는 세션 내 행동을 Short-Term Memory로 DIN(Deep Interest Network)에 입력</li>
+</ol>
+<p><strong>Vector Database (벡터 데이터베이스):</strong></p>
+<p>Item/User Embedding을 저장하고 빠른 유사도 검색을 제공하는 특수 DB.</p>
+<ul>
+<li>
+<p><strong>FAISS</strong> (Facebook): CPU/GPU 기반 ANN 라이브러리. Billion-scale 지원.</p>
+</li>
+<li>
+<p><strong>Milvus</strong>: 분산 벡터 DB. Production-grade.</p>
+</li>
+<li>
+<p><strong>Pinecone</strong>: 완전관리형 벡터 DB. 빠른 시작.</p>
+</li>
+<li>
+<p><strong>Weaviate, Qdrant</strong>: 오픈소스 벡터 DB.</p>
+</li>
+</ul>
+<p><strong>ANN (Approximate Nearest Neighbor) 알고리즘:</strong></p>
+<ul>
+<li>
+<p><strong>HNSW (Hierarchical Navigable Small World)</strong>: 그래프 기반. 높은 정확도, 빠른 검색. 메모리 사용량 많음.</p>
+</li>
+<li>
+<p><strong>IVF-PQ (Inverted File + Product Quantization)</strong>: 클러스터링 + 양자화. 적은 메모리, 약간의 정확도 손실.</p>
+</li>
+</ul>
+<p>임베딩 차원이 높아질수록(128~1024dim) 정확한 최근접 이웃(KNN)은 <span class="math-inline">\(O(n)\)</span>이라 불가능하다. ANN은 약간의 정확도를 포기하고 <span class="math-inline">\(O(\log n)\)</span>에 근사 검색.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">도서관 사서로 보는 추천 시스템</div>
+      <div class="a-body"><p>추천 시스템은 <strong>도서관 사서</strong>와 같다. 당신이 도서관에 처음 오면 사서는 당신에 대해 아무것도 모른다(User Cold Start). 일단 베스트셀러 코너로 안내한다.</p>
+<p>몇 번 방문하면서 과학 소설을 주로 빌린다는 것을 사서가 알게 됐다. "김씨와 비슷한 취향의 다른 손님들이 자주 빌리는 책"을 추천한다. 이것이 Collaborative Filtering이다.</p>
+<p>새로 들어온 책(Item Cold Start)은 어떻게 추천할까? 표지, 목차, 장르를 보고 "이 사람이 좋아할 것 같다"고 판단한다. Content-Based Filtering이다. 두 가지를 모두 참고하는 것이 Hybrid 방식이다.</p>
+<p>Funnel Architecture는 사서가 "이 손님에게 어울릴 것 같다" → 100권 선별 → 그중 최근 인기 + 신선도 고려 → 10권 → 오늘 기분에 맞는 것 → 3권 추천하는 과정이다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>FAISS를 이용한 Two-Tower 추천 시스템의 Candidate Generation 단계를 구현한다. 실제 YouTube, Pinterest 등이 사용하는 방식을 단순화한 버전이다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import numpy as np
+import faiss
+from dataclasses import dataclass
+from typing import List, Tuple
+
+@dataclass
+class Item:
+    item_id: str
+    embedding: np.ndarray
+
+class TwoTowerCandidateGenerator:
+    def __init__(self, embedding_dim: int = 64):
+        self.dim = embedding_dim
+        # HNSW index: high recall, fast query (good for production)
+        self.index = faiss.IndexHNSWFlat(embedding_dim, 32)  # 32 = M (connections)
+        self.item_ids: List[str] = []
+
+    def build_index(self, items: List[Item]):
+        &quot;&quot;&quot;Build FAISS index from item embeddings (run offline).&quot;&quot;&quot;
+        if not items:
+            return
+        embeddings = np.array(
+            [item.embedding for item in items],
+            dtype=np.float32
+        )
+        # Normalize for cosine similarity via dot product
+        faiss.normalize_L2(embeddings)
+        self.index.add(embeddings)
+        self.item_ids = [item.item_id for item in items]
+        print(f&quot;Indexed {len(items)} items&quot;)
+
+    def get_candidates(
+        self,
+        user_embedding: np.ndarray,
+        top_k: int = 500
+    ) -&gt; List[Tuple[str, float]]:
+        &quot;&quot;&quot;Real-time ANN search for candidate items.&quot;&quot;&quot;
+        query = user_embedding.reshape(1, -1).astype(np.float32)
+        faiss.normalize_L2(query)
+
+        scores, indices = self.index.search(query, top_k)
+
+        return [
+            (self.item_ids[idx], float(score))
+            for score, idx in zip(scores[0], indices[0])
+            if idx != -1
+        ]
+
+# Simulate 1M items with 64-dim embeddings
+np.random.seed(42)
+items = [
+    Item(item_id=f&quot;video:{i}&quot;,
+         embedding=np.random.randn(64).astype(np.float32))
+    for i in range(1_000_000)
+]
+
+generator = TwoTowerCandidateGenerator(embedding_dim=64)
+generator.build_index(items)
+
+# Real-time: given a user embedding, find top 500 candidates
+user_emb = np.random.randn(64).astype(np.float32)
+candidates = generator.get_candidates(user_emb, top_k=500)
+print(f&quot;Retrieved {len(candidates)} candidates&quot;)
+print(f&quot;Top-3: {candidates[:3]}&quot;)</code></pre>
+      <div class="c-walk"><p>100만 개 아이템에서 500개 후보를 찾는 ANN 검색이 수 밀리초 안에 완료된다. 브루트포스 KNN은 1M * 64dim 연산으로 수백ms가 걸리지만, HNSW는 로그 시간 복잡도로 처리한다. <code>faiss.normalize_L2</code>로 코사인 유사도를 내적으로 변환한다. 실제 프로덕션에서는 이 단계의 결과 500개가 다음 Ranking 단계로 넘어간다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">추천 시스템은 AI Engineering 면접의 핵심 주제다. Two-Tower 구조, Candidate Generation과 Ranking 분리, Feature Store 연동을 명확히 설명할 수 있어야 한다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>Funnel 아키텍처(Retrieval → Ranking → Re-ranking)를 명확히 설명하는가</li><li>Two-Tower 모델이 대규모 시스템에 적합한 이유를 설명하는가</li><li>Cold Start를 다양한 방법으로 해결할 수 있는가</li><li>Online A/B Test 설계와 평가 지표를 알고 있는가</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>Collaborative Filtering만 말하고 대규모 환경에서의 한계를 인지 못 함</li><li>Candidate Generation과 Ranking의 구분이 없는 설계</li><li>Cold Start 문제를 언급하지 않는 경우</li><li>Offline metrics만 고려하고 Online A/B Test를 언급 안 하는 경우</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>TikTok의 For You Page 추천 시스템을 설계해봐.</li><li>Two-Tower 모델에서 Hard Negative Sampling이 왜 중요한가?</li><li>추천 시스템의 다양성(Diversity)을 어떻게 측정하고 높이겠어?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 익숙한 수준은 Collaborative Filtering과 Two-Tower를 설명하는 것이다. 마스터 수준은 Exploration vs Exploitation, Diversity vs Relevance, Short-term vs Long-term user interest 사이의 트레이드오프를 비즈니스 목표와 연결하여 설계하고, Vector DB 선택 기준과 ANN 인덱스 타입(HNSW vs IVF-PQ)의 메모리/속도/정확도 트레이드오프를 설명할 수 있는 것이다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>Funnel Architecture가 핵심</h3><p>10M+ 아이템 → 1,000개(Candidate Generation) → 100개(Ranking) → 20개(Re-ranking). 각 단계의 속도/정확도 트레이드오프.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>Two-Tower = 사전 계산 가능</h3><p>Item Embedding을 미리 계산해두고 ANN 검색으로 실시간 서빙. 수억 아이템을 수밀리초에 검색하는 이유.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>ANN이 KNN을 대체</h3><p>수백만 임베딩에서 정확 KNN은 불가능. FAISS HNSW로 ~10ms에 근사 검색.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>Cold Start에 두 가지 전략</h3><p>User Cold Start: 인기 아이템 + 온보딩. Item Cold Start: Content-based + Exploration budget.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>Offline과 Online 지표는 다르다</h3><p>Offline에서 NDCG가 높아도 Online CTR이 낮을 수 있다. 반드시 A/B Test로 검증하라.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>Diversity를 설계에 포함</h3><p>같은 장르만 추천하면 User는 질린다. Re-ranking에서 다양성을 명시적으로 추가하라.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>Feature Store가 실시간 개인화 가능하게</h3><p>세션 내 최근 행동을 Online Feature Store에서 실시간으로 조회하여 즉각적인 개인화.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>Exploration이 없으면 Echo Chamber</h3><p>Exploitation만 하면 사용자는 같은 유형의 콘텐츠만 보게 된다. Multi-Armed Bandit으로 균형을 맞춰라.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-08.html">← ML System Design Fundamentals</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-10.html">LLM Infrastructure &amp; AI-Native Systems →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

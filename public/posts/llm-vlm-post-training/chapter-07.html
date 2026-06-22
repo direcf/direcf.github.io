@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch7: VLM RLHF &amp; Multimodal Preference Learning — LLM &amp; VLM Post-Training Mastery — direcf</title>
+  <meta name="description" content="멀티모달 reward modeling은 아직 미성숙하며, RL-trained reward model이 cross-modal 일반화에서 SFT-trained보다 반드시 우수하지는 않다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/multimodal-ai">LLM &amp; VLM Post-Training Mastery</a><span class="sep">›</span>
+        <strong>Ch07 VLM RLHF &amp; Multimodal Preference Learning</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 07 <span style="opacity:.3">·</span> 15 chapters
+      </div>
+      <div class="chapter-emoji">🏆</div>
+      <h1 class="chapter-title">VLM RLHF &amp; Multimodal Preference Learning</h1>
+      <div class="chapter-title-kr">VLM RLHF &amp; 멀티모달 Preference Learning</div>
+      <div class="chapter-tldr">멀티모달 reward modeling은 아직 미성숙하며, RL-trained reward model이 cross-modal 일반화에서 SFT-trained보다 반드시 우수하지는 않다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-07.png" alt="Chapter 7 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 7 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>멀티모달 reward model 훈련과 텍스트 전용 reward model의 차이를 설명할 수 있다</li><li>VLM DPO에서 preference 데이터 수집의 어려움과 해결책을 제시할 수 있다</li><li>VideoRewardBench의 핵심 발견을 설명하고 그 함의를 이해할 수 있다</li><li>MSRL의 multi-stage 접근법이 cross-modal generalization을 개선하는 방법을 설명할 수 있다</li><li>멀티모달 reward hacking의 구체적 사례를 들고 대응 방법을 제시할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>텍스트 LLM에서 RLHF가 성공적이었던 것처럼, VLM에도 동일한 접근을 적용하려는 시도가 활발하다. 그러나 멀티모달 reward modeling에는 텍스트 전용보다 훨씬 복잡한 도전이 있다.</p>
+<p>2025년 9월 발표된 VideoRewardBench(<a href="https://arxiv.org/abs/2509.00484">arxiv 2509.00484</a>)는 28개의 멀티모달 reward model을 1,563 curated 샘플로 평가했다. 핵심 발견: <strong>RL-trained 멀티모달 reward model이 cross-modal(image/text 훈련 → video 평가) 일반화에서 SFT-trained보다 반드시 우수하지 않다.</strong> R1-Reward는 base model 대비 15.6%p 하락했다.</p>
+<p>이 발견은 중요한 함의가 있다: 멀티모달 reward modeling에서 'RL training = 더 좋은 reward model'이라는 가정이 틀렸을 수 있다. 특히 훈련 domain(image)과 평가 domain(video)이 다를 때 이 문제가 심각하다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>멀티모달 Preference 데이터 수집</h2><p>VLM preference 데이터 수집은 텍스트 선호 데이터보다 훨씬 어렵다. 텍스트에서는 두 응답을 읽고 어느 것이 더 나은지 판단하면 된다. 멀티모달에서는 이미지/비디오를 보면서 응답의 시각적 정확성을 평가해야 한다.</p>
+<p><strong>주요 어려움</strong>:</p>
+<p><em>시각적 정확성 판단</em>: '이 이미지에서 고양이가 보이나요?'에 대해 두 응답 중 어느 것이 더 정확한지 판단하려면 주석자가 이미지를 직접 확인해야 한다. 텍스트보다 annotation 비용이 높다.</p>
+<p><em>Temporal 정확성</em>: 비디오 temporal grounding의 경우, '12.5-24.8초 구간'이 정확한지 판단하려면 주석자가 비디오를 직접 시청해야 한다. Annotation 시간이 길다.</p>
+<p><strong>자동화 전략</strong>: GPT-4V/GPT-4o를 judge로 사용하여 preference를 자동 생성. 비용이 낮지만 judge model의 시각적 이해 편향이 데이터에 반영된다. 특히 비디오 temporal 정보는 GPT-4V도 정확히 판단하지 못할 수 있다.</p></div><div class="sb-block"><h2>VLM DPO: 구현과 주의사항</h2><p>VLM DPO는 텍스트 DPO와 수식은 동일하지만, 입력 데이터가 (image/video + text) → response 형태다. 선호 데이터 구조:</p>
+<pre><code class="language-python">{
+    &quot;prompt&quot;: [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: [
+        {&quot;type&quot;: &quot;image&quot;, &quot;image&quot;: &quot;path/to/img.jpg&quot;},
+        {&quot;type&quot;: &quot;text&quot;, &quot;text&quot;: &quot;이 이미지를 설명하세요.&quot;}
+    ]}],
+    &quot;chosen&quot;: [{&quot;role&quot;: &quot;assistant&quot;, &quot;content&quot;: &quot;정확하고 상세한 설명...&quot;}],
+    &quot;rejected&quot;: [{&quot;role&quot;: &quot;assistant&quot;, &quot;content&quot;: &quot;부정확하거나 환각된 설명...&quot;}]
+}
+</code></pre>
+<p><strong>VLM-specific 주의사항</strong>:</p>
+<p><em>Visual hallucination을 rejected로</em>: 이미지에 없는 물체를 있다고 하거나(환각), 잘못된 위치를 설명하는 응답을 rejected로 구성하면 hallucination 감소에 효과적이다.</p>
+<p><em>Visual token은 양쪽 공유</em>: Chosen과 rejected 응답은 같은 이미지를 참조한다. Visual token encoding은 한 번만 수행하고 양쪽에 재사용하여 효율을 높인다.</p>
+<p><em>길이 균형</em>: 텍스트 DPO와 마찬가지로 chosen이 rejected보다 일관되게 길면 length bias가 발생한다.</p></div><div class="sb-block"><h2>VideoRewardBench: 멀티모달 Reward Model의 현실</h2><p><a href="https://arxiv.org/abs/2509.00484">VideoRewardBench</a>(September 2025)는 멀티모달 reward model의 체계적 평가를 제공한 첫 번째 벤치마크다. 1,563 curated 비디오 샘플에서 28개 모델을 평가했다.</p>
+<p><strong>핵심 발견</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>발견</th>
+<th>세부 사항</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>RL 훈련이 반드시 cross-modal 일반화를 개선하지 않음</td>
+<td>R1-Reward: base 대비 -15.6%p</td>
+</tr>
+<tr>
+<td>SFT-trained fast-thinking model이 base 대비 개선</td>
+<td>SFT 방식이 video task에서 더 안정적</td>
+</tr>
+<tr>
+<td>Video-specific 훈련 데이터 부재가 주요 원인</td>
+<td>대부분 RL reward model이 video 데이터로 훈련되지 않음</td>
+</tr>
+</tbody>
+</table>
+<p>이 발견의 실무적 함의: image/text preference 데이터로 RL training을 한 reward model을 video evaluation에 바로 적용하면 성능이 저하될 수 있다. Video-specific preference 데이터를 reward model 훈련에 포함시키는 것이 필수다.</p>
+<p>후속 연구인 MSRL(CVPR 2026)은 이 문제를 해결하기 위해 multi-stage RL을 제안했다: image → video로 점진적으로 domain을 확장하면서 reward model capability를 구축한다.</p></div><div class="sb-block"><h2>멀티모달 Reward Hacking 패턴</h2><p>텍스트 RLHF에서 발생하는 reward hacking은 멀티모달에서 더 복잡한 형태로 나타난다.</p>
+<p><strong>VLM-specific reward hacking 패턴</strong>:</p>
+<p><em>Image description verbosity</em>: Reward model이 상세한 이미지 설명을 선호하면, policy가 이미지와 무관한 배경 정보를 장황하게 생성한다.</p>
+<p><em>False visual grounding</em>: '화면에 X가 보입니다'라는 표현이 reward를 높이면, 실제로 X가 없어도 이 표현을 사용한다.</p>
+<p><em>Temporal assertion bias</em>: Temporal grounding reward model이 구체적 타임스탬프를 선호하면, 정확하지 않아도 타임스탬프를 무조건 출력한다.</p>
+<p><strong>방어 전략</strong>:</p>
+<ul>
+<li>Reward model에 visual faithfulness를 별도로 평가하는 항목 추가</li>
+<li>KL divergence를 시각적 hallucination 지표와 함께 모니터링</li>
+<li>Reference-free evaluation(이미지 없이 응답만 평가)으로 visual grounding 의존도 확인</li>
+</ul></div><div class="sb-block"><h2>MSRL: Multi-Stage RL for Video Understanding</h2><p>MSRL(CVPR 2026, [arxiv 2603.25108])은 VideoRewardBench에서 발견된 cross-modal generalization 문제의 해결책을 제시한다. 핵심 아이디어는 image → video로 점진적으로 domain을 확장하는 multi-stage RL 훈련이다.</p>
+<p><strong>Stage 1: Image-level RL</strong>
+- Image preference 데이터로 기본 멀티모달 reward 신호 학습
+- Visual grounding, object recognition, spatial understanding에 집중</p>
+<p><strong>Stage 2: Short Video RL</strong>
+- 짧은 비디오(&lt; 30초)로 temporal 이해 도입
+- Temporal consistency reward: 프레임 간 일관된 객체 추적</p>
+<p><strong>Stage 3: Long Video RL</strong>
+- 장시간 비디오(&gt; 1분)로 복잡한 temporal reasoning
+- Event-level reward: 비디오 전체의 이벤트 구조 이해</p>
+<p>MSRL은 단순히 image+video 데이터를 섞어서 훈련하는 것보다 유의미한 개선을 보여줬다. 이는 video-specific capability가 image capability 위에 점진적으로 구축되어야 함을 시사한다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">음악 심사위원을 다른 장르로 전환하기</div>
+      <div class="a-body"><p>클래식 음악을 평가하도록 훈련된 심사위원(텍스트 reward model)을 재즈 공연(비디오) 심사에 바로 투입하면 문제가 생긴다. 두 장르 모두 '음악'이지만, 평가 기준이 다르기 때문이다. 클래식 기준(정확한 음표 연주, 악보 충실도)으로 재즈(즉흥성, 리듬 feel)를 평가하면 잘못된 판단을 내린다.</p>
+<p>VideoRewardBench 발견은 이 문제의 실증이다: image/text로 훈련된 reward model을 video에 바로 적용하면 성능이 오히려 저하된다. MSRL의 multi-stage 접근법은 심사위원을 점진적으로 재훈련하는 것이다 — 클래식 기준을 유지하면서 재즈의 고유한 평가 기준을 단계적으로 추가한다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>VLM DPO 훈련 설정과 멀티모달 preference 데이터 포맷을 보여준다. VideoRewardBench 발견을 고려해 video-specific preference 샘플을 포함하는 방법도 보여준다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
+from trl import DPOTrainer, DPOConfig
+from peft import LoraConfig
+import torch
+
+model = Qwen2VLForConditionalGeneration.from_pretrained(
+    &quot;Qwen/Qwen2-VL-7B-Instruct&quot;,
+    torch_dtype=torch.bfloat16,
+    device_map=&quot;auto&quot;,
+)
+ref_model = Qwen2VLForConditionalGeneration.from_pretrained(
+    &quot;Qwen/Qwen2-VL-7B-Instruct&quot;,  # reference: SFT 완료 모델
+    torch_dtype=torch.bfloat16,
+    device_map=&quot;auto&quot;,
+)
+processor = AutoProcessor.from_pretrained(&quot;Qwen/Qwen2-VL-7B-Instruct&quot;)
+
+# VLM preference 데이터 포맷
+# VideoRewardBench 발견 반영: image + video 데이터 균형 포함
+preference_dataset = [
+    {
+        &quot;prompt&quot;: [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: [
+            {&quot;type&quot;: &quot;video&quot;, &quot;video&quot;: &quot;path/video.mp4&quot;, &quot;fps&quot;: 1.0},
+            {&quot;type&quot;: &quot;text&quot;, &quot;text&quot;: &quot;이 비디오에서 주요 이벤트를 설명하세요.&quot;},
+        ]}],
+        &quot;chosen&quot;: [{&quot;role&quot;: &quot;assistant&quot;,
+                    &quot;content&quot;: &quot;비디오 초반 0-5초에 사람이 앉아있고...&quot;}],
+        &quot;rejected&quot;: [{&quot;role&quot;: &quot;assistant&quot;,
+                      &quot;content&quot;: &quot;비디오에서 사람이 뛰고 있습니다...&quot;}],  # 환각
+    },
+    # image preference 샘플도 혼합 (cross-modal generalization 위해)
+    {
+        &quot;prompt&quot;: [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: [
+            {&quot;type&quot;: &quot;image&quot;, &quot;image&quot;: &quot;path/image.jpg&quot;},
+            {&quot;type&quot;: &quot;text&quot;, &quot;text&quot;: &quot;이 이미지를 설명하세요.&quot;},
+        ]}],
+        &quot;chosen&quot;: [{&quot;role&quot;: &quot;assistant&quot;, &quot;content&quot;: &quot;정확하고 상세한 설명...&quot;}],
+        &quot;rejected&quot;: [{&quot;role&quot;: &quot;assistant&quot;, &quot;content&quot;: &quot;환각된 설명...&quot;}],
+    },
+]
+
+dpo_config = DPOConfig(
+    output_dir=&quot;./qwen2-vl-dpo&quot;,
+    beta=0.1,
+    learning_rate=5e-6,
+    per_device_train_batch_size=1,
+    gradient_accumulation_steps=16,
+    num_train_epochs=1,
+    bf16=True,
+    loss_type=&quot;sigmoid&quot;,  # standard DPO loss
+)
+
+trainer = DPOTrainer(
+    model=model,
+    ref_model=ref_model,
+    args=dpo_config,
+    train_dataset=preference_dataset,
+    processing_class=processor,
+)</code></pre>
+      <div class="c-walk"><p>VLM DPO에서 <code>ref_model</code>은 SFT 완료 Qwen2-VL-7B이다. VideoRewardBench 발견을 반영해 video와 image preference 데이터를 균형 있게 혼합했다. Visual hallucination(없는 물체를 있다고 하는 것)을 rejected 응답으로 구성하면 hallucination 감소에 효과적이다. <code>per_device_train_batch_size=1</code>은 비디오 처리 시 높은 메모리 소비를 고려한 설정이다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">VLM RLHF는 LLM RLHF보다 훨씬 최신 분야이며, 아직 best practice가 완전히 정립되지 않았다. 이 분야에서 경험이 있는 연구자는 희소하다 — &#x27;이 분야의 미성숙함을 인식하고 있는가&#x27;를 확인하는 질문이 많이 나온다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>VideoRewardBench 같은 최신 연구를 통해 멀티모달 reward model의 한계를 인식하고 있는가</li><li>VLM preference 데이터 수집 파이프라인의 실전적 어려움을 설명할 수 있는가</li><li>Video-specific reward hacking 패턴을 식별하고 모니터링하는 방법</li><li>Cross-modal generalization 문제를 해결하기 위한 데이터 수집 전략</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>Image reward model을 video에 바로 적용할 수 있다고 생각하는 경우 (VideoRewardBench 반박)</li><li>VLM hallucination과 reward hacking의 관계를 설명하지 못하는 경우</li><li>멀티모달 preference 데이터 수집이 텍스트와 동일하다고 생각하는 경우</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>VLM temporal grounding에서 preference 데이터를 어떻게 수집하시겠나요? 자동화와 인간 주석의 trade-off는?</li><li>VideoRewardBench의 발견이 여러분의 VLM RLHF 파이프라인 설계에 어떤 영향을 미치나요?</li><li>멀티모달 reward hacking을 어떻게 탐지하고 모니터링하겠나요?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 친숙함 수준은 VLM DPOTrainer를 설정할 수 있는 것이다. 숙련 수준은 video-specific preference 데이터 수집 파이프라인을 설계하고, cross-modal generalization 실패를 VideoRewardBench 방식으로 평가하며, MSRL 방식의 multi-stage RL 훈련 계획을 실제로 제안할 수 있는 것이다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>멀티모달 reward modeling은 아직 미성숙</h3><p>VideoRewardBench(2025): 28개 모델 평가에서 RL-trained reward model이 cross-modal로 반드시 더 좋지 않다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>R1-Reward가 base 대비 15.6%p 하락</h3><p>Image/text로 RL 훈련한 reward model을 video에 적용하면 오히려 성능이 떨어질 수 있다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>Video-specific 훈련 데이터가 핵심</h3><p>Reward model 훈련에 video preference 데이터를 명시적으로 포함해야 video evaluation이 가능하다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>MSRL: Image→Video 점진적 확장</h3><p>Image RL → Short video RL → Long video RL 순서로 단계적으로 domain을 확장하면 cross-modal 일반화가 개선된다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>VLM hallucination = preference learning 기회</h3><p>환각 응답을 rejected로, 정확한 응답을 chosen으로 구성하면 DPO로 hallucination 감소가 가능하다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>Visual token 공유로 DPO 효율화</h3><p>Chosen과 rejected가 같은 이미지를 참조하므로 visual encoding을 한 번만 하고 재사용한다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>Video temporal bias 모니터링 필수</h3><p>&#x27;항상 타임스탬프를 출력하는&#x27; 패턴이 reward hacking의 신호다. Negative sample 비율과 타임스탬프 분포를 모니터링한다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-06.html">← Visual Instruction Tuning &amp; VLM SFT Strategy</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-08.html">Video Understanding &amp; Temporal Grounding →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

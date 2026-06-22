@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch5: Messaging &amp; Event-Driven Architecture — System Design Interview — direcf</title>
+  <meta name="description" content="비동기 메시징으로 서비스를 분리하고, Kafka로 수백만 TPS의 이벤트를 처리하는 설계를 익힌다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/ai-engineering">System Design Interview</a><span class="sep">›</span>
+        <strong>Ch05 Messaging &amp; Event-Driven Architecture</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 05 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">📨</div>
+      <h1 class="chapter-title">Messaging &amp; Event-Driven Architecture</h1>
+      <div class="chapter-title-kr">메시지 큐와 이벤트 기반 아키텍처</div>
+      <div class="chapter-tldr">비동기 메시징으로 서비스를 분리하고, Kafka로 수백만 TPS의 이벤트를 처리하는 설계를 익힌다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-05.png" alt="Chapter 5 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 5 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>메시지 큐가 해결하는 문제(비동기, 버퍼링, 디커플링)를 설명할 수 있다</li><li>Kafka의 Topic, Partition, Offset, Consumer Group을 이해하고 설명할 수 있다</li><li>At-Least-Once와 Exactly-Once 전달 의미를 알고 각각의 구현 방법을 안다</li><li>Event Sourcing이 무엇이고 왜 쓰는지, 단점이 무엇인지 설명할 수 있다</li><li>Dead Letter Queue를 언제 왜 써야 하는지 안다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>현대 대규모 시스템의 핵심 패턴 중 하나는 <strong>비동기 메시징</strong>이다. 서비스들이 직접 HTTP로 통신하는 대신, 메시지 큐를 통해 간접적으로 통신한다. 이를 통해 <strong>서비스 간의 결합도를 낮추고(Decoupling)</strong>, <strong>트래픽 스파이크를 흡수(Buffering)</strong>하며, <strong>독립적인 스케일링</strong>을 가능하게 한다.</p>
+<p>메시지 큐를 쓰지 않으면 어떻게 될까? 사용자가 Netflix에서 업로드한 동영상을 처리할 때, 트랜스코딩 서비스가 잠깐 느려지면 업로드 API 서버까지 blocking된다. 하지만 Kafka를 사이에 두면, 업로드 API는 이벤트를 Kafka에 쓰고 즉시 응답한다. 트랜스코딩 서비스는 자신의 속도로 처리한다.</p>
+<p>Apache Kafka는 LinkedIn에서 2011년 만들어진 이후 현대 데이터 인프라의 중심이 되었다. Uber는 초당 수백만 건의 이벤트를 Kafka로 처리하고, Airbnb, Netflix, Twitter도 핵심 인프라로 사용한다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>메시지 큐의 역할: 3가지 핵심 가치</h2><p>메시지 큐가 해결하는 핵심 문제는 세 가지다.</p>
+<p><strong>1. 비동기 처리 (Async Processing)</strong></p>
+<p>이메일 발송, 이미지 리사이징, 동영상 트랜스코딩처럼 시간이 걸리는 작업을 동기적으로 처리하면 사용자가 기다려야 한다. 메시지 큐에 넣고 즉시 응답하면, 백그라운드 워커가 처리한다. 사용자 경험 향상 + 서버 자원 효율화.</p>
+<p><strong>2. 트래픽 버퍼링 (Traffic Buffering)</strong></p>
+<p>이벤트 트래픽: 평소 1,000 TPS → 이벤트 기간 10,000 TPS. 메시지 큐 없이 DB에 직접 쓰면 DB가 죽는다. 큐를 버퍼로 쓰면 큐는 10,000 TPS를 받아 저장하고, 소비자는 DB 처리 속도에 맞춰 1,000 TPS로 소비한다.</p>
+<p><strong>3. 서비스 디커플링 (Service Decoupling)</strong></p>
+<p>주문 서비스 → (직접 호출) → 결제, 재고, 알림, 포인트 서비스. 하나라도 느리거나 다운되면 주문이 실패한다. 주문 서비스가 "OrderPlaced" 이벤트를 메시지 큐에 발행하면, 각 서비스가 독립적으로 구독하여 처리한다. 각 서비스는 서로의 존재를 모른다.</p>
+<p><strong>RabbitMQ vs Kafka:</strong></p>
+<table>
+<thead>
+<tr>
+<th>항목</th>
+<th>RabbitMQ</th>
+<th>Kafka</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>패러다임</td>
+<td>Message Queue (Push)</td>
+<td>Distributed Log (Pull)</td>
+</tr>
+<tr>
+<td>메시지 보존</td>
+<td>소비 후 삭제</td>
+<td>설정 기간 보존</td>
+</tr>
+<tr>
+<td>처리량</td>
+<td>수만 TPS</td>
+<td>수백만 TPS</td>
+</tr>
+<tr>
+<td>재처리</td>
+<td>어려움</td>
+<td>Consumer Offset으로 쉬움</td>
+</tr>
+<tr>
+<td>사용 사례</td>
+<td>Task queue, RPC</td>
+<td>Event streaming, 로그, CDC</td>
+</tr>
+</tbody>
+</table></div><div class="sb-block"><h2>Kafka 아키텍처 심층 분석</h2><p>Kafka는 분산 commit log다. 데이터는 <strong>Topic</strong> 안에 저장되고, Topic은 여러 <strong>Partition</strong>으로 나뉜다.</p>
+<p><strong>핵심 개념:</strong></p>
+<p><strong>Topic</strong> — 메시지의 카테고리. 예: <code>user-clicks</code>, <code>order-events</code>, <code>payment-processed</code>.</p>
+<p><strong>Partition</strong> — Topic의 분산 단위. 각 Partition은 순서가 보장된 immutable log. Partition이 많을수록 더 많은 Consumer가 병렬로 처리 가능.</p>
+<p><strong>Offset</strong> — Partition 내 메시지의 순서 번호. Consumer는 자신이 어디까지 읽었는지(offset)를 관리한다. 이 덕분에 재처리(replay)가 가능하다.</p>
+<p><strong>Consumer Group</strong> — 같은 Topic을 처리하는 Consumer 집합. 하나의 Partition은 Consumer Group 내 하나의 Consumer에게만 할당된다. 따라서 Consumer Group 내 Consumer 수는 Partition 수를 초과해도 의미없다.</p>
+<p><strong>Producer → Topic(Partition 1, 2, 3) → Consumer Group A (Consumer 1, 2, 3) + Consumer Group B (Consumer 1, 2)</strong></p>
+<p>Consumer Group A는 주문 처리, Consumer Group B는 분석 데이터 수집. 같은 이벤트를 두 목적으로 독립적으로 소비할 수 있다.</p>
+<p><strong>메시지 라우팅:</strong></p>
+<pre><code>partition = hash(message_key) % num_partitions
+</code></pre>
+<p>같은 <code>user_id</code>를 key로 쓰면 같은 사용자의 이벤트가 항상 같은 Partition에 들어간다 → 사용자 이벤트의 순서 보장.</p></div><div class="sb-block"><h2>전달 보장 의미론: At-Least-Once vs Exactly-Once</h2><p>메시지 전달 보장 수준은 세 가지다.</p>
+<p><strong>At-Most-Once</strong> — 메시지를 한 번만 전송, 유실 가능. 가장 빠르고 간단. 로그처럼 일부 유실이 괜찮은 경우.</p>
+<p><strong>At-Least-Once</strong> — 메시지가 반드시 전달됨, 중복 가능. Consumer가 처리 후 offset을 커밋하기 전에 crash하면 같은 메시지를 다시 받는다. 이를 처리하려면 Consumer가 <strong>멱등성(Idempotent)</strong> 을 가져야 한다.</p>
+<p><strong>Exactly-Once</strong> — 메시지가 정확히 한 번 처리됨. 이론적으로 가장 이상적이지만 구현이 복잡하고 성능 overhead가 있다. Kafka는 Idempotent Producer + Transactional API로 exactly-once를 지원한다.</p>
+<p><strong>멱등성(Idempotency) 구현:</strong></p>
+<p>같은 메시지를 여러 번 처리해도 결과가 동일해야 한다.</p>
+<ul>
+<li>DB UPSERT (INSERT ... ON CONFLICT UPDATE) — 같은 <code>event_id</code>로 여러 번 와도 한 번만 처리됨</li>
+<li>고유 이벤트 ID를 별도 테이블에 기록 후 중복 확인</li>
+</ul>
+<p>실제로 대부분의 시스템은 At-Least-Once + Idempotent Consumer로 구현한다. Exactly-Once는 Kafka의 financial transaction 같은 극히 중요한 경우에만 쓴다.</p></div><div class="sb-block"><h2>Event Sourcing과 CQRS</h2><p><strong>Event Sourcing</strong>은 시스템 상태를 직접 저장하는 대신, <strong>상태를 변경하는 이벤트의 시퀀스를 저장</strong>하는 패턴이다.</p>
+<p>전통적 방식: <code>users</code> 테이블에 현재 잔액 저장 → UPDATE로 덮어쓰기 → 과거 이력 없음.</p>
+<p>Event Sourcing 방식: <code>events</code> 테이블에 <code>{user_id: 1, type: 'Deposited', amount: 100, timestamp: ...}</code> 저장 → 모든 이벤트 재생(replay)으로 현재 잔액 계산.</p>
+<p><strong>장점:</strong>
+- 완전한 감사 로그(Audit Log) — 언제 누가 무엇을 했는지 완전히 재현 가능
+- 특정 시점의 상태 재현 (Time Travel) — "3일 전 오후 2시의 잔액은?" 가능
+- 이벤트를 새로운 Consumer가 처리하여 새 기능 구현 가능</p>
+<p><strong>단점:</strong>
+- 현재 상태 조회 시 이벤트 재생 비용 → Snapshot으로 완화
+- 이벤트 스키마 변경이 어려움
+- 시스템 복잡도 증가</p>
+<p><strong>CQRS (Command Query Responsibility Segregation)</strong> 는 Event Sourcing의 단점인 "현재 상태 조회 비용"을 해결한다. Write 모델(이벤트 저장)과 Read 모델(조회 최적화 뷰)을 분리한다. 이벤트가 발행되면 읽기 모델(Read Model)이 이벤트를 소비하여 조회에 최적화된 뷰를 업데이트한다.</p></div><div class="sb-block"><h2>Dead Letter Queue와 실패 처리</h2><p>메시지 처리는 실패할 수 있다. DB가 일시적으로 느리거나, 외부 API가 에러를 반환하거나, 메시지 형식이 잘못됐거나. 이런 실패를 어떻게 처리할까?</p>
+<p><strong>Retry with Exponential Backoff</strong></p>
+<p>실패 시 즉시 재시도하면 이미 과부하 상태인 시스템에 더 부하를 준다. 지수 백오프로 간격을 늘리며 재시도:
+- 1회: 1초 후
+- 2회: 2초 후
+- 3회: 4초 후
+- N회: <span class="math-inline">\(2^N\)</span>초 후 (최대 한도 있음)</p>
+<p><strong>Dead Letter Queue (DLQ)</strong></p>
+<p>최대 재시도 횟수를 초과한 메시지를 별도 큐(DLQ)로 이동. DLQ의 메시지는:
+- 수동으로 검토 후 재처리
+- 알림 발송으로 즉각적인 대응
+- 분석하여 버그 수정 후 일괄 재처리</p>
+<p>DLQ 없이 실패 메시지를 그냥 버리면, 중요한 데이터가 조용히 사라진다. 결제 실패, 주문 처리 실패를 DLQ에 모아두고 나중에 재처리하는 것이 실제 프로덕션 패턴이다.</p>
+<p><strong>Circuit Breaker와의 결합:</strong></p>
+<p>Downstream 서비스가 계속 실패하면 Circuit Breaker가 열려서 (open state) 메시지 처리 시도 자체를 일시 중단한다. 서비스 복구 후 Circuit Breaker가 닫히면 DLQ의 메시지를 재처리한다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">우체국 시스템으로 보는 메시지 큐</div>
+      <div class="a-body"><p>메시지 큐는 <strong>우체국</strong>과 같다. 편지를 쓰는 사람(Producer)은 우체국(Message Queue)에 편지를 맡기고 자신의 일을 계속한다. 받는 사람(Consumer)이 지금 자리에 없어도 편지는 우체국에 보관된다. 받는 사람은 자신이 편리한 시간에 편지를 찾아간다.</p>
+<p>Kafka는 특별한 우체국이다. 편지를 배달해도 <strong>원본을 보관한다(Retention)</strong>. 다른 사람(Consumer Group)도 같은 편지를 읽을 수 있다. "2주 전 편지부터 다시 읽어줘"도 가능하다. 일반 우체국(RabbitMQ)은 배달 완료 즉시 파기한다.</p>
+<p>Dead Letter Queue는 주소 불명으로 반송된 편지들을 모아두는 별도 보관함이다. 그냥 버리지 않고 모아뒀다가 나중에 직원이 확인하여 재처리한다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>Kafka Producer/Consumer 패턴과 At-Least-Once 보장, 멱등성 처리를 kafka-python 라이브러리로 구현한다. 실제 프로덕션 패턴에 가까운 코드다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">from kafka import KafkaProducer, KafkaConsumer
+from kafka.errors import KafkaError
+import json
+import logging
+
+# --- Producer with retry and idempotent config ---
+producer = KafkaProducer(
+    bootstrap_servers=[&#x27;kafka:9092&#x27;],
+    value_serializer=lambda v: json.dumps(v).encode(&#x27;utf-8&#x27;),
+    acks=&#x27;all&#x27;,           # Wait for all in-sync replicas
+    retries=3,            # Retry on transient errors
+    enable_idempotence=True,  # Exactly-once producer semantics
+    max_in_flight_requests_per_connection=5
+)
+
+def publish_order_event(order_id: str, user_id: str, amount: float):
+    event = {
+        &quot;event_id&quot;: f&quot;order-{order_id}&quot;,  # Unique ID for idempotency
+        &quot;type&quot;: &quot;OrderPlaced&quot;,
+        &quot;order_id&quot;: order_id,
+        &quot;user_id&quot;: user_id,
+        &quot;amount&quot;: amount,
+    }
+    future = producer.send(
+        topic=&#x27;order-events&#x27;,
+        key=user_id.encode(),  # Same user → same partition → ordered
+        value=event
+    )
+    try:
+        record_metadata = future.get(timeout=10)
+        logging.info(f&quot;Sent to {record_metadata.topic}:{record_metadata.partition}&quot;)
+    except KafkaError as e:
+        logging.error(f&quot;Failed to send event: {e}&quot;)
+        raise
+
+# --- Consumer with manual offset commit (At-Least-Once) ---
+consumer = KafkaConsumer(
+    &#x27;order-events&#x27;,
+    bootstrap_servers=[&#x27;kafka:9092&#x27;],
+    group_id=&#x27;payment-service&#x27;,
+    enable_auto_commit=False,  # Manual commit for reliability
+    auto_offset_reset=&#x27;earliest&#x27;,
+    value_deserializer=lambda x: json.loads(x.decode(&#x27;utf-8&#x27;))
+)
+
+processed_event_ids = set()  # Idempotency cache (use Redis in production)
+
+for message in consumer:
+    event = message.value
+    event_id = event.get(&quot;event_id&quot;)
+
+    # Idempotency check — skip if already processed
+    if event_id in processed_event_ids:
+        consumer.commit()  # Still commit to advance offset
+        continue
+
+    try:
+        # Process the event (e.g., charge payment)
+        process_payment(event)
+        processed_event_ids.add(event_id)
+        consumer.commit()  # Only commit AFTER successful processing
+    except Exception as e:
+        logging.error(f&quot;Failed to process {event_id}: {e}&quot;)
+        # Do NOT commit — message will be redelivered</code></pre>
+      <div class="c-walk"><p>핵심은 <code>enable_auto_commit=False</code>와 처리 완료 후 수동 커밋이다. 처리 전에 commit하면 실패 시 메시지가 유실된다(At-Most-Once). 처리 후 commit 전에 crash하면 같은 메시지를 다시 받는다(At-Least-Once). 멱등성 체크(<code>processed_event_ids</code>)로 중복을 처리한다. <code>key=user_id.encode()</code>로 같은 사용자의 이벤트가 항상 같은 Partition에 들어가 순서가 보장된다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">메시지 큐는 대규모 시스템 설계의 핵심 컴포넌트다. Kafka를 쓰는 이유, Partition 설계 전략, Consumer Group 구성, 실패 처리를 명확히 설명할 수 있어야 한다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>메시지 큐를 도입하는 시점과 이유를 명확히 설명하는가</li><li>Kafka Partition 수 결정 기준(Consumer 수 고려)을 아는가</li><li>At-Least-Once와 Exactly-Once의 트레이드오프를 설명할 수 있는가</li><li>Consumer lag 모니터링과 스케일링 전략을 아는가</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>모든 서비스 간 통신에 메시지 큐를 넣으려는 over-engineering</li><li>Partition 수를 고려하지 않는 설계 (Consumer가 Partition보다 많으면 유휴 Consumer 발생)</li><li>메시지 처리 실패 시나리오를 다루지 않는 설계</li><li>&quot;Kafka를 쓰면 됩니다&quot;만 말하고 왜 Kafka인지 설명 못 함</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>결제 시스템에서 Kafka를 쓴다면 어떤 Topic과 Consumer Group 구성을 가져가겠어?</li><li>Consumer가 메시지를 두 번 처리하는 상황이 발생했다. 어떻게 해결하겠어?</li><li>Kafka에서 순서가 보장되는 단위는 무엇인가? Partition 설계를 어떻게 해야 하나?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 익숙한 수준은 Kafka를 써봤고 Topic/Consumer Group의 개념을 설명하는 것이다. 마스터 수준은 Partition 수 계산 (목표 처리량 / Consumer 1개 처리량), Exactly-Once 구현 방법, Consumer lag의 의미와 대응 전략, Kafka Connect/Streams 생태계까지 알고 설계에 활용하는 것이다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>큐의 3가지 가치</h3><p>비동기 처리, 트래픽 버퍼링, 서비스 디커플링. 이 중 하나라도 필요하면 메시지 큐를 고려한다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>Kafka = 분산 로그</h3><p>Kafka는 메시지를 소비 후에도 보존한다. 재처리, 여러 Consumer Group의 독립적 소비, 시간 여행 조회가 가능하다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>Partition이 병렬성 단위</h3><p>Kafka의 병렬 처리 단위는 Partition이다. Consumer 수를 늘리려면 Partition 수를 먼저 늘려야 한다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>At-Least-Once + 멱등성</h3><p>대부분의 시스템은 At-Least-Once + Idempotent Consumer로 구현한다. 처리 완료 후 offset commit이 핵심.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>DLQ는 필수</h3><p>실패한 메시지를 버리지 않는다. DLQ에 모아 알림을 받고 수동 검토 또는 재처리한다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>같은 Key → 같은 Partition</h3><p>순서가 중요한 이벤트(같은 사용자의 주문 이벤트)는 user_id를 Kafka key로 써서 순서를 보장한다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>Event Sourcing = 이벤트 히스토리</h3><p>상태가 아닌 이벤트를 저장하면 완전한 감사 로그와 시간 여행 조회가 가능하다. 단, 복잡도가 올라간다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>Consumer Lag을 모니터링</h3><p>Consumer가 메시지를 소비하는 속도가 Producer보다 느리면 Consumer Lag가 증가한다. 이것이 알람 지표가 된다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-04.html">← Caching &amp; Content Delivery</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-06.html">Scalability &amp; Reliability Patterns →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>
