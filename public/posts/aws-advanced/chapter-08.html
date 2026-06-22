@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch8: Advanced Networking — AWS Advanced — direcf</title>
+  <meta name="description" content="Transit Gateway, PrivateLink, Direct Connect로 엔터프라이즈 규모의 멀티 VPC·하이브리드 클라우드 네트워크를 설계합니다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/ai-engineering">AWS Advanced</a><span class="sep">›</span>
+        <strong>Ch08 Advanced Networking</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 08 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🕸️</div>
+      <h1 class="chapter-title">Advanced Networking</h1>
+      <div class="chapter-title-kr">고급 네트워킹</div>
+      <div class="chapter-tldr">Transit Gateway, PrivateLink, Direct Connect로 엔터프라이즈 규모의 멀티 VPC·하이브리드 클라우드 네트워크를 설계합니다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-08.png" alt="Chapter 8 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 8 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>Transit Gateway Hub-Spoke 아키텍처로 VPC 간 연결을 중앙화할 수 있다</li><li>PrivateLink로 인터넷 없이 서비스를 안전하게 노출할 수 있다</li><li>Direct Connect와 VPN의 트레이드오프를 설명하고 선택할 수 있다</li><li>VPC Lattice로 마이크로서비스 간 통신을 관리할 수 있다</li><li>멀티 계정 네트워크 토폴로지를 설계할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>개인 AWS 계정에서 VPC 하나로 시작한 아키텍처는 조직이 성장할수록 복잡해집니다. 여러 팀이 독립적인 VPC를 사용하고, 개발·스테이징·프로덕션 환경이 분리되고, 온프레미스 데이터센터와 연결이 필요해지면, 네트워크 설계가 프로덕션 안정성의 핵심이 됩니다.</p>
+<p>VPC를 직접 페어링(VPC Peering)하면 10개만 되어도 N×(N-1)/2 = 45개의 페어링이 필요합니다. <strong>AWS Transit Gateway</strong>는 이 스파게티 토폴로지를 Hub-Spoke 아키텍처로 단순화합니다. <strong>AWS PrivateLink</strong>는 인터넷 노출 없이 서비스를 다른 VPC나 계정에 제공합니다. <strong>AWS Direct Connect</strong>는 온프레미스와 AWS 간 전용 물리 회선을 제공합니다.</p>
+<p>이 챕터에서는 엔터프라이즈 멀티 계정 환경에서의 네트워크 설계 패턴, 보안 경계 설정, 그리고 레이턴시·비용·보안을 균형있게 최적화하는 전략을 다룹니다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>Transit Gateway: 네트워크 Hub-Spoke 아키텍처</h2><p><strong>AWS Transit Gateway(TGW)</strong>는 여러 VPC와 온프레미스 네트워크를 단일 허브에 연결하는 네트워크 라우터입니다.</p>
+<p>TGW 이전에는 VPC Peering을 사용했습니다. VPC Peering은 두 VPC 간의 1:1 연결로, N개 VPC를 완전 연결하려면 N(N-1)/2개의 피어링이 필요합니다. TGW는 각 VPC가 TGW에만 연결하면 되므로 N개 연결로 모든 VPC 간 통신이 가능합니다.</p>
+<p><strong>TGW 라우팅 테이블</strong>은 트래픽 흐름을 제어합니다. 프로덕션 VPC와 개발 VPC를 같은 TGW에 연결하되 별도 라우팅 테이블로 격리합니다. 이로써 개발 환경이 실수로 프로덕션 DB에 접근하는 것을 방지합니다.</p>
+<p><strong>TGW Network Manager</strong>는 글로벌 TGW 토폴로지를 시각화합니다. 리전 간 TGW Peering으로 글로벌 네트워크를 구성합니다.</p>
+<p><strong>RAM(Resource Access Manager)</strong>으로 TGW를 Organization 내 다른 계정과 공유합니다. 공유 서비스 VPC(DNS, Active Directory, 모니터링)를 단일 계정에 두고 TGW를 통해 모든 계정에 서비스를 제공하는 것이 표준 패턴입니다.</p></div><div class="sb-block"><h2>AWS PrivateLink: 프라이빗 서비스 노출</h2><p><strong>AWS PrivateLink</strong>는 인터넷 없이 VPC Endpoint를 통해 AWS 서비스나 파트너/자체 서비스에 프라이빗으로 접근하는 기술입니다.</p>
+<p><strong>Interface Endpoint</strong>는 선택한 서비스(S3, DynamoDB, SSM 등)에 대한 ENI를 VPC에 생성합니다. 트래픽이 인터넷을 거치지 않아 보안이 강화되고, NAT Gateway 비용이 절감됩니다.</p>
+<p><strong>VPC Endpoint Service</strong>는 내 서비스를 다른 VPC나 계정에 PrivateLink로 노출합니다. NLB 뒤에 내 서비스를 위치시키고 Endpoint Service를 생성하면, 소비자는 Interface Endpoint를 생성하여 인터넷 없이 내 서비스에 접근합니다. SaaS 공급자들이 고객에게 프라이빗 접근을 제공하는 표준 방식입니다.</p>
+<p><strong>Gateway Endpoint</strong>는 S3와 DynamoDB 전용 Endpoint 타입으로 무료입니다. VPC 라우팅 테이블에 직접 추가됩니다.</p>
+<p><strong>PrivateLink vs VPC Peering</strong>: PrivateLink는 단방향 접근(소비자 → 서비스)이며 IP 주소 중복 없이 사용 가능합니다. VPC Peering은 양방향이며 VPC CIDR이 겹치면 사용 불가합니다.</p></div><div class="sb-block"><h2>Direct Connect와 VPN: 하이브리드 연결</h2><p><strong>AWS Direct Connect</strong>는 온프레미스 데이터센터와 AWS 간의 전용 물리 네트워크 회선입니다. 인터넷을 거치지 않아 일관된 레이턴시와 높은 대역폭을 제공합니다.</p>
+<table>
+<thead>
+<tr>
+<th>비교</th>
+<th>Direct Connect</th>
+<th>Site-to-Site VPN</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>연결 유형</td>
+<td>전용 물리 회선</td>
+<td>인터넷 기반 암호화 터널</td>
+</tr>
+<tr>
+<td>레이턴시</td>
+<td>일관적·낮음</td>
+<td>가변적</td>
+</tr>
+<tr>
+<td>대역폭</td>
+<td>1Gbps~100Gbps</td>
+<td>최대 1.25Gbps</td>
+</tr>
+<tr>
+<td>구축 기간</td>
+<td>수 주~수 개월</td>
+<td>즉시</td>
+</tr>
+<tr>
+<td>비용</td>
+<td>높음</td>
+<td>낮음</td>
+</tr>
+<tr>
+<td>암호화</td>
+<td>별도 설정 필요 (MACsec)</td>
+<td>기본 암호화</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Direct Connect Gateway</strong>는 하나의 Direct Connect 연결로 여러 리전의 VPC에 접근합니다.</p>
+<p><strong>Active/Active 이중화</strong>: 가용성을 위해 두 개의 Direct Connect 회선을 서로 다른 Direct Connect Location에 구성합니다. VPN을 백업으로 추가하면 3-tier 이중화가 됩니다.</p></div><div class="sb-block"><h2>VPC Lattice: 마이크로서비스 서비스 메시</h2><p><strong>Amazon VPC Lattice</strong>는 마이크로서비스 간의 서비스-투-서비스 통신을 일관되게 관리하는 AWS 네이티브 서비스 메시입니다.</p>
+<p>VPC Lattice의 핵심 개념은 <strong>서비스 디렉토리(Service Directory)</strong>입니다. EC2, ECS, EKS, Lambda로 구현된 어떤 서비스든 Lattice에 등록하면, 서비스 간 통신을 중앙에서 제어합니다.</p>
+<p><strong>인증 및 권한 부여</strong>: SigV4 기반 IAM 인증으로 서비스 간 인증을 표준화합니다. "서비스 A는 서비스 B의 /api/orders에만 GET 요청 가능"처럼 세밀한 접근 제어가 가능합니다.</p>
+<p><strong>가중치 기반 라우팅</strong>: 동일 서비스의 여러 버전에 트래픽을 분산합니다. 카나리 배포를 인프라 변경 없이 Lattice 라우팅 설정만으로 구현합니다.</p>
+<p>VPC Lattice vs Istio/App Mesh: VPC Lattice는 AWS 네이티브이고 운영이 간단합니다. Istio는 더 강력하지만 운영 복잡도가 높습니다. 팀이 Kubernetes 전문성이 없다면 Lattice가 현실적인 선택입니다.</p></div><div class="sb-block"><h2>AWS Network Firewall과 보안 VPC 설계</h2><p><strong>AWS Network Firewall</strong>은 VPC 트래픽을 레이어 3-7에서 검사하는 완전 관리형 방화벽입니다. Stateful 규칙 엔진, Suricata 호환 IPS(침입 방지 시스템) 규칙, 도메인 기반 필터링을 지원합니다.</p>
+<p><strong>중앙화된 방화벽 VPC 패턴</strong>: 보안 VPC(Inspection VPC)를 생성하고, 모든 인터넷 트래픽을 이 VPC를 통해 라우팅합니다. 인터넷 게이트웨이 → Network Firewall → TGW → 각 워크로드 VPC 순으로 트래픽이 흐릅니다.</p>
+<p><strong>방화벽 정책 계층화</strong>:</p>
+<ul>
+<li><strong>레이어 3/4</strong>: IP/포트 기반 ACL</li>
+<li><strong>레이어 7</strong>: HTTP/TLS SNI 기반 도메인 필터링</li>
+<li><strong>Stateful IPS</strong>: 알려진 악성 패턴 탐지</li>
+</ul>
+<p><strong>DNS Firewall</strong>은 Route 53 Resolver DNS 응답을 필터링하여 알려진 악성 도메인 접근을 차단합니다. EC2 인스턴스가 C&amp;C(Command &amp; Control) 서버에 연결하려는 시도를 DNS 수준에서 차단합니다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">도시의 교통 인프라</div>
+      <div class="a-body"><p>고급 네트워킹을 도시 교통 시스템에 비유해봅시다. <strong>VPC</strong>는 각 도시(서울, 부산, 대전)입니다. <strong>VPC Peering</strong>은 두 도시 간의 직통 고속도로입니다. 도시가 10개가 되면 직통 고속도로가 45개 필요하고 유지 관리가 불가능합니다.</p>
+<p><strong>Transit Gateway</strong>는 KTX 환승역입니다. 서울·부산·대전이 모두 KTX 허브(TGW)에 연결하면 3개의 노선만으로 모든 도시 간 이동이 가능합니다. <strong>PrivateLink</strong>는 전용 지하 통로입니다. 공공 도로(인터넷)를 거치지 않고 특정 빌딩(서비스)에 직접 접근하는 VIP 통로입니다.</p>
+<p><strong>Direct Connect</strong>는 KTX 전용 선로입니다. 일반 도로(인터넷 VPN)보다 빠르고 안정적이지만 건설에 시간과 비용이 필요합니다. <strong>VPN</strong>은 일반 고속도로에 정해진 경로로 달리는 암호화된 차량입니다. 교통 상황에 따라 속도가 달라집니다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>boto3로 Transit Gateway를 생성하고 여러 VPC를 연결하며, VPC Endpoint를 생성하는 예제입니다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import boto3
+import json
+
+ec2 = boto3.client(&#x27;ec2&#x27;, region_name=&#x27;ap-northeast-2&#x27;)
+
+# 1. Transit Gateway 생성
+tgw = ec2.create_transit_gateway(
+    Description=&#x27;Production Hub TGW&#x27;,
+    Options={
+        &#x27;DefaultRouteTableAssociation&#x27;: &#x27;disable&#x27;,  # 라우팅 테이블 자동 연결 비활성화
+        &#x27;DefaultRouteTablePropagation&#x27;: &#x27;disable&#x27;,  # 라우트 자동 전파 비활성화
+        &#x27;AutoAcceptSharedAttachments&#x27;: &#x27;disable&#x27;,    # 수동 승인
+        &#x27;DnsSupport&#x27;: &#x27;enable&#x27;,
+        &#x27;VpnEcmpSupport&#x27;: &#x27;enable&#x27;
+    },
+    TagSpecifications=[{
+        &#x27;ResourceType&#x27;: &#x27;transit-gateway&#x27;,
+        &#x27;Tags&#x27;: [{&#x27;Key&#x27;: &#x27;Name&#x27;, &#x27;Value&#x27;: &#x27;prod-tgw&#x27;}]
+    }]
+)
+tgw_id = tgw[&#x27;TransitGateway&#x27;][&#x27;TransitGatewayId&#x27;]
+print(f&#x27;TGW created: {tgw_id}&#x27;)
+
+# 2. VPC를 TGW에 연결 (Attachment)
+def attach_vpc_to_tgw(vpc_id: str, subnet_ids: list, name: str) -&gt; str:
+    attachment = ec2.create_transit_gateway_vpc_attachment(
+        TransitGatewayId=tgw_id,
+        VpcId=vpc_id,
+        SubnetIds=subnet_ids,
+        Options={&#x27;DnsSupport&#x27;: &#x27;enable&#x27;, &#x27;ApplianceModeSupport&#x27;: &#x27;disable&#x27;},
+        TagSpecifications=[{&#x27;ResourceType&#x27;: &#x27;transit-gateway-attachment&#x27;,
+                           &#x27;Tags&#x27;: [{&#x27;Key&#x27;: &#x27;Name&#x27;, &#x27;Value&#x27;: name}]}]
+    )
+    return attachment[&#x27;TransitGatewayVpcAttachment&#x27;][&#x27;TransitGatewayAttachmentId&#x27;]
+
+# 프로덕션 VPC와 공유 서비스 VPC 연결
+prod_attachment = attach_vpc_to_tgw(
+    vpc_id=&#x27;vpc-prod-xxxx&#x27;,
+    subnet_ids=[&#x27;subnet-a&#x27;, &#x27;subnet-b&#x27;],
+    name=&#x27;prod-vpc-attachment&#x27;
+)
+shared_attachment = attach_vpc_to_tgw(
+    vpc_id=&#x27;vpc-shared-xxxx&#x27;,
+    subnet_ids=[&#x27;subnet-c&#x27;, &#x27;subnet-d&#x27;],
+    name=&#x27;shared-services-attachment&#x27;
+)
+
+# 3. S3 VPC Endpoint 생성 (Gateway 타입 — 무료)
+vpc_endpoint_s3 = ec2.create_vpc_endpoint(
+    VpcId=&#x27;vpc-prod-xxxx&#x27;,
+    ServiceName=&#x27;com.amazonaws.ap-northeast-2.s3&#x27;,
+    VpcEndpointType=&#x27;Gateway&#x27;,
+    RouteTableIds=[&#x27;rtb-private-a&#x27;, &#x27;rtb-private-b&#x27;],  # 프라이빗 서브넷 라우팅 테이블
+    PolicyDocument=json.dumps({
+        &#x27;Statement&#x27;: [{
+            &#x27;Effect&#x27;: &#x27;Allow&#x27;,
+            &#x27;Principal&#x27;: &#x27;*&#x27;,
+            &#x27;Action&#x27;: &#x27;s3:GetObject&#x27;,
+            &#x27;Resource&#x27;: &#x27;arn:aws:s3:::my-prod-bucket/*&#x27;
+        }]
+    })
+)
+print(f&#x27;S3 Endpoint: {vpc_endpoint_s3[&quot;VpcEndpoint&quot;][&quot;VpcEndpointId&quot;]}&#x27;)
+
+# 4. SSM Interface Endpoint 생성 (EC2가 인터넷 없이 SSM 사용)
+for service in [&#x27;ssm&#x27;, &#x27;ssmmessages&#x27;, &#x27;ec2messages&#x27;]:
+    ec2.create_vpc_endpoint(
+        VpcId=&#x27;vpc-prod-xxxx&#x27;,
+        ServiceName=f&#x27;com.amazonaws.ap-northeast-2.{service}&#x27;,
+        VpcEndpointType=&#x27;Interface&#x27;,
+        SubnetIds=[&#x27;subnet-a&#x27;],
+        SecurityGroupIds=[&#x27;sg-endpoint-xxxx&#x27;],
+        PrivateDnsEnabled=True  # DNS 이름 자동 오버라이드
+    )
+    print(f&#x27;{service} Interface Endpoint created&#x27;)</code></pre>
+      <div class="c-walk"><p>TGW 생성 시 <code>DefaultRouteTableAssociation: disable</code>로 자동 라우팅을 끄고, 명시적 라우팅 테이블로 VPC 간 통신을 세밀하게 제어합니다. S3 Gateway Endpoint는 무료이며 프라이빗 서브넷에서 NAT Gateway를 거치지 않고 S3에 접근합니다. SSM Interface Endpoint 3개(<code>ssm</code>, <code>ssmmessages</code>, <code>ec2messages</code>)를 모두 생성해야 EC2 인스턴스가 인터넷 없이 Session Manager를 사용할 수 있습니다. <code>PrivateDnsEnabled: True</code>는 EC2가 기존 SSM 도메인으로 자동으로 Endpoint에 라우팅됩니다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">고급 네트워킹 면접에서는 멀티 계정 환경의 네트워크 설계 능력을 봅니다. 특히 보안과 운영 효율성의 균형, 그리고 네트워크 구성 실수가 미치는 영향을 이해하는지 검증합니다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>TGW 라우팅 테이블로 환경 간 격리 설계</li><li>PrivateLink vs VPC Peering 선택 근거 (IP 중복, 트래픽 방향)</li><li>Direct Connect 이중화 설계 (Active/Active, Active/Standby)</li><li>인터넷 없는 VPC에서 EC2 관리 방법 (SSM Endpoint)</li><li>NAT Gateway 비용 최적화 (S3/DynamoDB Gateway Endpoint 활용)</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>모든 VPC를 완전 메시로 연결 — N*N 규모 문제 이해 없음</li><li>프로덕션 VPC와 개발 VPC를 같은 TGW 라우팅 테이블로 연결 — 격리 미흡</li><li>Direct Connect를 단일 구성 — 장애 시 연결 단절</li><li>퍼블릭 서브넷에 RDS 배포 — 보안 위험</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>20개의 VPC가 있는 환경에서 공유 서비스(DNS, AD)에 접근하는 네트워크 아키텍처를 설계해주세요.</li><li>온프레미스에서 AWS로 10Gbps 이상의 데이터를 안정적으로 전송해야 합니다. 어떤 연결 방식을 선택하겠습니까?</li><li>VPC의 EC2 인스턴스가 인터넷에 접근하지 않고 S3에 데이터를 저장하려면 어떻게 해야 하나요?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 단순히 아는 것: VPC를 만들고 서브넷을 구성할 수 있다. 마스터리: 멀티 계정 환경에서 공유 서비스 VPC를 중심으로 한 Hub-Spoke TGW 토폴로지를 설계하고, 중앙화된 Inspection VPC(Network Firewall)로 모든 인터넷 트래픽을 검사하며, PrivateLink로 파트너에게 서비스를 프라이빗으로 노출하고, Gateway Endpoint로 S3/DynamoDB 비용을 최적화하는 전체 엔터프라이즈 네트워크 아키텍처를 설계할 수 있다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>TGW = 네트워크 스파게티의 해법</h3><p>N개 VPC를 완전 연결하려면 N(N-1)/2 피어링이 필요. TGW Hub-Spoke로 N개 연결로 단순화.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>TGW 라우팅 테이블로 환경 격리</h3><p>프로덕션·개발·공유 서비스를 별도 라우팅 테이블로 분리. 격리 없는 TGW는 보안 경계가 없는 것.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>PrivateLink = IP 중복 없는 단방향 서비스 노출</h3><p>VPC Peering의 대안. CIDR 충돌 없이 서비스를 다른 계정에 노출. SaaS 제공 표준 방식.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>S3/DynamoDB Gateway Endpoint는 무료</h3><p>NAT Gateway를 통하는 S3 트래픽은 과금됨. Gateway Endpoint로 비용 즉시 절감.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>Direct Connect는 예측 가능한 레이턴시가 필요할 때</h3><p>VPN보다 구축 시간·비용이 높지만 전용 회선으로 일관된 성능 보장.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>SSM Endpoint = 배스천 호스트 대체</h3><p>인터넷 없는 EC2에 SSH 대신 SSM Session Manager 사용. 포트 22 불필요, 감사 로그 자동 기록.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>VPC Lattice로 마이크로서비스 통신 표준화</h3><p>서비스 메시 운영 없이 서비스 간 인증·권한·라우팅을 AWS 네이티브로 관리.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>중앙 Inspection VPC 패턴으로 보안 일원화</h3><p>모든 인터넷 트래픽을 Network Firewall을 통해 검사. 계정별 방화벽 설정 불일치 방지.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-07.html">← Observability</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-09.html">CDK &amp; CI/CD Pipelines →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch4: Real-Time Streaming: Kinesis &amp; MSK — AWS Advanced — direcf</title>
+  <meta name="description" content="Kinesis Data Streams와 MSK(Managed Streaming for Apache Kafka)로 초당 수백만 이벤트를 안정적으로 처리하는 스트리밍 파이프라인을 설계합니다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/ai-engineering">AWS Advanced</a><span class="sep">›</span>
+        <strong>Ch04 Real-Time Streaming: Kinesis &amp; MSK</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 04 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🌊</div>
+      <h1 class="chapter-title">Real-Time Streaming: Kinesis &amp; MSK</h1>
+      <div class="chapter-title-kr">실시간 데이터 스트리밍: Kinesis &amp; MSK</div>
+      <div class="chapter-tldr">Kinesis Data Streams와 MSK(Managed Streaming for Apache Kafka)로 초당 수백만 이벤트를 안정적으로 처리하는 스트리밍 파이프라인을 설계합니다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-04.png" alt="Chapter 4 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 4 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>Kinesis Shard 용량 설계와 리샤딩 전략을 수립할 수 있다</li><li>Kinesis Firehose로 S3·Redshift·OpenSearch 데이터 파이프라인을 구성할 수 있다</li><li>MSK와 Kinesis의 트레이드오프를 설명하고 적절히 선택할 수 있다</li><li>KCL로 상태 저장 스트림 처리를 구현할 수 있다</li><li>스트리밍 데이터의 At-Least-Once와 Exactly-Once 처리를 보장할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>실시간 데이터 스트리밍은 IoT 센서 데이터, 사용자 행동 로그, 금융 거래, 애플리케이션 이벤트 등을 발생 즉시 처리하는 아키텍처 패턴입니다. 배치 처리 대비 레이턴시가 수초 이내이며, 실시간 대시보드·이상 탐지·동적 가격책정·사기 탐지 등 즉각적인 인사이트가 필요한 사용 사례에 필수입니다.</p>
+<p>AWS에서 실시간 스트리밍의 두 주인공은 <strong>Amazon Kinesis Data Streams</strong>와 <strong>Amazon MSK(Managed Streaming for Apache Kafka)</strong>입니다. Kinesis는 AWS 네이티브로 완전 관리형이며 운영 부담이 거의 없습니다. MSK는 오픈소스 Apache Kafka를 완전 관리형으로 제공하며, 기존 Kafka 생태계와의 호환성이 필요할 때 선택합니다.</p>
+<p>이 챕터에서는 Kinesis의 Shard 기반 처리 모델, Firehose의 데이터 레이크 통합, MSK의 Kafka 운영 모델, 그리고 스트림 처리의 핵심 패턴들을 다룹니다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>Kinesis Data Streams: Shard 기반 처리 모델</h2><p><strong>Amazon Kinesis Data Streams</strong>는 초당 수백만 건의 데이터 레코드를 수집하고 처리하는 실시간 데이터 스트리밍 서비스입니다.</p>
+<p><strong>Shard</strong>는 Kinesis의 처리 단위입니다. 각 Shard는 초당 1MB(또는 1,000 레코드) 입력, 초당 2MB 출력을 처리합니다. 스트림 용량은 Shard 수로 결정되며, Shard를 추가하면 선형적으로 처리량이 증가합니다.</p>
+<p><strong>파티션 키(Partition Key)</strong>는 레코드가 어느 Shard로 가는지를 결정합니다. 동일 파티션 키의 레코드는 항상 같은 Shard로 라우팅되어 순서가 보장됩니다. 파티션 키를 균등하게 분포시키지 않으면 Hot Shard(특정 Shard에 부하 집중)가 발생합니다.</p>
+<p><strong>Enhanced Fan-Out</strong>은 소비자당 독립적인 2MB/s 전용 처리량을 제공합니다. 기본 공유 모드에서 소비자가 늘어날수록 처리량이 분산되는 문제를 해결합니다. HTTP/2 Push 방식으로 폴링 없이 레코드를 즉시 받습니다.</p>
+<p><strong>데이터 보존 기간</strong>은 기본 24시간이며 최대 365일까지 연장 가능합니다. 소비자 오류 시 재처리를 위해 보존 기간을 충분히 설정하는 것이 중요합니다.</p></div><div class="sb-block"><h2>Kinesis Firehose: 스트리밍 ETL 파이프라인</h2><p><strong>Amazon Kinesis Data Firehose</strong>는 스트리밍 데이터를 S3, Redshift, OpenSearch, Splunk 등 데이터 스토어에 자동으로 로드하는 완전 관리형 서비스입니다. 소비자 코드 없이 스트리밍 데이터를 데이터 레이크에 저장합니다.</p>
+<p>Firehose는 버퍼링(buffering)을 통해 데이터를 묶어서 전달합니다. 버퍼 크기(1~128MB)나 버퍼 시간(60~900초) 중 먼저 달성되는 기준으로 전달합니다. S3 prefix 패턴을 설정하여 날짜별 파티셔닝을 자동화합니다.</p>
+<p><strong>변환 Lambda</strong>는 Firehose가 데이터를 저장하기 전에 Lambda를 호출하여 데이터를 변환합니다. JSON 정규화, PII 마스킹, Parquet 변환 등에 활용합니다.</p>
+<p><strong>Dynamic Partitioning</strong>은 레코드의 내용을 기반으로 S3 prefix를 동적으로 설정합니다. 예를 들어 <code>{country}/{year}/{month}/</code> 형태로 자동 파티셔닝하여 Athena 쿼리 성능을 향상시킵니다.</p>
+<p>Kinesis Data Streams와 Firehose의 차이는 다음과 같습니다.</p>
+<table>
+<thead>
+<tr>
+<th>비교</th>
+<th>Data Streams</th>
+<th>Firehose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>데이터 보존</td>
+<td>1~365일</td>
+<td>전송 후 삭제</td>
+</tr>
+<tr>
+<td>소비자 코드</td>
+<td>필요</td>
+<td>불필요</td>
+</tr>
+<tr>
+<td>목적지</td>
+<td>커스텀</td>
+<td>사전 정의된 대상</td>
+</tr>
+<tr>
+<td>레이턴시</td>
+<td>70ms</td>
+<td>60~900초</td>
+</tr>
+</tbody>
+</table></div><div class="sb-block"><h2>Amazon MSK: 관리형 Apache Kafka</h2><p><strong>Amazon MSK(Managed Streaming for Apache Kafka)</strong>는 Apache Kafka의 Control Plane(ZooKeeper 또는 KRaft, 브로커 관리)을 AWS가 관리하는 서비스입니다. Kafka의 강력한 기능과 생태계를 유지하면서 운영 부담을 줄입니다.</p>
+<p>MSK를 선택하는 주요 이유는 다음과 같습니다.</p>
+<ul>
+<li>기존 Kafka 기반 애플리케이션 이전(Migration)</li>
+<li>Kafka Connect, Kafka Streams, ksqlDB 등 Kafka 생태계 활용</li>
+<li>멀티클라우드 환경에서 Kafka 표준 API 사용</li>
+<li>특정 Kafka 버전 고정 필요</li>
+</ul>
+<p><strong>MSK Serverless</strong>는 서버 없이 Kafka를 사용하는 옵션으로, 용량 계획 없이 자동 스케일링됩니다.</p>
+<p><strong>MSK Connect</strong>는 Kafka Connect 커넥터를 완전 관리형으로 실행합니다. S3 Sink Connector로 Kafka 토픽의 데이터를 S3에 자동 저장하거나, Debezium Source Connector로 데이터베이스 변경 사항을 CDC(Change Data Capture)로 Kafka에 스트리밍합니다.</p>
+<table>
+<thead>
+<tr>
+<th>비교</th>
+<th>Kinesis Data Streams</th>
+<th>MSK</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>관리 부담</td>
+<td>최소 (완전 관리)</td>
+<td>보통 (브로커 관리)</td>
+</tr>
+<tr>
+<td>생태계</td>
+<td>AWS 네이티브</td>
+<td>Kafka 오픈소스</td>
+</tr>
+<tr>
+<td>비용 단위</td>
+<td>Shard·시간</td>
+<td>브로커·시간</td>
+</tr>
+<tr>
+<td>메시지 보존</td>
+<td>최대 1년</td>
+<td>무제한 (스토리지 기반)</td>
+</tr>
+</tbody>
+</table></div><div class="sb-block"><h2>KCL과 스트림 소비자 설계</h2><p><strong>KCL(Kinesis Client Library)</strong>는 Kinesis Data Streams의 공식 소비자 라이브러리입니다. Shard 리밸런싱, 체크포인팅(DynamoDB 기반), 오류 처리, 로드 밸런싱을 자동화합니다.</p>
+<p>KCL의 핵심 개념은 <strong>Record Processor</strong>입니다. 각 Shard에 하나의 Record Processor 인스턴스가 할당됩니다. <code>initialize()</code> → <code>processRecords()</code> → <code>shutdown()</code> 생명주기를 구현합니다. <code>processRecords()</code>에서 처리 완료 후 <code>checkpoint()</code>를 호출하여 DynamoDB에 현재 위치를 저장합니다.</p>
+<p><strong>Lambda 소비자</strong>는 KCL 없이 Lambda를 Kinesis 트리거로 사용하는 방식입니다. Shard당 하나의 Lambda 인스턴스가 호출됩니다. <code>BisectBatchOnFunctionError</code>를 활성화하면 실패 레코드를 이진 분할하여 문제 레코드를 격리합니다.</p>
+<p><strong>처리 보증</strong>: Kinesis는 At-Least-Once 전달을 제공합니다. Exactly-Once 처리는 소비자 측에서 Idempotency를 구현해야 합니다. 레코드의 <code>sequenceNumber</code>를 Idempotency Key로 사용하여 DynamoDB Conditional Write로 중복 처리를 방지합니다.</p></div><div class="sb-block"><h2>스트림 처리 패턴: 집계, 윈도잉, 조인</h2><p><strong>집계(Aggregation)</strong>는 스트리밍 데이터를 요약하는 기본 패턴입니다. 예를 들어 초당 결제 건수를 집계하거나, 1분 동안의 평균 응답 시간을 계산합니다.</p>
+<p><strong>윈도잉(Windowing)</strong>은 시간 기반으로 스트림 데이터를 그룹화합니다.</p>
+<ul>
+<li><strong>텀블링 윈도우(Tumbling Window)</strong>: 고정 크기의 비겹치는 구간. 예: 0-60초, 60-120초</li>
+<li><strong>슬라이딩 윈도우(Sliding Window)</strong>: 매 N초마다 이전 M초의 데이터를 집계. 예: 매 10초마다 지난 60초 평균</li>
+<li><strong>세션 윈도우(Session Window)</strong>: 이벤트 간 비활성 구간이 일정 시간 이상이면 세션 종료</li>
+</ul>
+<p><strong>Managed Flink(Amazon Managed Service for Apache Flink)</strong>는 Flink 애플리케이션을 관리형으로 실행합니다. Table API와 SQL로 윈도잉·조인 등 복잡한 스트림 처리를 선언적으로 구현합니다.</p>
+<p><strong>스트림-스트림 조인</strong>은 두 스트림의 이벤트를 시간 윈도우 내에서 매칭하는 연산입니다. 예: 광고 노출 이벤트와 클릭 이벤트를 5분 내에 조인하여 클릭률을 실시간 계산합니다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">고속도로 톨게이트 시스템</div>
+      <div class="a-body"><p>실시간 스트리밍을 고속도로 톨게이트 시스템에 비유해봅시다. <strong>Kinesis Shard</strong>는 고속도로 차선입니다. 차선이 많을수록(Shard 증가) 처리 가능한 차량(데이터)이 늘어납니다. <strong>파티션 키</strong>는 차량 번호판입니다. 같은 지역 번호판(파티션 키)은 항상 같은 차선으로 유도하여 순서를 보장합니다.</p>
+<p><strong>Kinesis Firehose</strong>는 자동 ETC(하이패스)입니다. 별도의 처리 로직 없이 통과하는 차량 정보를 자동으로 데이터베이스(S3)에 기록합니다. 실시간으로 확인하려면 별도 직원(소비자 코드)이 필요합니다.</p>
+<p><strong>MSK(Kafka)</strong>는 국제 공항의 수하물 컨베이어벨트입니다. 전 세계 공항이 동일한 표준을 사용하므로, 인천에서 만든 시스템을 뉴욕에서도 그대로 쓸 수 있습니다. 반면 Kinesis는 국내 전용 KTX 시스템으로, AWS 내에서는 가장 최적화되어 있지만 다른 환경으로 이식하기 어렵습니다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>Kinesis Data Streams에 이벤트를 발행하고, Lambda로 소비하여 실시간 집계를 DynamoDB에 저장하는 패턴입니다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import boto3
+import json
+import hashlib
+from datetime import datetime, timezone
+from decimal import Decimal
+
+kinesis = boto3.client(&#x27;kinesis&#x27;, region_name=&#x27;ap-northeast-2&#x27;)
+dynamodb = boto3.resource(&#x27;dynamodb&#x27;, region_name=&#x27;ap-northeast-2&#x27;)
+
+# 1. Kinesis에 이벤트 발행 (배치 전송으로 비용 절감)
+def publish_events(stream_name: str, events: list[dict]) -&gt; None:
+    records = [
+        {
+            &#x27;Data&#x27;: json.dumps(event).encode(&#x27;utf-8&#x27;),
+            &#x27;PartitionKey&#x27;: event.get(&#x27;user_id&#x27;, &#x27;default&#x27;)  # Hot Shard 방지: 균등 분산
+        }
+        for event in events
+    ]
+    # put_records로 최대 500개 레코드 배치 전송
+    response = kinesis.put_records(StreamName=stream_name, Records=records)
+    failed = response.get(&#x27;FailedRecordCount&#x27;, 0)
+    if failed &gt; 0:
+        print(f&#x27;WARNING: {failed} records failed — retry logic needed&#x27;)
+
+# 2. Lambda Handler — Kinesis 이벤트 소비 및 집계
+# (이 함수는 Lambda에 배포됩니다)
+def lambda_handler(event, context):
+    table = dynamodb.Table(&#x27;click-aggregates&#x27;)
+    processed_sequence_numbers = set()
+
+    for record in event[&#x27;Records&#x27;]:
+        seq_num = record[&#x27;kinesis&#x27;][&#x27;sequenceNumber&#x27;]
+
+        # Idempotency: 이미 처리한 레코드 건너뜀 (Lambda가 At-Least-Once이므로 필수)
+        if seq_num in processed_sequence_numbers:
+            continue
+
+        payload = json.loads(record[&#x27;kinesis&#x27;][&#x27;data&#x27;])
+        user_id = payload[&#x27;user_id&#x27;]
+        event_type = payload[&#x27;event_type&#x27;]
+        minute_key = datetime.now(timezone.utc).strftime(&#x27;%Y-%m-%dT%H:%M&#x27;)
+
+        # DynamoDB Atomic Counter로 집계 (동시성 안전)
+        table.update_item(
+            Key={&#x27;pk&#x27;: f&#x27;{event_type}#{minute_key}&#x27;, &#x27;sk&#x27;: user_id},
+            UpdateExpression=&#x27;ADD #count :one SET #ttl = :ttl&#x27;,
+            ExpressionAttributeNames={&#x27;#count&#x27;: &#x27;count&#x27;, &#x27;#ttl&#x27;: &#x27;ttl&#x27;},
+            ExpressionAttributeValues={
+                &#x27;:one&#x27;: Decimal(&#x27;1&#x27;),
+                &#x27;:ttl&#x27;: Decimal(str(int(datetime.now(timezone.utc).timestamp()) + 3600))
+            }
+        )
+        processed_sequence_numbers.add(seq_num)
+
+    return {&#x27;statusCode&#x27;: 200, &#x27;processed&#x27;: len(event[&#x27;Records&#x27;])}
+
+# 3. Kinesis Shard 수 동적 조정 (리샤딩)
+def rescale_stream(stream_name: str, target_shard_count: int) -&gt; None:
+    kinesis.update_shard_count(
+        StreamName=stream_name,
+        TargetShardCount=target_shard_count,
+        ScalingType=&#x27;UNIFORM_SCALING&#x27;  # 균등 분할
+    )
+    print(f&#x27;Stream {stream_name} scaling to {target_shard_count} shards&#x27;)
+
+# 발행 예시
+events = [
+    {&#x27;user_id&#x27;: f&#x27;user_{i % 100}&#x27;, &#x27;event_type&#x27;: &#x27;click&#x27;, &#x27;page&#x27;: &#x27;/product/123&#x27;}
+    for i in range(100)
+]
+publish_events(&#x27;user-events&#x27;, events)</code></pre>
+      <div class="c-walk"><p><code>put_records</code>로 최대 500개 레코드를 배치 전송하여 API 호출 수를 줄입니다. <code>PartitionKey</code>에 <code>user_id</code>를 사용하되, 특정 user_id에 편중될 경우 Hot Shard 문제가 발생하므로 고른 분포를 검증해야 합니다. Lambda handler에서 <code>sequenceNumber</code> 기반 Idempotency를 구현합니다. DynamoDB <code>ADD</code> 연산은 atomic하여 동시성 문제 없이 카운터를 증가시킵니다. <code>ttl</code> 속성으로 집계 데이터를 자동 만료시킵니다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">스트리밍 시스템 설계에서는 용량 계획(Shard 수), 데이터 유실 방지(체크포인팅), Hot Shard 방지, 비용 최적화가 핵심 평가 항목입니다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>최대 트래픽 기반 Shard 수 계산 능력</li><li>At-Least-Once 전달에서 Idempotency 구현 방법</li><li>Hot Partition 감지 및 파티션 키 전략</li><li>Enhanced Fan-Out vs 공유 소비자 트레이드오프</li><li>Kinesis vs MSK vs SQS 선택 근거</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>Shard 수를 고정으로 설정하고 리샤딩 계획 없음</li><li>Lambda 소비자에서 체크포인팅 미구현 — 람다 실패 시 레코드 재처리 순서 보장 불가</li><li>파티션 키를 항상 &#x27;default&#x27;로 설정 — 단일 Shard에 모든 부하 집중</li><li>Firehose와 Kinesis Data Streams를 동일하게 취급</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>초당 50,000 레코드, 레코드당 평균 2KB의 이벤트 스트림을 위한 Kinesis 설계를 해주세요.</li><li>Kinesis Lambda 소비자에서 특정 레코드 처리가 계속 실패할 때 어떻게 처리하겠습니까?</li><li>실시간 사기 탐지 시스템에서 스트리밍과 배치를 어떻게 조합하겠습니까?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 단순히 아는 것: Kinesis 스트림을 만들고 Lambda로 레코드를 처리할 수 있다. 마스터리: 트래픽 패턴 분석으로 Shard 수를 계산하고, Enhanced Fan-Out으로 처리량을 보장하며, 파티션 키 분포를 CloudWatch 메트릭으로 모니터링하고, Managed Flink로 실시간 윈도잉 집계를 구현하여 S3와 DynamoDB에 동시에 결과를 적재하는 Lambda Architecture를 설계할 수 있다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>Shard = 처리량의 단위</h3><p>1 Shard = 1MB/s 입력, 2MB/s 출력. 트래픽 피크 기반으로 Shard 수를 계산하고 CloudWatch IteratorAge로 모니터링.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>파티션 키 분포가 성능을 결정</h3><p>Hot Shard를 방지하기 위해 파티션 키를 균등하게 분산. UUID나 해시 기반 키가 효과적.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>Firehose는 소비자 코드 없는 S3 파이프라인</h3><p>람다 없이 Kinesis → S3/Redshift/OpenSearch 파이프라인 완성. Dynamic Partitioning으로 자동 파티셔닝.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>MSK는 Kafka 생태계가 필요할 때</h3><p>Kafka Connect, Kafka Streams, ksqlDB, CDC가 필요하거나 멀티클라우드 이식성이 중요할 때 선택.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>At-Least-Once → Idempotency는 소비자 책임</h3><p>sequenceNumber를 Idempotency Key로 DynamoDB Conditional Write. 생산자에서 중복 발행 가능성 항상 고려.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>Enhanced Fan-Out으로 소비자 독립성 확보</h3><p>소비자가 여러 개일 때 공유 처리량(2MB/s) 경쟁 대신 전용 처리량(2MB/s per consumer) 사용.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>BisectBatchOnFunctionError로 독성 레코드 격리</h3><p>Lambda 소비자 설정. 실패한 배치를 이진 분할하여 문제 레코드를 빠르게 격리하고 DLQ로 이동.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>Managed Flink = 스트림 처리의 스위스 아미 나이프</h3><p>윈도잉, 조인, CEP(Complex Event Processing)를 SQL로 선언적 구현. 데이터 분석가도 접근 가능.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-03.html">← Event-Driven Architecture</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-05.html">Data Lake &amp; Analytics →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

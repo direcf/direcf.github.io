@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch7: Observability — AWS Advanced — direcf</title>
+  <meta name="description" content="CloudWatch, X-Ray, OpenTelemetry로 분산 시스템의 메트릭·로그·트레이스를 통합하여 장애를 빠르게 탐지하고 진단합니다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/ai-engineering">AWS Advanced</a><span class="sep">›</span>
+        <strong>Ch07 Observability</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 07 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🔭</div>
+      <h1 class="chapter-title">Observability</h1>
+      <div class="chapter-title-kr">관찰 가능성</div>
+      <div class="chapter-tldr">CloudWatch, X-Ray, OpenTelemetry로 분산 시스템의 메트릭·로그·트레이스를 통합하여 장애를 빠르게 탐지하고 진단합니다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-07.png" alt="Chapter 7 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 7 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>CloudWatch Metric Filter와 Insights로 로그 기반 메트릭을 생성할 수 있다</li><li>X-Ray 트레이스로 마이크로서비스 간 레이턴시 병목을 찾을 수 있다</li><li>OpenTelemetry SDK로 계측(instrumentation)을 구현할 수 있다</li><li>SLO 기반 복합 알람(Composite Alarm)을 설계할 수 있다</li><li>Embedded Metrics Format으로 고해상도 커스텀 메트릭을 비용 효율적으로 발행할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>현대 분산 시스템에서 장애는 예상치 못한 방식으로 발생합니다. 개별 서비스는 정상이지만 조합했을 때 사용자 경험이 나빠지거나, 특정 사용자 세그먼트에서만 오류가 발생하거나, 레이턴시가 서서히 증가하는 패턴이 대표적입니다. 이런 문제를 빠르게 탐지하고 진단하려면 <strong>관찰 가능성(Observability)</strong>이 필요합니다.</p>
+<p>관찰 가능성의 세 기둥은 <strong>메트릭(Metrics)</strong>, <strong>로그(Logs)</strong>, <strong>트레이스(Traces)</strong>입니다. 메트릭은 시스템 상태를 수치로 요약합니다. 로그는 이벤트의 상세 기록입니다. 트레이스는 요청이 여러 서비스를 통과하는 전체 경로를 추적합니다. 이 세 가지를 연결할 때 비로소 "무슨 일이 일어나고 있는가(메트릭) → 어디서 일어나고 있는가(트레이스) → 왜 일어나고 있는가(로그)"에 답할 수 있습니다.</p>
+<p>이 챕터에서는 AWS CloudWatch의 심층 기능, X-Ray의 분산 추적, OpenTelemetry(OTel)를 통한 벤더 중립적 계측, 그리고 프로덕션 운영에 필요한 알람과 대시보드 설계를 다룹니다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>CloudWatch 심화: 메트릭·로그·대시보드</h2><p><strong>Amazon CloudWatch</strong>는 AWS의 통합 모니터링 서비스입니다. 기본 메트릭(CPU, 메모리 등)은 자동 수집되지만, 프로덕션 운영을 위해서는 훨씬 더 세밀한 설정이 필요합니다.</p>
+<p><strong>고해상도 메트릭</strong>: 기본 CloudWatch 메트릭 해상도는 1분입니다. <code>StorageResolution: 1</code>로 설정하면 초 단위 메트릭을 발행할 수 있습니다. API 레이턴시 이상을 초 단위로 탐지해야 하는 경우에 필수입니다.</p>
+<p><strong>Metric Math</strong>: 여러 메트릭을 수학적으로 조합하여 새로운 메트릭을 계산합니다. 예: <code>5XXErrors / Requests * 100</code>으로 에러율을 계산하거나, <code>ANOMALY_DETECTION_BAND</code>로 이상 탐지 밴드를 그립니다.</p>
+<p><strong>CloudWatch Logs Insights</strong>는 로그를 SQL과 유사한 쿼리 언어로 분석합니다. <code>stats avg(latency) by service</code>처럼 집계 쿼리를 실행하고 결과를 대시보드에 위젯으로 추가합니다.</p>
+<p><strong>Embedded Metrics Format(EMF)</strong>은 로그 메시지에 메트릭을 포함하는 JSON 형식입니다. CloudWatch가 로그에서 메트릭을 자동 추출합니다. 별도 API 호출 없이 비용 효율적으로 커스텀 메트릭을 발행하는 최신 모범 사례입니다.</p></div><div class="sb-block"><h2>SLO 기반 알람 설계</h2><p><strong>SLI(Service Level Indicator)</strong>는 서비스 품질을 수치로 측정하는 지표입니다. 가용성, p99 레이턴시, 에러율이 대표적 SLI입니다.</p>
+<p><strong>SLO(Service Level Objective)</strong>는 SLI의 목표값입니다. "99.9% 가용성", "p99 레이턴시 &lt; 500ms", "에러율 &lt; 0.1%" 같은 형태입니다.</p>
+<p><strong>Error Budget</strong>은 <code>1 - SLO</code>입니다. 99.9% SLO라면 월간 43.8분의 장애가 허용됩니다. Error Budget이 소진되면 새 기능 배포를 중단하고 안정성에 집중해야 합니다.</p>
+<p><strong>Composite Alarm</strong>은 여러 알람을 AND/OR로 조합합니다. 예: <code>(에러율 &gt; 1% AND 요청 수 &gt; 1000/min)</code>처럼 트래픽이 적을 때의 오탐(false alarm)을 방지합니다.</p>
+<p><strong>알람 액션 계층화</strong>:</p>
+<ol>
+<li>P1 (즉시 대응): SNS → PagerDuty/Opsgenie → 온콜 엔지니어 전화</li>
+<li>P2 (1시간 내): SNS → Slack 채널</li>
+<li>P3 (다음 근무일): SNS → Jira 티켓 자동 생성</li>
+</ol></div><div class="sb-block"><h2>AWS X-Ray: 분산 추적</h2><p><strong>AWS X-Ray</strong>는 분산 시스템에서 요청의 전체 경로를 추적하는 분산 추적(Distributed Tracing) 서비스입니다.</p>
+<p><strong>핵심 개념</strong>: <strong>Trace</strong>는 하나의 요청이 시스템을 통과하는 전체 여정입니다. <strong>Segment</strong>는 단일 서비스의 처리 시간입니다. <strong>Subsegment</strong>는 DB 쿼리, 외부 API 호출 등 더 세부적인 작업 단위입니다.</p>
+<p><strong>Service Map</strong>은 서비스 간 관계와 상태를 시각화합니다. 응답 시간, 오류율, 호출 수를 각 서비스 노드에 표시합니다. 어떤 서비스가 병목(bottleneck)인지 한눈에 파악합니다.</p>
+<p><strong>X-Ray와 Lambda</strong>: Lambda 함수는 X-Ray 추적을 콘솔에서 클릭 한 번으로 활성화할 수 있습니다. 콜드 스타트 초기화 시간이 Segment로 표시되어 성능 분석에 유용합니다.</p>
+<p><strong>샘플링(Sampling)</strong>: 모든 요청을 추적하면 비용이 폭발합니다. 기본 샘플링 규칙은 초당 1개 + 5%입니다. X-Ray Sampling Rules로 특정 경로나 사용자 기반의 동적 샘플링을 설정합니다.</p></div><div class="sb-block"><h2>OpenTelemetry: 벤더 중립 계측</h2><p><strong>OpenTelemetry(OTel)</strong>는 CNCF의 오픈소스 관찰 가능성 프레임워크입니다. 코드 계측(instrumentation)을 표준화하여 어떤 백엔드(Datadog, Grafana, CloudWatch, Jaeger)로도 데이터를 전송할 수 있습니다.</p>
+<p>OTel의 구성 요소는 세 가지입니다.</p>
+<ul>
+<li><strong>SDK</strong>: 애플리케이션 코드에 포함. 메트릭·로그·트레이스 생성</li>
+<li><strong>Collector</strong>: 에이전트로 동작. 데이터 수집·변환·전송</li>
+<li><strong>Protocol (OTLP)</strong>: OTel 데이터 전송 표준 프로토콜</li>
+</ul>
+<p><strong>AWS Distro for OpenTelemetry(ADOT)</strong>는 AWS가 배포하는 OTel 공식 배포판입니다. Lambda Layer로 제공되어 코드 변경 없이 Lambda 함수에 적용됩니다. X-Ray, CloudWatch, Amazon Managed Grafana로 데이터를 동시에 전송합니다.</p>
+<p>OTel은 락인(lock-in) 방지가 핵심 가치입니다. 오늘 X-Ray를 쓰다가 내일 Datadog으로 바꿔도 애플리케이션 코드는 변경하지 않아도 됩니다.</p></div><div class="sb-block"><h2>Container Insights와 Application Signals</h2><p><strong>CloudWatch Container Insights</strong>는 ECS와 EKS의 컨테이너 메트릭을 자동으로 수집합니다. CPU, 메모리, 네트워크, 디스크 I/O를 컨테이너·Task·서비스·클러스터 수준에서 집계합니다.</p>
+<p><strong>EKS Container Insights</strong>는 DaemonSet으로 배포된 CloudWatch Agent가 노드와 Pod 메트릭을 수집합니다. Kubernetes 이벤트도 CloudWatch Logs로 전송하여 <code>kubectl events</code> 없이 콘솔에서 조회합니다.</p>
+<p><strong>CloudWatch Application Signals</strong>는 SLO 기반 애플리케이션 성능 모니터링 서비스입니다. OTel 자동 계측으로 수집된 메트릭에서 서비스별 p99 레이턴시, 오류율 SLO를 자동 생성하고 Error Budget을 추적합니다.</p>
+<p><strong>Synthetics Canary</strong>는 CloudWatch가 관리하는 합성 모니터링(Synthetic Monitoring)입니다. Headless 브라우저 스크립트로 실제 사용자 행동을 시뮬레이션하고, 트랜잭션 레벨의 가용성을 모니터링합니다. API 엔드포인트 헬스체크는 물론 로그인 플로우 전체를 모니터링할 수 있습니다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">병원 중환자실 모니터링 시스템</div>
+      <div class="a-body"><p>관찰 가능성을 병원 중환자실(ICU)에 비유해봅시다. <strong>메트릭</strong>은 침대 옆 모니터의 심박수·혈압·산소포화도 숫자입니다. 이상 수치가 감지되면 알람이 울립니다. <strong>로그</strong>는 의사 진료 기록입니다. "오전 10시: 환자가 흉통을 호소함"처럼 구체적인 사건을 기록합니다. <strong>트레이스</strong>는 환자가 응급실 → 검사실 → 수술실 → ICU를 거치는 전체 여정 기록입니다. 어느 단계에서 얼마나 걸렸는지 추적합니다.</p>
+<p><strong>X-Ray Service Map</strong>은 병원 플로우차트입니다. 응급실에서 수술실로 가는 경로를 시각화하고, 어느 단계에서 지연이 발생하는지(병목)를 한눈에 봅니다.</p>
+<p><strong>SLO</strong>는 "응급 수술 환자는 도착 후 30분 내 수술실 이송" 같은 목표값입니다. <strong>Error Budget</strong>은 한 달에 몇 건의 지연이 허용되는지입니다. Error Budget이 소진되면 시스템 개선에 집중해야 합니다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>Embedded Metrics Format으로 커스텀 메트릭을 발행하고, X-Ray로 Lambda 함수의 외부 API 호출을 추적하는 예제입니다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import boto3
+import json
+import time
+import logging
+from aws_embedded_metrics import metric_scope
+from aws_xray_sdk.core import xray_recorder, patch_all
+from aws_xray_sdk.core.models.trace import Trace
+
+# X-Ray: boto3와 HTTP 라이브러리를 자동 패치 (모든 호출이 Subsegment로 기록)
+patch_all()
+
+logger = logging.getLogger()
+
+# 1. Embedded Metrics Format으로 커스텀 메트릭 발행
+@metric_scope
+def process_payment(payment: dict, metrics) -&gt; dict:
+    &quot;&quot;&quot;EMF를 사용하면 추가 API 호출 없이 CloudWatch 메트릭이 자동 생성됩니다.&quot;&quot;&quot;
+    start = time.time()
+    metrics.set_namespace(&#x27;MyApp/Payments&#x27;)
+    metrics.set_dimensions({&#x27;Environment&#x27;: &#x27;production&#x27;, &#x27;Region&#x27;: &#x27;ap-northeast-2&#x27;})
+
+    try:
+        # 결제 처리 로직 (생략)
+        result = {&#x27;status&#x27;: &#x27;success&#x27;, &#x27;transactionId&#x27;: &#x27;TXN-001&#x27;}
+
+        # 메트릭 발행 — CloudWatch에 자동 전송
+        metrics.put_metric(&#x27;PaymentSuccess&#x27;, 1, &#x27;Count&#x27;)
+        metrics.put_metric(&#x27;PaymentAmount&#x27;, payment[&#x27;amount&#x27;], &#x27;None&#x27;)
+        metrics.put_metric(&#x27;PaymentLatency&#x27;, (time.time() - start) * 1000, &#x27;Milliseconds&#x27;)
+        return result
+
+    except Exception as e:
+        metrics.put_metric(&#x27;PaymentFailure&#x27;, 1, &#x27;Count&#x27;)
+        raise
+
+# 2. X-Ray Subsegment로 외부 API 호출 추적
+@xray_recorder.capture(&#x27;process-order&#x27;)  # 자동으로 Segment 생성
+def process_order(order_id: str) -&gt; dict:
+    # 결제 서비스 호출 — X-Ray Subsegment 자동 생성
+    with xray_recorder.in_subsegment(&#x27;payment-service&#x27;) as subsegment:
+        subsegment.put_annotation(&#x27;orderId&#x27;, order_id)  # 검색 가능한 인덱스
+        subsegment.put_metadata(&#x27;orderDetails&#x27;, {&#x27;id&#x27;: order_id})  # 비검색 데이터
+        payment_result = process_payment({&#x27;amount&#x27;: 59000})
+
+    # DynamoDB 호출 — boto3 patch_all()로 자동 추적
+    dynamodb = boto3.resource(&#x27;dynamodb&#x27;)
+    table = dynamodb.Table(&#x27;orders&#x27;)
+    table.put_item(Item={&#x27;orderId&#x27;: order_id, &#x27;status&#x27;: &#x27;completed&#x27;})
+
+    return payment_result
+
+# 3. CloudWatch Alarm 생성 (에러율 기반)
+def create_error_rate_alarm(function_name: str) -&gt; None:
+    cw = boto3.client(&#x27;cloudwatch&#x27;, region_name=&#x27;ap-northeast-2&#x27;)
+    cw.put_metric_alarm(
+        AlarmName=f&#x27;{function_name}-error-rate-high&#x27;,
+        AlarmDescription=&#x27;Lambda error rate &gt; 1% for 5 minutes&#x27;,
+        Metrics=[
+            {&#x27;Id&#x27;: &#x27;errors&#x27;, &#x27;MetricStat&#x27;: {&#x27;Metric&#x27;: {&#x27;Namespace&#x27;: &#x27;AWS/Lambda&#x27;,
+             &#x27;MetricName&#x27;: &#x27;Errors&#x27;, &#x27;Dimensions&#x27;: [{&#x27;Name&#x27;: &#x27;FunctionName&#x27;, &#x27;Value&#x27;: function_name}]},
+             &#x27;Period&#x27;: 60, &#x27;Stat&#x27;: &#x27;Sum&#x27;}},
+            {&#x27;Id&#x27;: &#x27;invocations&#x27;, &#x27;MetricStat&#x27;: {&#x27;Metric&#x27;: {&#x27;Namespace&#x27;: &#x27;AWS/Lambda&#x27;,
+             &#x27;MetricName&#x27;: &#x27;Invocations&#x27;, &#x27;Dimensions&#x27;: [{&#x27;Name&#x27;: &#x27;FunctionName&#x27;, &#x27;Value&#x27;: function_name}]},
+             &#x27;Period&#x27;: 60, &#x27;Stat&#x27;: &#x27;Sum&#x27;}},
+            {&#x27;Id&#x27;: &#x27;error_rate&#x27;, &#x27;Expression&#x27;: &#x27;errors / invocations * 100&#x27;, &#x27;Label&#x27;: &#x27;Error Rate (%)&#x27;}
+        ],
+        ComparisonOperator&#x27;: &#x27;GreaterThanThreshold&#x27;,
+        Threshold&#x27;: 1.0,
+        EvaluationPeriods&#x27;: 5,
+        TreatMissingData&#x27;: &#x27;notBreaching&#x27;,
+        AlarmActions&#x27;: [&#x27;arn:aws:sns:ap-northeast-2:123456789:pagerduty-p1&#x27;]
+    )</code></pre>
+      <div class="c-walk"><p><code>@metric_scope</code> 데코레이터가 EMF JSON을 CloudWatch Logs에 발행하면, CloudWatch가 자동으로 메트릭을 추출합니다. 별도 <code>put_metric_data</code> API 호출이 없어 비용과 레이턴시가 감소합니다. <code>patch_all()</code>이 boto3를 래핑하여 DynamoDB 호출도 자동으로 X-Ray Subsegment가 됩니다. <code>put_annotation</code>은 트레이스 검색용 인덱스이며, <code>put_metadata</code>는 검색 불가능한 상세 데이터입니다. Metric Math Expression <code>errors / invocations * 100</code>으로 에러율을 계산하는 Alarm은 트래픽이 낮을 때 오탐을 방지합니다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">관찰 가능성 면접에서는 실제 장애 상황에서 어떻게 문제를 진단했는지 경험을 중심으로 묻습니다. 도구 지식보다 메트릭-트레이스-로그를 어떻게 연결하여 근본 원인을 찾는지가 핵심입니다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>SLI/SLO/Error Budget 개념을 비즈니스 맥락에서 설명</li><li>레이턴시 이상을 트레이스로 병목 서비스까지 추적하는 디버깅 플로우</li><li>고카디널리티 메트릭의 비용 문제와 해결책</li><li>온콜 알람 피로도(Alert Fatigue) 감소 전략</li><li>Structured Logging으로 로그 쿼리 최적화</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>알람 없이 운영 (사용자 불만 접수 후에야 장애 인지)</li><li>로그를 print()로 출력하고 CloudWatch Logs에 구조화 없이 저장</li><li>X-Ray 샘플링 100%로 설정 — 비용 폭발</li><li>대시보드 없는 운영 — 시스템 상태를 시각적으로 파악 불가</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>p99 레이턴시가 갑자기 2배가 됐습니다. X-Ray와 CloudWatch Logs로 어떻게 원인을 찾겠습니까?</li><li>CloudWatch 커스텀 메트릭 비용을 최소화하면서 고해상도 메트릭을 수집하는 방법은?</li><li>마이크로서비스 A가 B를 호출하는 구조에서, B의 p99 레이턴시 저하가 A의 응답 시간에 미치는 영향을 어떻게 추적하겠습니까?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 단순히 아는 것: CloudWatch에 알람을 추가하고 X-Ray를 켤 수 있다. 마스터리: 서비스 SLO를 정의하고 Error Budget을 주간 리뷰로 추적하며, Composite Alarm으로 오탐을 줄이고, OTel로 벤더 중립 계측을 구현하며, EMF로 비용 효율적 고해상도 메트릭을 발행하고, CloudWatch Logs Insights 저장 쿼리로 온콜 런북을 자동화하는 전체 관찰 가능성 시스템을 설계·구현할 수 있다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>메트릭·로그·트레이스 세 기둥을 연결</h3><p>알람(메트릭) → 트레이스로 병목 서비스 식별 → 로그로 근본 원인 파악. 세 가지가 연결될 때 MTTR이 단축됨.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>EMF로 커스텀 메트릭을 비용 효율적으로</h3><p>put_metric_data API 대신 로그에 EMF JSON을 포함. 추가 API 호출 없이 메트릭 자동 추출.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>SLO와 Error Budget이 운영 우선순위를 결정</h3><p>Error Budget 소진 = 기능 개발 중단, 안정성 투자. SLO 없으면 모든 인시던트가 동등하게 취급됨.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>X-Ray 샘플링 규칙을 반드시 설정</h3><p>기본 5% 샘플링이 프로덕션에 적합. 에러 발생 요청은 100% 캡처하도록 규칙 추가.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>OTel로 벤더 락인 방지</h3><p>AWS X-Ray SDK 대신 OTel을 사용하면 백엔드를 바꿔도 코드 수정 불필요. ADOT Layer로 Lambda에 쉽게 적용.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>Container Insights는 ECS/EKS 운영 필수</h3><p>컨테이너별 CPU/메모리/네트워크 메트릭 자동 수집. 커스텀 대시보드 없이도 기본 운영 가시성 확보.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>Composite Alarm으로 알람 피로도 감소</h3><p>단일 메트릭 알람은 오탐이 많다. 에러율 AND 트래픽 볼륨 조합으로 의미있는 알람만 발생시킴.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>Structured Logging이 쿼리 비용을 낮춘다</h3><p>JSON 형식 로그는 CloudWatch Logs Insights로 필드 기반 쿼리 가능. 텍스트 파싱 없이 빠른 분석.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-06.html">← Security Deep Dive</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-08.html">Advanced Networking →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

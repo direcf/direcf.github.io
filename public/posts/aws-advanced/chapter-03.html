@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch3: Event-Driven Architecture — AWS Advanced — direcf</title>
+  <meta name="description" content="EventBridge, Step Functions, SQS/SNS 고급 패턴으로 느슨하게 결합된 확장 가능한 시스템을 설계합니다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/ai-engineering">AWS Advanced</a><span class="sep">›</span>
+        <strong>Ch03 Event-Driven Architecture</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 03 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">⚡</div>
+      <h1 class="chapter-title">Event-Driven Architecture</h1>
+      <div class="chapter-title-kr">이벤트 기반 아키텍처</div>
+      <div class="chapter-tldr">EventBridge, Step Functions, SQS/SNS 고급 패턴으로 느슨하게 결합된 확장 가능한 시스템을 설계합니다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-03.png" alt="Chapter 3 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 3 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>EventBridge 규칙과 스케줄로 이벤트 라우팅을 설계할 수 있다</li><li>Step Functions State Machine으로 분산 트랜잭션을 오케스트레이션할 수 있다</li><li>SQS FIFO와 표준 큐의 차이를 프로덕션 시나리오에 적용할 수 있다</li><li>Saga 패턴으로 마이크로서비스 간 데이터 일관성을 보장할 수 있다</li><li>Dead Letter Queue와 재처리 전략을 설계할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>현대 클라우드 아키텍처에서 이벤트 기반 설계(Event-Driven Architecture, EDA)는 마이크로서비스 간 결합도를 낮추고 확장성을 극대화하는 핵심 패러다임입니다. 서비스들이 직접 API를 호출하는 대신 이벤트를 발행하고 구독하는 방식으로 통신하면, 각 서비스는 독립적으로 배포하고 스케일링할 수 있습니다.</p>
+<p>AWS는 EDA를 위한 세 가지 핵심 서비스를 제공합니다. <strong>Amazon EventBridge</strong>는 이벤트 버스로서 AWS 서비스 이벤트, SaaS 이벤트, 커스텀 이벤트를 라우팅합니다. <strong>AWS Step Functions</strong>는 여러 서비스를 조율하는 상태 머신 오케스트레이터입니다. <strong>Amazon SQS/SNS</strong>는 메시지 큐와 발행-구독 패턴의 기반입니다.</p>
+<p>이 챕터에서는 각 서비스의 내부 동작, 조합 패턴, 그리고 분산 시스템에서 가장 어려운 문제 중 하나인 분산 트랜잭션을 Saga 패턴으로 해결하는 방법을 다룹니다.</p>
+<p><img alt="AWS Step Functions 워크플로우 예시" src="http://docs.aws.amazon.com/step-functions/latest/dg/images/step-functions-example.png" />
+<em>이미지 출처: © Amazon Web Services, Inc. — <a href="https://docs.aws.amazon.com/step-functions/latest/dg/welcome.html">What is Step Functions</a> (교육 목적 인용)</em></p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>Amazon EventBridge: 서버리스 이벤트 버스</h2><p><strong>Amazon EventBridge</strong>는 AWS 서비스, SaaS 파트너, 커스텀 애플리케이션 간의 이벤트를 라우팅하는 서버리스 이벤트 버스입니다. 이전 이름은 CloudWatch Events였으며, 기능이 크게 확장되었습니다.</p>
+<p><strong>이벤트 버스 유형</strong>: Default 버스(AWS 서비스 이벤트), Custom 버스(애플리케이션 이벤트), Partner 버스(Datadog, Zendesk 등 SaaS 서비스 이벤트) 세 종류가 있습니다.</p>
+<p><strong>규칙(Rule)</strong>은 이벤트 패턴 매칭과 라우팅을 담당합니다. 규칙은 이벤트의 특정 필드를 매칭하는 JSON 패턴으로 정의합니다. 예를 들어 <code>{"source": ["aws.s3"], "detail-type": ["Object Created"]}</code> 패턴은 S3 객체 생성 이벤트만 필터링합니다.</p>
+<p><strong>EventBridge Pipes</strong>는 소스(SQS, DynamoDB Streams, Kinesis)에서 이벤트를 소비하여 필터링·변환하고, 타겟(Lambda, SageMaker Pipeline, Step Functions)으로 전달하는 통합 파이프를 제공합니다. Lambda 없이도 기본적인 변환 작업이 가능합니다.</p>
+<p><strong>EventBridge Scheduler</strong>는 크론 표현식이나 일회성 시간으로 이벤트를 스케줄링합니다. 수백만 개의 스케줄을 생성할 수 있어 SaaS에서 사용자별 알림이나 배치 작업 스케줄링에 활용됩니다.</p></div><div class="sb-block"><h2>AWS Step Functions: 분산 워크플로우 오케스트레이터</h2><p><strong>AWS Step Functions</strong>는 여러 AWS 서비스를 조율하는 비주얼 워크플로우 서비스입니다. Amazon States Language(ASL) JSON으로 상태 머신을 정의하며, 각 상태는 Task(작업), Choice(분기), Wait(대기), Parallel(병렬), Map(반복) 중 하나입니다.</p>
+<p><strong>Standard vs Express 워크플로우</strong>: Standard는 최대 1년 실행, Exactly-Once 보장, 실행 이력 저장. Express는 최대 5분, At-Least-Once, 고속 처리(초당 100,000 실행)입니다.</p>
+<p><strong>SDK Integration</strong>은 Step Functions이 Lambda를 거치지 않고 AWS SDK API를 직접 호출하는 기능입니다. <code>arn:aws:states:::dynamodb:putItem</code>처럼 상태 정의에 직접 DynamoDB, SQS, SNS, SageMaker 등 수백 개의 서비스를 호출할 수 있습니다. Lambda 비용과 레이턴시를 줄이는 핵심 최적화입니다.</p>
+<p><strong>오류 처리</strong>: <code>Retry</code>와 <code>Catch</code>로 재시도 로직과 오류 복구를 상태 머신 수준에서 정의합니다. 지수 백오프(<code>BackoffRate</code>)와 지터를 설정하여 thundering herd 문제를 방지합니다.</p>
+<p><img alt="Step Functions 워크플로우 유형 활용 사례" src="http://docs.aws.amazon.com/step-functions/latest/dg/images/use-case-examples.png" />
+<em>이미지 출처: © Amazon Web Services, Inc. — <a href="https://docs.aws.amazon.com/step-functions/latest/dg/welcome.html">What is Step Functions</a> (교육 목적 인용)</em></p></div><div class="sb-block"><h2>SQS 심화: FIFO, 가시성, DLQ</h2><p><strong>Amazon SQS(Simple Queue Service)</strong>는 메시지 큐 서비스입니다. 표준 큐(Standard Queue)는 초당 무제한 처리량, At-Least-Once 전달, 최대 노력 순서 보장입니다. FIFO 큐는 초당 3,000 메시지(배치), Exactly-Once 처리, 엄격한 순서 보장입니다.</p>
+<p><strong>가시성 타임아웃(Visibility Timeout)</strong>은 소비자가 메시지를 처리하는 동안 다른 소비자에게 보이지 않는 시간입니다. 처리 완료 전 타임아웃이 만료되면 메시지가 다시 큐에 나타납니다. 처리 시간보다 충분히 길게 설정해야 하며, 처리 중 연장(<code>change_message_visibility</code>)도 가능합니다.</p>
+<p><strong>Dead Letter Queue(DLQ)</strong>는 처리에 계속 실패하는 메시지를 격리하는 별도 큐입니다. <code>maxReceiveCount</code>를 초과한 메시지가 자동으로 DLQ로 이동합니다. CloudWatch 알람으로 DLQ 메시지 수를 모니터링하여 운영 이슈를 감지합니다.</p>
+<p><strong>Long Polling</strong>은 빈 큐에 대한 폴링을 최대 20초까지 대기하여 빈 응답을 줄이고 비용을 절감합니다. <code>ReceiveMessageWaitTimeSeconds</code>를 20으로 설정하면 됩니다.</p>
+<p><strong>메시지 그룹 ID(FIFO)</strong>는 동일 그룹 내 메시지의 순서를 보장합니다. 예를 들어 주문 ID를 그룹 ID로 사용하면, 동일 주문의 이벤트(생성 → 결제 → 배송)가 항상 순서대로 처리됩니다.</p></div><div class="sb-block"><h2>SNS 팬아웃 패턴과 필터링</h2><p><strong>Amazon SNS(Simple Notification Service)</strong>는 발행-구독(pub-sub) 메시징 서비스입니다. 하나의 메시지를 여러 구독자에게 동시에 전달하는 팬아웃(fan-out) 패턴의 기반입니다.</p>
+<p><strong>SNS → SQS 팬아웃</strong>은 SNS 토픽에 여러 SQS 큐를 구독하여 메시지를 병렬로 처리하는 패턴입니다. 예를 들어 주문 이벤트를 SNS에 발행하면, 결제 서비스 큐, 재고 서비스 큐, 알림 서비스 큐가 동시에 메시지를 수신합니다.</p>
+<p><strong>메시지 필터링(Message Filtering)</strong>은 구독자별로 수신할 메시지를 JSON 속성 기반으로 필터링합니다. 예를 들어 결제 서비스는 <code>{"event_type": ["order_placed", "order_cancelled"]}</code> 필터로 관련 이벤트만 수신합니다. Lambda나 SQS를 통하지 않고 SNS 수준에서 필터링이 가능합니다.</p>
+<p><strong>FIFO SNS + FIFO SQS</strong>는 순서 보장이 필요한 팬아웃에 사용합니다. 이 조합은 금융 거래처럼 이벤트 순서가 중요한 시나리오에 적합합니다.</p></div><div class="sb-block"><h2>Saga 패턴: 분산 트랜잭션 처리</h2><p>마이크로서비스 아키텍처에서 여러 서비스에 걸친 데이터 일관성을 유지하는 것은 어렵습니다. 2PC(2-Phase Commit)는 분산 환경에서 성능 문제와 단일 장애점을 만들기 때문에 클라우드 네이티브 환경에서는 <strong>Saga 패턴</strong>을 사용합니다.</p>
+<p>Saga는 여러 로컬 트랜잭션의 시퀀스로, 각 단계가 성공하면 다음 단계로 진행하고, 실패하면 <strong>보상 트랜잭션(Compensating Transaction)</strong>으로 이전 단계들을 롤백합니다.</p>
+<p>두 가지 구현 방식이 있습니다.</p>
+<p><strong>Choreography 방식</strong>: 각 서비스가 이벤트를 발행하고 다른 서비스의 이벤트를 구독하여 자율적으로 진행합니다. 중앙 오케스트레이터가 없어 결합도가 낮지만, 전체 흐름을 추적하기 어렵습니다.</p>
+<p><strong>Orchestration 방식</strong>: 중앙 오케스트레이터(Step Functions)가 각 서비스에게 순서대로 작업을 지시합니다. 전체 흐름이 State Machine으로 명확히 정의되어 가시성이 높습니다. 실패 시 Step Functions이 보상 트랜잭션을 자동으로 실행합니다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">공연 기획사의 이벤트 관리</div>
+      <div class="a-body"><p>이벤트 기반 아키텍처를 공연 기획사에 비유해봅시다. <strong>EventBridge</strong>는 공연 일정 관리 시스템입니다. "오늘 밤 7시 콘서트 시작"이라는 이벤트가 발생하면, 관련 팀(음향팀, 조명팀, 보안팀, 티켓팀)에게 동시에 알림이 갑니다. 각 팀은 독립적으로 자신의 업무를 처리합니다.</p>
+<p><strong>Step Functions</strong>는 공연 진행표(큐시트)입니다. "오프닝 → 1부 공연 → 인터미션 → 2부 공연 → 앵콜" 순서가 정의되어 있고, 각 단계가 완료되어야 다음 단계로 진행합니다. 만약 음향 장비가 고장나면(실패), 기술팀을 호출하는 대체 흐름(보상 트랜잭션)이 자동으로 실행됩니다.</p>
+<p><strong>SQS</strong>는 대기표 시스템입니다. 관객이 너무 많이 몰려도 대기표를 나눠주어 질서있게 처리합니다. 처리 속도가 느려도 메시지가 소실되지 않습니다. DLQ는 환불 처리에 계속 실패하는 티켓들을 모아놓는 별도 창구입니다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>EventBridge로 이벤트를 발행하고, Step Functions로 주문 처리 Saga를 오케스트레이션하는 예제입니다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import boto3
+import json
+
+events = boto3.client(&#x27;events&#x27;, region_name=&#x27;ap-northeast-2&#x27;)
+sfn = boto3.client(&#x27;stepfunctions&#x27;, region_name=&#x27;ap-northeast-2&#x27;)
+sqs = boto3.client(&#x27;sqs&#x27;, region_name=&#x27;ap-northeast-2&#x27;)
+
+# 1. EventBridge에 주문 이벤트 발행
+def publish_order_event(order: dict) -&gt; None:
+    response = events.put_events(
+        Entries=[
+            {
+                &#x27;Source&#x27;: &#x27;com.myapp.orders&#x27;,
+                &#x27;DetailType&#x27;: &#x27;OrderPlaced&#x27;,
+                &#x27;Detail&#x27;: json.dumps({
+                    &#x27;orderId&#x27;: order[&#x27;id&#x27;],
+                    &#x27;userId&#x27;: order[&#x27;userId&#x27;],
+                    &#x27;amount&#x27;: order[&#x27;amount&#x27;],
+                    &#x27;items&#x27;: order[&#x27;items&#x27;]
+                }),
+                &#x27;EventBusName&#x27;: &#x27;my-app-events&#x27;
+            }
+        ]
+    )
+    failed = response.get(&#x27;FailedEntryCount&#x27;, 0)
+    if failed &gt; 0:
+        raise RuntimeError(f&#x27;{failed} events failed to publish&#x27;)
+
+# 2. Step Functions으로 Saga 오케스트레이션 시작
+def start_order_saga(order_id: str, order_data: dict) -&gt; str:
+    &quot;&quot;&quot;Step Functions State Machine이 결제→재고→배송을 순서대로 처리.
+       각 단계 실패 시 보상 트랜잭션 자동 실행.&quot;&quot;&quot;
+    execution = sfn.start_execution(
+        stateMachineArn=&#x27;arn:aws:states:ap-northeast-2:123456789:stateMachine:OrderSaga&#x27;,
+        name=f&#x27;order-{order_id}&#x27;,   # 동일 주문 중복 실행 방지
+        input=json.dumps({
+            &#x27;orderId&#x27;: order_id,
+            &#x27;paymentMethod&#x27;: order_data[&#x27;paymentMethod&#x27;],
+            &#x27;items&#x27;: order_data[&#x27;items&#x27;],
+            &#x27;shippingAddress&#x27;: order_data[&#x27;shippingAddress&#x27;]
+        })
+    )
+    return execution[&#x27;executionArn&#x27;]
+
+# 3. SQS FIFO 큐에 메시지 전송 (순서 보장 + Exactly-Once)
+def enqueue_notification(user_id: str, message: str, order_id: str) -&gt; None:
+    queue_url = &#x27;https://sqs.ap-northeast-2.amazonaws.com/123456789/notifications.fifo&#x27;
+    sqs.send_message(
+        QueueUrl=queue_url,
+        MessageBody=json.dumps({&#x27;userId&#x27;: user_id, &#x27;message&#x27;: message}),
+        MessageGroupId=user_id,          # 동일 사용자 메시지는 순서 보장
+        MessageDeduplicationId=f&#x27;{order_id}-{message[:20]}&#x27;  # 중복 제거
+    )
+
+# 4. SQS DLQ 메시지 재처리
+def reprocess_dlq(dlq_url: str, main_queue_url: str, max_messages: int = 10) -&gt; int:
+    reprocessed = 0
+    while reprocessed &lt; max_messages:
+        resp = sqs.receive_message(
+            QueueUrl=dlq_url, MaxNumberOfMessages=10,
+            WaitTimeSeconds=5  # Long Polling
+        )
+        messages = resp.get(&#x27;Messages&#x27;, [])
+        if not messages:
+            break
+        for msg in messages:
+            # DLQ의 메시지를 메인 큐로 재전송
+            sqs.send_message(QueueUrl=main_queue_url, MessageBody=msg[&#x27;Body&#x27;])
+            sqs.delete_message(QueueUrl=dlq_url, ReceiptHandle=msg[&#x27;ReceiptHandle&#x27;])
+            reprocessed += 1
+    return reprocessed
+
+# 실행 예시
+order = {&#x27;id&#x27;: &#x27;ORD-001&#x27;, &#x27;userId&#x27;: &#x27;USR-123&#x27;, &#x27;amount&#x27;: 59000, &#x27;items&#x27;: [&#x27;item1&#x27;, &#x27;item2&#x27;],
+         &#x27;paymentMethod&#x27;: &#x27;card&#x27;, &#x27;shippingAddress&#x27;: &#x27;서울 강남구&#x27;}
+publish_order_event(order)
+execution_arn = start_order_saga(order[&#x27;id&#x27;], order)
+print(f&#x27;Saga execution: {execution_arn}&#x27;)</code></pre>
+      <div class="c-walk"><p><code>put_events</code>로 EventBridge에 커스텀 이벤트를 발행합니다. <code>FailedEntryCount</code>를 체크하는 것이 중요합니다. Step Functions의 <code>name</code> 파라미터에 주문 ID를 사용하면 중복 실행을 방지합니다. SQS FIFO의 <code>MessageGroupId</code>를 userId로 설정하면 동일 사용자의 알림이 순서대로 처리됩니다. DLQ 재처리 함수는 Long Polling(<code>WaitTimeSeconds=5</code>)으로 빈 응답을 줄입니다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">이벤트 기반 아키텍처는 설계 면접에서 자주 등장합니다. 단순히 SQS를 쓴다는 것보다 언제 SQS vs EventBridge vs Kinesis를 선택하는지, 그리고 이벤트 유실과 중복 처리를 어떻게 다루는지를 봅니다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>Choreography vs Orchestration Saga의 트레이드오프 설명</li><li>At-Least-Once 전달에서 Idempotency 보장 방법</li><li>이벤트 스키마 버전 관리 전략 (EventBridge Schema Registry)</li><li>DLQ 모니터링과 알람 설계</li><li>이벤트 순서 보장이 필요한 상황과 SQS FIFO 적용</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>이벤트 중복 수신(At-Least-Once) 처리 로직 없음 — DB 상태가 망가질 수 있음</li><li>Lambda 함수가 Step Functions 중간 연결자로만 존재 — SDK Integration 미사용</li><li>모든 것에 SNS → SQS 사용 — 순서가 중요한 경우에 표준 큐 사용</li><li>DLQ 없는 큐 설계 — 실패 메시지가 영원히 재시도되거나 소실</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>주문 서비스가 결제 서비스를 직접 호출하는 것과 EventBridge를 통하는 것의 차이점과 각각의 장단점은?</li><li>Step Functions Standard와 Express 워크플로우를 어떤 기준으로 선택하겠습니까?</li><li>Saga 패턴에서 보상 트랜잭션이 실패하면 어떻게 처리해야 하나요?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 단순히 아는 것: SQS로 메시지 큐를 만들고 Lambda로 소비할 수 있다. 마스터리: 주문 처리 시스템에서 재고 감소→결제→배송 요청의 Saga를 Step Functions로 구현하고, 각 단계의 Idempotency Key를 DynamoDB Conditional Put으로 보장하며, 보상 트랜잭션의 멱등성을 검증하고, EventBridge Schema Registry로 이벤트 계약을 팀 간에 공유하는 전체 시스템을 설계할 수 있다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>이벤트 기반 = 느슨한 결합</h3><p>서비스 간 직접 API 호출을 이벤트로 교체하면 배포 독립성·확장성·내결함성이 향상된다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>EventBridge vs SQS vs Kinesis 선택 기준</h3><p>EventBridge: 라우팅·필터링이 핵심. SQS: 큐잉·작업 분산. Kinesis: 순서 보장·실시간 스트리밍.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>Step Functions SDK Integration으로 Lambda 제거</h3><p>Lambda를 중간 연결자로만 쓰는 패턴은 비용과 레이턴시를 증가시킨다. SDK Integration이 더 효율적.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>At-Least-Once → Idempotency 필수</h3><p>모든 메시지 소비자는 같은 메시지를 여러 번 받아도 안전해야 한다. DB Conditional Write가 표준 해결책.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>DLQ는 운영 안전망</h3><p>모든 큐에는 DLQ를 붙이고 CloudWatch 알람을 설정. DLQ가 없으면 실패 메시지가 소실되거나 무한 재시도.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>Saga &gt; 2PC</h3><p>분산 환경에서 2PC는 성능·가용성 문제를 유발. Choreography 또는 Orchestration Saga가 클라우드 표준.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>FIFO 큐는 순서가 비즈니스 규칙인 경우에만</h3><p>처리량 제한(3,000 msg/s)이 있으므로, 순서가 비즈니스적으로 중요한 경우(금융 거래, 상태 변경)에만 사용.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>EventBridge Scheduler로 Lambda 크론 대체</h3><p>EventBridge Scheduler는 수백만 개의 개별 스케줄을 지원. 사용자별 알림, 만료 처리에 적합.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-02.html">← SageMaker — ML Pipeline Mastery</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-04.html">Real-Time Streaming: Kinesis &amp; MSK →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

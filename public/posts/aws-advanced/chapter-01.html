@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch1: ECS &amp; EKS — Container Orchestration — AWS Advanced — direcf</title>
+  <meta name="description" content="Fargate와 EKS를 통해 컨테이너 워크로드를 프로덕션 수준으로 운영하는 법을 배웁니다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/ai-engineering">AWS Advanced</a><span class="sep">›</span>
+        <strong>Ch01 ECS &amp; EKS — Container Orchestration</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 01 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🐳</div>
+      <h1 class="chapter-title">ECS &amp; EKS — Container Orchestration</h1>
+      <div class="chapter-title-kr">ECS &amp; EKS — 컨테이너 오케스트레이션</div>
+      <div class="chapter-tldr">Fargate와 EKS를 통해 컨테이너 워크로드를 프로덕션 수준으로 운영하는 법을 배웁니다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-01.png" alt="Chapter 1 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 1 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>ECS Task Definition과 Service의 구조를 설계할 수 있다</li><li>Fargate와 EC2 launch type의 trade-off를 설명할 수 있다</li><li>EKS 클러스터에 Helm Chart로 애플리케이션을 배포할 수 있다</li><li>Blue/Green 및 Rolling 배포 전략을 실제 서비스에 적용할 수 있다</li><li>컨테이너 스케일링 정책을 비즈니스 메트릭 기반으로 설정할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>컨테이너는 현대 클라우드 아키텍처의 핵심 단위입니다. Amazon ECS와 EKS는 이 컨테이너를 프로덕션 규모로 실행하기 위한 두 가지 주요 오케스트레이션 플랫폼이며, 각각 다른 철학과 운영 모델을 가지고 있습니다.</p>
+<p>Amazon ECS(Elastic Container Service)는 AWS가 완전히 관리하는 컨테이너 오케스트레이터입니다. 제어 영역(Control Plane)이 완전히 추상화되어 있고, Fargate를 사용하면 EC2 인스턴스조차 관리할 필요가 없습니다. 반면 Amazon EKS(Elastic Kubernetes Service)는 오픈소스 Kubernetes 위에 구축된 관리형 서비스로, 방대한 Kubernetes 생태계(Helm, Kustomize, Argo CD 등)를 그대로 활용할 수 있습니다.</p>
+<p>이 챕터에서는 두 서비스의 내부 구조, Fargate의 서버리스 컨테이너 실행 모델, EKS의 노드 그룹과 Helm 배포, 그리고 프로덕션에서 반드시 알아야 할 배포 전략(Blue/Green, Canary)과 오토스케일링 패턴을 심층적으로 다룹니다.</p>
+<p><img alt="Amazon ECS 아키텍처 레이어 다이어그램" src="http://docs.aws.amazon.com/AmazonECS/latest/developerguide/images/ecs-layers.png" />
+<em>이미지 출처: © Amazon Web Services, Inc. — <a href="https://docs.aws.amazon.com/AmazonECS/latest/developerguide/Welcome.html">What is Amazon ECS</a> (교육 목적 인용)</em></p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>ECS 아키텍처: Cluster · Service · Task</h2><p>ECS는 세 개의 핵심 개념으로 구성됩니다. <strong>Cluster</strong>는 컨테이너가 실행되는 인프라 경계입니다. EC2 인스턴스의 집합이거나, Fargate의 경우 논리적 네임스페이스입니다.</p>
+<p><strong>Task Definition</strong>은 컨테이너를 어떻게 실행할지를 정의하는 JSON 청사진입니다. CPU·메모리 할당, 컨테이너 이미지 URI, 환경 변수, IAM Role, 네트워크 모드, 볼륨 마운트, 로깅 설정이 모두 이 안에 들어갑니다. Task Definition은 버전 관리가 되며, <code>my-task:5</code>처럼 revision 번호로 참조합니다.</p>
+<p><strong>Service</strong>는 Task의 원하는 개수(desired count)를 유지하고, ALB와 연동하여 트래픽을 라우팅하는 장기 실행 오케스트레이터입니다. Service가 Task의 상태를 감시하고, 실패한 Task는 자동으로 재시작합니다.</p>
+<p><strong>Task</strong>는 실제로 실행 중인 컨테이너 인스턴스입니다. 하나의 Task 안에 여러 컨테이너가 공존할 수 있으며, 이를 <strong>sidecar 패턴</strong>이라고 합니다. 예를 들어 메인 애플리케이션 컨테이너와 Datadog Agent 컨테이너를 같은 Task에 넣어 메트릭을 수집합니다.</p></div><div class="sb-block"><h2>Fargate: 서버리스 컨테이너의 실체</h2><p><strong>AWS Fargate</strong>는 EC2 인스턴스 없이 컨테이너를 실행하는 서버리스 컴퓨팅 엔진입니다. Fargate를 사용하면 OS 패치, 인스턴스 타입 선택, 클러스터 용량 관리가 모두 AWS 책임이 됩니다.</p>
+<p>Fargate의 격리 모델은 VM 수준입니다. 각 Task는 자체 커널과 네트워크 인터페이스를 가진 격리된 마이크로VM에서 실행됩니다. 이는 EC2 launch type에서 같은 호스트의 여러 Task가 커널을 공유하는 것과 다릅니다. 따라서 Fargate는 보안이 중요한 멀티테넌트 워크로드에 특히 적합합니다.</p>
+<p>비용 모델은 vCPU·시간과 GB·시간 단위입니다. 스팟 인스턴스처럼 Fargate Spot을 사용하면 최대 70%까지 비용을 절감할 수 있으나, 2분 전 알림 후 회수될 수 있으므로 무상태(stateless) 워크로드에만 적합합니다.</p>
+<table>
+<thead>
+<tr>
+<th>비교</th>
+<th>Fargate</th>
+<th>EC2 Launch Type</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>인프라 관리</td>
+<td>AWS 완전 관리</td>
+<td>사용자 관리</td>
+</tr>
+<tr>
+<td>격리 수준</td>
+<td>VM 수준</td>
+<td>프로세스 수준</td>
+</tr>
+<tr>
+<td>비용</td>
+<td>Task 단위 과금</td>
+<td>인스턴스 단위 과금</td>
+</tr>
+<tr>
+<td>최적 워크로드</td>
+<td>가변적 트래픽, 보안</td>
+<td>예측 가능한 대규모 트래픽</td>
+</tr>
+</tbody>
+</table></div><div class="sb-block"><h2>Amazon EKS와 Kubernetes 생태계</h2><p><strong>Amazon EKS(Elastic Kubernetes Service)</strong>는 AWS가 Kubernetes Control Plane(API Server, etcd, Scheduler, Controller Manager)을 관리해주는 서비스입니다. 사용자는 Worker Node(EC2 또는 Fargate)만 관리하면 됩니다.</p>
+<p>EKS의 강점은 표준 Kubernetes API와의 완전한 호환성입니다. <code>kubectl</code>, Helm, Kustomize, Argo CD, Flux 등 모든 Kubernetes 도구가 그대로 동작합니다. 이는 멀티클라우드 전략이나 온프레미스 Kubernetes에서 마이그레이션할 때 큰 장점입니다.</p>
+<p><strong>Managed Node Groups</strong>는 EC2 인스턴스를 Node로 자동 프로비저닝·업데이트·종료하는 기능입니다. Auto Scaling Group 위에 동작하며, <code>kubectl drain</code>을 자동으로 실행하여 안전하게 노드를 교체합니다.</p>
+<p><strong>Karpenter</strong>는 AWS가 개발한 오픈소스 노드 오토스케일러입니다. 기존 Cluster Autoscaler보다 훨씬 빠르게 (수십 초 내) 필요한 인스턴스 타입을 직접 프로비저닝합니다. Spot·On-Demand 혼합 전략을 Provisioner 리소스로 선언적으로 관리할 수 있습니다.</p>
+<p><strong>Helm</strong>은 Kubernetes의 패키지 매니저입니다. Chart는 Kubernetes 리소스 템플릿의 묶음이며, <code>values.yaml</code>로 환경별 설정을 주입합니다. <code>helm upgrade --install</code>로 선언적 배포를 구현합니다.</p></div><div class="sb-block"><h2>배포 전략: Blue/Green · Canary · Rolling</h2><p>프로덕션 배포에서 다운타임 없이 새 버전을 릴리스하는 것은 필수입니다. AWS는 세 가지 주요 배포 전략을 지원합니다.</p>
+<p><strong>Rolling Update</strong>는 Task를 순차적으로 교체합니다. <code>minimumHealthyPercent</code>(최소 유지 비율)와 <code>maximumPercent</code>(최대 Task 수 비율)를 설정하여 속도와 안전성을 균형잡습니다. ECS Service의 기본 배포 전략이며 구성이 간단합니다.</p>
+<p><strong>Blue/Green 배포</strong>는 CodeDeploy와 ECS를 연동하여 구현합니다. 현재 버전(Blue)과 새 버전(Green) 두 개의 Target Group이 존재하고, ALB Listener Rule을 전환하여 트래픽을 이동합니다. 문제가 있으면 Blue로 즉시 롤백할 수 있습니다. EKS에서는 Argo Rollouts가 동일한 기능을 제공합니다.</p>
+<p><strong>Canary 배포</strong>는 새 버전으로 트래픽의 일부(예: 5%)만 먼저 보내어 오류율을 모니터링한 후 점진적으로 100%로 확장합니다. AWS App Mesh 또는 ALB Weighted Target Group으로 구현합니다.</p>
+<blockquote>
+<p><em>"Deployment strategy is risk management. Blue/Green gives you instant rollback; Canary gives you blast radius control."</em>
+— AWS Container Hero, re:Invent 2023</p>
+</blockquote></div><div class="sb-block"><h2>ECR과 이미지 관리 전략</h2><p><strong>Amazon ECR(Elastic Container Registry)</strong>는 AWS의 완전 관리형 Docker 이미지 레지스트리입니다. IAM과 완전히 통합되어 별도의 자격증명 없이 ECS/EKS에서 이미지를 Pull할 수 있습니다.</p>
+<p><strong>ECR 수명 주기 정책(Lifecycle Policy)</strong>은 오래된 이미지를 자동 삭제하여 스토리지 비용을 관리합니다. <code>imageCountMoreThan</code> 규칙으로 태그별 보관 개수를 제한하거나, <code>sinceImagePushed</code>로 일정 기간 이상 된 이미지를 삭제합니다.</p>
+<p><strong>이미지 스캔(Image Scanning)</strong>은 ECR이 제공하는 취약점 스캔 기능입니다. 기본 스캔은 푸시 시점에 CVE 데이터베이스를 검사하며, Enhanced 스캔(Amazon Inspector 연동)은 지속적으로 새 CVE를 모니터링합니다.</p>
+<p><strong>ECR Public</strong>은 퍼블릭 이미지를 무료로 호스팅합니다. 오픈소스 프로젝트나 베이스 이미지 배포에 활용합니다. 프라이빗 레지스트리의 이미지를 ECR에 미러링하여 외부 의존성을 제거하는 것이 프로덕션 모범 사례입니다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">항공사 운항 관제 시스템</div>
+      <div class="a-body"><p>ECS/EKS를 이해하려면 항공사 운항 관제 시스템을 상상해보세요. <strong>Task Definition</strong>은 비행기의 기종 명세서(B737의 좌석 수, 연료 용량, 승무원 구성)입니다. 매번 비행할 때마다 이 명세서를 참고해 비행기를 구성합니다.</p>
+<p><strong>Service</strong>는 관제탑입니다. "서울-도쿄 노선에는 항상 5대가 운항 중이어야 한다"는 목표를 유지하며, 비행기가 결항되면 즉시 대체기를 투입합니다. <strong>Fargate</strong>는 비행기를 빌려주는 회사입니다. 항공사는 비행기를 직접 소유하지 않고 필요할 때만 빌려 씁니다. 정비, 보험, 주기장 걱정이 없죠.</p>
+<p><strong>EKS</strong>는 국제 공항입니다. 세계 어디서든 같은 표준(Kubernetes API)을 사용하므로, A 공항에서 사용하던 관제 시스템을 B 공항에서도 그대로 쓸 수 있습니다. ECS는 국내 전용 공항으로, AWS 방식에 최적화되어 있지만 표준 Kubernetes 도구는 사용할 수 없습니다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>boto3를 사용하여 ECS Fargate Task를 프로그래밍 방식으로 실행하고, EKS 클러스터에 Helm Chart를 배포하는 예제입니다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import boto3
+import subprocess
+import json
+
+ecs = boto3.client(&#x27;ecs&#x27;, region_name=&#x27;ap-northeast-2&#x27;)
+
+# ECS Fargate Task Definition 등록
+task_def = ecs.register_task_definition(
+    family=&#x27;my-web-app&#x27;,
+    networkMode=&#x27;awsvpc&#x27;,
+    requiresCompatibilities=[&#x27;FARGATE&#x27;],
+    cpu=&#x27;512&#x27;,      # 0.5 vCPU
+    memory=&#x27;1024&#x27;,  # 1 GB
+    executionRoleArn=&#x27;arn:aws:iam::123456789:role/ecsTaskExecutionRole&#x27;,
+    taskRoleArn=&#x27;arn:aws:iam::123456789:role/ecsTaskRole&#x27;,
+    containerDefinitions=[
+        {
+            &#x27;name&#x27;: &#x27;web&#x27;,
+            &#x27;image&#x27;: &#x27;123456789.dkr.ecr.ap-northeast-2.amazonaws.com/my-app:v1.2.3&#x27;,
+            &#x27;portMappings&#x27;: [{&#x27;containerPort&#x27;: 8080}],
+            &#x27;environment&#x27;: [
+                {&#x27;name&#x27;: &#x27;ENV&#x27;, &#x27;value&#x27;: &#x27;production&#x27;}
+            ],
+            &#x27;logConfiguration&#x27;: {
+                &#x27;logDriver&#x27;: &#x27;awslogs&#x27;,
+                &#x27;options&#x27;: {
+                    &#x27;awslogs-group&#x27;: &#x27;/ecs/my-web-app&#x27;,
+                    &#x27;awslogs-region&#x27;: &#x27;ap-northeast-2&#x27;,
+                    &#x27;awslogs-stream-prefix&#x27;: &#x27;ecs&#x27;
+                }
+            },
+            &#x27;healthCheck&#x27;: {
+                &#x27;command&#x27;: [&#x27;CMD-SHELL&#x27;, &#x27;curl -f http://localhost:8080/health || exit 1&#x27;],
+                &#x27;interval&#x27;: 30,
+                &#x27;timeout&#x27;: 5,
+                &#x27;retries&#x27;: 3
+            }
+        }
+    ]
+)
+
+task_def_arn = task_def[&#x27;taskDefinition&#x27;][&#x27;taskDefinitionArn&#x27;]
+print(f&#x27;Task Definition: {task_def_arn}&#x27;)
+
+# ECS Service 업데이트 (새 Task Definition으로 Rolling 배포)
+response = ecs.update_service(
+    cluster=&#x27;production-cluster&#x27;,
+    service=&#x27;my-web-app-service&#x27;,
+    taskDefinition=task_def_arn,
+    deploymentConfiguration={
+        &#x27;minimumHealthyPercent&#x27;: 100,  # 다운타임 없는 배포
+        &#x27;maximumPercent&#x27;: 200
+    }
+)
+print(f&quot;Deployment started: {response[&#x27;service&#x27;][&#x27;deployments&#x27;][0][&#x27;id&#x27;]}&quot;)
+
+# EKS에 Helm Chart 배포 (kubectl/helm은 subprocess로 호출)
+def deploy_helm_chart(cluster_name: str, chart: str, release: str, values: dict):
+    # kubeconfig 업데이트
+    subprocess.run([
+        &#x27;aws&#x27;, &#x27;eks&#x27;, &#x27;update-kubeconfig&#x27;,
+        &#x27;--name&#x27;, cluster_name,
+        &#x27;--region&#x27;, &#x27;ap-northeast-2&#x27;
+    ], check=True)
+
+    # values를 임시 파일로 저장 후 helm upgrade
+    values_json = json.dumps(values)
+    result = subprocess.run([
+        &#x27;helm&#x27;, &#x27;upgrade&#x27;, &#x27;--install&#x27;, release, chart,
+        &#x27;--set-json&#x27;, f&#x27;app={values_json}&#x27;,
+        &#x27;--namespace&#x27;, &#x27;production&#x27;,
+        &#x27;--wait&#x27;, &#x27;--timeout&#x27;, &#x27;5m&#x27;
+    ], capture_output=True, text=True)
+
+    if result.returncode != 0:
+        raise RuntimeError(f&#x27;Helm deploy failed: {result.stderr}&#x27;)
+    print(f&#x27;Helm release {release} deployed successfully&#x27;)
+
+deploy_helm_chart(
+    cluster_name=&#x27;my-eks-cluster&#x27;,
+    chart=&#x27;./charts/my-app&#x27;,
+    release=&#x27;my-app-prod&#x27;,
+    values={&#x27;image&#x27;: {&#x27;tag&#x27;: &#x27;v1.2.3&#x27;}, &#x27;replicas&#x27;: 3}
+)</code></pre>
+      <div class="c-walk"><p><code>register_task_definition</code>으로 Task 명세를 버전 관리합니다. <code>awsvpc</code> 네트워크 모드는 Fargate 필수이며 각 Task에 독립 ENI를 부여합니다. <code>logConfiguration</code>으로 CloudWatch Logs에 자동 전송합니다. <code>update_service</code>의 <code>minimumHealthyPercent: 100</code>은 기존 Task가 모두 유지된 상태에서 새 Task가 추가되는 다운타임 제로 롤링 배포를 보장합니다. EKS 배포는 <code>aws eks update-kubeconfig</code>로 로컬 kubeconfig를 갱신 후 <code>helm upgrade --install</code>로 선언적 배포를 수행합니다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">시니어 엔지니어들은 ECS/EKS 선택의 근거, 배포 전략 설계 능력, 컨테이너 스케일링과 비용 최적화 경험을 봅니다. 단순히 도구를 알고 있는지가 아니라 트레이드오프를 설명할 수 있는지를 검증합니다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>ECS vs EKS 선택 근거를 팀 규모, 운영 부담, 생태계 요구사항으로 설명</li><li>Task Definition 버전 관리와 롤백 전략</li><li>Fargate Spot을 활용한 비용 최적화</li><li>컨테이너 헬스체크와 Service 장애 복구 메커니즘</li><li>ECR 취약점 스캔 파이프라인 통합</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>&quot;Kubernetes가 ECS보다 무조건 낫다&quot;는 단순한 답변 — 운영 복잡성을 고려하지 않음</li><li>배포 전략 없이 always latest 태그 사용</li><li>CPU/메모리 limit을 request와 동일하게 설정하여 스케일링 여지 없앰</li><li>IAM Task Role과 Execution Role의 차이를 모름</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>ECS Service의 deploymentConfiguration 설정이 배포 속도와 가용성에 어떤 영향을 미치나요?</li><li>EKS에서 HPA(Horizontal Pod Autoscaler)와 Karpenter가 어떻게 협력하여 스케일링을 처리하는지 설명해주세요.</li><li>동일한 ECS 클러스터에서 On-Demand와 Spot Fargate를 혼합 운영할 때 주의할 점은 무엇인가요?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 단순히 아는 것: ECS Service를 만들고 Task를 실행할 수 있다. 마스터리: 트래픽 패턴에 따라 ECS Application Auto Scaling의 Target Tracking 정책(ALBRequestCountPerTarget)을 설계하고, Fargate Spot 인터럽션에 대비한 graceful shutdown(SIGTERM 처리)을 구현하며, EKS에서 PodDisruptionBudget으로 롤링 업데이트 중 가용성을 보장하는 전체 흐름을 설계할 수 있다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>ECS는 단순함, EKS는 생태계</h3><p>ECS는 관리 부담이 적고 AWS 서비스와 통합이 자연스럽다. EKS는 Kubernetes 표준 도구를 그대로 사용할 수 있어 멀티클라우드·대규모 팀에 적합하다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>Fargate = 서버리스 컨테이너</h3><p>EC2 없이 Task 단위 과금. VM 수준 격리로 보안이 강하며, Fargate Spot으로 비용을 70%까지 절감할 수 있다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>Task Definition은 버전 관리가 핵심</h3><p>새 배포는 항상 새 revision으로. 이전 revision으로 Service를 업데이트하면 즉시 롤백 가능.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>Blue/Green이 롤백 속도를 결정</h3><p>CodeDeploy + ECS Blue/Green은 트래픽 전환이 초 단위. 문제 발견 즉시 원클릭 롤백.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>Karpenter로 노드 스케일링 혁신</h3><p>기존 Cluster Autoscaler 대비 60% 이상 빠른 노드 프로비저닝. Spot 혼합 전략도 선언적 관리.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>ECR 수명 주기 정책 필수</h3><p>오래된 이미지 자동 삭제 없이는 ECR 스토리지 비용이 지속 증가. 환경별 정책을 반드시 설정.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>IAM Role 분리: Task Role vs Execution Role</h3><p>Execution Role은 ECR Pull·CloudWatch 로그 권한. Task Role은 애플리케이션이 사용하는 AWS API 권한. 절대 혼용하지 말 것.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>sidecar 패턴으로 Cross-Cutting Concerns 분리</h3><p>Datadog Agent, AWS X-Ray Daemon, Envoy Proxy를 sidecar로 운영하면 메인 앱 코드를 건드리지 않고 관찰 가능성·서비스 메시를 추가할 수 있다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <span></span>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-02.html">SageMaker — ML Pipeline Mastery →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch5: Data Lake &amp; Analytics — AWS Advanced — direcf</title>
+  <meta name="description" content="Glue ETL, Athena, Lake Formation, Redshift로 엑사바이트 규모의 데이터 레이크를 구축하고 SQL로 분석합니다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/ai-engineering">AWS Advanced</a><span class="sep">›</span>
+        <strong>Ch05 Data Lake &amp; Analytics</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 05 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🏞️</div>
+      <h1 class="chapter-title">Data Lake &amp; Analytics</h1>
+      <div class="chapter-title-kr">데이터 레이크 &amp; 분석</div>
+      <div class="chapter-tldr">Glue ETL, Athena, Lake Formation, Redshift로 엑사바이트 규모의 데이터 레이크를 구축하고 SQL로 분석합니다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-05.png" alt="Chapter 5 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 5 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>Glue Crawler와 ETL Job으로 데이터 파이프라인을 자동화할 수 있다</li><li>Athena 쿼리를 파티셔닝과 Parquet 컬럼 형식으로 최적화할 수 있다</li><li>Lake Formation으로 행·열 수준의 데이터 접근 제어를 설계할 수 있다</li><li>Redshift Spectrum으로 S3 데이터를 Redshift에서 직접 쿼리할 수 있다</li><li>데이터 레이크 레이어(Raw/Refined/Curated)를 설계할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>조직의 데이터는 RDB, SaaS 애플리케이션, IoT 기기, 로그 파일 등 다양한 소스에서 다양한 형식으로 생성됩니다. 이 모든 데이터를 하나의 중앙 저장소에 모아두고 필요할 때 분석할 수 있는 구조가 <strong>데이터 레이크(Data Lake)</strong>입니다.</p>
+<p>AWS 데이터 레이크의 중심은 <strong>Amazon S3</strong>입니다. S3는 비용이 저렴하고 거의 무한한 용량을 제공하며, 다양한 파일 형식(CSV, JSON, Parquet, ORC)을 저장합니다. 하지만 S3 자체는 데이터를 정리하고 접근을 제어하고 쿼리를 최적화하는 기능이 없습니다. 이를 위해 <strong>AWS Glue</strong>(ETL·카탈로그), <strong>Amazon Athena</strong>(서버리스 SQL), <strong>AWS Lake Formation</strong>(거버넌스), <strong>Amazon Redshift</strong>(DW 분석)가 조합됩니다.</p>
+<p>이 챕터에서는 데이터 레이크의 계층적 설계(Raw → Refined → Curated), 각 서비스의 역할, 그리고 프로덕션 규모의 데이터 레이크를 안전하고 비용 효율적으로 운영하는 패턴을 다룹니다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>데이터 레이크 아키텍처: 3-Tier 레이어 설계</h2><p>프로덕션 데이터 레이크는 데이터 처리 단계에 따라 세 개의 S3 레이어로 구성됩니다.</p>
+<p><strong>Raw (Bronze) Layer</strong>: 소스 시스템에서 수집된 원본 데이터를 그대로 저장합니다. 절대로 수정하지 않습니다. 데이터 유실 방지를 위한 근원지로, 모든 데이터는 여기서 시작합니다.</p>
+<p><strong>Refined (Silver) Layer</strong>: Raw 데이터를 정제·변환한 데이터입니다. PII 마스킹, 스키마 정규화, 중복 제거, 타입 변환이 이루어집니다. Parquet 형식으로 변환하고 파티셔닝을 적용합니다.</p>
+<p><strong>Curated (Gold) Layer</strong>: 비즈니스 도메인별로 집계·변환한 분석용 데이터입니다. 데이터 마트(Data Mart) 개념으로, 특정 비즈니스 질문에 최적화된 형태입니다.</p>
+<p>각 레이어 간 데이터 이동은 AWS Glue ETL Job이 담당합니다. S3 버킷 이벤트 → EventBridge → Glue Job 트리거로 데이터 수집부터 변환까지 자동화합니다.</p></div><div class="sb-block"><h2>AWS Glue: 서버리스 ETL</h2><p><strong>AWS Glue</strong>는 ETL(Extract, Transform, Load) 작업을 위한 서버리스 데이터 통합 서비스입니다.</p>
+<p><strong>Glue Data Catalog</strong>는 데이터 메타데이터(스키마, 파티션, 위치)를 중앙 관리하는 메타스토어입니다. Athena, Redshift Spectrum, EMR이 모두 Glue Catalog를 공유합니다. S3의 Parquet 파일 구조가 자동으로 테이블로 등록됩니다.</p>
+<p><strong>Glue Crawler</strong>는 S3 데이터를 자동으로 스캔하여 스키마를 추론하고 Data Catalog에 테이블을 생성합니다. 새 파티션을 자동으로 감지합니다.</p>
+<p><strong>Glue ETL Job</strong>은 PySpark 또는 Python Shell로 작성한 변환 로직을 서버리스 Spark 클러스터에서 실행합니다. DPU(Data Processing Unit)를 기반으로 과금하며, Glue Studio의 비주얼 편집기로 코드 없이 ETL을 구성할 수 있습니다.</p>
+<p><strong>Glue DataBrew</strong>는 데이터 분석가가 코드 없이 데이터를 프로파일링하고 변환할 수 있는 노코드 ETL 도구입니다.</p></div><div class="sb-block"><h2>Amazon Athena: 서버리스 SQL 엔진</h2><p><strong>Amazon Athena</strong>는 S3에 저장된 데이터를 표준 SQL로 쿼리하는 서버리스 분석 엔진입니다. 인프라 없이 사용하고 스캔한 데이터 양만 과금($5/TB)합니다.</p>
+<p><strong>쿼리 비용 최적화</strong>는 데이터 형식과 파티셔닝으로 달성합니다.</p>
+<ul>
+<li><strong>Parquet/ORC</strong>: 컬럼 형식이므로 필요한 컬럼만 읽어 스캔 비용이 90% 이상 감소</li>
+<li><strong>파티셔닝</strong>: <code>WHERE year=2026 AND month=06</code>처럼 필터링하면 해당 파티션만 스캔</li>
+<li><strong>압축</strong>: Snappy, ZSTD 압축으로 파일 크기를 줄여 스캔량 감소</li>
+<li><strong>Iceberg Table</strong>: ACID 트랜잭션, 타임 트래블, 스키마 진화를 지원하는 오픈 테이블 형식</li>
+</ul>
+<p><strong>Athena Federated Query</strong>는 S3 외에 DynamoDB, RDS, Redshift 등 다른 데이터 소스에도 SQL로 쿼리할 수 있습니다. Lambda Connector가 각 데이터 소스를 Athena에 연결합니다.</p>
+<p><strong>Workgroup</strong>은 쿼리별 결과 위치, 최대 스캔 비용 한도, 암호화 설정을 팀/프로젝트별로 분리합니다.</p></div><div class="sb-block"><h2>AWS Lake Formation: 데이터 거버넌스</h2><p><strong>AWS Lake Formation</strong>은 데이터 레이크의 접근 제어를 중앙 관리하는 거버넌스 서비스입니다. S3 버킷 정책과 IAM만으로는 행·열 수준의 세밀한 제어가 불가능하지만, Lake Formation은 이를 가능하게 합니다.</p>
+<p><strong>데이터 권한 모델</strong>: Lake Formation에서 테이블, 컬럼, 행 수준의 접근 권한을 설정하면, Athena·Glue·EMR이 이 권한을 자동으로 준수합니다. IAM과 별개로 Lake Formation 권한이 동시에 적용됩니다.</p>
+<p><strong>행 수준 보안(Row-Level Security)</strong>: <code>WHERE user_region = current_user_region</code> 같은 필터를 Lake Formation에 설정하면 쿼리 시 자동으로 적용됩니다.</p>
+<p><strong>컬럼 수준 보안</strong>: 특정 역할에 민감한 컬럼(SSN, 신용카드 번호)을 숨기거나 마스킹합니다.</p>
+<p><strong>Cross-Account 접근</strong>: Lake Formation RAM(Resource Access Manager) 통합으로 다른 AWS 계정의 데이터 레이크에 안전하게 접근할 수 있습니다.</p></div><div class="sb-block"><h2>Amazon Redshift: 클라우드 데이터 웨어하우스</h2><p><strong>Amazon Redshift</strong>는 페타바이트 규모의 데이터를 분석하는 완전 관리형 컬럼 기반 데이터 웨어하우스입니다. 표준 SQL을 지원하며 BI 도구(QuickSight, Tableau, Looker)와 통합됩니다.</p>
+<p><strong>Redshift Spectrum</strong>은 Redshift 클러스터가 S3의 데이터를 외부 테이블로 직접 쿼리하는 기능입니다. 데이터를 Redshift로 로드하지 않고도 S3 데이터 레이크와 Redshift 내부 테이블을 조인하여 쿼리합니다.</p>
+<p><strong>Redshift Serverless</strong>는 클러스터 없이 Redshift를 사용합니다. RPU(Redshift Processing Unit) 기반 과금으로 간헐적 쿼리 워크로드에 적합합니다.</p>
+<p><strong>배포 전략</strong>: 대용량 JOIN 키 기준으로 <strong>Distribution Key</strong>를 설정하여 데이터를 노드 간 균등 분산합니다. 작은 차원 테이블은 <strong>ALL 배포</strong>로 모든 노드에 복사합니다. <strong>Sort Key</strong>는 쿼리 필터에 자주 사용되는 컬럼으로 설정하여 구역 맵(zone map) 기반 스캔 최소화를 달성합니다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">도서관 운영 시스템</div>
+      <div class="a-body"><p>데이터 레이크를 도서관에 비유해봅시다. <strong>S3 Raw Layer</strong>는 출판사에서 납품된 책들을 그대로 쌓아두는 창고입니다. <strong>Refined Layer</strong>는 사서가 책을 분류하고 ISBN을 붙여 정리한 서가입니다. <strong>Curated Layer</strong>는 특정 주제(역사, 과학)별로 큐레이션된 전문 열람실입니다.</p>
+<p><strong>AWS Glue</strong>는 책의 목차와 저자 정보를 스캔하여 카탈로그 카드(Data Catalog)를 만드는 사서입니다. <strong>Athena</strong>는 도서관 검색 단말기입니다. 어떤 책이 어디 있는지 몰라도 "2025년 출간된 한국 역사책"이라는 조건으로 검색하면 즉시 해당 책을 찾아줍니다.</p>
+<p><strong>Lake Formation</strong>은 열람 권한 시스템입니다. 일반 회원은 일반 서가만, 연구원은 특수 자료실까지 접근할 수 있습니다. <strong>Redshift</strong>는 사서가 미리 분석해둔 "통계 연보"입니다. 원본 책을 매번 찾아 분석하는 것보다 훨씬 빠르게 답을 얻을 수 있습니다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>Glue ETL Job으로 S3의 JSON 데이터를 Parquet으로 변환하고, Athena로 최적화된 쿼리를 실행하는 패턴입니다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import boto3
+import awswrangler as wr
+import pandas as pd
+from datetime import datetime
+
+s3 = boto3.client(&#x27;s3&#x27;)
+glue = boto3.client(&#x27;glue&#x27;, region_name=&#x27;ap-northeast-2&#x27;)
+athena = boto3.client(&#x27;athena&#x27;, region_name=&#x27;ap-northeast-2&#x27;)
+
+# 1. AWS Wrangler로 S3 JSON → Parquet 변환 및 Glue Catalog 자동 업데이트
+def transform_to_parquet(
+    source_s3_path: str,
+    database: str,
+    table: str,
+    partition_cols: list[str]
+) -&gt; None:
+    # JSON 데이터를 pandas DataFrame으로 읽기
+    df = wr.s3.read_json(path=source_s3_path)
+
+    # 데이터 정제
+    df[&#x27;event_time&#x27;] = pd.to_datetime(df[&#x27;event_time&#x27;])
+    df[&#x27;year&#x27;] = df[&#x27;event_time&#x27;].dt.year
+    df[&#x27;month&#x27;] = df[&#x27;event_time&#x27;].dt.month
+    df[&#x27;day&#x27;] = df[&#x27;event_time&#x27;].dt.day
+    df = df.drop_duplicates(subset=[&#x27;event_id&#x27;])  # 중복 제거
+
+    # Parquet으로 S3에 저장 + Glue Catalog 자동 등록
+    result = wr.s3.to_parquet(
+        df=df,
+        path=f&#x27;s3://my-datalake/refined/{table}/&#x27;,
+        partition_cols=partition_cols,  # [&#x27;year&#x27;, &#x27;month&#x27;, &#x27;day&#x27;]
+        dataset=True,
+        database=database,
+        table=table,
+        compression=&#x27;snappy&#x27;,  # 쿼리 비용 절감
+        mode=&#x27;append&#x27;
+    )
+    print(f&#x27;Written {len(df)} rows: {result}&#x27;)
+
+# 2. Athena 쿼리 실행 및 결과 반환
+def run_athena_query(query: str, database: str) -&gt; pd.DataFrame:
+    result = wr.athena.read_sql_query(
+        sql=query,
+        database=database,
+        ctas_approach=True,  # CTAS로 대용량 결과 처리 최적화
+        s3_output=&#x27;s3://my-datalake/athena-results/&#x27;,
+        workgroup=&#x27;data-team&#x27;
+    )
+    return result
+
+# 3. Glue Crawler 실행 (신규 파티션 자동 감지)
+def run_crawler(crawler_name: str) -&gt; None:
+    glue.start_crawler(Name=crawler_name)
+    print(f&#x27;Crawler {crawler_name} started&#x27;)
+
+# 실행 예시
+transform_to_parquet(
+    source_s3_path=&#x27;s3://my-datalake/raw/events/2026/06/&#x27;,
+    database=&#x27;my_database&#x27;,
+    table=&#x27;user_events&#x27;,
+    partition_cols=[&#x27;year&#x27;, &#x27;month&#x27;, &#x27;day&#x27;]
+)
+
+# 파티션 필터를 활용한 비용 최적화 쿼리
+df = run_athena_query(
+    query=&quot;&quot;&quot;SELECT user_id, COUNT(*) AS clicks FROM user_events
+             WHERE year=2026 AND month=6 AND event_type=&#x27;click&#x27;
+             GROUP BY user_id ORDER BY clicks DESC LIMIT 100&quot;&quot;&quot;,
+    database=&#x27;my_database&#x27;
+)
+print(df.head())</code></pre>
+      <div class="c-walk"><p><code>awswrangler</code>(AWS SDK for Pandas)는 Glue Catalog와 Athena를 pandas 인터페이스로 사용하는 라이브러리입니다. <code>to_parquet</code>의 <code>dataset=True</code> 옵션이 Glue Catalog를 자동 업데이트합니다. <code>partition_cols=['year','month','day']</code>는 Athena 쿼리 시 날짜 필터로 스캔 범위를 극적으로 줄입니다. <code>ctas_approach=True</code>는 쿼리 결과를 CTAS(Create Table As Select)로 처리하여 대용량 결과를 효율적으로 반환합니다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">데이터 엔지니어링 면접에서는 데이터 레이크 설계의 실용성을 봅니다. Parquet 파티셔닝 전략, 비용 최적화, 거버넌스, 그리고 스트리밍과 배치를 어떻게 통합하는지가 핵심입니다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>파티셔닝 전략과 Athena 쿼리 비용 절감 수치 제시</li><li>Glue Catalog와 Lake Formation의 역할 구분</li><li>데이터 레이크 레이어(Raw/Refined/Curated) 설계 근거</li><li>Redshift vs Athena 선택 기준 (빈도, 복잡도, 비용)</li><li>데이터 품질 검증(Great Expectations, Deequ) 파이프라인 통합</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>모든 데이터를 Raw 레이어에서 직접 쿼리 — 변환 없는 데이터 레이크는 &#x27;데이터 늪(Data Swamp)&#x27;</li><li>S3에 CSV로만 저장 — Parquet 대비 10배 이상 비용 차이</li><li>파티셔닝 없는 대용량 테이블 — Athena 쿼리가 전체 데이터를 스캔</li><li>Lake Formation 없이 S3 버킷 정책으로만 접근 제어 — 컬럼·행 수준 보안 불가</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>100TB의 S3 데이터에 Athena로 쿼리할 때 비용을 최소화하는 설계를 설명해주세요.</li><li>Redshift와 Athena를 같은 조직에서 함께 사용하는 이유는 무엇인가요?</li><li>데이터 레이크에서 PII 데이터를 안전하게 관리하는 방법을 설계해주세요.</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 단순히 아는 것: S3에 데이터를 저장하고 Athena로 쿼리할 수 있다. 마스터리: 데이터 소스별 수집 전략(Firehose·Glue·DMS)을 설계하고, 3-tier 레이크 구조로 데이터 품질을 보장하며, Lake Formation으로 팀별 컬럼 수준 접근 제어를 구현하고, Iceberg 테이블로 ACID 트랜잭션과 타임 트래블을 지원하며, 비용 모니터링 대시보드(Cost Explorer + S3 스토리지 렌즈)까지 갖춘 엔터프라이즈 데이터 플랫폼을 설계할 수 있다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>Raw → Refined → Curated 3-Tier가 표준</h3><p>Raw는 절대 수정 금지. 각 레이어는 목적이 다르므로 별도 버킷 또는 S3 prefix로 분리.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>Parquet + 파티셔닝 = Athena 비용 90% 절감</h3><p>CSV → Parquet 전환만으로도 스캔 비용이 5-10배 감소. year/month/day 파티셔닝은 필수.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>Glue Data Catalog가 모든 서비스의 메타스토어</h3><p>Athena, Redshift Spectrum, EMR이 같은 카탈로그 공유. 한 번만 정의하면 모든 서비스에서 사용.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>Lake Formation = 행·열 수준 접근 제어</h3><p>S3 버킷 정책으로는 불가능한 세밀한 보안. GDPR·HIPAA 대응의 핵심 도구.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>Athena는 ad-hoc, Redshift는 반복 복잡 쿼리</h3><p>간헐적 탐색 쿼리는 Athena(스캔당 과금). 정규 리포트·복잡 조인은 Redshift(클러스터 고정 비용).</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>Redshift Spectrum으로 DW와 Data Lake 통합</h3><p>Redshift에 모든 데이터를 로드하지 않고, S3의 대용량 히스토리 데이터를 외부 테이블로 직접 조인.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>Iceberg로 데이터 레이크를 ACID로</h3><p>Update/Delete/Time-travel을 S3에서 지원. 규정 준수(Right to Erasure)와 데이터 수정이 필요한 경우 필수.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>AWS Wrangler(awswrangler)로 개발 생산성 향상</h3><p>boto3의 저수준 API 대신 pandas 친화적 인터페이스로 Athena·Glue·S3를 쉽게 연동.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-04.html">← Real-Time Streaming: Kinesis &amp; MSK</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-06.html">Security Deep Dive →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>
