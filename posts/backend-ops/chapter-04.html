@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch4: REST API Design with FastAPI — Backend &amp; Ops for AI Engineers — direcf</title>
+  <meta name="description" content="Pydantic으로 데이터 검증을 자동화하고, FastAPI로 프로덕션 수준의 REST API를 빠르게 구축하는 방법을 배운다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item active" href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/computer-science">Backend &amp; Ops for AI Engineers</a><span class="sep">›</span>
+        <strong>Ch04 REST API Design with FastAPI</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 04 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🔧</div>
+      <h1 class="chapter-title">REST API Design with FastAPI</h1>
+      <div class="chapter-title-kr">FastAPI로 REST API 설계하기</div>
+      <div class="chapter-tldr">Pydantic으로 데이터 검증을 자동화하고, FastAPI로 프로덕션 수준의 REST API를 빠르게 구축하는 방법을 배운다.</div>
+
+      <div class="cs-wrap">
+        <object data="cheatsheets/chapter-04.svg" type="image/svg+xml" style="max-width:min(560px,100%);margin:0 auto;border-radius:12px;"></object>
+        <div class="cs-label">🍌 Nano Banana — Chapter 4 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>REST API URL 설계 원칙(리소스 명명, 버전 관리)을 따를 수 있다</li><li>FastAPI로 CRUD 엔드포인트를 구현하고 자동 문서를 생성할 수 있다</li><li>Pydantic 모델로 요청/응답 스키마를 정의하고 유효성 검사를 자동화할 수 있다</li><li>의존성 주입으로 DB 연결, 인증, 공통 로직을 재사용할 수 있다</li><li>비동기 엔드포인트로 AI 모델 추론을 효율적으로 처리할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>API(Application Programming Interface)는 서로 다른 소프트웨어 시스템이 통신하는 계약서입니다. AI 모델을 서비스로 만들려면 모델을 감싸는 API가 필요합니다. 이 챕터에서는 현재 파이썬 생태계에서 가장 인기 있는 API 프레임워크인 FastAPI를 사용해 프로덕션 수준의 REST API를 설계하고 구현하는 방법을 배웁니다.</p>
+<p>FastAPI는 2018년에 등장했지만 빠르게 Django, Flask를 제치고 파이썬 웹 프레임워크의 1위 자리에 올랐습니다. 성능(Starlette 기반 ASGI), 개발 생산성(자동 문서화, 타입 힌트), 그리고 AI/ML 워크로드 친화성이 이유입니다. Netflix, Uber, Microsoft가 내부 AI 서비스에 FastAPI를 사용합니다.</p>
+<p>REST(Representational State Transfer)는 웹 API 설계 스타일입니다. 엄격한 규격이 아니라 6가지 원칙을 따르는 아키텍처 스타일입니다. 가장 중요한 원칙은 <strong>무상태성(Stateless)</strong> — 서버가 클라이언트의 상태를 기억하지 않고, 모든 요청이 독립적으로 처리되어야 한다는 것입니다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>REST URL 설계 원칙</h2><p>좋은 REST API URL은 <strong>리소스(명사)</strong> 를 중심으로 설계합니다. 행위는 HTTP 메서드로 표현합니다.</p>
+<p>나쁜 URL 설계:</p>
+<pre><code>GET  /getUser?id=123
+POST /createModel
+GET  /deleteExperiment?id=456
+</code></pre>
+<p>좋은 URL 설계:</p>
+<pre><code>GET    /users/123
+POST   /models
+DELETE /experiments/456
+</code></pre>
+<p><strong>복수형 명사</strong> 를 사용합니다. <code>/user</code>가 아니라 <code>/users</code>. 컬렉션은 복수형, 단일 리소스는 ID로 식별합니다.</p>
+<p><strong>계층 관계</strong> 는 URL 경로로 표현합니다. <code>/users/123/experiments</code>는 "사용자 123의 실험들"입니다. 단, 3레벨 이상 중첩은 복잡해지니 <code>/experiments?user_id=123</code>으로 평탄화하는 것을 고려합니다.</p>
+<p><strong>API 버전 관리</strong> 는 URL에 포함합니다. <code>/api/v1/models</code>. v1이 변경되어도 기존 클라이언트는 영향을 받지 않습니다.</p></div><div class="sb-block"><h2>FastAPI 핵심: 타입 힌트로 모든 것을</h2><p>FastAPI의 핵심 철학은 <strong>파이썬 타입 힌트가 곧 API 계약이다</strong> 입니다. 함수 시그니처에 타입을 명시하면 FastAPI가 자동으로 요청 파싱, 유효성 검사, 직렬화, OpenAPI 문서를 생성합니다.</p>
+<p>경로 매개변수(<code>path parameter</code>)는 URL의 <code>{param}</code> 부분입니다. <code>def get_model(model_id: int)</code> 처럼 정의하면 FastAPI가 문자열 <code>"123"</code>을 정수 <code>123</code>으로 변환합니다. 타입이 맞지 않으면 자동으로 <code>422 Unprocessable Entity</code>를 반환합니다.</p>
+<p>쿼리 매개변수(<code>query parameter</code>)는 URL의 <code>?key=value</code> 부분입니다. 함수 파라미터 중 경로 매개변수가 아닌 것은 자동으로 쿼리 파라미터가 됩니다. <code>Optional[str] = None</code>으로 선택적 파라미터를 만들 수 있습니다.</p>
+<p><strong>Pydantic 모델</strong> 은 요청/응답 바디의 스키마를 정의합니다. <code>BaseModel</code>을 상속하고 필드를 타입 힌트로 정의하면 됩니다. 중첩 모델, 기본값, 유효성 검사기를 지원합니다.</p>
+<p><code>/docs</code> 엔드포인트에 자동으로 Swagger UI가 생성되고, <code>/openapi.json</code>으로 OpenAPI 스펙을 내보낼 수 있습니다.</p></div><div class="sb-block"><h2>의존성 주입: 코드 재사용의 핵심</h2><p>의존성 주입(Dependency Injection, DI)은 함수가 필요한 것을 직접 만드는 것이 아니라 외부에서 받는 패턴입니다. FastAPI의 <code>Depends</code>가 이를 우아하게 구현합니다.</p>
+<p>가장 흔한 DI 사용 사례는 세 가지입니다.</p>
+<p><strong>데이터베이스 세션</strong>: 요청마다 DB 연결을 열고 끝나면 닫는 로직을 <code>Depends(get_db_session)</code>으로 모든 엔드포인트에서 재사용합니다.</p>
+<p><strong>인증</strong>: <code>Depends(get_current_user)</code>로 모든 엔드포인트에서 JWT 토큰 검증과 사용자 조회를 공통 처리합니다. 특정 엔드포인트만 관리자 권한을 요구할 때는 <code>Depends(require_admin)</code>을 추가합니다.</p>
+<p><strong>공통 쿼리 파라미터</strong>: 페이지네이션(<code>offset</code>, <code>limit</code>)처럼 여러 엔드포인트에서 공통으로 쓰는 파라미터를 <code>Depends(PaginationParams)</code>로 묶습니다.</p>
+<p>DI는 테스트를 용이하게 합니다. 테스트 시 실제 DB 대신 모의(mock) DB를 주입할 수 있습니다.</p></div><div class="sb-block"><h2>미들웨어와 에러 핸들링</h2><p>미들웨어는 모든 요청-응답 사이클에 끼어드는 코드입니다. 인증 확인, 로깅, CORS 처리, 응답 시간 측정 등에 사용됩니다.</p>
+<p>FastAPI에서 미들웨어는 <code>@app.middleware("http")</code> 데코레이터로 정의합니다. 요청이 들어오면 처리 전 코드를 실행하고, <code>await call_next(request)</code>로 실제 핸들러를 호출한 뒤, 응답이 나오면 처리 후 코드를 실행합니다.</p>
+<p><strong>전역 에러 핸들러</strong> 는 <code>@app.exception_handler</code>로 특정 예외를 HTTP 응답으로 변환합니다. 코드 곳곳에 <code>try-except</code>를 넣는 대신, 비즈니스 예외를 던지고 최상위에서 한 번에 처리합니다. <code>HTTPException</code>은 FastAPI가 자동으로 처리하므로, 커스텀 예외만 핸들러를 등록합니다.</p>
+<p><strong>응답 모델</strong> (<code>response_model=</code>)은 응답에서 특정 필드만 노출하는 역할을 합니다. 데이터베이스 모델에 <code>hashed_password</code>가 있어도, 응답 모델에 포함되지 않으면 절대 노출되지 않습니다. 보안의 핵심 패턴입니다.</p></div><div class="sb-block"><h2>백그라운드 태스크와 비동기 처리</h2><p>AI API에서 자주 만나는 패턴은 즉시 응답하고 처리를 백그라운드에서 하는 것입니다. 대규모 문서 분석, 배치 추론, 이메일 발송 등이 해당됩니다.</p>
+<p>FastAPI의 <code>BackgroundTasks</code>는 응답을 먼저 보낸 뒤 함수를 비동기로 실행합니다. 단순한 경우에 적합하지만, 서버가 재시작되면 실행 중인 태스크가 유실될 수 있습니다. 프로덕션에서는 Celery + Redis 또는 ARQ 같은 분산 태스크 큐를 사용합니다.</p>
+<p><strong>비동기 엔드포인트</strong> (<code>async def</code>)는 FastAPI에서 기본이지만 주의할 점이 있습니다. <code>async def</code> 함수 안에서 동기 블로킹 코드(일반 DB 드라이버, <code>requests</code> 라이브러리, 무거운 CPU 작업)를 실행하면 이벤트 루프 전체가 블로킹됩니다. CPU 집약적 작업은 <code>asyncio.run_in_executor</code>로 스레드풀에서 실행해야 합니다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">레스토랑 주방 시스템</div>
+      <div class="a-body"><p>FastAPI의 의존성 주입과 미들웨어를 레스토랑으로 이해해봅시다. 각 테이블(HTTP 요청)이 들어오면 웨이터(FastAPI 라우터)가 주문을 받습니다. 메뉴판(OpenAPI 스펙)은 자동으로 생성됩니다.</p>
+<p>의존성 주입은 <strong>공용 자원 관리</strong> 입니다. 매 요청마다 새 냉장고를 살 수 없듯, DB 연결 풀을 미리 만들어 두고 각 엔드포인트가 <code>Depends(get_db)</code>로 꺼내 씁니다. 다 쓰면 다시 풀에 반납합니다.</p>
+<p>미들웨어는 <strong>모든 손님에게 적용되는 서비스 표준</strong> 입니다. 레스토랑 입구에서 복장 체크(인증 미들웨어), 손 소독(CORS 헤더), 대기 시간 기록(로깅 미들웨어)을 하는 것처럼, 미들웨어는 어떤 엔드포인트로 가는 요청이든 반드시 거쳐야 하는 공통 처리입니다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>FastAPI로 AI 모델 서빙 API의 핵심 구조를 구현합니다. Pydantic 스키마, 의존성 주입, 비동기 추론, 에러 핸들링을 모두 포함합니다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks
+from pydantic import BaseModel, Field, field_validator
+from typing import Optional
+import asyncio
+
+app = FastAPI(title=&quot;ML Serving API&quot;, version=&quot;1.0.0&quot;)
+
+# ── 스키마 정의 ────────────────────────────────────────
+class PredictRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=10000)
+    model_name: str = Field(default=&quot;default&quot;, pattern=r&quot;^[a-z0-9-]+$&quot;)
+    threshold: float = Field(default=0.5, ge=0.0, le=1.0)
+
+    @field_validator(&quot;text&quot;)
+    @classmethod
+    def text_must_not_be_empty(cls, v: str) -&gt; str:
+        if v.strip() == &quot;&quot;:
+            raise ValueError(&quot;text must not be blank&quot;)
+        return v.strip()
+
+class PredictResponse(BaseModel):
+    label: str
+    score: float
+    model_name: str
+    request_id: str
+
+# ── 의존성 ────────────────────────────────────────────
+class ModelRegistry:
+    models: dict = {&quot;default&quot;: None}  # 실제론 로드된 모델
+
+model_registry = ModelRegistry()
+
+def get_model(model_name: str) -&gt; object:
+    if model_name not in model_registry.models:
+        raise HTTPException(status_code=404, detail=f&quot;Model &#x27;{model_name}&#x27; not found&quot;)
+    return model_registry.models[model_name]
+
+# ── 엔드포인트 ────────────────────────────────────────
+@app.post(&quot;/v1/predict&quot;, response_model=PredictResponse)
+async def predict(
+    request: PredictRequest,
+    background_tasks: BackgroundTasks,
+    model=Depends(lambda: get_model(request.model_name if False else &quot;default&quot;)),
+):
+    # 실제 추론 (비동기 실행)
+    await asyncio.sleep(0.01)  # GPU 추론 시뮬레이션
+    result = {&quot;label&quot;: &quot;positive&quot;, &quot;score&quot;: 0.92}
+
+    # 로깅은 백그라운드에서
+    background_tasks.add_task(log_prediction, request.text, result)
+
+    return PredictResponse(
+        label=result[&quot;label&quot;],
+        score=result[&quot;score&quot;],
+        model_name=request.model_name,
+        request_id=&quot;req-001&quot;,
+    )
+
+async def log_prediction(text: str, result: dict):
+    # 응답 후 비동기로 DB에 저장
+    pass
+
+@app.get(&quot;/health&quot;)
+async def health_check():
+    return {&quot;status&quot;: &quot;healthy&quot;}</code></pre>
+      <div class="c-walk"><p><code>Field(...)</code>의 <code>...</code>는 필수 항목을 의미합니다. <code>min_length</code>, <code>max_length</code>, <code>ge</code>, <code>le</code>로 범위 검증을 자동화합니다. <code>response_model=PredictResponse</code>는 이 모델에 없는 필드는 응답에서 자동 제거합니다. <code>BackgroundTasks</code>는 응답을 먼저 클라이언트에 보낸 후 <code>log_prediction</code>을 비동기로 실행합니다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">FastAPI 코드는 주니어와 시니어를 명확하게 가릅니다. 작동하는 코드를 짜는 것과 안전하고 유지보수 가능한 코드를 짜는 것은 다릅니다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>response_model을 사용해 민감 필드 노출을 방지하는가</li><li>의존성 주입으로 DB 세션과 인증을 처리하는가 (전역 변수 대신)</li><li>유효성 검사 오류를 적절한 HTTP 상태 코드로 변환하는가</li><li>비동기 함수 안에서 동기 블로킹 코드를 사용하지 않는가</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>`global` 변수로 DB 연결을 관리하는 경우</li><li>모든 에러를 `500 Internal Server Error`로 반환하는 경우</li><li>`async def`를 쓰면서 내부에서 동기 `requests` 라이브러리를 사용하는 경우</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>FastAPI에서 특정 엔드포인트에만 관리자 권한을 요구하려면 어떻게 구현하겠어요?</li><li>response_model이 단순히 직렬화를 위한 것이 아닌 이유를 설명해주세요.</li><li>수천 개의 동시 추론 요청을 처리할 때 FastAPI 레벨에서 할 수 있는 최적화는 무엇인가요?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 아는 수준은 CRUD 엔드포인트를 만들 수 있는 것입니다. 마스터 수준은 커스텀 미들웨어로 분산 트레이싱 헤더를 전파하고, 스트리밍 응답(`StreamingResponse`)으로 LLM 토큰을 실시간 전송하며, OpenAPI 커스터마이징으로 외부 팀에 명확한 API 계약을 제공하는 것입니다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>리소스 중심 URL</h3><p>URL은 명사(리소스), 동작은 HTTP 메서드. /getUser 대신 GET /users/{id}.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>Pydantic = 자동 검증</h3><p>타입 힌트로 스키마를 정의하면 파싱·검증·직렬화·문서화가 자동으로 이루어진다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>Depends로 DI</h3><p>DB 연결, 인증, 공통 쿼리 파라미터는 의존성 주입으로 재사용한다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>response_model은 보안</h3><p>응답 모델에 없는 필드는 절대 노출되지 않는다. hashed_password 같은 민감 정보 보호에 필수.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>BackgroundTasks</h3><p>응답 후 실행할 작업(로깅, 알림)은 BackgroundTasks로 비동기 처리한다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>/docs 자동 생성</h3><p>FastAPI는 코드에서 Swagger UI를 자동으로 생성한다. 별도 문서 작성이 불필요하다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-03.html">← NoSQL &amp; Data Modeling</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-05.html">Authentication &amp; Security →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

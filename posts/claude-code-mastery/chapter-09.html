@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch9: Expert Configurations: How Top Practitioners Use Claude Code — Claude Code Mastery — direcf</title>
+  <meta name="description" content="Superpowers 플러그인, 9가지 핵심 settings.json 설정, 팀 CLAUDE.md 전략 — 해외 파워유저들이 실제로 사용하는 구체적인 설정을 분해한다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/ai-engineering">Claude Code Mastery</a><span class="sep">›</span>
+        <strong>Ch09 Expert Configurations: How Top Practitioners Use Claude Code</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 09 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🏆</div>
+      <h1 class="chapter-title">Expert Configurations: How Top Practitioners Use Claude Code</h1>
+      <div class="chapter-title-kr">고수들의 세팅 — 해외 최고 전문가들의 Claude Code 환경</div>
+      <div class="chapter-tldr">Superpowers 플러그인, 9가지 핵심 settings.json 설정, 팀 CLAUDE.md 전략 — 해외 파워유저들이 실제로 사용하는 구체적인 설정을 분해한다.</div>
+
+      <div class="cs-wrap">
+        <object data="cheatsheets/chapter-09.svg" type="image/svg+xml" style="max-width:min(560px,100%);margin:0 auto;border-radius:12px;"></object>
+        <div class="cs-label">🍌 Nano Banana — Chapter 9 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>Superpowers 플러그인의 핵심 스킬들과 그것이 강제하는 방법론을 이해한다</li><li>첫날 바꿔야 하는 9가지 settings.json 설정을 알고 적용한다</li><li>팀 전체가 CLAUDE.md를 살아있는 문서로 관리하는 전략을 설계한다</li><li>커뮤니티에서 검증된 hooks 패턴을 자신의 환경에 적용한다</li><li>해외 파워유저들의 공통 접근법을 자신의 워크플로우에 통합한다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>Claude Code를 6개월 이상 집중적으로 사용한 개발자들의 설정을 분석하면 공통 패턴이 나타난다. 그들은 CLAUDE.md를 정기적으로 업데이트하고, hooks로 품질 자동화를 구현하고, 반복 작업을 스킬로 캡슐화하며, 멀티에이전트 패턴을 선택적으로 도입한다.</p>
+<p>이 챕터는 그 패턴들을 구체적인 설정 파일과 스킬로 번역한다. Superpowers 플러그인이 어떻게 전체 개발 방법론을 자동화하는지, 커뮤니티에서 가장 많이 검증된 hooks 레시피가 무엇인지, 팀 CLAUDE.md를 살아있는 문서로 유지하는 전략이 무엇인지.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>Superpowers 플러그인 — 방법론을 자동화하는 14가지 스킬</h2><p>Superpowers(<code>npx skills add superpowers</code>)는 Jesse Storimer가 만든 오픈소스 플러그인으로, 아무것도 하지 않고 코드를 쓰려는 Claude를 멈추고 방법론을 따르게 강제한다.</p>
+<p><strong>핵심 스킬들</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>스킬</th>
+<th>역할</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>brainstorming</code></td>
+<td>구현 전 소크라테스식 요구사항 정제</td>
+</tr>
+<tr>
+<td><code>writing-plans</code></td>
+<td>주니어 엔지니어가 따를 수 있는 상세 구현 계획</td>
+</tr>
+<tr>
+<td><code>test-driven-development</code></td>
+<td>빨강-초록-리팩토링 사이클 강제</td>
+</tr>
+<tr>
+<td><code>systematic-debugging</code></td>
+<td>재현→격리→근원→수정 4단계 강제</td>
+</tr>
+<tr>
+<td><code>subagent-driven-development</code></td>
+<td>스페셜리스트 서브에이전트로 분산 구현</td>
+</tr>
+<tr>
+<td><code>verification-before-completion</code></td>
+<td>완료 전 검증 게이트</td>
+</tr>
+<tr>
+<td><code>receiving-code-review</code></td>
+<td>구조화된 다관점 코드 리뷰</td>
+</tr>
+</tbody>
+</table>
+<p><strong>핵심 메커니즘</strong>: Claude가 '뭔가를 만들려 한다'고 감지되면 자동으로 <code>brainstorming</code> → <code>writing-plans</code> → TDD/구현 흐름을 거친다. 코드를 바로 쓰는 게 아니라, 먼저 '당신이 진짜 원하는 게 뭔지' 소크라테스식으로 파악한다.</p>
+<p><strong>Token 효율성</strong>: 스킬은 호출될 때만 로드된다. 사용하지 않을 때의 오버헤드는 거의 없다.</p></div><div class="sb-block"><h2>첫날 바꾸는 9가지 settings.json 설정</h2><p>커뮤니티에서 검증된 '첫날 설정' 목록:</p>
+<pre><code class="language-json">{
+  &quot;model&quot;: &quot;claude-opus-4-7&quot;,
+  &quot;env&quot;: {
+    &quot;ANTHROPIC_MODEL&quot;: &quot;claude-opus-4-7&quot;
+  },
+  &quot;permissions&quot;: {
+    &quot;allow&quot;: [
+      &quot;Bash(git status)&quot;,
+      &quot;Bash(git diff *)&quot;,
+      &quot;Bash(git log *)&quot;,
+      &quot;Bash(npm test)&quot;,
+      &quot;Bash(npm run lint)&quot;,
+      &quot;Bash(npm run typecheck)&quot;
+    ],
+    &quot;deny&quot;: [
+      &quot;Bash(git push --force *)&quot;,
+      &quot;Bash(rm -rf *)&quot;,
+      &quot;Read(.env)&quot;,
+      &quot;Read(.env.local)&quot;,
+      &quot;Read(.env.production)&quot;
+    ]
+  },
+  &quot;hooks&quot;: {
+    &quot;PostToolUse&quot;: [{
+      &quot;matcher&quot;: &quot;Write|Edit&quot;,
+      &quot;hooks&quot;: [{ &quot;type&quot;: &quot;command&quot;,
+        &quot;command&quot;: &quot;jq -r '.tool_input.file_path // empty' | { read -r f; [ -n \&quot;<span class="math-inline">\(f\&quot; ] &amp;&amp; npx prettier --write \&quot;\)</span>f\&quot; --ignore-unknown; } 2&gt;/dev/null || true&quot;,
+        &quot;async&quot;: true }]
+    }]
+  }
+}
+</code></pre>
+<p><strong>9가지 변경사항 설명</strong>:</p>
+<ol>
+<li>모델 명시적 설정 (기본값에 의존하지 않음)</li>
+<li>env에도 모델 설정 (일부 도구가 env에서 읽음)</li>
+<li>읽기 전용 git 명령 allowlist</li>
+<li>테스트/린트 자동 승인</li>
+<li>force push deny</li>
+<li>rm -rf deny</li>
+<li>.env 파일 읽기 deny</li>
+<li>PostToolUse 포맷터 훅</li>
+<li>포맷터 async 실행 (메인 흐름 비차단)</li>
+</ol></div><div class="sb-block"><h2>팀 CLAUDE.md 전략 — 살아있는 문서</h2><p>최고의 팀 CLAUDE.md는 한 번 쓰고 잊어버리는 문서가 아니다 — 팀의 AI 협업 경험이 누적되는 살아있는 문서다.</p>
+<p><strong>규칙 1: 실수가 생기면 즉시 추가하라</strong>
+Claude가 잘못된 행동을 했다 → CLAUDE.md에 규칙 추가 → 다음 번에는 반복 안 함.
+이 피드백 루프가 시간이 지날수록 팀의 Claude를 점점 강력하게 만든다.</p>
+<p><strong>규칙 2: 모든 팀원이 기여자</strong>
+CLAUDE.md를 git에 커밋하고 PR 리뷰 대상에 포함시켜라. 한 사람의 파일이 아닌 팀의 집단 지식.</p>
+<p><strong>규칙 3: 중요한 것을 먼저</strong>
+Claude는 파일을 위에서 아래로 읽으며 초반 내용에 더 집중한다. Do NOT 목록을 두 번째 섹션에 배치하라.</p>
+<p><strong>규칙 4: 코드 스니펫 대신 파일 참조</strong>
+<code>src/utils/validators.ts:1-30</code> 형태로 참조. 스니펫은 코드가 변경되면 stale해진다.</p>
+<p><strong>커뮤니티 검증된 Do NOT 패턴</strong>:</p>
+<pre><code class="language-markdown">## Do NOT
+- Use `any` type — always fix the actual type error
+- Use default exports — all exports must be named
+- Modify `schema.prisma` directly — ask me first
+- Leave `console.log` in production code
+- Refactor code unrelated to the current task
+- Create new DB migrations without confirmation
+- Push to main without PR review
+</code></pre></div><div class="sb-block"><h2>해외 고수들의 공통 접근법</h2><p>6개월 이상 Claude Code를 집중 사용한 개발자들에게서 공통적으로 나타나는 패턴:</p>
+<p><strong>패턴 1: 주간 CLAUDE.md 리뷰</strong>
+매주 금요일, 그 주에 Claude가 반복적으로 잘못한 것을 CLAUDE.md에 추가한다. 처음에는 비어있던 Do NOT 목록이 몇 개월 후에는 팀의 가장 가치 있는 규칙 모음이 된다.</p>
+<p><strong>패턴 2: 복잡도 기반 모드 선택</strong>
+- 1파일 버그 수정: Normal mode, 바로 시작
+- 3-5파일 기능 추가: Plan mode, 계획 확인 후 구현
+- 아키텍처 변경: Ultraplan + 멀티에이전트 검증</p>
+<p><strong>패턴 3: 스킬 라이브러리 구축</strong>
+처음 6개월 동안 반복적으로 하는 작업(PR 생성, 릴리즈 노트, 마이그레이션 계획 등)을 하나씩 스킬로 만든다. 6개월 후에는 30분 걸리던 PR 작업이 5분이 된다.</p>
+<p><strong>패턴 4: 세션 시작 루틴</strong>
+매 세션 시작에 <code>!git log --oneline -5</code>와 <code>!git status</code>를 자동 주입하는 SessionStart 훅을 설정한다. Claude가 항상 현재 상태를 파악하고 시작한다.</p>
+<pre><code class="language-json">{
+  &quot;hooks&quot;: {
+    &quot;SessionStart&quot;: [{
+      &quot;matcher&quot;: &quot;*&quot;,
+      &quot;hooks&quot;: [{
+        &quot;type&quot;: &quot;command&quot;,
+        &quot;command&quot;: &quot;echo '## 현재 상태'; git log --oneline -5 2&gt;/dev/null; echo '---'; git status 2&gt;/dev/null&quot;,
+        &quot;async&quot;: false
+      }]
+    }]
+  }
+}
+</code></pre></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">장인의 작업실</div>
+      <div class="a-body"><p>뛰어난 장인의 작업실을 들어가보면 단순히 도구들이 정리되어 있는 것 이상이다. 모든 도구가 손이 닿기 쉬운 곳에 있다. 가장 자주 쓰는 도구가 가장 가까이 있다. 지난 실수에서 만든 맞춤 지그와 가이드들이 같은 실수를 반복하지 않게 막는다.</p>
+<p>해외 Claude Code 고수들의 환경이 정확히 이렇다. CLAUDE.md는 지난 실수에서 학습한 맞춤 가이드다. hooks는 반복 작업을 자동화하는 지그다. skills는 복잡한 작업을 일관성 있게 실행하는 템플릿이다. 이 모든 것이 처음부터 완성된 것이 아니라 수개월의 사용을 통해 조금씩 구축된 것이다.</p>
+<p>장인의 작업실을 하루아침에 따라 만들 수 없듯이, 이 환경도 즉시 복제할 수 없다. 하지만 그 장인이 어떤 원칙으로 작업실을 구성했는지 이해하면, 자신만의 최적화된 환경을 훨씬 빠르게 만들 수 있다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>6개월 이상 사용 후 안정화된 프로덕션 설정이다. 각 설정이 어떤 문제를 해결하기 위해 추가되었는지 주석으로 설명했다.</p></div>
+      <div class="code-bar">json</div>
+      <pre><code class="language-json">// ~/.claude/settings.json
+// 모든 프로젝트에 적용되는 개인 설정
+{
+  &quot;model&quot;: &quot;claude-opus-4-7&quot;,
+  &quot;env&quot;: {
+    &quot;ANTHROPIC_MODEL&quot;: &quot;claude-opus-4-7&quot;,
+    &quot;CLAUDE_CODE_MAX_OUTPUT_TOKENS&quot;: &quot;100000&quot;
+  },
+  &quot;permissions&quot;: {
+    &quot;allow&quot;: [
+      &quot;Bash(git status)&quot;,
+      &quot;Bash(git diff *)&quot;,
+      &quot;Bash(git log *)&quot;,
+      &quot;Bash(git branch *)&quot;,
+      &quot;Bash(npm test)&quot;,
+      &quot;Bash(npm run *)&quot;,
+      &quot;Bash(npx *)&quot;
+    ],
+    &quot;deny&quot;: [
+      &quot;Bash(git push --force *)&quot;,
+      &quot;Bash(git push --force-with-lease *)&quot;,
+      &quot;Bash(rm -rf *)&quot;,
+      &quot;Read(.env)&quot;,
+      &quot;Read(.env.local)&quot;,
+      &quot;Read(.env.production)&quot;,
+      &quot;Read(**/secrets/**)&quot;
+    ]
+  },
+  &quot;hooks&quot;: {
+    &quot;SessionStart&quot;: [{
+      &quot;matcher&quot;: &quot;*&quot;,
+      &quot;hooks&quot;: [{
+        &quot;type&quot;: &quot;command&quot;,
+        &quot;command&quot;: &quot;git log --oneline -5 2&gt;/dev/null | { echo &#x27;## Recent commits:&#x27;; cat; echo &#x27;## Status:&#x27;; git status --short 2&gt;/dev/null; }&quot;,
+        &quot;async&quot;: false
+      }]
+    }],
+    &quot;PostToolUse&quot;: [{
+      &quot;matcher&quot;: &quot;Write|Edit&quot;,
+      &quot;hooks&quot;: [{
+        &quot;type&quot;: &quot;command&quot;,
+        &quot;command&quot;: &quot;jq -r &#x27;.tool_input.file_path // empty&#x27; | { read -r f; [ -n \&quot;$f\&quot; ] &amp;&amp; npx prettier --write \&quot;$f\&quot; --ignore-unknown 2&gt;/dev/null; } || true&quot;,
+        &quot;async&quot;: true
+      }]
+    }],
+    &quot;Stop&quot;: [{
+      &quot;matcher&quot;: &quot;*&quot;,
+      &quot;hooks&quot;: [{
+        &quot;type&quot;: &quot;command&quot;,
+        &quot;command&quot;: &quot;npm run typecheck --silent 2&gt;&amp;1 | tail -3&quot;,
+        &quot;async&quot;: true
+      }]
+    }]
+  }
+}</code></pre>
+      <div class="c-walk"><p>SessionStart 훅은 매 세션 초반에 git 상태를 Claude의 컨텍스트에 주입한다. 이 한 줄이 '지금 어떤 브랜치에 있고 뭐가 변경됐냐'는 매 세션 반복 질문을 없앤다. Stop 훅의 typecheck는 async:true로 실행되어 Claude의 턴을 막지 않으면서 결과를 보여준다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">Claude Code 파워유저는 도구를 수동적으로 사용하지 않는다 — 적극적으로 환경을 구성하고 최적화한다. 이 차이가 시간이 지날수록 생산성 격차를 만든다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>설정이 단순히 복사된 것인지 팀의 실제 pain point를 반영하는지</li><li>hooks와 스킬이 실제로 사용되고 주기적으로 업데이트되는지</li><li>CLAUDE.md에 팀 전체가 기여하고 있는지</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>settings.json을 기본값 그대로 쓰는 경우</li><li>CLAUDE.md를 한 번 쓰고 업데이트하지 않는 경우</li><li>Superpowers나 다른 스킬 플러그인을 설치했지만 어떤 스킬이 있는지 모르는 경우</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>가장 최근에 CLAUDE.md에 추가한 규칙이 무엇이고, 어떤 경험에서 나왔나요?</li><li>Superpowers의 systematic-debugging 스킬이 일반 디버깅과 어떻게 다른지 설명해주세요.</li><li>팀 CLAUDE.md 업데이트 프로세스가 어떻게 되나요?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 단순히 아는 수준: 플러그인과 설정 옵션의 이름을 안다. 마스터 수준: 각 설정이 어떤 구체적인 문제를 해결하는지 설명하고, 팀의 환경이 시간이 지날수록 더 강력해지는 피드백 루프를 만들었다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>Superpowers = 방법론 자동화</h3><p>단순한 스킬 모음이 아니라 전체 개발 방법론(brainstorm→plan→TDD→review)을 강제하는 시스템이다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>9가지 첫날 설정</h3><p>모델 명시, 안전 명령 허용, 위험 명령 금지, 포맷터 훅 — 이 조합이 바로 사용 가능한 기반을 만든다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>실수 → CLAUDE.md 추가</h3><p>이 피드백 루프가 팀의 Claude를 점점 강력하게 만든다. 주간 리뷰 루틴으로 강화하라.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>복잡도 기반 모드 선택</h3><p>모든 작업에 Plan Mode를 쓸 필요는 없다. 복잡도에 따라 Normal/Plan/Ultraplan을 의도적으로 선택하라.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>스킬 라이브러리는 투자</h3><p>처음 6개월 동안 반복 작업을 하나씩 스킬화하면, 1년 후에는 시간 대비 ROI가 극적으로 높아진다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-08.html">← Memory Systems: Persistent Context Across Sessions</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-10.html">Building Your Ultimate Claude Code Environment →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

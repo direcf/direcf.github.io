@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch5: Authentication &amp; Security — Backend &amp; Ops for AI Engineers — direcf</title>
+  <meta name="description" content="JWT 토큰과 OAuth 2.0을 사용해 안전한 API 인증을 구현하고, OWASP 10대 취약점으로부터 서비스를 보호한다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item active" href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/computer-science">Backend &amp; Ops for AI Engineers</a><span class="sep">›</span>
+        <strong>Ch05 Authentication &amp; Security</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 05 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🔐</div>
+      <h1 class="chapter-title">Authentication &amp; Security</h1>
+      <div class="chapter-title-kr">인증과 보안</div>
+      <div class="chapter-tldr">JWT 토큰과 OAuth 2.0을 사용해 안전한 API 인증을 구현하고, OWASP 10대 취약점으로부터 서비스를 보호한다.</div>
+
+      <div class="cs-wrap">
+        <object data="cheatsheets/chapter-05.svg" type="image/svg+xml" style="max-width:min(560px,100%);margin:0 auto;border-radius:12px;"></object>
+        <div class="cs-label">🍌 Nano Banana — Chapter 5 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>인증(Authentication)과 인가(Authorization)의 차이를 명확히 구분할 수 있다</li><li>JWT의 구조(헤더.페이로드.서명)를 이해하고 직접 발급·검증할 수 있다</li><li>OAuth 2.0의 Authorization Code Flow를 구현하거나 설명할 수 있다</li><li>SQL 인젝션, XSS 같은 주요 보안 취약점을 코드에서 방지할 수 있다</li><li>API 키를 안전하게 저장·관리하는 방법을 안다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>보안은 나중에 추가하는 것이 아니라 처음부터 설계에 포함해야 합니다. AI 서비스는 특히 취약합니다 — 모델 추론 API가 무단 접근에 노출되면 GPU 비용이 폭발하고, 학습 데이터와 모델이 유출되며, 프롬프트 인젝션 공격에 악용될 수 있습니다.</p>
+<p>이 챕터에서는 현대 웹 서비스에서 가장 널리 사용되는 인증 방식인 JWT(JSON Web Token)와 OAuth 2.0을 중심으로, API 보안의 핵심을 다룹니다. 또한 OWASP(Open Web Application Security Project)가 정의한 10대 취약점 중 백엔드 개발자가 반드시 알아야 할 항목들을 코드 수준에서 살펴봅니다.</p>
+<p>"내 서비스는 작아서 해킹 대상이 안 된다"는 착각은 버려야 합니다. 공격자는 서비스를 직접 타겟팅하는 것이 아니라 인터넷 전체를 자동 스캔합니다. 취약한 설정(<code>ALLOWED_HOSTS=*</code>, 기본 비밀번호, 미패치 라이브러리)은 몇 분 안에 발견됩니다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>인증 vs 인가: 핵심 구분</h2><p>두 개념의 혼동은 심각한 보안 취약점을 낳습니다.</p>
+<p><strong>인증(Authentication)</strong> = "당신은 누구인가?" — 신원 확인. 사용자 이름 + 비밀번호, 지문, OTP가 인증 수단입니다. 성공 시 토큰이나 세션이 발급됩니다. HTTP에서 <code>401 Unauthorized</code>는 인증 실패입니다.</p>
+<p><strong>인가(Authorization)</strong> = "당신은 무엇을 할 수 있는가?" — 권한 확인. 인증된 사용자가 특정 리소스에 접근하거나 특정 작업을 수행할 권한이 있는지 확인합니다. 성공한 인증이 모든 권한을 의미하지 않습니다. HTTP에서 <code>403 Forbidden</code>은 인가 실패입니다.</p>
+<p><strong>세션 기반 vs 토큰 기반 인증</strong></p>
+<table>
+<thead>
+<tr>
+<th>구분</th>
+<th>세션 기반</th>
+<th>토큰 기반 (JWT)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>상태 저장</td>
+<td>서버 (세션 저장소)</td>
+<td>클라이언트 (토큰 자체)</td>
+</tr>
+<tr>
+<td>확장성</td>
+<td>세션 공유 필요</td>
+<td>무상태, 수평 확장 용이</td>
+</tr>
+<tr>
+<td>취소 방법</td>
+<td>세션 삭제</td>
+<td>블랙리스트 또는 짧은 TTL</td>
+</tr>
+<tr>
+<td>모바일/SPA</td>
+<td>쿠키 제한 있음</td>
+<td>Authorization 헤더로 자유로움</td>
+</tr>
+</tbody>
+</table></div><div class="sb-block"><h2>JWT: 자기 포함형 토큰</h2><p>JWT(JSON Web Token)는 <code>헤더.페이로드.서명</code> 세 파트를 <code>.</code>으로 연결한 문자열입니다. Base64URL로 인코딩되어 있어 사람이 읽을 수 있지만(jwt.io에서 디코딩 가능), 서명으로 위변조를 방지합니다.</p>
+<p><strong>헤더(Header)</strong> 는 토큰 타입(<code>JWT</code>)과 서명 알고리즘(<code>HS256</code>, <code>RS256</code>)을 포함합니다.</p>
+<p><strong>페이로드(Payload)</strong> 는 클레임(Claim)의 집합입니다. 클레임은 키-값 쌍으로, 표준 클레임(<code>sub</code>: 사용자 ID, <code>exp</code>: 만료 시간, <code>iat</code>: 발급 시간)과 커스텀 클레임(역할, 권한)을 포함합니다.</p>
+<p><strong>서명(Signature)</strong> 은 헤더와 페이로드를 비밀 키(HS256) 또는 개인 키(RS256)로 서명합니다. 서명을 검증하면 토큰이 변조되지 않았음을 확인할 수 있습니다.</p>
+<p><strong>중요한 보안 포인트</strong>: JWT 페이로드는 암호화되지 않습니다. 누구나 디코딩해 내용을 볼 수 있습니다. 비밀번호, 신용카드 번호 같은 민감 정보를 페이로드에 넣으면 안 됩니다. 서명은 변조 방지이지 기밀성 보장이 아닙니다.</p>
+<p>Access Token은 짧은 TTL(15분~1시간), Refresh Token은 긴 TTL(7~30일)로 설정합니다. Access Token이 탈취되어도 짧은 시간 내에 만료됩니다.</p></div><div class="sb-block"><h2>OAuth 2.0: 위임된 인증</h2><p>OAuth 2.0은 사용자가 자신의 비밀번호를 서드파티에 주지 않고 권한을 위임하는 프로토콜입니다. "Google로 로그인" 버튼이 OAuth 2.0을 사용합니다.</p>
+<p><strong>Authorization Code Flow</strong> (웹 앱에서 가장 안전한 방식):</p>
+<ol>
+<li>사용자가 "Google로 로그인" 클릭 → 앱이 Google 로그인 페이지로 리다이렉트</li>
+<li>사용자가 Google에서 로그인 → Google이 <code>code</code>를 앱으로 리다이렉트</li>
+<li>앱 서버가 <code>code</code>를 Google에 보내 Access Token 교환 (서버-서버)</li>
+<li>앱이 Access Token으로 사용자 정보 조회</li>
+</ol>
+<p><code>code</code>는 단기 유효(10분)하고 한 번만 사용 가능합니다. Access Token 교환은 클라이언트가 아닌 서버에서 이루어지므로 토큰이 브라우저에 노출되지 않습니다.</p>
+<p>FastAPI에서는 <code>python-jose</code>, <code>authlib</code> 같은 라이브러리로 OAuth 클라이언트를 구현하거나, Auth0, Supabase Auth 같은 서비스를 사용해 인증을 위임할 수 있습니다.</p></div><div class="sb-block"><h2>OWASP Top 10: 반드시 알아야 할 취약점</h2><p>OWASP Top 10은 가장 흔하고 위험한 웹 취약점 목록입니다. 백엔드 개발자가 반드시 알아야 할 항목들입니다.</p>
+<p><strong>A01 - 접근 제어 취약점</strong>: 인가 로직 누락. 예: 다른 사용자의 데이터를 조회할 수 있는 IDOR(Insecure Direct Object Reference). <code>GET /users/123/data</code>에서 현재 로그인 사용자가 사용자 123인지 확인하지 않는 경우.</p>
+<p><strong>A02 - 암호화 실패</strong>: 민감 데이터를 평문으로 저장하거나 약한 암호화를 사용. 비밀번호는 반드시 <code>bcrypt</code> 또는 <code>argon2</code>로 해싱합니다. <code>MD5</code>, <code>SHA1</code>로 비밀번호를 저장하면 레인보우 테이블로 즉시 크래킹됩니다.</p>
+<p><strong>A03 - 인젝션</strong>: SQL 인젝션, 커맨드 인젝션. 사용자 입력을 쿼리에 직접 포맷팅하면 발생. 항상 파라미터화된 쿼리(<code>$1</code>, <code>?</code>)를 사용합니다.</p>
+<p><strong>A07 - 인증 실패</strong>: 약한 비밀번호 정책, JWT 검증 누락, 무제한 로그인 시도. Rate Limiting과 JWT 서명 검증이 필수입니다.</p>
+<p><strong>A09 - 보안 로깅 실패</strong>: 침해 사고가 발생했을 때 로그가 없으면 원인 파악이 불가능합니다. 모든 인증 시도, 권한 실패, 중요 데이터 접근을 로깅합니다.</p></div><div class="sb-block"><h2>API Key 관리와 비밀 관리</h2><p>API 키, DB 비밀번호, JWT 시크릿 같은 민감 정보를 코드에 하드코딩하는 것은 가장 흔한 보안 실수입니다. GitHub에 공개된 코드에서 AWS 키가 발견되면 수분 안에 악용됩니다.</p>
+<p><strong>환경 변수</strong> 로 분리합니다. <code>.env</code> 파일에 저장하고 <code>python-dotenv</code>로 로드합니다. <code>.gitignore</code>에 <code>.env</code>를 반드시 추가합니다.</p>
+<p><strong>시크릿 매니저</strong> 를 프로덕션에서 사용합니다. AWS Secrets Manager, GCP Secret Manager, HashiCorp Vault는 비밀 값을 암호화하여 저장하고, 접근 감사 로그를 남깁니다. 코드는 시크릿 값이 아니라 "어디서 가져올지"만 알면 됩니다.</p>
+<p>API 키는 <strong>bcrypt로 해싱</strong>해 DB에 저장합니다. 사용자가 키를 분실하면 재발급(새 키 생성, 이전 키 무효화)해야 합니다. 비밀번호와 동일한 원칙을 적용합니다.</p>
+<p><strong>최소 권한 원칙(Principle of Least Privilege)</strong>: 서비스에 필요한 최소한의 권한만 부여합니다. 읽기 전용 API는 읽기 전용 DB 계정을 사용하고, 특정 S3 버킷만 접근하는 Lambda는 해당 버킷에만 권한을 줍니다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">공항 보안 시스템</div>
+      <div class="a-body"><p>인증과 인가를 공항 보안으로 이해해봅시다. 공항 입구에서 여권과 탑승권을 확인하는 것이 <strong>인증</strong>입니다. 여권은 신원(당신이 누구인지)을, 탑승권은 유효한 승객임을 증명합니다. 검사를 통과하면 JWT 토큰처럼 팔찌(탑승 게이트 스티커)를 받습니다.</p>
+<p>이후 비즈니스 라운지 입장 시 팔찌를 보여주면 되는데, 이때 직원이 "이 사람이 비즈니스 라운지 이용 권한이 있는가?"를 확인하는 것이 <strong>인가</strong>입니다. 이미 공항 안에 있는(인증된) 사람이라도 라운지 이용 권한은 별도입니다.</p>
+<p>OAuth는 <strong>위임장</strong>입니다. 내가 직접 모든 공항에 여권을 보여주는 대신, Google이라는 신뢰할 수 있는 기관이 "이 사람을 우리가 인증했다"고 보증합니다. 앱은 내 Google 비밀번호를 모르지만, Google의 보증서(Access Token)로 내 신원을 확인할 수 있습니다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>FastAPI에서 JWT 기반 인증 시스템을 구현합니다. 로그인 엔드포인트에서 토큰을 발급하고, 보호된 엔드포인트에서 토큰을 검증합니다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+from datetime import datetime, timedelta, timezone
+import os
+
+app = FastAPI()
+
+# 설정
+SECRET_KEY = os.environ[&quot;JWT_SECRET_KEY&quot;]  # 절대 하드코딩 금지
+ALGORITHM = &quot;HS256&quot;
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
+pwd_context = CryptContext(schemes=[&quot;bcrypt&quot;], deprecated=&quot;auto&quot;)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl=&quot;/auth/login&quot;)
+
+# 토큰 생성
+def create_access_token(data: dict) -&gt; str:
+    to_encode = data.copy()
+    expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode[&quot;exp&quot;] = expire
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+# 현재 사용자 추출 (의존성)
+async def get_current_user(token: str = Depends(oauth2_scheme)) -&gt; dict:
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=&quot;Invalid or expired token&quot;,
+        headers={&quot;WWW-Authenticate&quot;: &quot;Bearer&quot;},
+    )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: str = payload.get(&quot;sub&quot;)
+        if user_id is None:
+            raise credentials_exception
+        return {&quot;user_id&quot;: user_id, &quot;role&quot;: payload.get(&quot;role&quot;, &quot;user&quot;)}
+    except JWTError:
+        raise credentials_exception
+
+# 관리자 권한 체크 (인가)
+def require_admin(current_user=Depends(get_current_user)):
+    if current_user[&quot;role&quot;] != &quot;admin&quot;:
+        raise HTTPException(status_code=403, detail=&quot;Admin required&quot;)
+    return current_user
+
+@app.post(&quot;/auth/login&quot;)
+async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    # 실제로는 DB에서 사용자 조회 후 비밀번호 검증
+    if not pwd_context.verify(form_data.password, &quot;$2b$12$hashed...&quot;):
+        raise HTTPException(status_code=401, detail=&quot;Incorrect credentials&quot;)
+    token = create_access_token({&quot;sub&quot;: form_data.username, &quot;role&quot;: &quot;user&quot;})
+    return {&quot;access_token&quot;: token, &quot;token_type&quot;: &quot;bearer&quot;}
+
+@app.get(&quot;/me&quot;)
+async def get_me(user=Depends(get_current_user)):
+    return user  # 인증된 사용자만 접근 가능
+
+@app.delete(&quot;/admin/models/{model_id}&quot;)
+async def delete_model(model_id: str, admin=Depends(require_admin)):
+    return {&quot;deleted&quot;: model_id}  # 관리자만 접근 가능</code></pre>
+      <div class="c-walk"><p><code>os.environ["JWT_SECRET_KEY"]</code>는 환경 변수에서 시크릿을 가져옵니다. 없으면 <code>KeyError</code>가 발생해 서비스가 시작되지 않습니다 — 의도적으로 안전한 실패를 만든 것입니다. <code>CryptContext(schemes=["bcrypt"])</code>는 bcrypt로 비밀번호를 해싱·검증합니다. <code>require_admin</code>은 <code>get_current_user</code>에 의존하므로 인증(토큰 검증) + 인가(역할 확인)를 순서대로 처리합니다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">보안은 &#x27;나중에 추가&#x27;가 없습니다. 면접에서 보안 관련 질문은 경험에서 나온 구체적인 답변을 기대합니다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>비밀번호를 평문이나 MD5로 저장하지 않고 bcrypt/argon2를 사용하는가</li><li>JWT 서명 검증을 실제로 수행하는가 (decode 시 알고리즘 명시)</li><li>SQL 인젝션 방지를 위해 파라미터화된 쿼리를 사용하는가</li><li>민감 정보를 환경 변수 또는 시크릿 매니저로 관리하는가</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>JWT 페이로드에 비밀번호나 카드 번호를 저장하는 경우</li><li>알고리즘을 `none`으로 설정할 수 있는 JWT 구현</li><li>모든 CORS를 `*`로 허용하는 프로덕션 설정</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>JWT의 만료 시간이 지난 토큰을 사용자가 제출했을 때 어떻게 처리해야 하나요?</li><li>SQL 인젝션이 발생하는 코드 예시를 보여주고, 어떻게 수정하겠어요?</li><li>서비스가 침해당했을 때 모든 사용자의 JWT를 즉시 무효화하려면 어떻게 해야 하나요?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 아는 수준은 JWT를 발급·검증할 수 있는 것입니다. 마스터 수준은 Refresh Token Rotation 전략을 구현하고, PKCE(Proof Key for Code Exchange)를 이해하며, 보안 헤더(HSTS, CSP, X-Frame-Options)를 설정하고, 비밀 관리를 HashiCorp Vault로 중앙화할 수 있는 것입니다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>인증 ≠ 인가</h3><p>인증은 신원 확인(401), 인가는 권한 확인(403). 401이 뜨면 토큰 문제, 403이 뜨면 권한 문제.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>JWT = 자기 포함형</h3><p>JWT는 DB 조회 없이 서버가 검증할 수 있는 토큰. 페이로드는 암호화 안 됨 — 비밀 정보 넣지 말 것.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>bcrypt for 비밀번호</h3><p>비밀번호는 반드시 bcrypt 또는 argon2로 해싱. MD5, SHA1은 레인보우 테이블에 취약.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>환경 변수 = 시크릿</h3><p>API 키, JWT 시크릿, DB 비밀번호는 코드가 아닌 환경 변수 또는 시크릿 매니저에 저장.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>파라미터화된 쿼리</h3><p>SQL 인젝션은 f-string으로 쿼리를 만들면 발생한다. 항상 $1, ? 플레이스홀더를 사용.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>최소 권한 원칙</h3><p>서비스에 필요한 최소한의 권한만 부여한다. 읽기만 하는 서비스에 쓰기 권한을 주지 않는다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-04.html">← REST API Design with FastAPI</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-06.html">Containers &amp; Docker →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

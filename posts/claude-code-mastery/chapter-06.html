@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch6: Plan Mode Mastery: The Explore-Plan-Implement-Commit Workflow — Claude Code Mastery — direcf</title>
+  <meta name="description" content="Claude Code 고수들의 핵심 비밀은 구현 시간보다 탐색과 계획에 더 많은 시간을 투자하는 것이다 — Plan Mode는 그 투자를 강제하는 메커니즘이다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/ai-engineering">Claude Code Mastery</a><span class="sep">›</span>
+        <strong>Ch06 Plan Mode Mastery: The Explore-Plan-Implement-Commit Workflow</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 06 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🗺️</div>
+      <h1 class="chapter-title">Plan Mode Mastery: The Explore-Plan-Implement-Commit Workflow</h1>
+      <div class="chapter-title-kr">Plan Mode 마스터리 — Explore→Plan→Implement→Commit 4단계</div>
+      <div class="chapter-tldr">Claude Code 고수들의 핵심 비밀은 구현 시간보다 탐색과 계획에 더 많은 시간을 투자하는 것이다 — Plan Mode는 그 투자를 강제하는 메커니즘이다.</div>
+
+      <div class="cs-wrap">
+        <object data="cheatsheets/chapter-06.svg" type="image/svg+xml" style="max-width:min(560px,100%);margin:0 auto;border-radius:12px;"></object>
+        <div class="cs-label">🍌 Nano Banana — Chapter 6 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>Shift+Tab으로 순환되는 3가지 모드의 차이를 설명한다</li><li>Plan Mode와 Thinking Mode(Extended Thinking)의 근본적 차이를 이해한다</li><li>Explore→Plan→Implement→Commit 4단계 워크플로우를 실제로 적용한다</li><li>좋은 계획과 나쁜 계획의 차이를 구분하고 계획을 개선하는 방법을 안다</li><li>Ultraplan을 언제 사용해야 하는지 판단한다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>대부분의 Claude Code 초보자가 저지르는 가장 큰 실수는 바로 구현으로 뛰어드는 것이다. 요청을 입력하고 Claude가 코드를 쏟아내기를 기다린다. 잘못된 방향이면 다시 요청하고, 또 기다린다. 이 패턴은 비효율적일 뿐만 아니라, 요청이 복잡할수록 낭비되는 토큰과 시간이 기하급수적으로 커진다.</p>
+<p>해외 최고 고수들의 공통된 접근법은 반대다 — <strong>전체 시간의 80%를 탐색과 계획에 투자</strong>하고, 구현은 명확한 계획이 확정된 후에 시작한다. Plan Mode는 Claude Code가 이 철학을 강제하는 메커니즘이다. 계획을 작성하고 멈추며, 사용자의 승인 없이 아무것도 실행하지 않는다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>3가지 모드 — Shift+Tab 사이클</h2><p>Shift+Tab을 누를 때마다 모드가 순환된다:</p>
+<table>
+<thead>
+<tr>
+<th>모드</th>
+<th>동작</th>
+<th>사용 시점</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Normal</strong> (기본)</td>
+<td>도구 사용 전 권한 요청</td>
+<td>일반 작업</td>
+</tr>
+<tr>
+<td><strong>Auto-Accept</strong> (1번 누름)</td>
+<td>모든 도구 호출 자동 승인</td>
+<td>반복 작업, 테스트 수정</td>
+</tr>
+<tr>
+<td><strong>Plan</strong> (2번 누름)</td>
+<td>계획 작성 후 정지, 실행 없음</td>
+<td>복잡한 기능, 리팩토링</td>
+</tr>
+</tbody>
+</table>
+<p>Plan Mode는 <code>claude --permission-mode plan</code> CLI 플래그나 <code>/plan</code> 커맨드로도 진입할 수 있다.</p>
+<p><strong>Auto-Accept의 위험</strong>: 자동 승인 모드는 Claude가 모든 파일을 임의로 수정할 수 있게 된다. 명확한 태스크 범위가 있고 잘 정의된 CLAUDE.md가 있을 때만 사용하라. 탐색 단계에서는 절대로 사용하지 마라.</p>
+<p><strong>Plan Mode의 핵심 보장</strong>: 이 모드에서 Claude는 파일을 읽고 탐색할 수 있지만, 어떤 파일도 수정하지 않고 어떤 명령도 실행하지 않는다. 안전하게 아키텍처를 논의할 수 있다.</p></div><div class="sb-block"><h2>Explore → Plan → Implement → Commit — 4단계 워크플로우</h2><p>이것이 해외 최고 고수들이 공통적으로 사용하는 패턴이다:</p>
+<p><strong>1단계: Explore (탐색)</strong> — Plan Mode에서
+- 관련 파일을 열어보고 현재 구조를 파악하라
+- 의존성과 영향 범위를 확인하라
+- 이 단계에서 '모르는 것'을 발견하는 것이 목표</p>
+<p><strong>2단계: Plan (계획)</strong> — 여전히 Plan Mode에서
+- 구현 전략을 단계별로 작성하라
+- 각 단계마다 검증 기준을 포함하라
+- 불확실한 부분을 명시하라
+- 계획이 마음에 들 때까지 Claude와 반복적으로 논의하라</p>
+<p><strong>3단계: Implement (구현)</strong> — Normal 또는 Auto-Accept Mode로 전환
+- 계획에 따라 구현
+- 계획에서 벗어나는 발견이 있으면 <strong>멈추고 계획을 업데이트</strong></p>
+<p><strong>4단계: Commit</strong> — 검증 후
+- 모든 테스트 통과 확인
+- 변경 범위 검토
+- 커밋</p>
+<p>핵심 원칙: 계획이 확정되기 전까지는 구현을 시작하지 않는다. 구현 중 계획에서 이탈해야 한다면, 구현을 멈추고 계획을 먼저 업데이트한다.</p></div><div class="sb-block"><h2>Plan Mode vs Thinking Mode — 자주 혼동되는 개념</h2><p>이 두 가지는 근본적으로 다른 개념이다.</p>
+<p><strong>Plan Mode = 워크플로우 제어</strong>
+- Claude가 계획을 작성하고 <strong>멈춘다</strong>
+- 사용자 승인 없이는 아무 것도 실행되지 않는다
+- Shift+Tab 또는 /plan으로 진입
+- 계획 품질에 영향을 주는 것이 아니라, 계획 후 실행을 막는 것</p>
+<p><strong>Thinking Mode (Extended Thinking) = 추론 제어</strong>
+- Claude가 응답 전에 더 오래, 더 깊이 생각한다
+- 실행은 여전히 일어난다
+- <code>alwaysThinkingEnabled: true</code> 설정
+- 계획의 품질을 높이지만 실행을 막지는 않는다</p>
+<p><strong>Ultraplan</strong> (2026년 4월 도입):
+- <code>/ultraplan</code> 커맨드로 호출
+- 더 깊은 컨텍스트 분석 + Plan Mode 결합
+- 복잡한 멀티파일 리팩토링이나 아키텍처 변경에 적합
+- 일반 Plan Mode보다 지연시간이 길지만 계획 품질이 높음</p>
+<p>세 가지를 조합하면: Ultraplan(깊은 분석) + Thinking Mode(깊은 추론) = 가능한 가장 높은 계획 품질. 구현은 이 계획이 승인된 후에만 시작된다.</p></div><div class="sb-block"><h2>좋은 계획 vs 나쁜 계획</h2><p>Plan Mode에서 좋은 계획을 얻기 위해서는 구체적인 컨텍스트를 제공해야 한다.</p>
+<p><strong>나쁜 요청 (모호한):</strong></p>
+<blockquote>
+<p>'인증을 구현해주세요'</p>
+</blockquote>
+<p><strong>좋은 요청 (구체적인):</strong></p>
+<blockquote>
+<p>'현재 Express 서버에 JWT 기반 인증을 추가해주세요. 기존 user 테이블 구조는 src/models/User.ts에 있고, 보안 요구사항은 CLAUDE.md에 있습니다. 영향받는 파일 목록, 변경 순서, 각 단계의 검증 방법을 계획으로 작성해주세요.'</p>
+</blockquote>
+<p><strong>좋은 계획이 포함해야 하는 요소:</strong></p>
+<pre><code class="language-markdown">## 구현 계획: JWT 인증
+
+### 영향받는 파일
+- src/middleware/auth.ts (새 파일)
+- src/routes/auth.ts (새 파일)
+- src/routes/users.ts (수정: 인증 미들웨어 추가)
+
+### 구현 순서
+1. auth.ts 미들웨어 생성
+   → 검증: 단위 테스트 통과
+2. auth 라우트 생성 (/login, /logout)
+   → 검증: Postman으로 토큰 발급 확인
+3. users 라우트에 미들웨어 적용
+   → 검증: 기존 테스트 통과, 인증 없이 접근 시 401
+
+### 의존성
+- jsonwebtoken 패키지 필요
+- JWT_SECRET 환경 변수 필요 (.env에 추가)
+</code></pre>
+<p>이 수준의 계획이 나오기 전까지 '계획이 충분히 구체적이지 않습니다, 단계를 더 세분화해주세요'로 반복 요청하라.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">건축가와 시공업자</div>
+      <div class="a-body"><p>건물을 짓는 과정을 생각해보자. 건축가와 의뢰인이 수개월 동안 설계도를 다듬는다. 의뢰인의 요구를 반영하고, 구조 엔지니어의 검토를 받고, 각종 규제를 확인하고, 예산을 계산한다. 설계도가 완전히 확정된 후에야 첫 삽을 뜬다.</p>
+<p>이유는 간단하다 — 설계 단계에서 변경하는 것이 시공 단계에서 변경하는 것보다 100배 저렴하다. 이미 지어진 벽을 허무는 것은 비용이 엄청나다.</p>
+<p>코딩도 마찬가지다. Plan Mode에서 계획을 수정하는 것은 토큰 몇 개다. 이미 작성된 코드를 삭제하고 다시 쓰는 것은 많은 토큰, 시간, 그리고 에너지다. 해외 고수들이 구현 전 탐색/계획에 80%의 시간을 쓰는 이유다 — 그게 실제로 더 빠르기 때문이다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>Plan Mode에서 실제로 주고받는 대화 흐름이다. 처음부터 구체적인 컨텍스트를 제공할 때와 그렇지 않을 때의 차이를 보여준다.</p></div>
+      <div class="code-bar">markdown</div>
+      <pre><code class="language-markdown"># Plan Mode 활용 예시 — 좋은 패턴
+
+# 1. /plan 으로 Plan Mode 진입
+# 2. 구체적인 컨텍스트와 함께 요청:
+
+사용자:
+현재 상황:
+- Next.js 14 + Prisma + PostgreSQL 프로젝트
+- src/app/api/users/ 에 CRUD API 있음
+- 현재 인증 없음
+
+목표:
+- JWT 기반 인증 추가
+- /api/users/* 모든 엔드포인트 보호
+- src/lib/auth.ts에 토큰 검증 로직
+
+요구사항:
+- 기존 테스트 통과 유지
+- TypeScript 에러 0개
+- .env.local에 JWT_SECRET 추가 필요
+
+계획을 작성해주세요. 영향받는 파일, 구현 순서,
+각 단계 검증 방법을 포함해주세요.
+
+# Claude의 계획 (Plan Mode - 실행 없음):
+Claude:
+## 구현 계획: JWT 인증 시스템
+
+### 신규 파일
+1. src/lib/auth.ts — JWT 서명/검증 유틸리티
+2. src/middleware/requireAuth.ts — Next.js 미들웨어
+
+### 수정 파일  
+3. src/app/api/users/route.ts — requireAuth 적용
+4. src/app/api/users/[id]/route.ts — requireAuth 적용
+5. .env.local — JWT_SECRET 추가
+6. package.json — jsonwebtoken 의존성 추가
+
+### 구현 순서 및 검증
+1. pnpm add jsonwebtoken @types/jsonwebtoken
+   → 검증: pnpm build 성공
+2. src/lib/auth.ts 생성
+   → 검증: 단위 테스트 (test/lib/auth.test.ts)
+3. src/middleware/requireAuth.ts 생성
+   → 검증: 단위 테스트
+4. 기존 라우트에 미들웨어 적용
+   → 검증: 기존 테스트 통과 + 인증 없이 401 반환
+
+### 주의사항
+- 기존 테스트가 인증을 통과해야 하므로
+  테스트에 mock 토큰 주입 필요
+
+# 사용자: 계획 승인. 구현 시작하세요.
+# → Normal/Auto-Accept 모드로 전환 후 구현 시작</code></pre>
+      <div class="c-walk"><p>이 흐름의 핵심은 Claude가 Plan Mode에서 아무것도 실행하지 않는다는 것이다. 파일을 읽고, 구조를 파악하고, 계획을 작성하지만 변경하지 않는다. 사용자가 '계획 승인'을 하기 전까지. 계획 단계에서 '주의사항'이 발견된 것도 중요하다 — 기존 테스트가 인증을 통과해야 한다는 사실을 구현 전에 발견했다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">Plan Mode를 활용하는 개발자와 그렇지 않은 개발자의 차이는 복잡한 기능을 구현할 때 두드러진다. 전자는 명확한 계획을 가지고 예측 가능하게 진행하고, 후자는 반복적인 수정과 롤백을 반복한다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>Plan Mode를 사용하는 습관이 있는지</li><li>계획이 충분히 구체적인지 (파일 목록, 순서, 검증 기준)</li><li>계획과 실제 구현의 편차를 어떻게 관리하는지</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>Plan Mode를 알고 있지만 사용하지 않는 경우</li><li>계획을 승인하자마자 바로 수정하는 경우 (계획을 읽지 않음)</li><li>구현 중 계획을 벗어나도 계획을 업데이트하지 않는 경우</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>Plan Mode와 Auto-Accept Mode를 각각 어떤 상황에서 사용하시나요?</li><li>계획이 구현 중 현실과 맞지 않을 때 어떻게 처리하시나요?</li><li>Ultraplan과 일반 Plan Mode의 실제 품질 차이를 경험한 사례가 있나요?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 단순히 아는 수준: Plan Mode의 존재를 안다. 마스터 수준: 복잡도에 따라 Normal/Plan/Ultraplan을 의도적으로 선택하고, 계획 단계에서 적극적으로 피드백을 주어 계획 품질을 높이며, 구현 전 80% 투자 원칙을 팀 문화로 만들었다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>80%를 탐색/계획에 투자하라</h3><p>해외 최고 고수들의 공통 원칙. 구현 전 충분한 계획이 실제로 더 빠른 결과를 낸다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>Shift+Tab으로 3가지 모드 순환</h3><p>Normal → Auto-Accept → Plan. 복잡한 기능은 Plan Mode로, 반복 수정은 Auto-Accept로.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>Plan Mode ≠ Thinking Mode</h3><p>Plan Mode는 실행을 막는 워크플로우 제어. Thinking Mode는 추론 깊이 제어. 둘은 독립적이고 조합 가능하다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>계획에 검증 기준을 포함하라</h3><p>각 구현 단계마다 검증 방법을 포함한 계획이 좋은 계획이다. &#x27;완료&#x27;의 정의가 없는 계획은 불완전하다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>계획 벗어나면 먼저 업데이트</h3><p>구현 중 계획과 다른 것을 발견하면, 구현을 멈추고 계획을 먼저 업데이트한다. 계획이 항상 현실을 반영해야 한다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-05.html">← Hooks: Event-Driven Automation</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-07.html">Multi-Agent Orchestration: Dynamic Workflows →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

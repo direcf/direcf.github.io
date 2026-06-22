@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch9: CI/CD Pipelines — Backend &amp; Ops for AI Engineers — direcf</title>
+  <meta name="description" content="코드 변경이 자동으로 테스트되고 배포되는 파이프라인을 GitHub Actions로 구축해 안전하고 빠른 배포를 실현한다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item active" href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/computer-science">Backend &amp; Ops for AI Engineers</a><span class="sep">›</span>
+        <strong>Ch09 CI/CD Pipelines</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 09 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🔄</div>
+      <h1 class="chapter-title">CI/CD Pipelines</h1>
+      <div class="chapter-title-kr">CI/CD 파이프라인</div>
+      <div class="chapter-tldr">코드 변경이 자동으로 테스트되고 배포되는 파이프라인을 GitHub Actions로 구축해 안전하고 빠른 배포를 실현한다.</div>
+
+      <div class="cs-wrap">
+        <object data="cheatsheets/chapter-09.svg" type="image/svg+xml" style="max-width:min(560px,100%);margin:0 auto;border-radius:12px;"></object>
+        <div class="cs-label">🍌 Nano Banana — Chapter 9 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>CI(지속적 통합)와 CD(지속적 배포)의 차이를 설명하고 각 단계에서 무엇을 해야 하는지 안다</li><li>GitHub Actions로 테스트·린팅·빌드를 자동화하는 워크플로우를 작성할 수 있다</li><li>Docker 이미지를 빌드해 컨테이너 레지스트리에 푸시하는 파이프라인을 구성할 수 있다</li><li>환경별(dev/staging/prod) 배포 전략을 설계하고 롤백 절차를 안다</li><li>블루-그린 배포와 카나리 배포의 차이와 각각의 장단점을 설명할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>"배포가 무섭다"는 말은 CI/CD가 없는 팀에서 자주 들립니다. 수동 배포는 실수가 잦고, 새벽에 긴급 배포하면 누가 뭘 어떻게 했는지 기억도 안 납니다. CI/CD는 이 공포를 제거합니다. 코드를 푸시하면 자동으로 테스트를 실행하고, 통과하면 배포합니다. 사람이 "배포 스크립트 실행"을 기억할 필요가 없습니다.</p>
+<p><strong>CI(Continuous Integration, 지속적 통합)</strong> 는 개발자들이 코드 변경사항을 자주 공유 브랜치에 통합하고, 매 통합 시 자동으로 빌드·테스트를 실행하는 관행입니다. 목표는 통합 오류를 빠르게 발견하는 것입니다.</p>
+<p><strong>CD(Continuous Delivery/Deployment, 지속적 배포)</strong> 는 CI를 통과한 코드를 자동(또는 승인 후)으로 프로덕션에 배포하는 관행입니다. Delivery는 배포 준비까지, Deployment는 실제 프로덕션 배포까지 자동화합니다.</p>
+<p>AI 엔지니어에게 CI/CD는 모델 서빙 파이프라인 자동화에 직결됩니다. 새 모델 버전이 평가를 통과하면 자동으로 스테이징에 배포하고, 성능 기준을 충족하면 프로덕션에 반영하는 파이프라인을 구축합니다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>GitHub Actions: 워크플로우의 기초</h2><p>GitHub Actions는 GitHub 저장소 이벤트(push, pull_request, schedule)에 반응해 자동화된 작업을 실행하는 CI/CD 플랫폼입니다.</p>
+<p><strong>핵심 개념</strong></p>
+<p><strong>Workflow</strong> 는 <code>.github/workflows/*.yml</code> 파일로 정의됩니다. 하나 이상의 Job으로 구성됩니다.</p>
+<p><strong>Job</strong> 은 하나의 러너(실행 환경)에서 실행되는 Step의 집합입니다. Job들은 기본적으로 병렬로 실행되지만 <code>needs</code>로 순서를 지정할 수 있습니다.</p>
+<p><strong>Step</strong> 은 Job 안의 개별 작업입니다. <code>uses</code> (Action 사용) 또는 <code>run</code> (쉘 명령 실행) 중 하나입니다.</p>
+<p><strong>Triggers</strong> 는 워크플로우를 실행하는 이벤트입니다.</p>
+<ul>
+<li><code>push</code>: 브랜치에 코드가 푸시될 때</li>
+<li><code>pull_request</code>: PR이 열리거나 업데이트될 때</li>
+<li><code>schedule</code>: cron 표현식으로 주기적 실행</li>
+<li><code>workflow_dispatch</code>: 수동 실행</li>
+</ul>
+<p><strong>Actions Marketplace</strong> 에는 수천 개의 재사용 가능한 Action이 있습니다. <code>actions/checkout</code>, <code>actions/setup-python</code>, <code>docker/build-push-action</code> 같은 공식 Action은 반드시 특정 버전(<code>@v4</code>)을 명시합니다.</p></div><div class="sb-block"><h2>CI 파이프라인: 코드 품질 자동화</h2><p>좋은 CI 파이프라인은 빠르고(5분 내) 믿을 수 있어야 합니다. 너무 느리면 개발자들이 CI 결과를 기다리지 않고 다음 작업을 시작합니다.</p>
+<p><strong>CI 파이프라인이 포함해야 할 단계</strong></p>
+<ol>
+<li>
+<p><strong>Lint &amp; Format</strong>: <code>ruff</code>, <code>black</code>, <code>isort</code>로 코드 스타일 자동 검사. 팀 코드 스타일 일관성 유지.</p>
+</li>
+<li>
+<p><strong>Type Check</strong>: <code>mypy</code>로 타입 오류 정적 분석. 런타임 오류를 사전에 방지.</p>
+</li>
+<li>
+<p><strong>Unit Test</strong>: <code>pytest</code>로 유닛 테스트 실행. 코드 커버리지 리포트 생성.</p>
+</li>
+<li>
+<p><strong>Integration Test</strong>: 실제 DB나 Redis를 Docker Compose로 띄워 통합 테스트.</p>
+</li>
+<li>
+<p><strong>Security Scan</strong>: <code>bandit</code>으로 파이썬 보안 취약점 스캔. <code>trivy</code>로 Docker 이미지 취약점 스캔.</p>
+</li>
+</ol>
+<p><strong>병렬 실행</strong> 으로 시간을 줄입니다. Lint, Type Check, Unit Test는 서로 의존성이 없으므로 동시에 실행할 수 있습니다.</p>
+<p><strong>캐싱</strong> 으로 반복 실행 속도를 높입니다. <code>actions/cache</code>로 pip 패키지, Docker 레이어를 캐시합니다. PyTorch 같은 대용량 패키지의 반복 다운로드를 방지합니다.</p></div><div class="sb-block"><h2>CD 파이프라인: 자동 배포</h2><p>CD는 CI가 통과한 아티팩트(Docker 이미지)를 환경별로 배포합니다.</p>
+<p><strong>환경 구분</strong></p>
+<ul>
+<li>
+<p><strong>Development (dev)</strong>: 개발자들이 기능을 테스트하는 환경. 최신 코드를 자유롭게 배포.</p>
+</li>
+<li>
+<p><strong>Staging</strong>: 프로덕션과 동일한 설정. 출시 전 최종 검증. 실제 데이터 일부 사용.</p>
+</li>
+<li>
+<p><strong>Production (prod)</strong>: 실제 사용자들이 쓰는 환경. 배포 승인이 필요하거나 자동화(CD).</p>
+</li>
+</ul>
+<p><strong>배포 전략</strong></p>
+<p>브랜치 전략과 배포를 연결합니다.</p>
+<ul>
+<li><code>main</code> 브랜치 push → dev 자동 배포</li>
+<li><code>release/*</code> 브랜치 push → staging 자동 배포</li>
+<li>Tag (<code>v1.2.0</code>) push → production 배포 (수동 승인 or 자동)</li>
+</ul>
+<p><strong>Docker 이미지 태깅 전략</strong></p>
+<ul>
+<li><code>latest</code>: 최신 빌드. 프로덕션에 <code>latest</code> 사용 금지 (재현 불가)</li>
+<li><code>{git-sha}</code>: 커밋 해시. 정확한 버전 추적. <code>image:abc123f</code></li>
+<li><code>{semver}</code>: 시맨틱 버전. <code>image:1.2.0</code>. 사람이 읽기 좋음.</li>
+</ul></div><div class="sb-block"><h2>배포 안전장치: 블루-그린과 카나리</h2><p>모든 배포는 잠재적으로 장애를 일으킬 수 있습니다. 안전한 배포 전략은 오류가 발생했을 때 피해를 최소화하고 빠르게 롤백합니다.</p>
+<p><strong>블루-그린 배포(Blue-Green Deployment)</strong> 는 두 개의 동일한 프로덕션 환경을 유지합니다. 현재 서빙 중인 환경이 Blue이고, 새 버전을 배포할 환경이 Green입니다. Green에 새 버전을 배포하고 테스트가 완료되면 로드 밸런서가 트래픽을 Green으로 전환합니다. 문제가 있으면 즉시 Blue로 되돌립니다. 롤백이 초 단위로 가능합니다. 단점은 두 배의 인프라 비용입니다.</p>
+<p><strong>카나리 배포(Canary Deployment)</strong> 는 새 버전을 전체 트래픽의 일부(1% → 5% → 20% → 100%)에게만 서빙합니다. 문제가 발생하면 카나리 트래픽을 0%로 줄입니다. AI 서비스에서 새 모델 버전을 소수 사용자에게 테스트하는 A/B 테스트에 적합합니다.</p>
+<p><strong>롤백(Rollback)</strong> 은 K8s에서 <code>kubectl rollout undo deployment/ml-server</code>로 이전 Deployment 버전으로 즉시 되돌립니다. 이것이 가능하려면 이전 이미지가 레지스트리에 남아 있어야 하므로, <code>latest</code> 태그만 사용하면 안 됩니다.</p></div><div class="sb-block"><h2>시크릿 관리와 환경 분리</h2><p>CI/CD 파이프라인에서 시크릿(DB 비밀번호, API 키, K8s 클러스터 인증 정보)을 안전하게 다루는 것이 중요합니다.</p>
+<p><strong>GitHub Actions Secrets</strong> 는 저장소 또는 환경(Environment) 레벨에서 시크릿을 저장합니다. <code>${{ secrets.MY_API_KEY }}</code>로 워크플로우에서 참조합니다. 로그에 시크릿 값이 노출되지 않도록 자동으로 마스킹됩니다.</p>
+<p><strong>환경(Environment) 보호 규칙</strong> 을 사용하면 프로덕션 배포 시 특정 리뷰어의 승인이 필요하도록 설정할 수 있습니다. <code>staging</code> 환경은 자동 배포, <code>production</code> 환경은 팀 리드 승인 후 배포하는 정책을 GitHub에서 강제할 수 있습니다.</p>
+<p><strong>OIDC(OpenID Connect) 인증</strong> 을 사용하면 장기 유효 자격증명(Access Key) 없이 CI/CD가 AWS, GCP 등에 인증할 수 있습니다. GitHub Actions가 일회용 OIDC 토큰을 발급하고, AWS가 이 토큰을 검증해 임시 자격증명을 발급합니다. 자격증명 노출 위험이 크게 줄어듭니다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">공장 품질 관리 라인</div>
+      <div class="a-body"><p>CI/CD를 자동차 공장 조립 라인으로 이해해봅시다. 자동차 부품(코드)이 컨베이어 벨트(CI 파이프라인)에 올라가면 각 스테이션에서 자동 검사가 이루어집니다. 용접 품질 검사(린팅), 강도 테스트(유닛 테스트), 안전 기준 검사(보안 스캔).</p>
+<p>모든 검사를 통과한 자동차(Docker 이미지)는 창고(컨테이너 레지스트리)에 보관됩니다. 완성된 자동차가 딜러에게 배송되는 것이 CD(배포)입니다. 카나리 배포는 신모델을 일부 딜러에게만 먼저 배포해 시장 반응을 테스트하는 것과 같습니다.</p>
+<p>이전에는 모든 것을 수동으로 했습니다 — 검사원이 직접 용접부를 눈으로 보고, 수동으로 강도를 측정했습니다. 자동화된 라인은 실수가 없고, 기록이 남으며, 24시간 일합니다. CI/CD가 소프트웨어 배포에 가져온 변화와 같습니다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>AI 서비스의 전체 CI/CD 파이프라인 GitHub Actions 워크플로우입니다. 테스트, 이미지 빌드, K8s 배포를 자동화합니다.</p></div>
+      <div class="code-bar">yaml</div>
+      <pre><code class="language-yaml"># .github/workflows/ci-cd.yml
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  IMAGE_NAME: myregistry/ml-service
+
+jobs:
+  # ── CI: 테스트 및 린팅 ────────────────────────────────
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [&quot;3.11&quot;]  # 필요 시 복수 버전 테스트
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: pip  # pip 캐시로 반복 설치 생략
+
+    - run: pip install -r requirements.txt -r requirements-dev.txt
+
+    - name: Lint
+      run: ruff check . &amp;&amp; ruff format --check .
+
+    - name: Type check
+      run: mypy src/
+
+    - name: Test
+      run: pytest tests/ --cov=src --cov-report=xml
+
+  # ── CD: 이미지 빌드 &amp; 배포 (main에 push될 때만) ─────────
+  deploy:
+    needs: test  # 테스트 통과 후에만 실행
+    if: github.ref == &#x27;refs/heads/main&#x27; &amp;&amp; github.event_name == &#x27;push&#x27;
+    runs-on: ubuntu-latest
+    environment: staging  # GitHub Environment 보호 규칙 적용
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Log in to registry
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.REGISTRY_USER }}
+        password: ${{ secrets.REGISTRY_PASSWORD }}
+
+    - name: Build and push image
+      uses: docker/build-push-action@v5
+      with:
+        push: true
+        tags: |
+          ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          ${{ env.IMAGE_NAME }}:latest
+        cache-from: type=gha   # GitHub Actions 캐시로 Docker 레이어 재사용
+        cache-to: type=gha,mode=max
+
+    - name: Deploy to K8s
+      run: |
+        # 이미지 태그만 업데이트 (롤링 업데이트 트리거)
+        kubectl set image deployment/ml-server \
+          inference=${{ env.IMAGE_NAME }}:${{ github.sha }} \
+          --record</code></pre>
+      <div class="c-walk"><p><code>needs: test</code>는 test Job이 성공해야만 deploy Job을 실행합니다. <code>if: github.ref == 'refs/heads/main'</code>은 main 브랜치 push에만 배포합니다. PR은 테스트만 실행합니다. <code>github.sha</code>로 이미지를 태깅하면 어떤 커밋에서 빌드된 이미지인지 정확히 추적할 수 있습니다. <code>cache-from: type=gha</code>는 이전 빌드의 Docker 레이어를 재사용해 빌드 시간을 크게 줄입니다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">CI/CD는 팀의 배포 속도와 안정성을 직결합니다. 면접에서는 실제 파이프라인 설계 경험과 장애 대응 경험을 봅니다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>배포와 릴리스를 분리하는 개념을 이해하는가 (Feature Flag 등)</li><li>롤백 절차가 명확하고 자동화되어 있는가</li><li>시크릿을 파이프라인에서 안전하게 다루는가</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>latest 태그만 사용해 롤백이 불가능한 경우</li><li>CI를 거치지 않고 프로덕션에 직접 배포하는 경우</li><li>DB 마이그레이션을 배포 스크립트에 포함시켜 롤백 시 충돌이 발생하는 경우</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>배포 도중 오류가 발생했을 때 30초 안에 롤백하는 방법은?</li><li>DB 스키마 변경과 코드 변경을 어떻게 안전하게 함께 배포하겠어요?</li><li>카나리 배포 중 새 버전이 5% 트래픽에서 오류율이 2% 높게 나올 때 어떻게 하겠어요?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 아는 수준은 기본 GitHub Actions 워크플로우를 작성하는 것입니다. 마스터 수준은 GitOps(ArgoCD)로 K8s 선언적 배포를 관리하고, 배포 빈도/변경 실패율/MTTR을 DORA 메트릭으로 측정하며, Dependabot으로 의존성 자동 업데이트 파이프라인을 운영하는 것입니다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>CI = 빠른 피드백</h3><p>코드 변경이 5분 안에 통과/실패를 알 수 있어야 개발자가 즉시 수정한다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>이미지 태그 = 커밋 해시</h3><p>latest만으로 배포하면 롤백이 불가능하다. 항상 git sha로 이미지를 태깅한다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>환경 분리</h3><p>dev → staging → prod 환경을 분리하고, staging에서 검증 후 prod에 배포한다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>카나리로 리스크 감소</h3><p>새 버전을 1~5%에 먼저 배포해 전체 롤아웃 전에 문제를 발견한다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>OIDC 인증</h3><p>장기 유효 Access Key 대신 OIDC 임시 자격증명으로 클라우드 인증한다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>DB 마이그레이션 분리</h3><p>DB 변경은 이전 버전과 호환되도록 먼저 적용하고, 코드 배포 후 이전 열을 삭제한다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-08.html">← Monitoring &amp; Observability</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-10.html">MLOps &amp; AI System Design →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

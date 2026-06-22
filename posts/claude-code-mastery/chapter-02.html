@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch2: Dissecting Karpathy&#x27;s 65-Line CLAUDE.md — Claude Code Mastery — direcf</title>
+  <meta name="description" content="65줄로 AI의 4대 실패 패턴을 모두 막는 방법 — 각 줄이 왜 그 자리에 있는지 분해한다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/ai-engineering">Claude Code Mastery</a><span class="sep">›</span>
+        <strong>Ch02 Dissecting Karpathy&#x27;s 65-Line CLAUDE.md</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 02 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🔬</div>
+      <h1 class="chapter-title">Dissecting Karpathy&#x27;s 65-Line CLAUDE.md</h1>
+      <div class="chapter-title-kr">Karpathy의 65줄 해부 — 22만 star의 비밀</div>
+      <div class="chapter-tldr">65줄로 AI의 4대 실패 패턴을 모두 막는 방법 — 각 줄이 왜 그 자리에 있는지 분해한다.</div>
+
+      <div class="cs-wrap">
+        <object data="cheatsheets/chapter-02.svg" type="image/svg+xml" style="max-width:min(560px,100%);margin:0 auto;border-radius:12px;"></object>
+        <div class="cs-label">🍌 Nano Banana — Chapter 2 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>Karpathy CLAUDE.md의 4가지 섹션이 각각 어떤 실패 패턴을 막는지 설명할 수 있다</li><li>각 원칙을 자신의 프로젝트에 적용하는 방법을 안다</li><li>Senior Engineer Test와 Traceability Test를 이해하고 활용한다</li><li>이 파일이 22만 star를 받은 심리적, 기술적 이유를 분석한다</li><li>원칙을 프로젝트별로 커스터마이즈하는 방법을 안다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>Karpathy CLAUDE.md의 전문을 처음 읽으면 놀라울 정도로 단순해 보인다. 화려한 프롬프트 엔지니어링 기법도 없고, 복잡한 조건 분기도 없다. 단지 네 개의 섹션, 명확한 지시들, 그리고 각 원칙의 자가 테스트 방법.</p>
+<p>이 단순함이 바로 핵심이다. CLAUDE.md는 Claude가 읽는 문서인 동시에 인간 개발자도 읽고 이해할 수 있어야 한다. 복잡한 파일은 관리되지 않는다. 관리되지 않는 CLAUDE.md는 없는 것만 못하다.</p>
+<p>그러나 이 65줄 안에는 수개월의 실패 경험이 압축되어 있다. 각 규칙은 구체적인 사고에서 나왔다 — 'AI가 이런 짓을 해서 PR이 엉망이 됐다'는 경험이 하나의 줄로 결정화된 것이다. 이 챕터에서는 그 65줄을 한 줄씩 분해하고, 각 선택의 이유를 이해한다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>섹션 1: Think Before Coding — 가정을 드러내라</h2><p>첫 번째 섹션의 핵심 명령은 두 단어다: <strong>Don't assume.</strong> 그리고 바로 이어서: <strong>Don't hide confusion.</strong></p>
+<p>이 두 문장이 AI 에이전트의 가장 흔한 실패를 막는다. AI는 모호한 지시를 받았을 때 가장 그럴듯한 해석을 선택하고 구현을 시작한다. 사용자에게 물어보는 것보다 그게 더 '도움이 되는' 행동처럼 느껴지기 때문이다. 하지만 틀린 방향으로 구현된 200줄의 코드는 애초에 아무것도 안 한 것보다 훨씬 나쁘다.</p>
+<pre><code class="language-markdown">## 1. Think Before Coding
+
+Before implementing:
+- State your assumptions explicitly. If uncertain, ask.
+
+- If multiple interpretations exist, present them - don't pick silently.
+
+- If a simpler approach exists, say so. Push back when warranted.
+
+- If something is unclear, stop. Name what's confusing. Ask.
+</code></pre>
+<p>'Push back when warranted'는 특히 중요하다. Claude에게 반박할 권한을 명시적으로 주는 것이다. 이 줄이 없으면 Claude는 비효율적인 접근법도 그냥 구현해버린다. 이 줄이 있으면 '더 간단한 방법이 있는데요'라고 먼저 말한다.</p>
+<p>자가 테스트 질문: 구현 전에 명시적으로 가정을 드러냈는가? 불분명한 게 있으면 이름을 붙여서 물어봤는가?</p></div><div class="sb-block"><h2>섹션 2: Simplicity First — 코드 비대화와의 전쟁</h2><p>두 번째 섹션은 AI의 가장 흔한 죄악과 싸운다 — 요청하지 않은 것을 추가하는 습관.</p>
+<pre><code class="language-markdown">## 2. Simplicity First
+
+- No features beyond what was asked.
+
+- No abstractions for single-use code.
+
+- No &quot;flexibility&quot; or &quot;configurability&quot; that wasn't requested.
+
+- No error handling for impossible scenarios.
+
+- If you write 200 lines and it could be 50, rewrite it.
+
+Ask yourself: &quot;Would a senior engineer say this is overcomplicated?&quot; If yes, simplify.
+</code></pre>
+<p>마지막 두 줄이 특히 천재적이다. 'Senior Engineer Test'는 Claude에게 자가 검증 메커니즘을 준다. Claude는 코드를 작성한 후 스스로 시니어 엔지니어의 관점에서 평가해야 한다. 이것은 외부 검토를 내부화한 것이다.</p>
+<p>'If you write 200 lines and it could be 50, rewrite it'은 더 나아간다 — 한 번에 최소한으로 쓰는 게 아니라, 너무 많이 썼다면 <strong>다시 쓰라</strong>는 명령이다. 이 명령이 없으면 Claude는 일단 쓴 코드를 유지하려는 경향이 있다.</p></div><div class="sb-block"><h2>섹션 3: Surgical Changes — 부수 피해 방지</h2><p>세 번째 섹션은 매우 구체적인 메타포를 사용한다 — 'Surgical'. 외과 수술처럼 정확히 필요한 부분만 건드리라는 것이다.</p>
+<pre><code class="language-markdown">## 3. Surgical Changes
+
+When editing existing code:
+- Don't &quot;improve&quot; adjacent code, comments, or formatting.
+
+- Don't refactor things that aren't broken.
+
+- Match existing style, even if you'd do it differently.
+
+When your changes create orphans:
+- Remove imports/variables/functions that YOUR changes made unused.
+
+- Don't remove pre-existing dead code unless asked.
+
+The test: Every changed line should trace directly to the user's request.
+</code></pre>
+<p>마지막 줄 <strong>Traceability Test</strong>가 핵심이다: 변경된 모든 줄이 사용자의 요청으로 직접 추적될 수 있어야 한다. 이 테스트가 명시되면, Claude는 PR에 들어가는 모든 변경에 대해 '왜 이 줄이 필요한가'를 스스로 검증해야 한다.</p>
+<p>'Match existing style, even if you'd do it differently'는 미묘하지만 중요하다. Claude에게는 자신의 선호가 있다. 이 줄이 없으면 Claude는 기존 코드를 자신의 스타일로 맞추려 한다. 이 줄이 있으면 그러지 않는다.</p></div><div class="sb-block"><h2>섹션 4: Goal-Driven Execution — 검증 가능한 성공 기준</h2><p>마지막 섹션은 가장 야심찬 변환을 요구한다 — 모든 태스크를 <strong>검증 가능한 목표</strong>로 바꾸는 것.</p>
+<pre><code class="language-markdown">## 4. Goal-Driven Execution
+
+Transform tasks into verifiable goals:
+- &quot;Add validation&quot; → &quot;Write tests for invalid inputs, then make them pass&quot;
+- &quot;Fix the bug&quot; → &quot;Write a test that reproduces it, then make it pass&quot;
+- &quot;Refactor X&quot; → &quot;Ensure tests pass before and after&quot;
+
+For multi-step tasks, state a brief plan:
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+</code></pre>
+<p>이 변환이 강력한 이유는, 검증 단계를 구현 단계와 분리하기 때문이다. '검증'이 명시적으로 있으면 Claude는 '완료'를 선언하기 전에 실제로 검증한다. 없으면 구현이 끝나는 것이 곧 완료다.</p>
+<p>멀티스텝 태스크를 위한 플랜 템플릿도 포함되어 있다. 각 스텝에 대응하는 검증 체크가 붙어있어, 루프를 독립적으로 돌릴 수 있다. 이것이 '약한 기준(make it work)'과 '강한 기준(test passes)' 사이의 차이다.</p></div><div class="sb-block"><h2>22만 Star의 비밀 — 왜 이 파일이 공명했는가</h2><p>이 파일이 기록적인 속도로 퍼진 데는 기술적 이유와 심리적 이유가 함께 작용했다.</p>
+<p><strong>기술적 이유</strong>: 파일이 해결하는 네 가지 실패 패턴은 실재하고 측정 가능하다. 각 섹션 끝의 자가 테스트(Senior Engineer Test, Traceability Test)는 Claude가 실제로 따를 수 있는 구체적인 기준을 제공한다. 규칙이 아니라 <strong>기준</strong>이다.</p>
+<p><strong>심리적 이유</strong>: 이 파일은 프롬프트 엔지니어링처럼 느껴지지 않는다. 새 팀원에게 주는 온보딩 문서처럼 느껴진다. 개발자들은 이것을 읽고 '나도 이게 필요했어'라고 즉각 인식한다. 공유하기 쉽고, 커스터마이즈하기 쉽고, 팀원에게 설명하기 쉽다.</p>
+<p><strong>Tradeoff 고지</strong>: 파일 첫 줄에 있는 이 문장도 중요하다 — <em>'These guidelines bias toward caution over speed. For trivial tasks, use judgment.'</em> 이 솔직함이 신뢰를 만든다. '항상 이렇게 하라'가 아니라 '이 트레이드오프를 알고 쓰라'고 말하는 것이다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">체스 그랜드마스터의 오프닝 북</div>
+      <div class="a-body"><p>체스 그랜드마스터들은 수천 개의 오프닝 라인을 암기한다. 하지만 그들이 정말로 배우는 것은 특정 수열이 아니라, <strong>그 수열이 만들어내는 포지션의 원칙</strong>이다. 왜 이 말을 여기에 두어야 하는가? 왜 이 교환은 손해처럼 보여도 유리한가?</p>
+<p>Karpathy의 65줄은 그 오프닝 북과 같다. 각 규칙은 단순한 '이렇게 해'가 아니라, 그 배후의 원칙을 담고 있다. 'Don't assume'은 단지 물어보라는 게 아니다 — 모호함을 명시적으로 만들라는 원칙이다. 'Every changed line should trace directly to the user's request'는 단지 적게 바꾸라는 게 아니다 — 인과관계를 추적 가능하게 유지하라는 원칙이다.</p>
+<p>그랜드마스터가 오프닝 북을 넘어서는 순간은 규칙을 외울 때가 아니라 원칙을 이해할 때다. 마찬가지로, 이 파일을 그냥 복사해서 쓰는 것과 각 줄의 이유를 이해하고 자신의 프로젝트에 맞게 변형하는 것 사이에는 큰 차이가 있다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>Karpathy의 원본 65줄 전문이다. 각 섹션의 구조와 자가 테스트 메커니즘에 주목하라.</p></div>
+      <div class="code-bar">markdown</div>
+      <pre><code class="language-markdown"># CLAUDE.md
+
+Behavioral guidelines to reduce common LLM coding mistakes.
+Merge with project-specific instructions as needed.
+
+**Tradeoff:** These guidelines bias toward caution over speed.
+For trivial tasks, use judgment.
+
+## 1. Think Before Coding
+
+**Don&#x27;t assume. Don&#x27;t hide confusion. Surface tradeoffs.**
+
+Before implementing:
+- State your assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them - don&#x27;t pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what&#x27;s confusing. Ask.
+
+## 2. Simplicity First
+
+**Minimum code that solves the problem. Nothing speculative.**
+
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No &quot;flexibility&quot; or &quot;configurability&quot; that wasn&#x27;t requested.
+- No error handling for impossible scenarios.
+- If you write 200 lines and it could be 50, rewrite it.
+
+Ask yourself: &quot;Would a senior engineer say this is overcomplicated?&quot;
+If yes, simplify.
+
+## 3. Surgical Changes
+
+**Touch only what you must. Clean up only your own mess.**
+
+When editing existing code:
+- Don&#x27;t &quot;improve&quot; adjacent code, comments, or formatting.
+- Don&#x27;t refactor things that aren&#x27;t broken.
+- Match existing style, even if you&#x27;d do it differently.
+- If you notice unrelated dead code, mention it - don&#x27;t delete it.
+
+When your changes create orphans:
+- Remove imports/variables/functions that YOUR changes made unused.
+- Don&#x27;t remove pre-existing dead code unless asked.
+
+The test: Every changed line should trace directly to the user&#x27;s request.
+
+## 4. Goal-Driven Execution
+
+**Define success criteria. Loop until verified.**
+
+Transform tasks into verifiable goals:
+- &quot;Add validation&quot; → &quot;Write tests for invalid inputs, then make them pass&quot;
+- &quot;Fix the bug&quot; → &quot;Write a test that reproduces it, then make it pass&quot;
+- &quot;Refactor X&quot; → &quot;Ensure tests pass before and after&quot;
+
+For multi-step tasks, state a brief plan:
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
+
+Strong success criteria let you loop independently.
+Weak criteria (&quot;make it work&quot;) require constant clarification.
+
+---
+**These guidelines are working if:** fewer unnecessary changes in diffs,
+fewer rewrites due to overcomplication, and clarifying questions come
+before implementation rather than after mistakes.</code></pre>
+      <div class="c-walk"><p>파일 끝의 '이 가이드라인이 작동하고 있는지 확인하는 방법' 섹션을 주목하라. 이것은 단순한 마무리 문장이 아니라 메타 검증이다 — CLAUDE.md 자체가 효과가 있는지 측정하는 기준을 제공한다. diff에 불필요한 변경이 줄었는가? 과도한 복잡성으로 인한 재작성이 줄었는가? 구현 후가 아닌 전에 질문이 오는가? 이 세 지표를 추적하면 CLAUDE.md의 ROI를 실제로 측정할 수 있다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">이 파일을 진지하게 공부하는 엔지니어와 그냥 복사해서 쓰는 엔지니어의 차이는 커스터마이제이션에서 나타난다. 4원칙의 정신을 자신의 프로젝트에 맞게 변형했는가, 아니면 그대로 붙여넣었는가.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>4원칙이 팀의 실제 사고 기록과 연결되어 있는지</li><li>&#x27;Senior Engineer Test&#x27;와 &#x27;Traceability Test&#x27;를 실제로 적용하고 있는지</li><li>Tradeoff 고지처럼 솔직한 한계 인정이 있는지</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>원본 그대로 복사해서 프로젝트 특화 정보 없이 쓰는 경우</li><li>파일이 있지만 팀원들이 내용을 모르는 경우</li><li>자가 테스트 기준을 이해 없이 따라 쓰는 경우</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>Karpathy CLAUDE.md의 4원칙 중 귀하의 팀에서 가장 중요한 것은 무엇이고 왜인가요?</li><li>&#x27;Surgical Changes&#x27; 원칙을 실제 코드 리뷰에서 적용한 사례가 있나요?</li><li>&#x27;Goal-Driven Execution&#x27;에서 약한 기준과 강한 기준의 차이를 실제 태스크로 보여주세요.</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 단순히 아는 수준: 4원칙의 이름을 말할 수 있다. 마스터 수준: 각 원칙이 어떤 심리적, 기술적 이유로 AI에게 작동하는지 설명하고, 자신의 프로젝트에서 각 원칙을 위반한 사례와 그것을 막기 위해 CLAUDE.md에 추가한 규칙을 말할 수 있다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>65줄은 수개월의 실패를 압축한 것</h3><p>각 규칙 뒤에는 구체적인 사고가 있다. 규칙을 외우기보다 그 사고를 이해하라.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>자가 테스트가 핵심이다</h3><p>Senior Engineer Test와 Traceability Test는 Claude에게 외부 검토를 내부화시키는 메커니즘이다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>Tradeoff를 솔직하게 고지하라</h3><p>좋은 CLAUDE.md는 항상 이렇게 하라고 말하지 않는다. 트레이드오프를 인정하고 판단을 위임한다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>단순함이 관리 가능성을 만든다</h3><p>이 파일이 22만 star를 받은 이유 중 하나는 팀원 누구나 읽고 이해하고 기여할 수 있기 때문이다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>복사보다 변형이 가치 있다</h3><p>원본을 시작점으로 삼되, 팀의 실제 사고를 반영하도록 반드시 커스터마이즈하라.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>끝의 메타 검증을 기억하라</h3><p>diff 품질, 재작성 빈도, 질문 타이밍 — 이 세 지표를 추적하면 CLAUDE.md의 실제 효과를 측정할 수 있다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-01.html">← Why CLAUDE.md? The Anatomy of an AI Instruction File</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-03.html">The Loading Architecture: How Claude Reads Your Files →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

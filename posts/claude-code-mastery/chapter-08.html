@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch8: Memory Systems: Persistent Context Across Sessions — Claude Code Mastery — direcf</title>
+  <meta name="description" content="Claude는 기본적으로 세션이 끝나면 모든 것을 잊는다 — Memory 시스템은 그 망각을 극복하고 Claude가 당신의 프로젝트와 작업 방식을 장기적으로 학습하게 만든다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/ai-engineering">Claude Code Mastery</a><span class="sep">›</span>
+        <strong>Ch08 Memory Systems: Persistent Context Across Sessions</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 08 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🧠</div>
+      <h1 class="chapter-title">Memory Systems: Persistent Context Across Sessions</h1>
+      <div class="chapter-title-kr">Memory 시스템 — 세션을 넘나드는 영속적 컨텍스트</div>
+      <div class="chapter-tldr">Claude는 기본적으로 세션이 끝나면 모든 것을 잊는다 — Memory 시스템은 그 망각을 극복하고 Claude가 당신의 프로젝트와 작업 방식을 장기적으로 학습하게 만든다.</div>
+
+      <div class="cs-wrap">
+        <object data="cheatsheets/chapter-08.svg" type="image/svg+xml" style="max-width:min(560px,100%);margin:0 auto;border-radius:12px;"></object>
+        <div class="cs-label">🍌 Nano Banana — Chapter 8 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>Claude Code의 Auto-memory 시스템이 어떻게 작동하는지 이해한다</li><li>user, feedback, project, reference 4가지 메모리 타입의 차이를 설명한다</li><li>효과적인 메모리 파일 구조를 설계한다</li><li>언제 메모리를 저장하고 언제 저장하지 말아야 하는지 판단한다</li><li>메모리와 CLAUDE.md의 역할을 구분한다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>Claude Code 세션은 기본적으로 상태가 없다. 오늘 알려준 팀의 코딩 규칙, 내일은 다시 알려줘야 한다. 지난주에 한 실수에서 배운 교훈, 새 세션에서 Claude는 모른다. 이것은 AI 어시스턴트 사용의 가장 큰 마찰 중 하나다.</p>
+<p>Auto-memory 시스템은 이 문제를 해결한다. Claude가 대화에서 중요한 정보를 발견하면 자동으로 파일로 저장하고, 다음 세션에서 그 파일들을 불러와 컨텍스트에 포함한다. 프로젝트별로 독립된 메모리 디렉토리에 마크다운 파일로 저장되어, 사람이 읽고 수정할 수 있다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>Auto-memory 시스템 — 어디에 어떻게 저장되는가</h2><p>Auto-memory 파일들은 다음 위치에 저장된다:</p>
+<pre><code>~/.claude/projects/&lt;sanitized-cwd&gt;/memory/
+├── MEMORY.md           ← 인덱스 파일 (항상 컨텍스트에 로드됨)
+├── user_role.md        ← 사용자 역할/선호도
+├── feedback_testing.md ← 테스트 전략 피드백
+├── project_auth.md     ← 인증 관련 프로젝트 결정
+└── reference_linear.md ← Linear 티켓 추적 참조
+</code></pre>
+<p><code>MEMORY.md</code>는 특별하다 — <strong>항상 컨텍스트 윈도우에 로드된다</strong>. 이 파일은 인덱스로만 사용되며, 각 메모리의 한 줄 요약과 파일 링크를 담는다. 200줄 이후는 잘리므로 간결하게 유지해야 한다.</p>
+<p>개별 메모리 파일은 관련성이 있을 때만 로드된다 — 컨텍스트를 아낀다.</p>
+<p>설정으로 메모리 위치를 커스터마이즈할 수 있다:</p>
+<pre><code class="language-json">{
+  &quot;autoMemoryDirectory&quot;: &quot;~/my-custom-memory/&quot;
+}
+</code></pre></div><div class="sb-block"><h2>4가지 메모리 타입</h2><p>메모리 파일에는 4가지 타입이 있으며, 각각 다른 목적을 가진다:</p>
+<p><strong>1. user</strong> — 사용자의 역할, 선호도, 지식 수준</p>
+<pre><code class="language-markdown">---
+name: user-role
+description: 사용자가 Go 전문가이며 React는 처음임을 기록
+metadata:
+  type: user
+---
+10년 경력 Go 엔지니어. 이 프로젝트의 React 프론트엔드는 처음이다.
+프론트엔드 설명 시 Go 개념과 비교해서 설명하면 효과적이다.
+</code></pre>
+<p><strong>2. feedback</strong> — 접근 방식에 대한 사용자 교정/확인</p>
+<pre><code class="language-markdown">---
+metadata:
+  type: feedback
+---
+테스트에서 DB를 mock하지 말 것.
+**Why:** 지난 분기에 mock 테스트 통과 후 프로덕션 마이그레이션이 실패한 사건이 있었음.
+**How to apply:** 통합 테스트는 항상 실제 DB 사용.
+</code></pre>
+<p><strong>3. project</strong> — 진행 중인 작업, 목표, 결정 사항</p>
+<pre><code class="language-markdown">---
+metadata:
+  type: project
+---
+2026-07-01까지 인증 미들웨어 재작성 완료 목표.
+**Why:** Legal이 세션 토큰 저장 방식이 새 컴플라이언스 요구사항 미충족을 지적함.
+**How to apply:** 인증 관련 스코프 결정은 컴플라이언스 우선.
+</code></pre>
+<p><strong>4. reference</strong> — 외부 시스템의 위치 정보</p>
+<pre><code class="language-markdown">---
+metadata:
+  type: reference
+---
+파이프라인 버그는 Linear 프로젝트 'INGEST'에서 추적됨.
+</code></pre></div><div class="sb-block"><h2>언제 저장하고 언제 저장하지 말아야 하는가</h2><p>메모리에 저장해야 하는 것:</p>
+<ul>
+<li>사용자의 역할, 전문 분야, 새로운 기술 분야</li>
+<li>사용자가 접근 방식을 수정하거나 확인한 것 ('이렇게 하지 마세요', '네 정확해요')</li>
+<li>진행 중인 프로젝트의 결정과 맥락</li>
+<li>외부 시스템 참조 (어떤 버그 트래커, 어떤 채널)</li>
+</ul>
+<p><strong>메모리에 저장하지 말아야 하는 것</strong> (이것들은 다른 방법으로 관리한다):</p>
+<table>
+<thead>
+<tr>
+<th>저장 안 할 것</th>
+<th>이유</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>코드 패턴, 컨벤션, 파일 구조</td>
+<td>코드 자체에서 읽을 수 있음</td>
+</tr>
+<tr>
+<td>Git 히스토리, 최근 변경</td>
+<td><code>git log/blame</code>이 권위적 소스</td>
+</tr>
+<tr>
+<td>디버깅 해결책, 수정 레시피</td>
+<td>코드에 있음; 커밋 메시지에 맥락 있음</td>
+</tr>
+<tr>
+<td>CLAUDE.md에 이미 있는 것</td>
+<td>중복, 충돌 위험</td>
+</tr>
+<tr>
+<td>현재 세션의 임시 상태</td>
+<td>세션이 끝나면 의미 없음</td>
+</tr>
+</tbody>
+</table>
+<p>기억해야 할 핵심 테스트: '이 정보를 미래의 Claude가 현재 파일을 보지 않고도 알아야 하는가?' 그렇다면 메모리에. 아니라면 코드나 git에.</p></div><div class="sb-block"><h2>MEMORY.md 인덱스 설계와 유지관리</h2><p>MEMORY.md는 항상 컨텍스트에 로드되므로 가볍게 유지하는 것이 중요하다.</p>
+<pre><code class="language-markdown"># Memory Index
+
+## User
+- [User Role](user_role.md) — Go 전문가, React 초보; 프론트엔드 설명 시 Go 비교법 효과적
+
+## Feedback  
+- [Testing Strategy](feedback_testing.md) — DB mock 금지; 작년 migration 실패 사건
+- [Response Style](feedback_style.md) — 요약 금지, diff를 직접 읽을 수 있음
+
+## Project
+- [Auth Rewrite](project_auth.md) — 2026-07-01 데드라인; compliance 요구사항
+- [Current Sprint](project_sprint.md) — JWT 미들웨어 구현 중
+
+## Reference
+- [Bug Tracker](reference_bugs.md) — Linear 'INGEST' 프로젝트
+- [Monitoring](reference_monitoring.md) — grafana.internal/d/api-latency
+</code></pre>
+<p>각 항목은 한 줄, 150자 이내. 파일 링크와 핵심 내용을 담는다.</p>
+<p><strong>유지관리 전략</strong>: 메모리 파일이 오래되거나 틀려지면 즉시 업데이트하거나 삭제하라. stale한 메모리는 없는 것보다 나쁘다 — Claude가 잘못된 가정으로 작업할 수 있다. 메모리 파일을 읽기 전에 현재 코드 상태와 대조해 여전히 유효한지 확인하는 습관을 들여라.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">새 팀원의 온보딩 노트</div>
+      <div class="a-body"><p>상상해보자. 당신이 매일 아침 기억을 잃고 출근한다. 어제 동료와 어떤 결정을 했는지, 어떤 코딩 컨벤션을 사용하기로 했는지, 어떤 버그를 추적 중인지 — 전혀 기억이 없다. 매일 아침 동료들이 다시 설명해줘야 한다.</p>
+<p>이것이 기본 상태의 Claude다. 세션마다 새로 시작한다.</p>
+<p>Auto-memory는 이 문제에 대한 해결책이다 — 마치 매일 아침 책상에 놓인 '어제의 나에게 남기는 노트'와 같다. 어제의 Claude가 오늘의 Claude에게 남기는 메시지. '이 프로젝트에서 DB mock은 금지입니다. 이유: 지난 분기 사건이 있었습니다.' '이 사용자는 Go 전문가라 Go 개념으로 설명하면 빠릅니다.'</p>
+<p>가장 효과적인 노트는 WHY를 포함한다 — 규칙만 있고 이유가 없으면, 다음날의 나는 그 규칙이 아직도 유효한지 판단할 수 없다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>실제 프로젝트에서 사용하는 feedback 메모리 파일의 예제다. Why와 How to apply 구조가 어떻게 미래의 Claude를 안내하는지 주목하라.</p></div>
+      <div class="code-bar">markdown</div>
+      <pre><code class="language-markdown">---
+name: db-testing-policy
+description: DB를 테스트에서 mock하지 말 것 — production divergence 사건
+metadata:
+  type: feedback
+---
+
+통합 테스트에서 DB를 mock하지 마라. 항상 실제 DB 연결을 사용해야 한다.
+
+**Why:** 2025년 4분기에 mock 테스트가 전부 통과했지만,
+prod 마이그레이션이 실패한 사건이 있었다. Mock이 실제 Prisma 동작과
+다르게 작동했기 때문이다. 이 사건으로 프로덕션이 2시간 다운됐다.
+
+**How to apply:** 테스트 파일에서 `jest.mock(&#x27;prisma&#x27;)`나
+`vi.mock(&#x27;@/lib/db&#x27;)` 패턴을 보면 제안하지 말 것.
+통합 테스트는 `test-db`라는 별도 PostgreSQL 인스턴스를 사용한다
+(`.env.test`의 `DATABASE_URL` 참조).
+
+[[feedback-test-runner]]  ← 관련 메모리 링크</code></pre>
+      <div class="c-walk"><p>이 메모리 파일의 구조에서 Why와 How to apply 섹션이 핵심이다. Why가 없으면 미래의 Claude는 이 규칙이 여전히 유효한지 판단할 수 없다. How to apply는 규칙을 적용해야 하는 구체적인 코드 패턴을 알려준다. <code>[[feedback-test-runner]]</code> 링크는 관련 메모리 파일을 연결한다 — 나중에 그 파일이 만들어지면 연결이 완성된다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">메모리 시스템을 적극적으로 관리하는 팀은 AI와 협업하는 속도가 시간이 지날수록 빨라진다. 초기 온보딩 투자가 복리로 돌아오는 것이다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>메모리와 CLAUDE.md의 역할을 명확히 구분하는지</li><li>Why와 How to apply가 포함된 feedback 메모리 구조</li><li>stale 메모리를 주기적으로 정리하는 습관</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>CLAUDE.md에 있어야 할 코딩 규칙을 메모리에 저장하는 경우</li><li>Why 없이 규칙만 있는 feedback 메모리</li><li>오래된 프로젝트 상태가 그대로 메모리에 남아있는 경우</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>메모리와 CLAUDE.md를 어떻게 구분해서 사용하시나요?</li><li>feedback 메모리에 Why를 포함하는 것이 왜 중요한가요?</li><li>stale 메모리를 발견했을 때 어떻게 처리하시나요?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 단순히 아는 수준: Auto-memory 시스템이 존재한다. 마스터 수준: 세션마다 메모리 파일을 적극적으로 관리하고, feedback 메모리에 Why를 항상 포함하며, CLAUDE.md와 메모리의 역할을 명확히 분리해 중복과 충돌을 방지한다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>MEMORY.md는 항상 로드된다</h3><p>200줄 이후 잘리므로 가볍게 유지하라. 각 항목은 한 줄, 핵심 내용과 파일 링크만.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>4타입: user/feedback/project/reference</h3><p>각 타입은 다른 목적. feedback이 가장 중요 — 작업 방식을 교정하고 반복 실수를 막는다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>Why를 반드시 포함하라</h3><p>규칙만 있고 이유가 없으면 미래의 Claude가 여전히 유효한지 판단할 수 없다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>코드에서 읽을 수 있는 것은 저장하지 마라</h3><p>코딩 패턴, git 히스토리, CLAUDE.md에 있는 것 — 메모리에 중복 저장하면 충돌 위험만 높아진다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>stale 메모리는 없는 것보다 나쁘다</h3><p>오래된 메모리를 믿고 Claude가 잘못된 가정으로 작업할 수 있다. 주기적으로 현재 상태와 대조하라.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-07.html">← Multi-Agent Orchestration: Dynamic Workflows</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-09.html">Expert Configurations: How Top Practitioners Use Claude Code →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

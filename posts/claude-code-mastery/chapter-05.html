@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch5: Hooks: Event-Driven Automation — Claude Code Mastery — direcf</title>
+  <meta name="description" content="훅은 Claude Code의 모든 이벤트에 자동화를 연결하는 메커니즘이다 — 파일 저장 시 자동 포맷, 위험 명령 차단, 테스트 자동 실행까지.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/ai-engineering">Claude Code Mastery</a><span class="sep">›</span>
+        <strong>Ch05 Hooks: Event-Driven Automation</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 05 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🔗</div>
+      <h1 class="chapter-title">Hooks: Event-Driven Automation</h1>
+      <div class="chapter-title-kr">Hooks — 이벤트 기반 자동화의 완전 가이드</div>
+      <div class="chapter-tldr">훅은 Claude Code의 모든 이벤트에 자동화를 연결하는 메커니즘이다 — 파일 저장 시 자동 포맷, 위험 명령 차단, 테스트 자동 실행까지.</div>
+
+      <div class="cs-wrap">
+        <object data="cheatsheets/chapter-05.svg" type="image/svg+xml" style="max-width:min(560px,100%);margin:0 auto;border-radius:12px;"></object>
+        <div class="cs-label">🍌 Nano Banana — Chapter 5 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>훅의 6가지 이벤트 카테고리를 이해한다</li><li>5가지 핸들러 타입(command, http, mcp_tool, prompt, agent)의 차이를 설명한다</li><li>exit code 0, 2, 기타의 동작을 정확히 이해한다</li><li>PostToolUse에서 자동 포맷 훅을 작성할 수 있다</li><li>PreToolUse에서 위험 명령을 차단하는 훅을 설계한다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>Hooks는 Claude Code의 가장 강력하고 가장 과소 평가된 기능이다. 파일을 편집할 때마다 자동으로 포맷터를 실행하거나, 위험한 명령을 실행 전에 차단하거나, 세션이 끝날 때 테스트를 자동 실행하거나, AI의 판단이 의심스러울 때 LLM 기반 검증을 추가하거나 — 이 모든 것이 훅으로 가능하다.</p>
+<p>훅을 이해하면 Claude Code가 단순한 AI 어시스턴트를 넘어 팀의 자동화 인프라가 된다. 이 챕터에서는 20개 이상의 이벤트 타입, 5가지 핸들러 타입, 그리고 실제로 팀에서 즉시 사용할 수 있는 레시피를 다룬다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>훅 이벤트 6가지 카테고리</h2><p>훅 이벤트는 6가지 카테고리로 나뉜다:</p>
+<p><strong>1. 세션 생명주기 (비블로킹)</strong>
+- <code>SessionStart</code> — 세션 시작 시
+- <code>SessionEnd</code> — 세션 종료 시
+- <code>Setup</code> — <code>--init-only</code>로 한 번만 실행</p>
+<p><strong>2. 턴 이벤트</strong>
+- <code>UserPromptSubmit</code> — 사용자 프롬프트 제출 시 (블로킹, exit 2로 차단 가능)
+- <code>Stop</code> — Claude가 턴을 마칠 때 (exit 2로 계속 작업 강제)
+- <code>StopFailure</code> — 비블로킹 관찰용</p>
+<p><strong>3. 도구 실행 (에이전트 루프 핵심)</strong>
+- <code>PreToolUse</code> — 모든 도구 호출 전 (블로킹, exit 2로 차단)
+- <code>PostToolUse</code> — 도구 성공 후 (응답 수정 가능)
+- <code>PermissionRequest</code> — 권한 다이얼로그 전 (자동 승인/거부)
+- <code>PostToolBatch</code> — 병렬 도구 배치 완료 후 (블로킹)</p>
+<p><strong>4. 에이전트/팀 이벤트</strong>
+- <code>SubagentStart</code> / <code>SubagentStop</code>
+- <code>TeammateIdle</code> — 팀원을 계속 작업하게 유지 가능</p>
+<p><strong>5. 파일/설정 이벤트</strong>
+- <code>FileChanged</code> — 디스크의 파일 변경 감지 (비동기)
+- <code>InstructionsLoaded</code> — CLAUDE.md 로드 시
+- <code>ConfigChange</code> — settings.json 변경 시 (블로킹, 거부 가능)</p>
+<p><strong>6. 태스크/컨텍스트 이벤트</strong>
+- <code>TaskCreated</code> / <code>TaskCompleted</code>
+- <code>PreCompact</code> / <code>PostCompact</code> — 컨텍스트 압축 전후</p></div><div class="sb-block"><h2>5가지 핸들러 타입</h2><p>각 훅 이벤트에 어떤 종류의 핸들러를 붙일지 선택할 수 있다:</p>
+<p><strong>1. command</strong> — 가장 일반적. 쉘 명령을 실행한다.</p>
+<pre><code class="language-json">{ &quot;type&quot;: &quot;command&quot;, &quot;command&quot;: &quot;prettier --write ${CLAUDE_TOOL_INPUT_FILE_PATH}&quot; }
+</code></pre>
+<p><strong>2. http</strong> — HTTP POST로 외부 서비스에 이벤트를 전송한다.</p>
+<pre><code class="language-json">{ &quot;type&quot;: &quot;http&quot;, &quot;url&quot;: &quot;http://localhost:8080/validate&quot; }
+</code></pre>
+<p><strong>3. mcp_tool</strong> — 연결된 MCP 서버의 도구를 호출한다.</p>
+<pre><code class="language-json">{ &quot;type&quot;: &quot;mcp_tool&quot;, &quot;server&quot;: &quot;my_server&quot;, &quot;tool&quot;: &quot;validate_code&quot; }
+</code></pre>
+<p><strong>4. prompt</strong> — 단일 턴 LLM 평가. 빠른 모델로 조건을 검사한다.</p>
+<pre><code class="language-json">{ &quot;type&quot;: &quot;prompt&quot;, &quot;prompt&quot;: &quot;이 쉘 명령이 안전한가? $ARGUMENTS&quot; }
+</code></pre>
+<p><strong>5. agent</strong> — Read/Grep/Glob 도구를 가진 서브에이전트를 스폰한다 (실험적).</p>
+<pre><code class="language-json">{ &quot;type&quot;: &quot;agent&quot;, &quot;prompt&quot;: &quot;이 작업이 허용된 범위 내인지 확인하라: $ARGUMENTS&quot; }
+</code></pre>
+<p>prompt와 agent 핸들러는 <code>PreToolUse</code>, <code>PostToolUse</code>, <code>PermissionRequest</code>에서만 사용 가능하다.</p></div><div class="sb-block"><h2>Exit Code 시맨틱 — 가장 중요한 이해</h2><p>훅의 동작은 종료 코드에 의해 결정된다:</p>
+<table>
+<thead>
+<tr>
+<th>종료 코드</th>
+<th>이벤트 유형</th>
+<th>동작</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>0</code></td>
+<td>모든 이벤트</td>
+<td>성공. stdout의 JSON이 처리됨</td>
+</tr>
+<tr>
+<td><code>2</code></td>
+<td>PreToolUse</td>
+<td>도구 호출 <strong>차단</strong>. stderr가 Claude에 표시됨</td>
+</tr>
+<tr>
+<td><code>2</code></td>
+<td>Stop</td>
+<td>Claude가 <strong>계속 작업</strong>하도록 강제</td>
+</tr>
+<tr>
+<td><code>2</code></td>
+<td>UserPromptSubmit</td>
+<td>프롬프트 <strong>차단</strong></td>
+</tr>
+<tr>
+<td>기타</td>
+<td>모든 이벤트</td>
+<td>비블로킹 오류. stderr 첫 줄만 표시</td>
+</tr>
+</tbody>
+</table>
+<p>exit code 2의 이중적 의미가 중요하다. PreToolUse에서는 '이 도구 호출을 막아라'이고, Stop에서는 '아직 작업이 끝나지 않았다 계속해라'이다. 같은 코드가 컨텍스트에 따라 반대 효과를 낸다.</p>
+<p>JSON 출력으로 Claude에 피드백을 줄 수 있다:</p>
+<pre><code class="language-json">{
+  &quot;systemMessage&quot;: &quot;사용자에게 표시할 메시지&quot;,
+  &quot;continue&quot;: false,
+  &quot;stopReason&quot;: &quot;차단 이유&quot;,
+  &quot;hookSpecificOutput&quot;: {
+    &quot;hookEventName&quot;: &quot;PostToolUse&quot;,
+    &quot;additionalContext&quot;: &quot;Claude의 컨텍스트에 주입될 텍스트&quot;
+  }
+}
+</code></pre></div><div class="sb-block"><h2>실전 훅 레시피 — 즉시 사용 가능한 패턴</h2><p><strong>레시피 1: 파일 저장 시 자동 포맷 (PostToolUse)</strong></p>
+<pre><code class="language-json">{
+  &quot;hooks&quot;: {
+    &quot;PostToolUse&quot;: [{
+      &quot;matcher&quot;: &quot;Write|Edit&quot;,
+      &quot;hooks&quot;: [{
+        &quot;type&quot;: &quot;command&quot;,
+        &quot;command&quot;: &quot;jq -r '.tool_input.file_path // empty' | { read -r f; [ -n \&quot;<span class="math-inline">\(f\&quot; ] &amp;&amp; prettier --write \&quot;\)</span>f\&quot;; } 2&gt;/dev/null || true&quot;
+      }]
+    }]
+  }
+}
+</code></pre>
+<p><strong>레시피 2: rm -rf 차단 (PreToolUse)</strong></p>
+<pre><code class="language-json">{
+  &quot;hooks&quot;: {
+    &quot;PreToolUse&quot;: [{
+      &quot;matcher&quot;: &quot;Bash&quot;,
+      &quot;if&quot;: &quot;Bash(rm -rf *)&quot;,
+      &quot;hooks&quot;: [{
+        &quot;type&quot;: &quot;command&quot;,
+        &quot;command&quot;: &quot;echo '{\&quot;continue\&quot;: false, \&quot;stopReason\&quot;: \&quot;rm -rf는 허용되지 않습니다\&quot;}'&quot;
+      }]
+    }]
+  }
+}
+</code></pre>
+<p><strong>레시피 3: 세션 종료 시 테스트 실행 (Stop)</strong></p>
+<pre><code class="language-json">{
+  &quot;hooks&quot;: {
+    &quot;Stop&quot;: [{
+      &quot;matcher&quot;: &quot;*&quot;,
+      &quot;hooks&quot;: [{
+        &quot;type&quot;: &quot;command&quot;,
+        &quot;command&quot;: &quot;npm test --silent &amp;&amp; echo '{\&quot;systemMessage\&quot;: \&quot;테스트 통과 완료\&quot;}' || echo '{\&quot;continue\&quot;: false, \&quot;stopReason\&quot;: \&quot;테스트 실패: 수정 후 완료 선언하세요\&quot;}'&quot;
+      }]
+    }]
+  }
+}
+</code></pre>
+<p><strong>레시피 4: .env 파일 읽기 차단 (PreToolUse)</strong></p>
+<pre><code class="language-json">{
+  &quot;permissions&quot;: {
+    &quot;deny&quot;: [&quot;Read(.env)&quot;, &quot;Read(.env.local)&quot;, &quot;Read(.env.production)&quot;]
+  }
+}
+</code></pre></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">공장의 품질 관리 체크포인트</div>
+      <div class="a-body"><p>현대 자동차 공장에는 생산 라인의 각 단계마다 품질 검사 포인트가 있다. 어떤 포인트는 문제를 발견하면 라인 전체를 멈춘다(블로킹). 어떤 포인트는 문제를 기록만 하고 라인을 계속 진행시킨다(비블로킹). 어떤 포인트는 발견된 문제를 즉석에서 자동 수정한다.</p>
+<p>훅은 Claude Code 에이전트 루프의 품질 관리 체크포인트다. 도구 호출 전(PreToolUse)과 후(PostToolUse)에 검사 로직이 실행된다. 문제 발견 시 exit code 2로 라인을 멈추거나, 자동 수정(포맷터 실행)을 하거나, 그냥 기록만 할 수 있다.</p>
+<p>가장 좋은 공장은 가능한 많은 품질 검사를 자동화한다 — 인간 검사자는 자동화로 잡기 어려운 판단의 영역에만 개입한다. 마찬가지로 좋은 훅 설계는 반복 가능한 검사를 자동화하고, 인간 승인은 실제로 판단이 필요한 경우에만 요구한다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>프로덕션에서 실제 사용되는 종합 hooks 설정이다. 포맷, 보안, 테스트 자동화가 하나의 settings.json에 담겨있다.</p></div>
+      <div class="code-bar">json</div>
+      <pre><code class="language-json">{
+  &quot;hooks&quot;: {
+    &quot;PostToolUse&quot;: [
+      {
+        &quot;matcher&quot;: &quot;Write|Edit&quot;,
+        &quot;hooks&quot;: [
+          {
+            &quot;type&quot;: &quot;command&quot;,
+            &quot;command&quot;: &quot;jq -r &#x27;.tool_input.file_path // empty&#x27; | { read -r f; [ -n \&quot;$f\&quot; ] &amp;&amp; npx prettier --write \&quot;$f\&quot; --ignore-unknown; } 2&gt;/dev/null || true&quot;,
+            &quot;async&quot;: true
+          }
+        ]
+      }
+    ],
+    &quot;PreToolUse&quot;: [
+      {
+        &quot;matcher&quot;: &quot;Bash&quot;,
+        &quot;if&quot;: &quot;Bash(git push --force *)&quot;,
+        &quot;hooks&quot;: [
+          {
+            &quot;type&quot;: &quot;command&quot;,
+            &quot;command&quot;: &quot;echo &#x27;{\&quot;continue\&quot;: false, \&quot;stopReason\&quot;: \&quot;force push는 허용되지 않습니다. PR을 통해 머지하세요.\&quot;}&#x27;&quot;
+          }
+        ]
+      },
+      {
+        &quot;matcher&quot;: &quot;Read&quot;,
+        &quot;if&quot;: &quot;Read(.env*)&quot;,
+        &quot;hooks&quot;: [
+          {
+            &quot;type&quot;: &quot;command&quot;,
+            &quot;command&quot;: &quot;echo &#x27;{\&quot;continue\&quot;: false, \&quot;stopReason\&quot;: \&quot;.env 파일은 읽을 수 없습니다.\&quot;}&#x27;&quot;
+          }
+        ]
+      }
+    ],
+    &quot;Stop&quot;: [
+      {
+        &quot;matcher&quot;: &quot;*&quot;,
+        &quot;hooks&quot;: [
+          {
+            &quot;type&quot;: &quot;command&quot;,
+            &quot;command&quot;: &quot;npm run typecheck --silent 2&gt;&amp;1 | grep -c &#x27;error&#x27; | { read n; [ \&quot;$n\&quot; -eq 0 ] &amp;&amp; echo &#x27;{\&quot;systemMessage\&quot;: \&quot;TypeCheck: 통과\&quot;}&#x27; || echo &#x27;{\&quot;continue\&quot;: false, \&quot;stopReason\&quot;: \&quot;TypeScript 에러가 있습니다. 수정 후 완료하세요.\&quot;}&#x27;; }&quot;,
+            &quot;async&quot;: false
+          }
+        ]
+      }
+    ]
+  }
+}</code></pre>
+      <div class="c-walk"><p>세 가지 훅이 각자 다른 역할을 한다. PostToolUse의 prettier 훅은 <code>async: true</code>로 파일 저장 후 백그라운드에서 포맷을 실행한다 (메인 흐름을 막지 않음). PreToolUse의 두 훅은 위험 작업을 차단한다 — <code>if</code> 필드로 특정 패턴에만 반응해 불필요한 훅 실행을 줄인다. Stop 훅은 TypeScript 에러가 있으면 완료를 선언하지 못하게 막는다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">훅을 사용하는 팀은 그렇지 않은 팀보다 코드 품질 관련 PR 리뷰 코멘트가 현저히 적다. 포맷, 타입 체크, 보안 체크 같은 반복적인 품질 게이트를 자동화했기 때문이다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>훅이 실제 팀의 pain point를 해결하는지</li><li>블로킹 훅과 비블로킹 훅을 적절히 구분하는지</li><li>exit code 시맨틱을 정확히 이해하고 있는지</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>훅이 너무 많아서 Claude의 모든 작업이 지연되는 경우</li><li>비블로킹이어야 하는 훅이 블로킹으로 설정된 경우</li><li>훅 명령이 실패 시 Claude에 아무 피드백 없이 조용히 실패하는 경우</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>Stop 훅에서 exit code 2의 의미가 PreToolUse와 어떻게 다른지 설명해주세요.</li><li>팀에서 가장 많은 가치를 제공한 훅 설정이 무엇인가요?</li><li>LLM 기반 prompt 핸들러를 언제 command 핸들러 대신 사용하시나요?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 단순히 아는 수준: 훅을 설정할 수 있다. 마스터 수준: 팀의 품질 관리 전략을 훅 시스템으로 구현하고, exit code와 JSON 응답으로 Claude에 정확한 피드백을 줄 수 있으며, async/sync 실행을 의도적으로 선택한다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>훅은 에이전트 루프의 체크포인트</h3><p>모든 도구 호출 전후에 자동화를 삽입할 수 있다. 반복 품질 검사를 인간이 하지 않아도 되게 만든다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>exit code 2는 이중 의미</h3><p>PreToolUse에서는 차단, Stop에서는 계속 작업 강제. 같은 코드가 컨텍스트에 따라 반대 효과다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>if 필드로 과도한 실행 방지</h3><p>모든 Bash 명령이 아니라 rm -rf* 패턴에만 반응하도록 필터링하라. 불필요한 훅 실행은 성능을 저하시킨다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>async: true로 흐름 보존</h3><p>포맷터같은 사후 정리 작업은 async로 실행해 Claude의 메인 흐름을 막지 않는다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>JSON 응답으로 Claude에 피드백</h3><p>단순히 차단하는 것보다 왜 차단되었는지 `stopReason`으로 알려주면 Claude가 더 적절히 대응한다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-04.html">← Skills &amp; Slash Commands: Dynamic Context Injection</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-06.html">Plan Mode Mastery: The Explore-Plan-Implement-Commit Workflow →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>
