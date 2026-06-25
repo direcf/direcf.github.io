@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch3: NoSQL &amp; Data Modeling — Backend &amp; Ops for AI Engineers — direcf</title>
+  <meta name="description" content="Redis, MongoDB 등 NoSQL 데이터베이스가 언제 SQL보다 적합한지 이해하고, 캐싱과 세션 관리에 Redis를 실전 활용한다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item active" href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/computer-science">Backend &amp; Ops for AI Engineers</a><span class="sep">›</span>
+        <strong>Ch03 NoSQL &amp; Data Modeling</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 03 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">⚡</div>
+      <h1 class="chapter-title">NoSQL &amp; Data Modeling</h1>
+      <div class="chapter-title-kr">NoSQL과 데이터 모델링</div>
+      <div class="chapter-tldr">Redis, MongoDB 등 NoSQL 데이터베이스가 언제 SQL보다 적합한지 이해하고, 캐싱과 세션 관리에 Redis를 실전 활용한다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-03.png" alt="Chapter 3 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 3 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>CAP 정리를 이해하고 NoSQL이 어떤 트레이드오프를 선택하는지 설명할 수 있다</li><li>Redis를 사용해 API 응답 캐싱, 세션 저장, Rate Limiting을 구현할 수 있다</li><li>MongoDB의 도큐먼트 모델과 집계 파이프라인을 활용할 수 있다</li><li>주어진 문제에 SQL과 NoSQL 중 어느 것이 적합한지 판단할 수 있다</li><li>캐시 무효화(Cache Invalidation) 전략의 종류와 트레이드오프를 설명할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>2000년대 후반, 구글·아마존·페이스북 같은 인터넷 기업들이 폭발적인 트래픽 앞에서 전통적인 RDBMS의 한계를 체감하기 시작했습니다. 수평 확장(서버를 여러 대로 늘리기)이 어렵고, 엄격한 스키마가 빠르게 변화하는 제품 요구사항을 따라가지 못했습니다. 이 문제를 해결하기 위해 등장한 것이 NoSQL(Not Only SQL) 데이터베이스입니다.</p>
+<p>NoSQL은 단일 기술이 아닙니다. 키-값 저장소(Redis), 도큐먼트 저장소(MongoDB), 컬럼 패밀리 저장소(Cassandra), 그래프 데이터베이스(Neo4j) 등 다양한 종류가 있으며, 각각 특정 문제를 SQL보다 효율적으로 해결합니다.</p>
+<p>AI 엔지니어에게 NoSQL은 특히 캐싱과 피처 스토어 맥락에서 중요합니다. Redis는 모델 추론 결과를 캐싱해 동일한 입력에 대한 중복 계산을 방지하고, MongoDB는 반정형 데이터(사용자 행동 로그, 모델 설정)를 유연하게 저장합니다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>CAP 정리: 분산 시스템의 철학</h2><p>NoSQL을 이해하려면 CAP 정리를 알아야 합니다. 분산 데이터베이스는 다음 세 가지 속성 중 동시에 두 가지만 보장할 수 있다는 이론입니다.</p>
+<p><strong>C(Consistency, 일관성)</strong> = 모든 노드가 같은 시간에 같은 데이터를 본다.</p>
+<p><strong>A(Availability, 가용성)</strong> = 모든 요청이 응답을 받는다(최신 데이터가 아닐 수도 있음).</p>
+<p><strong>P(Partition Tolerance, 분할 내성)</strong> = 네트워크가 끊겨도 시스템이 계속 작동한다.</p>
+<p>네트워크 분할(P)은 현실에서 반드시 발생하므로, 실제 선택은 <strong>CP(일관성 + 분할 내성)</strong> vs <strong>AP(가용성 + 분할 내성)</strong> 입니다. PostgreSQL처럼 레플리케이션 설정에 따라 선택이 달라지는 경우도 있습니다. Redis Cluster는 기본적으로 AP에 가깝고, Zookeeper는 CP를 선택합니다.</p></div><div class="sb-block"><h2>Redis: 마이크로초 단위의 데이터 저장소</h2><p>Redis(Remote Dictionary Server)는 메모리 기반 키-값 저장소입니다. 디스크가 아닌 RAM에 저장하기 때문에 읽기/쓰기가 마이크로초 단위입니다. 일반적인 PostgreSQL 쿼리가 수 밀리초인 것과 비교하면 100~1000배 빠릅니다.</p>
+<p>Redis가 단순한 딕셔너리와 다른 점은 다양한 자료구조를 지원한다는 것입니다.</p>
+<ul>
+<li><strong>String</strong>: <code>SET key value</code>, <code>GET key</code>. TTL(Time-To-Live)로 자동 만료 설정 가능</li>
+<li><strong>Hash</strong>: 필드-값 쌍의 컬렉션. 사용자 세션 저장에 적합</li>
+<li><strong>List</strong>: 순서가 있는 문자열 목록. 메시지 큐 구현에 사용</li>
+<li><strong>Sorted Set</strong>: 점수(score)로 정렬된 집합. 리더보드, Rate Limiting 구현에 사용</li>
+<li><strong>Pub/Sub</strong>: 채널 기반 메시지 발행/구독. 실시간 알림에 사용</li>
+</ul>
+<p>Redis는 AI 서빙에서 두 가지 중요한 역할을 합니다. 첫째, <strong>결과 캐싱</strong> — 동일한 입력(같은 텍스트 프롬프트, 같은 이미지 해시)에 대한 모델 추론 결과를 캐시해 GPU 비용을 줄입니다. 둘째, <strong>피처 스토어</strong> — 실시간 피처(사용자의 최근 클릭 10개)를 Redis에 저장해 낮은 레이턴시로 모델에 제공합니다.</p></div><div class="sb-block"><h2>MongoDB: 유연한 도큐먼트 저장소</h2><p>MongoDB는 JSON 문서를 BSON(Binary JSON) 형태로 저장하는 도큐먼트 데이터베이스입니다. 테이블 스키마가 고정되지 않아, 각 도큐먼트가 다른 필드를 가질 수 있습니다.</p>
+<p>MongoDB가 SQL보다 유리한 상황은 다음과 같습니다.</p>
+<ul>
+<li>스키마가 자주 변경되는 초기 단계 제품</li>
+<li>중첩된 구조(댓글 안에 대댓글)를 자연스럽게 저장하고 싶을 때</li>
+<li>서로 다른 형태의 이벤트 로그를 단일 컬렉션에 저장할 때</li>
+</ul>
+<p>그러나 MongoDB에도 한계가 있습니다. JOIN이 기본 지원되지 않아 관계형 데이터를 다루기 복잡합니다(<code>$lookup</code> 사용). 트랜잭션은 4.0 이후 지원하지만 PostgreSQL보다 기능이 제한적입니다.</p>
+<p><strong>집계 파이프라인(Aggregation Pipeline)</strong> 은 MongoDB의 강력한 데이터 처리 기능입니다. <code><span class="math-inline">\(match`, `\)</span>group</code>, <code><span class="math-inline">\(project`, `\)</span>sort</code>, <code>$limit</code>를 체이닝해 SQL의 GROUP BY와 유사한 집계를 수행합니다.</p></div><div class="sb-block"><h2>캐싱 전략: Cache-Aside, Write-Through, Write-Behind</h2><p>캐싱은 자주 읽히고 드물게 변경되는 데이터를 빠른 저장소(Redis)에 복사해 읽기 성능을 높이는 기법입니다. 세 가지 주요 전략이 있습니다.</p>
+<p><strong>Cache-Aside (Lazy Loading)</strong> 는 가장 흔한 패턴입니다.</p>
+<ol>
+<li>캐시에 데이터가 있으면(Cache Hit) 바로 반환</li>
+<li>없으면(Cache Miss) DB에서 조회 후 캐시에 저장하고 반환</li>
+</ol>
+<p>장점: 실제로 필요한 데이터만 캐싱됩니다. 단점: 첫 요청은 항상 DB를 거칩니다(Cache Warming으로 해결).</p>
+<p><strong>Write-Through</strong> 는 쓰기 시 캐시와 DB를 동시에 업데이트합니다. 캐시 일관성이 높지만, 모든 쓰기에 캐시 비용이 추가됩니다.</p>
+<p><strong>Write-Behind (Write-Back)</strong> 는 캐시에만 먼저 쓰고, 비동기로 나중에 DB에 씁니다. 쓰기 속도가 매우 빠르지만, 캐시가 죽으면 데이터가 유실될 수 있습니다.</p>
+<p><strong>캐시 무효화(Cache Invalidation)</strong> 는 "컴퓨터 과학에서 가장 어려운 두 가지 문제"(네이밍, 캐시 무효화, off-by-one 오류) 중 하나입니다. TTL로 자동 만료하거나, 데이터 변경 이벤트에 명시적으로 삭제하는 방법이 있습니다.</p></div><div class="sb-block"><h2>SQL vs NoSQL: 선택 기준</h2><p>SQL과 NoSQL 중 무엇을 선택할지는 종교 전쟁이 아니라 엔지니어링 판단입니다. 다음 기준으로 결정합니다.</p>
+<table>
+<thead>
+<tr>
+<th>기준</th>
+<th>SQL 선택</th>
+<th>NoSQL 선택</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>데이터 구조</td>
+<td>명확하고 안정적인 스키마</td>
+<td>유동적, 중첩 구조</td>
+</tr>
+<tr>
+<td>관계</td>
+<td>복잡한 JOIN 필요</td>
+<td>비정규화 허용</td>
+</tr>
+<tr>
+<td>일관성</td>
+<td>강한 ACID 필요</td>
+<td>최종 일관성 허용</td>
+</tr>
+<tr>
+<td>확장 방향</td>
+<td>수직 확장 (Scale-Up)</td>
+<td>수평 확장 (Scale-Out)</td>
+</tr>
+<tr>
+<td>쓰기 패턴</td>
+<td>랜덤 쓰기·읽기 혼합</td>
+<td>대용량 쓰기 위주</td>
+</tr>
+</tbody>
+</table>
+<p>실무에서 대부분의 시스템은 SQL + NoSQL을 함께 씁니다. <strong>PostgreSQL</strong>이 주 데이터 저장소, <strong>Redis</strong>가 캐시·세션, <strong>Elasticsearch</strong>가 전문 검색(Full-text search)을 담당합니다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">메모판과 서류 캐비닛</div>
+      <div class="a-body"><p>데이터베이스의 차이를 이해하는 가장 좋은 비유입니다. Redis는 책상 위의 <strong>메모판</strong>입니다. 자주 보는 정보(오늘 일정, 자주 쓰는 전화번호)를 적어두면 바로 볼 수 있습니다. 그러나 메모판이 꽉 차면 오래된 것을 지워야 하고, 정전이 되면(TTL 만료 또는 서버 재시작) 내용이 사라집니다.</p>
+<p>PostgreSQL은 <strong>잠금장치가 달린 서류 캐비닛</strong>입니다. 중요한 계약서, 거래 기록을 안전하게 보관합니다. 꺼내려면 서랍을 찾아야 하니 메모판보다 느리지만, 절대 사라지지 않습니다.</p>
+<p>MongoDB는 <strong>플렉시블한 파일 박스</strong>입니다. 같은 박스 안에 다양한 모양의 서류(어떤 건 사진, 어떤 건 텍스트, 어떤 건 영수증)를 아무 형식이나 넣을 수 있습니다. 나중에 정리하기 불편할 수 있지만 빠르게 수집하기는 쉽습니다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>Redis를 사용해 AI 모델 추론 결과를 캐싱하는 패턴입니다. 같은 입력에 대한 중복 GPU 연산을 방지하고, TTL로 캐시를 자동 만료합니다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import redis.asyncio as aioredis
+import hashlib
+import json
+from functools import wraps
+
+# Redis 클라이언트 (싱글톤)
+redis_client = aioredis.from_url(&quot;redis://localhost:6379&quot;, decode_responses=True)
+
+def cache_inference(ttl: int = 300):
+    &quot;&quot;&quot;모델 추론 결과를 Redis에 캐시하는 데코레이터&quot;&quot;&quot;
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            # 입력을 직렬화해 캐시 키 생성
+            cache_key = f&quot;inference:{hashlib.sha256(
+                json.dumps({&#x27;args&#x27;: str(args), &#x27;kwargs&#x27;: kwargs},
+                sort_keys=True).encode()
+            ).hexdigest()[:16]}&quot;
+
+            # 캐시 히트 확인
+            cached = await redis_client.get(cache_key)
+            if cached:
+                return json.loads(cached)  # 캐시에서 즉시 반환
+
+            # 캐시 미스: 실제 추론 실행
+            result = await func(*args, **kwargs)
+
+            # 결과를 TTL과 함께 저장 (5분 후 자동 만료)
+            await redis_client.setex(cache_key, ttl, json.dumps(result))
+            return result
+        return wrapper
+    return decorator
+
+@cache_inference(ttl=300)
+async def run_model_inference(text: str, model_name: str) -&gt; dict:
+    &quot;&quot;&quot;실제 GPU 추론 (캐시 미스 시에만 실행)&quot;&quot;&quot;
+    # 실제로는 모델 호출
+    return {&quot;label&quot;: &quot;positive&quot;, &quot;score&quot;: 0.97, &quot;model&quot;: model_name}
+
+# Rate Limiting with Sorted Set
+async def check_rate_limit(user_id: str, limit: int = 100, window: int = 60) -&gt; bool:
+    key = f&quot;rate_limit:{user_id}&quot;
+    import time
+    now = time.time()
+    pipe = redis_client.pipeline()
+    pipe.zremrangebyscore(key, 0, now - window)   # 오래된 기록 제거
+    pipe.zadd(key, {str(now): now})               # 현재 요청 추가
+    pipe.zcard(key)                               # 윈도우 내 요청 수 확인
+    pipe.expire(key, window)                      # TTL 갱신
+    results = await pipe.execute()
+    return results[2] &lt;= limit                    # 제한 이하면 True</code></pre>
+      <div class="c-walk"><p><code>cache_inference</code> 데코레이터는 함수 인자를 SHA-256으로 해싱해 캐시 키를 만듭니다. <code>setex</code>는 SET + EXPIRE의 원자적 명령으로 TTL과 함께 저장합니다. Rate Limiting은 Sorted Set의 <code>ZREMRANGEBYSCORE</code>로 윈도우 밖 기록을 정리하고 <code>ZADD</code>→<code>ZCARD</code>로 현재 카운트를 확인합니다. <code>pipeline()</code>으로 여러 명령을 한 번의 네트워크 요청으로 보냅니다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">캐싱은 면접에서 시스템 설계 문제의 핵심 컴포넌트로 자주 등장합니다. Redis를 사용해봤는지보다 캐시 무효화 전략과 트레이드오프를 이해하는지를 봅니다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>캐시 스탬피드(Cache Stampede) 문제를 알고 해결 방법(분산 락, 확률적 조기 만료)을 아는가</li><li>Redis 메모리 정책(eviction policy)을 상황에 맞게 설정할 수 있는가</li><li>캐시 일관성 문제를 인식하고 허용 가능한 불일치 수준을 비즈니스 요구사항에 맞게 결정하는가</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>캐시를 무제한으로 채워두고 메모리 관리를 하지 않는 경우</li><li>모든 데이터를 MongoDB에 넣으면 된다고 생각하는 경우</li><li>캐시와 DB 사이의 데이터 불일치 가능성을 고려하지 않는 경우</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>Cache-Aside 패턴에서 여러 서버가 동시에 같은 캐시 미스를 처리할 때 발생하는 문제와 해결책은?</li><li>Redis가 메모리가 꽉 찼을 때 어떻게 동작하나요? eviction policy 종류를 설명해보세요.</li><li>AI 추론 캐시에서 같은 텍스트라도 캐시를 무효화해야 하는 상황은 언제인가요? (모델 업데이트)</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 아는 수준은 Redis에 데이터를 넣고 꺼낼 수 있는 것입니다. 마스터 수준은 Redis Cluster의 슬롯 기반 샤딩을 이해하고, 핫키(Hot Key) 문제를 Local Cache로 완화하며, Redis Streams로 이벤트 소싱을 구현할 수 있는 것입니다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>CAP 정리</h3><p>분산 DB는 일관성(C), 가용성(A), 분할 내성(P) 중 동시에 두 가지만 보장할 수 있다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>Redis = 인메모리 파워</h3><p>Redis는 마이크로초 레이턴시로 캐시·세션·Rate Limiting·Pub/Sub을 처리한다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>Cache-Aside 패턴</h3><p>캐시 미스 시 DB 조회 후 캐시 저장. 가장 범용적인 캐싱 패턴이다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>TTL로 자동 관리</h3><p>모든 캐시 항목에 TTL을 설정해 오래된 데이터가 자동으로 제거되도록 한다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>SQL + NoSQL 함께</h3><p>PostgreSQL(주 저장소) + Redis(캐시) + Elasticsearch(검색)을 함께 쓰는 것이 일반적이다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>캐시 무효화 전략</h3><p>캐시 무효화는 복잡하다. TTL 자동 만료와 명시적 삭제를 상황에 맞게 조합한다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-02.html">← Relational Databases &amp; SQL</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-04.html">REST API Design with FastAPI →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

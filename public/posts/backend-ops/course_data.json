@@ -1,0 +1,768 @@
+{
+  "topic": "Backend & Ops for AI Engineers",
+  "topicKr": "AI 엔지니어를 위한 백엔드 & Ops",
+  "topicSlug": "backend-ops",
+  "categorySlug": "computer-science",
+  "level": "beginner",
+  "codeLanguage": "Python",
+  "description": "AI 엔지니어가 혼자서 하나의 시스템을 처음부터 끝까지 구축할 수 있도록, HTTP·데이터베이스·API 설계·컨테이너·클라우드·모니터링·CI/CD까지 백엔드와 Ops의 핵심을 쉽고 깊게 다룹니다. 코드 예제는 모두 Python 기반이며, 각 챕터는 실제 프로덕션 환경에서 시니어 엔지니어가 평가하는 기준까지 포함합니다.",
+  "chapters": [
+    {
+      "number": 1,
+      "emoji": "🌐",
+      "title": "HTTP & Web Server Fundamentals",
+      "titleKr": "HTTP와 웹 서버 기초",
+      "tldr": "인터넷에서 클라이언트와 서버가 어떻게 대화하는지, HTTP의 구조와 웹 서버의 역할을 완전히 이해한다.",
+      "topics": ["HTTP 요청/응답 사이클", "메서드와 상태 코드", "헤더와 바디", "WSGI vs ASGI", "동기 vs 비동기 서버"],
+      "learningGoals": [
+        "HTTP 요청이 브라우저에서 서버까지 전달되는 전체 흐름을 설명할 수 있다",
+        "GET, POST, PUT, DELETE, PATCH의 의미 차이를 실제 사례로 구분할 수 있다",
+        "상태 코드 2xx/3xx/4xx/5xx 각각이 의미하는 바를 정확히 안다",
+        "WSGI와 ASGI의 차이를 이해하고 AI 서비스에 ASGI가 왜 유리한지 설명할 수 있다",
+        "HTTP 헤더가 인증·캐싱·콘텐츠 협상에 어떻게 쓰이는지 안다"
+      ],
+      "overview": "백엔드 개발을 처음 배울 때 가장 먼저 마주치는 것은 HTTP입니다. AI 모델을 아무리 잘 만들어도, 그것을 외부 세계와 연결하는 통로가 HTTP이기 때문에 이 프로토콜을 이해하지 않으면 아무것도 배포할 수 없습니다. 이 챕터는 HTTP가 무엇인지, 어떻게 동작하는지를 브라우저 주소창에 URL을 입력하는 순간부터 서버가 응답을 돌려보내는 순간까지 단계별로 추적합니다.\n\nHTTP는 HyperText Transfer Protocol의 약자로, 텍스트 기반의 요청-응답 프로토콜입니다. 클라이언트(브라우저, 모바일 앱, Python의 `requests` 라이브러리)가 서버에 요청을 보내면, 서버는 처리 후 응답을 돌려줍니다. 이 단순한 구조 위에 전 세계 웹이 돌아갑니다.\n\nAI 엔지니어에게 HTTP는 특히 중요합니다. 모델 추론 서버, 데이터 파이프라인 API, MLflow 같은 실험 추적 도구, 그리고 Kubernetes의 헬스체크까지 — 모두 HTTP를 사용합니다. 이 챕터를 마치면 `curl` 명령 한 줄로 어떤 서버든 디버깅할 수 있게 됩니다.",
+      "sections": [
+        {
+          "title": "HTTP 요청-응답 사이클",
+          "content": "브라우저에 `https://api.example.com/predict`를 입력하면 어떤 일이 벌어질까요? 먼저 DNS 조회가 일어납니다. DNS(Domain Name System)는 도메인 이름을 IP 주소로 변환하는 전화번호부입니다. `api.example.com` → `203.0.113.42` 같은 식으로 변환됩니다.\n\nIP 주소를 얻은 뒤 TCP 연결이 수립됩니다. HTTP/1.1까지는 매 요청마다 새 TCP 연결을 맺는 것이 기본이었지만, HTTP/1.1의 `keep-alive`와 HTTP/2부터는 하나의 연결을 재사용합니다. HTTPS라면 TLS 핸드셰이크가 추가됩니다.\n\nTCP 연결이 수립되면 클라이언트는 HTTP 요청 메시지를 전송합니다. 이 메시지는 **요청 라인**(메서드 + 경로 + HTTP 버전), **헤더**(키-값 쌍), **빈 줄**, **바디**(선택적)로 구성됩니다. 서버는 요청을 처리한 뒤 **상태 라인**(HTTP 버전 + 상태 코드 + 상태 메시지), **헤더**, **빈 줄**, **바디**로 구성된 응답을 보냅니다."
+        },
+        {
+          "title": "HTTP 메서드: 의미론적 계약",
+          "content": "HTTP 메서드는 단순히 \"어떤 동작을 할지\"가 아니라 **의미론적 계약**입니다. 서버와 클라이언트가 서로의 의도를 오해하지 않도록 하는 규약이죠.\n\n**GET** = 리소스를 조회한다. 서버 상태를 바꾸지 않는다(멱등성 보장). 브라우저가 뒤로가기를 눌러도 안전하게 재요청할 수 있습니다.\n\n**POST** = 새 리소스를 생성하거나 서버에 데이터를 처리 요청한다. 멱등성이 없습니다. 같은 요청을 두 번 보내면 두 개의 레코드가 생성될 수 있습니다.\n\n**PUT** = 리소스를 완전히 교체한다. 멱등성이 있습니다. 같은 요청을 열 번 보내도 결과는 동일합니다.\n\n**PATCH** = 리소스의 일부만 수정한다. PUT과 달리 변경할 필드만 보냅니다. AI 서빙에서 모델의 `threshold`만 바꾸고 싶을 때 유용합니다.\n\n**DELETE** = 리소스를 삭제한다. 멱등성이 있습니다(이미 없는 리소스를 삭제해도 결과는 동일)."
+        },
+        {
+          "title": "상태 코드: 서버의 언어",
+          "content": "HTTP 상태 코드는 서버가 클라이언트에게 보내는 표준 응답 언어입니다. 5가지 카테고리가 있습니다.\n\n**2xx — 성공**\n\n- `200 OK`: 요청 성공, 응답 바디에 결과가 있음\n- `201 Created`: 리소스 생성 성공, `Location` 헤더에 새 리소스 URL이 있음\n- `204 No Content`: 성공했지만 응답 바디가 없음 (DELETE 후 자주 사용)\n\n**3xx — 리다이렉션**\n\n- `301 Moved Permanently`: 영구 이동, 클라이언트가 북마크를 업데이트해야 함\n- `302 Found`: 임시 이동\n- `304 Not Modified`: 캐시가 유효함, 바디 없이 헤더만 전송\n\n**4xx — 클라이언트 오류**\n\n- `400 Bad Request`: 요청 형식이 잘못됨\n- `401 Unauthorized`: 인증이 필요함 (토큰 없음 또는 만료)\n- `403 Forbidden`: 인증은 됐지만 권한이 없음\n- `404 Not Found`: 리소스가 없음\n- `422 Unprocessable Entity`: FastAPI에서 유효성 검사 실패 시 반환\n- `429 Too Many Requests`: Rate limit 초과\n\n**5xx — 서버 오류**\n\n- `500 Internal Server Error`: 서버 내부 오류 (예외 처리 안 된 경우)\n- `502 Bad Gateway`: 프록시 서버가 업스트림에서 잘못된 응답 수신\n- `503 Service Unavailable`: 서버 과부하 또는 유지보수 중"
+        },
+        {
+          "title": "WSGI vs ASGI: 파이썬 서버의 두 세계",
+          "content": "파이썬 웹 프레임워크가 웹 서버(Nginx, Gunicorn)와 통신하는 인터페이스 규격이 WSGI와 ASGI입니다.\n\n**WSGI(Web Server Gateway Interface)** 는 Python 2.5 시절(2003년)에 정의된 동기 인터페이스입니다. 요청 하나를 처리하는 동안 스레드 전체가 블로킹됩니다. Django, Flask가 이 방식을 사용합니다. CPU를 많이 쓰는 작업(이미지 처리, 행렬 연산)에는 적합하지만, 수천 개의 동시 연결을 처리하기 위해선 스레드 또는 프로세스를 늘려야 합니다.\n\n**ASGI(Asynchronous Server Gateway Interface)** 는 Python의 `asyncio`를 기반으로 한 비동기 인터페이스입니다. 단일 스레드가 I/O 대기 시간 동안 다른 요청을 처리할 수 있습니다. FastAPI, Starlette이 이 방식을 사용합니다.\n\nAI 서빙 서버에 ASGI가 유리한 이유가 있습니다. 모델 추론 요청은 GPU 연산이 끝날 때까지 기다리는 I/O 바운드 작업입니다. ASGI를 쓰면 GPU가 추론하는 동안 CPU는 다른 요청의 전처리·후처리를 할 수 있어 처리량이 크게 증가합니다. Triton Inference Server, vLLM이 모두 비동기 처리를 핵심으로 설계된 이유가 여기 있습니다."
+        },
+        {
+          "title": "HTTP 헤더의 실전 활용",
+          "content": "헤더는 HTTP 메시지의 메타데이터입니다. 바디에 담기지 않는 제어 정보를 전달합니다.\n\n**인증 관련 헤더**\n\n`Authorization: Bearer <token>` 형태로 JWT 토큰을 전달합니다. API 키는 보통 `X-API-Key: <key>` 형태의 커스텀 헤더로 전달합니다.\n\n**콘텐츠 협상 헤더**\n\n`Content-Type: application/json`은 바디가 JSON 형식임을 알립니다. `Accept: application/json`은 클라이언트가 JSON 응답을 원한다는 의사 표시입니다. AI 서버에서 이미지를 업로드할 때는 `Content-Type: multipart/form-data`를 사용합니다.\n\n**캐싱 헤더**\n\n`Cache-Control: max-age=3600`은 응답을 1시간 동안 캐시해도 된다는 의미입니다. `ETag`는 리소스의 버전 식별자로, 클라이언트가 `If-None-Match` 헤더로 조건부 요청을 보내 서버가 `304`를 반환하면 대역폭을 아낄 수 있습니다.\n\n**CORS 헤더**\n\n`Access-Control-Allow-Origin: *`는 어떤 도메인에서도 이 API를 호출할 수 있다는 의미입니다. 브라우저가 다른 도메인의 API를 호출할 때 CORS 정책이 적용되므로, FastAPI 등에서 반드시 설정해야 합니다."
+        }
+      ],
+      "analogy": {
+        "title": "우체국 택배 시스템",
+        "content": "HTTP 요청-응답을 이해하는 가장 좋은 비유는 우체국 택배입니다. 클라이언트는 택배를 보내는 사람, 서버는 택배를 받는 물류 창고입니다.\n\n택배 상자(HTTP 요청)에는 받는 주소(URL), 운송 방법(HTTP 메서드: 일반 배송/빠른 배송/반품), 내용물(바디), 그리고 겉면에 붙어 있는 스티커들(헤더: 냉동 보관 필요, 취급 주의, 결제 완료 확인서)이 있습니다.\n\n물류 창고(서버)는 택배를 받으면 상태 스티커를 붙여 돌려보냅니다. `200 OK`는 \"정상 수령했습니다.\", `404 Not Found`는 \"해당 상품이 창고에 없습니다.\", `503 Service Unavailable`은 \"오늘 창고 화재로 운영이 불가합니다.\" 상태 코드는 물류 창고가 보내는 표준 응답 언어입니다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "Python의 `httpx` 라이브러리로 비동기 HTTP 요청을 보내고, 응답의 상태 코드·헤더·바디를 직접 다루는 예제입니다. AI 서버에 예측 요청을 보내는 클라이언트 코드를 작성합니다.",
+        "code": "import httpx\nimport asyncio\n\nBASE_URL = \"https://api.example.com\"\n\nasync def predict(image_url: str, model: str = \"yolo-v8\") -> dict:\n    async with httpx.AsyncClient(timeout=30.0) as client:\n        # POST 요청: JSON 바디 + 인증 헤더\n        response = await client.post(\n            f\"{BASE_URL}/v1/predict\",\n            json={\"image_url\": image_url, \"model\": model},\n            headers={\n                \"Authorization\": \"Bearer my-secret-token\",\n                \"Content-Type\": \"application/json\",\n                \"X-Request-Id\": \"req-001\",  # 디버깅용 커스텀 헤더\n            },\n        )\n\n        # 상태 코드에 따른 분기 처리\n        if response.status_code == 200:\n            return response.json()\n        elif response.status_code == 422:\n            # FastAPI 유효성 검사 실패: 어떤 필드가 문제인지 확인\n            raise ValueError(f\"Validation error: {response.json()}\")\n        elif response.status_code == 429:\n            # Rate limit: Retry-After 헤더에 재시도 대기 시간이 있음\n            retry_after = response.headers.get(\"Retry-After\", \"60\")\n            raise RuntimeError(f\"Rate limited. Retry after {retry_after}s\")\n        else:\n            response.raise_for_status()  # 나머지 4xx/5xx는 예외 발생\n\nasync def main():\n    result = await predict(\"https://example.com/dog.jpg\")\n    print(result)\n\nif __name__ == \"__main__\":\n    asyncio.run(main())",
+        "walkthrough": "`httpx.AsyncClient`는 비동기 HTTP 클라이언트로, `requests`의 비동기 버전입니다. `async with` 구문으로 연결 풀을 자동으로 관리합니다. `timeout=30.0`은 30초 내에 응답이 없으면 예외를 발생시킵니다. 상태 코드별 분기 처리가 핵심입니다 — 특히 `429`의 경우 `Retry-After` 헤더를 읽어 적절한 대기 후 재시도해야 합니다."
+      },
+      "industryEvaluation": {
+        "overview": "시니어 엔지니어는 HTTP에 대해 \"아는\" 사람과 \"이해하는\" 사람을 면접에서 빠르게 구분합니다. 표면적인 지식(메서드 이름, 상태 코드 숫자)이 아니라, 실제 문제 상황에서 어떻게 활용하는지를 봅니다.",
+        "whatEngineersLookFor": [
+          "PUT과 PATCH의 차이를 설계 맥락에서 설명할 수 있는가",
+          "401과 403을 혼동하지 않고 각각 언제 반환해야 하는지 아는가",
+          "CORS 오류를 브라우저 콘솔에서 보고 서버 설정으로 해결한 경험이 있는가",
+          "Rate limiting 구현 시 `Retry-After` 헤더를 포함하는지 아는가"
+        ],
+        "redFlags": [
+          "POST와 GET을 \"데이터 보낼 때\" vs \"데이터 가져올 때\"로만 구분하는 경우",
+          "401과 403을 같은 의미로 사용하는 경우",
+          "HTTP/2나 HTTPS의 동작 원리를 전혀 모르는 경우"
+        ],
+        "interviewQuestions": [
+          "사용자가 로그인했지만 관리자 페이지에 접근하면 어떤 상태 코드를 반환해야 하나요? (401 vs 403)",
+          "AI 추론 API에서 처리 시간이 오래 걸릴 때 클라이언트 타임아웃 문제를 어떻게 해결하시겠어요?",
+          "같은 POST 요청이 네트워크 오류로 두 번 전송됐을 때 중복 처리를 어떻게 방지하나요? (Idempotency Key)"
+        ],
+        "masteryVsFamiliar": "단순히 아는 수준은 상태 코드와 메서드 이름을 나열할 수 있는 정도입니다. 마스터 수준은 `ETag`와 `If-None-Match`를 이용한 조건부 요청을 직접 구현하거나, HTTP/2의 멀티플렉싱이 AI 서빙 레이턴시를 어떻게 개선하는지 설명하고, 실제 트레이드오프를 가진 설계 결정을 내릴 수 있는 것입니다."
+      },
+      "keyTakeaways": [
+        {"title": "요청-응답 사이클", "content": "모든 HTTP 통신은 클라이언트의 요청과 서버의 응답 한 쌍으로 이루어진다."},
+        {"title": "메서드는 계약", "content": "GET·POST·PUT·PATCH·DELETE는 서버와 클라이언트 간의 의미론적 약속이다."},
+        {"title": "상태 코드 패밀리", "content": "2xx 성공, 4xx 클라이언트 오류, 5xx 서버 오류를 구분할 줄 알아야 디버깅이 가능하다."},
+        {"title": "ASGI = AI 서버의 선택", "content": "비동기 ASGI(FastAPI/Starlette)는 GPU 추론 대기 시간 동안 CPU가 다른 요청을 처리해 처리량을 높인다."},
+        {"title": "헤더는 메타데이터", "content": "인증·캐싱·콘텐츠 협상은 헤더로 제어된다. 바디만 보면 헤더를 놓친다."},
+        {"title": "CORS는 브라우저 정책", "content": "CORS 오류는 브라우저가 발생시키는 것이지 서버 버그가 아니다. 서버에서 허용 헤더를 설정해야 한다."},
+        {"title": "curl로 디버깅", "content": "`curl -v` 옵션은 요청·응답 헤더 전체를 보여준다. 모든 HTTP 이슈의 첫 번째 디버깅 도구다."}
+      ]
+    },
+    {
+      "number": 2,
+      "emoji": "🗄️",
+      "title": "Relational Databases & SQL",
+      "titleKr": "관계형 데이터베이스와 SQL",
+      "tldr": "데이터를 테이블에 저장하고, SQL로 원하는 정보를 정확하게 꺼내오는 방법과 인덱스·트랜잭션의 원리를 이해한다.",
+      "topics": ["관계형 모델과 테이블 설계", "SQL 핵심 문법", "인덱스와 쿼리 최적화", "트랜잭션과 ACID", "PostgreSQL 실전"],
+      "learningGoals": [
+        "ERD를 보고 테이블 간 관계(1:N, N:M)를 이해하고 직접 설계할 수 있다",
+        "JOIN, GROUP BY, 서브쿼리를 사용해 복잡한 데이터를 추출할 수 있다",
+        "인덱스가 쿼리 성능에 미치는 영향을 EXPLAIN으로 확인할 수 있다",
+        "트랜잭션과 ACID 속성을 이해하고 실제 금융/주문 시스템에 적용할 수 있다",
+        "PostgreSQL의 JSON 타입을 활용해 구조화·비구조화 데이터를 함께 저장할 수 있다"
+      ],
+      "overview": "데이터베이스는 모든 백엔드 시스템의 심장입니다. AI 모델이 아무리 뛰어나도, 학습 데이터·사용자 정보·실험 결과를 안전하게 저장하고 빠르게 조회하지 못하면 서비스가 될 수 없습니다. 관계형 데이터베이스(RDBMS)는 50년 이상 검증된 기술로, 2024년에도 여전히 대부분의 프로덕션 시스템에서 핵심 데이터 저장소로 사용됩니다.\n\nSQL(Structured Query Language)은 데이터베이스와 대화하는 언어입니다. Python이나 JavaScript와 달리 선언적 언어입니다 — \"어떻게 가져와라\"가 아니라 \"무엇을 원한다\"고 말하면 데이터베이스 엔진이 최적의 방법을 찾습니다. 이 점이 처음에는 어색하지만, 익숙해지면 강력한 표현력을 제공합니다.\n\nAI 엔지니어가 SQL을 알아야 하는 이유는 명확합니다. 모델 학습 데이터는 대부분 데이터베이스에서 나오고, 실험 결과와 모델 메타데이터는 데이터베이스에 저장되며, A/B 테스트 분석도 SQL 쿼리로 합니다. MLflow, Weights & Biases 같은 ML 플랫폼도 내부적으로 SQL DB를 사용합니다.",
+      "sections": [
+        {
+          "title": "관계형 모델: 테이블, 키, 관계",
+          "content": "관계형 데이터베이스는 데이터를 **테이블(Table)** 로 저장합니다. 테이블은 엑셀 시트와 비슷하지만, 훨씬 엄격한 규칙이 있습니다. 각 테이블은 **행(Row, 레코드)** 과 **열(Column, 속성)** 으로 구성됩니다.\n\n**기본 키(Primary Key, PK)** 는 테이블 내에서 각 행을 유일하게 식별하는 열입니다. 중복이 없고 NULL이 될 수 없습니다. 보통 `id` 열에 자동 증가 정수(`SERIAL` or `BIGSERIAL`) 또는 UUID를 사용합니다.\n\n**외래 키(Foreign Key, FK)** 는 다른 테이블의 기본 키를 참조하는 열입니다. 테이블 간의 관계를 표현합니다. 예를 들어 `orders.user_id`는 `users.id`를 참조하는 외래 키입니다.\n\n테이블 간 관계는 세 가지 유형이 있습니다.\n\n- **1:1 관계**: 사용자 ↔ 사용자 프로필 (한 사용자에 프로필 하나)\n- **1:N 관계**: 사용자 ↔ 주문 (한 사용자가 여러 주문)\n- **N:M 관계**: 모델 ↔ 태그 (한 모델에 여러 태그, 한 태그가 여러 모델). 중간 테이블(Junction Table)이 필요합니다."
+        },
+        {
+          "title": "SQL 핵심 문법: CRUD 그 이상",
+          "content": "SQL은 크게 DDL(테이블 정의), DML(데이터 조작), DCL(권한 관리)로 나뉩니다. 실무에서 가장 많이 쓰는 것은 DML의 `SELECT`입니다.\n\n**기본 SELECT 구조**는 `SELECT → FROM → WHERE → GROUP BY → HAVING → ORDER BY → LIMIT` 순서로 작성합니다. 실제 실행 순서는 FROM → WHERE → GROUP BY → HAVING → SELECT → ORDER BY → LIMIT입니다.\n\n**JOIN** 은 여러 테이블을 결합합니다.\n\n- `INNER JOIN`: 양쪽 테이블에 모두 존재하는 행만 반환\n- `LEFT JOIN`: 왼쪽 테이블 전체 + 오른쪽에 매칭되는 행 (없으면 NULL)\n- `RIGHT JOIN`: 오른쪽 테이블 전체 + 왼쪽에 매칭되는 행\n\n**집계 함수와 GROUP BY**는 데이터를 요약합니다. `COUNT`, `SUM`, `AVG`, `MAX`, `MIN`을 `GROUP BY`와 함께 사용합니다. `HAVING`은 그룹화 이후에 필터링할 때 씁니다(`WHERE`는 그룹화 이전).\n\n**서브쿼리와 CTE**는 복잡한 쿼리를 가독성 있게 분리합니다. `WITH cte_name AS (SELECT ...)` 형태의 CTE(Common Table Expression)는 재사용 가능한 임시 뷰입니다."
+        },
+        {
+          "title": "인덱스: 검색 속도의 핵심",
+          "content": "인덱스 없는 데이터베이스 쿼리는 책의 목차 없이 내용을 찾는 것과 같습니다. 10행짜리 테이블에서는 전체를 뒤져도 빠르지만, 1억 행 테이블에서는 인덱스 없이 `WHERE user_id = 12345` 쿼리를 실행하면 전체 행을 스캔(`Seq Scan`)합니다.\n\n**B-Tree 인덱스** 는 PostgreSQL의 기본 인덱스 타입입니다. 정렬된 트리 구조로 `=`, `<`, `>`, `BETWEEN`, `LIKE 'prefix%'` 조건에 효율적입니다.\n\n**복합 인덱스(Composite Index)** 는 여러 열을 묶어서 인덱스를 만듭니다. `CREATE INDEX ON events (user_id, created_at)`처럼 만들면 `WHERE user_id = ? ORDER BY created_at` 쿼리를 인덱스만으로 처리할 수 있습니다. 열 순서가 중요합니다 — 첫 번째 열이 필터 조건에 없으면 인덱스가 사용되지 않습니다.\n\n**`EXPLAIN ANALYZE`** 로 쿼리 실행 계획을 확인합니다. `Seq Scan`이 보이면 인덱스가 필요하다는 신호입니다. `Index Scan`이나 `Bitmap Index Scan`이 보이면 인덱스를 잘 활용하고 있습니다."
+        },
+        {
+          "title": "트랜잭션과 ACID 보장",
+          "content": "트랜잭션은 하나의 논리적 작업 단위입니다. 계좌 이체를 예로 들면, A 계좌에서 빼고 B 계좌에 더하는 두 작업이 하나의 트랜잭션이어야 합니다. 중간에 서버가 죽으면 두 작업이 모두 취소되어야 합니다.\n\nRDBMS는 **ACID** 속성으로 트랜잭션의 신뢰성을 보장합니다.\n\n**A(Atomicity, 원자성)** = 트랜잭션 내 모든 작업이 전부 성공하거나 전부 실패합니다.\n\n**C(Consistency, 일관성)** = 트랜잭션 전후로 데이터베이스의 무결성 제약(FK, NOT NULL, UNIQUE 등)이 유지됩니다.\n\n**I(Isolation, 격리성)** = 동시에 실행되는 트랜잭션들이 서로 영향을 주지 않습니다. 격리 수준(Read Uncommitted → Read Committed → Repeatable Read → Serializable)에 따라 성능과 일관성을 트레이드오프합니다.\n\n**D(Durability, 지속성)** = 커밋된 트랜잭션은 시스템 장애가 나도 유지됩니다. WAL(Write-Ahead Log)이 이를 보장합니다."
+        },
+        {
+          "title": "PostgreSQL: AI 엔지니어의 데이터베이스",
+          "content": "PostgreSQL은 오픈소스 RDBMS 중 가장 기능이 풍부하고 확장성이 높습니다. AI/ML 워크플로에서 특히 유용한 기능들이 있습니다.\n\n**JSONB 타입** 은 JSON을 바이너리 형태로 저장하고 인덱싱을 지원합니다. 스키마가 유동적인 모델 하이퍼파라미터나 실험 설정을 저장할 때 유용합니다. `SELECT config->'learning_rate'` 같은 JSON 경로 쿼리를 지원합니다.\n\n**`pgvector` 확장** 을 사용하면 임베딩 벡터를 PostgreSQL에 저장하고 근사 최근접 이웃(ANN) 검색을 할 수 있습니다. Pinecone 같은 전용 벡터 DB 없이도 RAG 시스템을 구축할 수 있습니다.\n\n**`pg_cron`** 으로 데이터 정리, 통계 집계, 모델 학습 트리거 등을 SQL 스케줄러로 실행할 수 있습니다.\n\n파티셔닝(Partitioning)은 대용량 테이블을 날짜나 범위로 분할하여 쿼리 성능을 높입니다. 수억 건의 로그 데이터를 월별로 파티셔닝하면 최근 한 달 조회 시 나머지 파티션은 건너뜁니다."
+        }
+      ],
+      "analogy": {
+        "title": "엑셀 시트와 그 한계",
+        "content": "관계형 데이터베이스를 처음 이해하는 데 가장 좋은 비유는 엑셀 시트입니다. 테이블 = 시트, 행 = 데이터 한 줄, 열 = 각 항목(이름, 나이, 이메일). 엑셀로 고객 목록을 관리할 수 있죠.\n\n그런데 엑셀의 한계가 있습니다. 고객 한 명이 여러 주문을 하면 어떻게 하죠? 같은 시트에 주문마다 행을 추가하면 고객 이름이 중복됩니다. 고객이 이름을 바꾸면 모든 행을 찾아서 수정해야 합니다. 이것이 **데이터 중복**과 **업데이트 이상** 문제입니다.\n\n관계형 데이터베이스는 이 문제를 **정규화(Normalization)** 로 해결합니다. 고객 시트와 주문 시트를 분리하고, 주문 시트에 고객 ID만 저장합니다. 이제 고객 이름이 바뀌어도 고객 시트 한 곳만 수정하면 됩니다. `JOIN`은 두 시트를 고객 ID 기준으로 합쳐서 보여주는 `VLOOKUP`의 슈퍼 버전입니다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "Python의 `asyncpg` 라이브러리로 PostgreSQL에 비동기 연결하고, ML 실험 결과를 저장·조회하는 패턴을 구현합니다. 실제 MLOps 시스템에서 사용하는 구조입니다.",
+        "code": "import asyncpg\nimport asyncio\nfrom typing import Optional\n\nasync def get_db_pool():\n    return await asyncpg.create_pool(\n        dsn=\"postgresql://user:password@localhost:5432/mlops\",\n        min_size=2,\n        max_size=10,  # 최대 10개 동시 연결\n    )\n\nasync def save_experiment(pool, run_id: str, metrics: dict, config: dict):\n    async with pool.acquire() as conn:\n        # JSONB로 유동적인 설정·지표 저장\n        await conn.execute(\"\"\"\n            INSERT INTO experiments (run_id, metrics, config, created_at)\n            VALUES ($1, $2::jsonb, $3::jsonb, NOW())\n            ON CONFLICT (run_id) DO UPDATE\n            SET metrics = EXCLUDED.metrics\n        \"\"\", run_id, str(metrics).replace(\"'\", '\"'), str(config).replace(\"'\", '\"'))\n\nasync def get_top_experiments(pool, metric: str = \"accuracy\", top_n: int = 5):\n    async with pool.acquire() as conn:\n        rows = await conn.fetch(\"\"\"\n            SELECT\n                run_id,\n                metrics->>'accuracy'      AS accuracy,\n                metrics->>'loss'          AS loss,\n                config->>'learning_rate'  AS lr,\n                created_at\n            FROM experiments\n            WHERE metrics->>$1 IS NOT NULL\n            ORDER BY (metrics->>'accuracy')::float DESC\n            LIMIT $2\n        \"\"\", metric, top_n)\n        return [dict(r) for r in rows]\n\nasync def main():\n    pool = await get_db_pool()\n    # 실험 결과 저장\n    await save_experiment(\n        pool,\n        run_id=\"exp-2024-001\",\n        metrics={\"accuracy\": 0.923, \"loss\": 0.187},\n        config={\"learning_rate\": 0.001, \"batch_size\": 32},\n    )\n    # 상위 5개 실험 조회\n    top = await get_top_experiments(pool)\n    for exp in top:\n        print(exp)\n    await pool.close()\n\nasyncio.run(main())",
+        "walkthrough": "`create_pool`은 커넥션 풀을 생성합니다. 매 요청마다 새 연결을 여닫는 비용을 없애고, `max_size=10`으로 동시 쿼리 수를 제한합니다. `$1`, `$2` 플레이스홀더는 SQL 인젝션을 방지하는 파라미터화된 쿼리입니다. `metrics->>'accuracy'` 는 JSONB에서 특정 키의 값을 문자열로 추출하고, `::float` 캐스트로 숫자 정렬합니다."
+      },
+      "industryEvaluation": {
+        "overview": "데이터베이스 능력은 백엔드 면접에서 가장 깊이 파고드는 영역 중 하나입니다. SQL을 쓸 줄 아는지가 아니라, 스키마 설계 결정의 이유와 성능 트레이드오프를 이해하는지를 봅니다.",
+        "whatEngineersLookFor": [
+          "N+1 쿼리 문제를 인식하고 JOIN이나 서브쿼리로 해결할 수 있는가",
+          "인덱스를 무분별하게 추가하지 않고 쓰기 성능 비용을 인지하는가",
+          "트랜잭션 격리 수준 선택의 이유를 설명할 수 있는가",
+          "EXPLAIN ANALYZE 결과를 읽고 병목을 찾을 수 있는가"
+        ],
+        "redFlags": [
+          "ORM만 쓰고 실제 실행되는 SQL을 확인하지 않는 경우",
+          "모든 열에 인덱스를 만들면 빠를 것이라고 생각하는 경우",
+          "트랜잭션 없이 여러 테이블을 수정하는 코드를 작성하는 경우"
+        ],
+        "interviewQuestions": [
+          "1억 건 로그 테이블에서 특정 사용자의 최근 7일 활동을 빠르게 조회하려면 어떤 인덱스를 만들겠어요?",
+          "ORM을 쓸 때 N+1 문제가 발생하는 상황을 설명하고, 어떻게 해결하시겠어요?",
+          "동시에 같은 재고를 구매하는 두 요청이 들어올 때 재고가 마이너스가 되지 않도록 하려면 어떻게 하나요?"
+        ],
+        "masteryVsFamiliar": "기초 수준은 SELECT, JOIN, GROUP BY를 사용할 수 있는 것입니다. 마스터 수준은 파티셔닝된 테이블 설계, 부분 인덱스(Partial Index), 데드락 방지를 위한 락 순서 설계, 그리고 WAL을 활용한 논리 복제 설정까지 할 수 있는 것입니다."
+      },
+      "keyTakeaways": [
+        {"title": "정규화로 중복 제거", "content": "데이터는 한 곳에만 저장하고 키로 참조한다. 중복은 업데이트 이상을 유발한다."},
+        {"title": "SELECT 실행 순서", "content": "FROM → WHERE → GROUP BY → HAVING → SELECT → ORDER BY → LIMIT. 작성 순서와 다르다."},
+        {"title": "인덱스는 공짜가 아니다", "content": "인덱스는 읽기를 빠르게 하지만 쓰기를 느리게 하고 저장 공간을 추가로 사용한다."},
+        {"title": "EXPLAIN ANALYZE", "content": "쿼리 성능 문제는 추측하지 말고 EXPLAIN ANALYZE로 실행 계획을 확인한다."},
+        {"title": "ACID = 신뢰성", "content": "트랜잭션의 ACID 속성이 데이터 무결성을 보장한다. 돈을 다루는 모든 로직은 트랜잭션 안에 있어야 한다."},
+        {"title": "JSONB for 유연성", "content": "PostgreSQL의 JSONB는 구조화·비구조화 데이터를 함께 저장하면서도 인덱싱과 쿼리를 지원한다."},
+        {"title": "pgvector for RAG", "content": "pgvector 확장으로 PostgreSQL이 벡터 DB가 될 수 있다. 별도의 Pinecone 없이 RAG를 구축할 수 있다."}
+      ]
+    },
+    {
+      "number": 3,
+      "emoji": "⚡",
+      "title": "NoSQL & Data Modeling",
+      "titleKr": "NoSQL과 데이터 모델링",
+      "tldr": "Redis, MongoDB 등 NoSQL 데이터베이스가 언제 SQL보다 적합한지 이해하고, 캐싱과 세션 관리에 Redis를 실전 활용한다.",
+      "topics": ["NoSQL의 등장 배경", "Redis: 인메모리 캐시", "MongoDB: 도큐먼트 저장소", "SQL vs NoSQL 선택 기준", "캐싱 전략"],
+      "learningGoals": [
+        "CAP 정리를 이해하고 NoSQL이 어떤 트레이드오프를 선택하는지 설명할 수 있다",
+        "Redis를 사용해 API 응답 캐싱, 세션 저장, Rate Limiting을 구현할 수 있다",
+        "MongoDB의 도큐먼트 모델과 집계 파이프라인을 활용할 수 있다",
+        "주어진 문제에 SQL과 NoSQL 중 어느 것이 적합한지 판단할 수 있다",
+        "캐시 무효화(Cache Invalidation) 전략의 종류와 트레이드오프를 설명할 수 있다"
+      ],
+      "overview": "2000년대 후반, 구글·아마존·페이스북 같은 인터넷 기업들이 폭발적인 트래픽 앞에서 전통적인 RDBMS의 한계를 체감하기 시작했습니다. 수평 확장(서버를 여러 대로 늘리기)이 어렵고, 엄격한 스키마가 빠르게 변화하는 제품 요구사항을 따라가지 못했습니다. 이 문제를 해결하기 위해 등장한 것이 NoSQL(Not Only SQL) 데이터베이스입니다.\n\nNoSQL은 단일 기술이 아닙니다. 키-값 저장소(Redis), 도큐먼트 저장소(MongoDB), 컬럼 패밀리 저장소(Cassandra), 그래프 데이터베이스(Neo4j) 등 다양한 종류가 있으며, 각각 특정 문제를 SQL보다 효율적으로 해결합니다.\n\nAI 엔지니어에게 NoSQL은 특히 캐싱과 피처 스토어 맥락에서 중요합니다. Redis는 모델 추론 결과를 캐싱해 동일한 입력에 대한 중복 계산을 방지하고, MongoDB는 반정형 데이터(사용자 행동 로그, 모델 설정)를 유연하게 저장합니다.",
+      "sections": [
+        {
+          "title": "CAP 정리: 분산 시스템의 철학",
+          "content": "NoSQL을 이해하려면 CAP 정리를 알아야 합니다. 분산 데이터베이스는 다음 세 가지 속성 중 동시에 두 가지만 보장할 수 있다는 이론입니다.\n\n**C(Consistency, 일관성)** = 모든 노드가 같은 시간에 같은 데이터를 본다.\n\n**A(Availability, 가용성)** = 모든 요청이 응답을 받는다(최신 데이터가 아닐 수도 있음).\n\n**P(Partition Tolerance, 분할 내성)** = 네트워크가 끊겨도 시스템이 계속 작동한다.\n\n네트워크 분할(P)은 현실에서 반드시 발생하므로, 실제 선택은 **CP(일관성 + 분할 내성)** vs **AP(가용성 + 분할 내성)** 입니다. PostgreSQL처럼 레플리케이션 설정에 따라 선택이 달라지는 경우도 있습니다. Redis Cluster는 기본적으로 AP에 가깝고, Zookeeper는 CP를 선택합니다."
+        },
+        {
+          "title": "Redis: 마이크로초 단위의 데이터 저장소",
+          "content": "Redis(Remote Dictionary Server)는 메모리 기반 키-값 저장소입니다. 디스크가 아닌 RAM에 저장하기 때문에 읽기/쓰기가 마이크로초 단위입니다. 일반적인 PostgreSQL 쿼리가 수 밀리초인 것과 비교하면 100~1000배 빠릅니다.\n\nRedis가 단순한 딕셔너리와 다른 점은 다양한 자료구조를 지원한다는 것입니다.\n\n- **String**: `SET key value`, `GET key`. TTL(Time-To-Live)로 자동 만료 설정 가능\n- **Hash**: 필드-값 쌍의 컬렉션. 사용자 세션 저장에 적합\n- **List**: 순서가 있는 문자열 목록. 메시지 큐 구현에 사용\n- **Sorted Set**: 점수(score)로 정렬된 집합. 리더보드, Rate Limiting 구현에 사용\n- **Pub/Sub**: 채널 기반 메시지 발행/구독. 실시간 알림에 사용\n\nRedis는 AI 서빙에서 두 가지 중요한 역할을 합니다. 첫째, **결과 캐싱** — 동일한 입력(같은 텍스트 프롬프트, 같은 이미지 해시)에 대한 모델 추론 결과를 캐시해 GPU 비용을 줄입니다. 둘째, **피처 스토어** — 실시간 피처(사용자의 최근 클릭 10개)를 Redis에 저장해 낮은 레이턴시로 모델에 제공합니다."
+        },
+        {
+          "title": "MongoDB: 유연한 도큐먼트 저장소",
+          "content": "MongoDB는 JSON 문서를 BSON(Binary JSON) 형태로 저장하는 도큐먼트 데이터베이스입니다. 테이블 스키마가 고정되지 않아, 각 도큐먼트가 다른 필드를 가질 수 있습니다.\n\nMongoDB가 SQL보다 유리한 상황은 다음과 같습니다.\n\n- 스키마가 자주 변경되는 초기 단계 제품\n- 중첩된 구조(댓글 안에 대댓글)를 자연스럽게 저장하고 싶을 때\n- 서로 다른 형태의 이벤트 로그를 단일 컬렉션에 저장할 때\n\n그러나 MongoDB에도 한계가 있습니다. JOIN이 기본 지원되지 않아 관계형 데이터를 다루기 복잡합니다(`$lookup` 사용). 트랜잭션은 4.0 이후 지원하지만 PostgreSQL보다 기능이 제한적입니다.\n\n**집계 파이프라인(Aggregation Pipeline)** 은 MongoDB의 강력한 데이터 처리 기능입니다. `$match`, `$group`, `$project`, `$sort`, `$limit`를 체이닝해 SQL의 GROUP BY와 유사한 집계를 수행합니다."
+        },
+        {
+          "title": "캐싱 전략: Cache-Aside, Write-Through, Write-Behind",
+          "content": "캐싱은 자주 읽히고 드물게 변경되는 데이터를 빠른 저장소(Redis)에 복사해 읽기 성능을 높이는 기법입니다. 세 가지 주요 전략이 있습니다.\n\n**Cache-Aside (Lazy Loading)** 는 가장 흔한 패턴입니다.\n\n1. 캐시에 데이터가 있으면(Cache Hit) 바로 반환\n2. 없으면(Cache Miss) DB에서 조회 후 캐시에 저장하고 반환\n\n장점: 실제로 필요한 데이터만 캐싱됩니다. 단점: 첫 요청은 항상 DB를 거칩니다(Cache Warming으로 해결).\n\n**Write-Through** 는 쓰기 시 캐시와 DB를 동시에 업데이트합니다. 캐시 일관성이 높지만, 모든 쓰기에 캐시 비용이 추가됩니다.\n\n**Write-Behind (Write-Back)** 는 캐시에만 먼저 쓰고, 비동기로 나중에 DB에 씁니다. 쓰기 속도가 매우 빠르지만, 캐시가 죽으면 데이터가 유실될 수 있습니다.\n\n**캐시 무효화(Cache Invalidation)** 는 \"컴퓨터 과학에서 가장 어려운 두 가지 문제\"(네이밍, 캐시 무효화, off-by-one 오류) 중 하나입니다. TTL로 자동 만료하거나, 데이터 변경 이벤트에 명시적으로 삭제하는 방법이 있습니다."
+        },
+        {
+          "title": "SQL vs NoSQL: 선택 기준",
+          "content": "SQL과 NoSQL 중 무엇을 선택할지는 종교 전쟁이 아니라 엔지니어링 판단입니다. 다음 기준으로 결정합니다.\n\n| 기준 | SQL 선택 | NoSQL 선택 |\n|---|---|---|\n| 데이터 구조 | 명확하고 안정적인 스키마 | 유동적, 중첩 구조 |\n| 관계 | 복잡한 JOIN 필요 | 비정규화 허용 |\n| 일관성 | 강한 ACID 필요 | 최종 일관성 허용 |\n| 확장 방향 | 수직 확장 (Scale-Up) | 수평 확장 (Scale-Out) |\n| 쓰기 패턴 | 랜덤 쓰기·읽기 혼합 | 대용량 쓰기 위주 |\n\n실무에서 대부분의 시스템은 SQL + NoSQL을 함께 씁니다. **PostgreSQL**이 주 데이터 저장소, **Redis**가 캐시·세션, **Elasticsearch**가 전문 검색(Full-text search)을 담당합니다."
+        }
+      ],
+      "analogy": {
+        "title": "메모판과 서류 캐비닛",
+        "content": "데이터베이스의 차이를 이해하는 가장 좋은 비유입니다. Redis는 책상 위의 **메모판**입니다. 자주 보는 정보(오늘 일정, 자주 쓰는 전화번호)를 적어두면 바로 볼 수 있습니다. 그러나 메모판이 꽉 차면 오래된 것을 지워야 하고, 정전이 되면(TTL 만료 또는 서버 재시작) 내용이 사라집니다.\n\nPostgreSQL은 **잠금장치가 달린 서류 캐비닛**입니다. 중요한 계약서, 거래 기록을 안전하게 보관합니다. 꺼내려면 서랍을 찾아야 하니 메모판보다 느리지만, 절대 사라지지 않습니다.\n\nMongoDB는 **플렉시블한 파일 박스**입니다. 같은 박스 안에 다양한 모양의 서류(어떤 건 사진, 어떤 건 텍스트, 어떤 건 영수증)를 아무 형식이나 넣을 수 있습니다. 나중에 정리하기 불편할 수 있지만 빠르게 수집하기는 쉽습니다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "Redis를 사용해 AI 모델 추론 결과를 캐싱하는 패턴입니다. 같은 입력에 대한 중복 GPU 연산을 방지하고, TTL로 캐시를 자동 만료합니다.",
+        "code": "import redis.asyncio as aioredis\nimport hashlib\nimport json\nfrom functools import wraps\n\n# Redis 클라이언트 (싱글톤)\nredis_client = aioredis.from_url(\"redis://localhost:6379\", decode_responses=True)\n\ndef cache_inference(ttl: int = 300):\n    \"\"\"모델 추론 결과를 Redis에 캐시하는 데코레이터\"\"\"\n    def decorator(func):\n        @wraps(func)\n        async def wrapper(*args, **kwargs):\n            # 입력을 직렬화해 캐시 키 생성\n            cache_key = f\"inference:{hashlib.sha256(\n                json.dumps({'args': str(args), 'kwargs': kwargs},\n                sort_keys=True).encode()\n            ).hexdigest()[:16]}\"\n\n            # 캐시 히트 확인\n            cached = await redis_client.get(cache_key)\n            if cached:\n                return json.loads(cached)  # 캐시에서 즉시 반환\n\n            # 캐시 미스: 실제 추론 실행\n            result = await func(*args, **kwargs)\n\n            # 결과를 TTL과 함께 저장 (5분 후 자동 만료)\n            await redis_client.setex(cache_key, ttl, json.dumps(result))\n            return result\n        return wrapper\n    return decorator\n\n@cache_inference(ttl=300)\nasync def run_model_inference(text: str, model_name: str) -> dict:\n    \"\"\"실제 GPU 추론 (캐시 미스 시에만 실행)\"\"\"\n    # 실제로는 모델 호출\n    return {\"label\": \"positive\", \"score\": 0.97, \"model\": model_name}\n\n# Rate Limiting with Sorted Set\nasync def check_rate_limit(user_id: str, limit: int = 100, window: int = 60) -> bool:\n    key = f\"rate_limit:{user_id}\"\n    import time\n    now = time.time()\n    pipe = redis_client.pipeline()\n    pipe.zremrangebyscore(key, 0, now - window)   # 오래된 기록 제거\n    pipe.zadd(key, {str(now): now})               # 현재 요청 추가\n    pipe.zcard(key)                               # 윈도우 내 요청 수 확인\n    pipe.expire(key, window)                      # TTL 갱신\n    results = await pipe.execute()\n    return results[2] <= limit                    # 제한 이하면 True",
+        "walkthrough": "`cache_inference` 데코레이터는 함수 인자를 SHA-256으로 해싱해 캐시 키를 만듭니다. `setex`는 SET + EXPIRE의 원자적 명령으로 TTL과 함께 저장합니다. Rate Limiting은 Sorted Set의 `ZREMRANGEBYSCORE`로 윈도우 밖 기록을 정리하고 `ZADD`→`ZCARD`로 현재 카운트를 확인합니다. `pipeline()`으로 여러 명령을 한 번의 네트워크 요청으로 보냅니다."
+      },
+      "industryEvaluation": {
+        "overview": "캐싱은 면접에서 시스템 설계 문제의 핵심 컴포넌트로 자주 등장합니다. Redis를 사용해봤는지보다 캐시 무효화 전략과 트레이드오프를 이해하는지를 봅니다.",
+        "whatEngineersLookFor": [
+          "캐시 스탬피드(Cache Stampede) 문제를 알고 해결 방법(분산 락, 확률적 조기 만료)을 아는가",
+          "Redis 메모리 정책(eviction policy)을 상황에 맞게 설정할 수 있는가",
+          "캐시 일관성 문제를 인식하고 허용 가능한 불일치 수준을 비즈니스 요구사항에 맞게 결정하는가"
+        ],
+        "redFlags": [
+          "캐시를 무제한으로 채워두고 메모리 관리를 하지 않는 경우",
+          "모든 데이터를 MongoDB에 넣으면 된다고 생각하는 경우",
+          "캐시와 DB 사이의 데이터 불일치 가능성을 고려하지 않는 경우"
+        ],
+        "interviewQuestions": [
+          "Cache-Aside 패턴에서 여러 서버가 동시에 같은 캐시 미스를 처리할 때 발생하는 문제와 해결책은?",
+          "Redis가 메모리가 꽉 찼을 때 어떻게 동작하나요? eviction policy 종류를 설명해보세요.",
+          "AI 추론 캐시에서 같은 텍스트라도 캐시를 무효화해야 하는 상황은 언제인가요? (모델 업데이트)"
+        ],
+        "masteryVsFamiliar": "아는 수준은 Redis에 데이터를 넣고 꺼낼 수 있는 것입니다. 마스터 수준은 Redis Cluster의 슬롯 기반 샤딩을 이해하고, 핫키(Hot Key) 문제를 Local Cache로 완화하며, Redis Streams로 이벤트 소싱을 구현할 수 있는 것입니다."
+      },
+      "keyTakeaways": [
+        {"title": "CAP 정리", "content": "분산 DB는 일관성(C), 가용성(A), 분할 내성(P) 중 동시에 두 가지만 보장할 수 있다."},
+        {"title": "Redis = 인메모리 파워", "content": "Redis는 마이크로초 레이턴시로 캐시·세션·Rate Limiting·Pub/Sub을 처리한다."},
+        {"title": "Cache-Aside 패턴", "content": "캐시 미스 시 DB 조회 후 캐시 저장. 가장 범용적인 캐싱 패턴이다."},
+        {"title": "TTL로 자동 관리", "content": "모든 캐시 항목에 TTL을 설정해 오래된 데이터가 자동으로 제거되도록 한다."},
+        {"title": "SQL + NoSQL 함께", "content": "PostgreSQL(주 저장소) + Redis(캐시) + Elasticsearch(검색)을 함께 쓰는 것이 일반적이다."},
+        {"title": "캐시 무효화 전략", "content": "캐시 무효화는 복잡하다. TTL 자동 만료와 명시적 삭제를 상황에 맞게 조합한다."}
+      ]
+    },
+    {
+      "number": 4,
+      "emoji": "🔧",
+      "title": "REST API Design with FastAPI",
+      "titleKr": "FastAPI로 REST API 설계하기",
+      "tldr": "Pydantic으로 데이터 검증을 자동화하고, FastAPI로 프로덕션 수준의 REST API를 빠르게 구축하는 방법을 배운다.",
+      "topics": ["REST 설계 원칙", "FastAPI 핵심 기능", "Pydantic 데이터 검증", "의존성 주입(DI)", "비동기 엔드포인트"],
+      "learningGoals": [
+        "REST API URL 설계 원칙(리소스 명명, 버전 관리)을 따를 수 있다",
+        "FastAPI로 CRUD 엔드포인트를 구현하고 자동 문서를 생성할 수 있다",
+        "Pydantic 모델로 요청/응답 스키마를 정의하고 유효성 검사를 자동화할 수 있다",
+        "의존성 주입으로 DB 연결, 인증, 공통 로직을 재사용할 수 있다",
+        "비동기 엔드포인트로 AI 모델 추론을 효율적으로 처리할 수 있다"
+      ],
+      "overview": "API(Application Programming Interface)는 서로 다른 소프트웨어 시스템이 통신하는 계약서입니다. AI 모델을 서비스로 만들려면 모델을 감싸는 API가 필요합니다. 이 챕터에서는 현재 파이썬 생태계에서 가장 인기 있는 API 프레임워크인 FastAPI를 사용해 프로덕션 수준의 REST API를 설계하고 구현하는 방법을 배웁니다.\n\nFastAPI는 2018년에 등장했지만 빠르게 Django, Flask를 제치고 파이썬 웹 프레임워크의 1위 자리에 올랐습니다. 성능(Starlette 기반 ASGI), 개발 생산성(자동 문서화, 타입 힌트), 그리고 AI/ML 워크로드 친화성이 이유입니다. Netflix, Uber, Microsoft가 내부 AI 서비스에 FastAPI를 사용합니다.\n\nREST(Representational State Transfer)는 웹 API 설계 스타일입니다. 엄격한 규격이 아니라 6가지 원칙을 따르는 아키텍처 스타일입니다. 가장 중요한 원칙은 **무상태성(Stateless)** — 서버가 클라이언트의 상태를 기억하지 않고, 모든 요청이 독립적으로 처리되어야 한다는 것입니다.",
+      "sections": [
+        {
+          "title": "REST URL 설계 원칙",
+          "content": "좋은 REST API URL은 **리소스(명사)** 를 중심으로 설계합니다. 행위는 HTTP 메서드로 표현합니다.\n\n나쁜 URL 설계:\n\n```\nGET  /getUser?id=123\nPOST /createModel\nGET  /deleteExperiment?id=456\n```\n\n좋은 URL 설계:\n\n```\nGET    /users/123\nPOST   /models\nDELETE /experiments/456\n```\n\n**복수형 명사** 를 사용합니다. `/user`가 아니라 `/users`. 컬렉션은 복수형, 단일 리소스는 ID로 식별합니다.\n\n**계층 관계** 는 URL 경로로 표현합니다. `/users/123/experiments`는 \"사용자 123의 실험들\"입니다. 단, 3레벨 이상 중첩은 복잡해지니 `/experiments?user_id=123`으로 평탄화하는 것을 고려합니다.\n\n**API 버전 관리** 는 URL에 포함합니다. `/api/v1/models`. v1이 변경되어도 기존 클라이언트는 영향을 받지 않습니다."
+        },
+        {
+          "title": "FastAPI 핵심: 타입 힌트로 모든 것을",
+          "content": "FastAPI의 핵심 철학은 **파이썬 타입 힌트가 곧 API 계약이다** 입니다. 함수 시그니처에 타입을 명시하면 FastAPI가 자동으로 요청 파싱, 유효성 검사, 직렬화, OpenAPI 문서를 생성합니다.\n\n경로 매개변수(`path parameter`)는 URL의 `{param}` 부분입니다. `def get_model(model_id: int)` 처럼 정의하면 FastAPI가 문자열 `\"123\"`을 정수 `123`으로 변환합니다. 타입이 맞지 않으면 자동으로 `422 Unprocessable Entity`를 반환합니다.\n\n쿼리 매개변수(`query parameter`)는 URL의 `?key=value` 부분입니다. 함수 파라미터 중 경로 매개변수가 아닌 것은 자동으로 쿼리 파라미터가 됩니다. `Optional[str] = None`으로 선택적 파라미터를 만들 수 있습니다.\n\n**Pydantic 모델** 은 요청/응답 바디의 스키마를 정의합니다. `BaseModel`을 상속하고 필드를 타입 힌트로 정의하면 됩니다. 중첩 모델, 기본값, 유효성 검사기를 지원합니다.\n\n`/docs` 엔드포인트에 자동으로 Swagger UI가 생성되고, `/openapi.json`으로 OpenAPI 스펙을 내보낼 수 있습니다."
+        },
+        {
+          "title": "의존성 주입: 코드 재사용의 핵심",
+          "content": "의존성 주입(Dependency Injection, DI)은 함수가 필요한 것을 직접 만드는 것이 아니라 외부에서 받는 패턴입니다. FastAPI의 `Depends`가 이를 우아하게 구현합니다.\n\n가장 흔한 DI 사용 사례는 세 가지입니다.\n\n**데이터베이스 세션**: 요청마다 DB 연결을 열고 끝나면 닫는 로직을 `Depends(get_db_session)`으로 모든 엔드포인트에서 재사용합니다.\n\n**인증**: `Depends(get_current_user)`로 모든 엔드포인트에서 JWT 토큰 검증과 사용자 조회를 공통 처리합니다. 특정 엔드포인트만 관리자 권한을 요구할 때는 `Depends(require_admin)`을 추가합니다.\n\n**공통 쿼리 파라미터**: 페이지네이션(`offset`, `limit`)처럼 여러 엔드포인트에서 공통으로 쓰는 파라미터를 `Depends(PaginationParams)`로 묶습니다.\n\nDI는 테스트를 용이하게 합니다. 테스트 시 실제 DB 대신 모의(mock) DB를 주입할 수 있습니다."
+        },
+        {
+          "title": "미들웨어와 에러 핸들링",
+          "content": "미들웨어는 모든 요청-응답 사이클에 끼어드는 코드입니다. 인증 확인, 로깅, CORS 처리, 응답 시간 측정 등에 사용됩니다.\n\nFastAPI에서 미들웨어는 `@app.middleware(\"http\")` 데코레이터로 정의합니다. 요청이 들어오면 처리 전 코드를 실행하고, `await call_next(request)`로 실제 핸들러를 호출한 뒤, 응답이 나오면 처리 후 코드를 실행합니다.\n\n**전역 에러 핸들러** 는 `@app.exception_handler`로 특정 예외를 HTTP 응답으로 변환합니다. 코드 곳곳에 `try-except`를 넣는 대신, 비즈니스 예외를 던지고 최상위에서 한 번에 처리합니다. `HTTPException`은 FastAPI가 자동으로 처리하므로, 커스텀 예외만 핸들러를 등록합니다.\n\n**응답 모델** (`response_model=`)은 응답에서 특정 필드만 노출하는 역할을 합니다. 데이터베이스 모델에 `hashed_password`가 있어도, 응답 모델에 포함되지 않으면 절대 노출되지 않습니다. 보안의 핵심 패턴입니다."
+        },
+        {
+          "title": "백그라운드 태스크와 비동기 처리",
+          "content": "AI API에서 자주 만나는 패턴은 즉시 응답하고 처리를 백그라운드에서 하는 것입니다. 대규모 문서 분석, 배치 추론, 이메일 발송 등이 해당됩니다.\n\nFastAPI의 `BackgroundTasks`는 응답을 먼저 보낸 뒤 함수를 비동기로 실행합니다. 단순한 경우에 적합하지만, 서버가 재시작되면 실행 중인 태스크가 유실될 수 있습니다. 프로덕션에서는 Celery + Redis 또는 ARQ 같은 분산 태스크 큐를 사용합니다.\n\n**비동기 엔드포인트** (`async def`)는 FastAPI에서 기본이지만 주의할 점이 있습니다. `async def` 함수 안에서 동기 블로킹 코드(일반 DB 드라이버, `requests` 라이브러리, 무거운 CPU 작업)를 실행하면 이벤트 루프 전체가 블로킹됩니다. CPU 집약적 작업은 `asyncio.run_in_executor`로 스레드풀에서 실행해야 합니다."
+        }
+      ],
+      "analogy": {
+        "title": "레스토랑 주방 시스템",
+        "content": "FastAPI의 의존성 주입과 미들웨어를 레스토랑으로 이해해봅시다. 각 테이블(HTTP 요청)이 들어오면 웨이터(FastAPI 라우터)가 주문을 받습니다. 메뉴판(OpenAPI 스펙)은 자동으로 생성됩니다.\n\n의존성 주입은 **공용 자원 관리** 입니다. 매 요청마다 새 냉장고를 살 수 없듯, DB 연결 풀을 미리 만들어 두고 각 엔드포인트가 `Depends(get_db)`로 꺼내 씁니다. 다 쓰면 다시 풀에 반납합니다.\n\n미들웨어는 **모든 손님에게 적용되는 서비스 표준** 입니다. 레스토랑 입구에서 복장 체크(인증 미들웨어), 손 소독(CORS 헤더), 대기 시간 기록(로깅 미들웨어)을 하는 것처럼, 미들웨어는 어떤 엔드포인트로 가는 요청이든 반드시 거쳐야 하는 공통 처리입니다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "FastAPI로 AI 모델 서빙 API의 핵심 구조를 구현합니다. Pydantic 스키마, 의존성 주입, 비동기 추론, 에러 핸들링을 모두 포함합니다.",
+        "code": "from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks\nfrom pydantic import BaseModel, Field, field_validator\nfrom typing import Optional\nimport asyncio\n\napp = FastAPI(title=\"ML Serving API\", version=\"1.0.0\")\n\n# ── 스키마 정의 ────────────────────────────────────────\nclass PredictRequest(BaseModel):\n    text: str = Field(..., min_length=1, max_length=10000)\n    model_name: str = Field(default=\"default\", pattern=r\"^[a-z0-9-]+$\")\n    threshold: float = Field(default=0.5, ge=0.0, le=1.0)\n\n    @field_validator(\"text\")\n    @classmethod\n    def text_must_not_be_empty(cls, v: str) -> str:\n        if v.strip() == \"\":\n            raise ValueError(\"text must not be blank\")\n        return v.strip()\n\nclass PredictResponse(BaseModel):\n    label: str\n    score: float\n    model_name: str\n    request_id: str\n\n# ── 의존성 ────────────────────────────────────────────\nclass ModelRegistry:\n    models: dict = {\"default\": None}  # 실제론 로드된 모델\n\nmodel_registry = ModelRegistry()\n\ndef get_model(model_name: str) -> object:\n    if model_name not in model_registry.models:\n        raise HTTPException(status_code=404, detail=f\"Model '{model_name}' not found\")\n    return model_registry.models[model_name]\n\n# ── 엔드포인트 ────────────────────────────────────────\n@app.post(\"/v1/predict\", response_model=PredictResponse)\nasync def predict(\n    request: PredictRequest,\n    background_tasks: BackgroundTasks,\n    model=Depends(lambda: get_model(request.model_name if False else \"default\")),\n):\n    # 실제 추론 (비동기 실행)\n    await asyncio.sleep(0.01)  # GPU 추론 시뮬레이션\n    result = {\"label\": \"positive\", \"score\": 0.92}\n\n    # 로깅은 백그라운드에서\n    background_tasks.add_task(log_prediction, request.text, result)\n\n    return PredictResponse(\n        label=result[\"label\"],\n        score=result[\"score\"],\n        model_name=request.model_name,\n        request_id=\"req-001\",\n    )\n\nasync def log_prediction(text: str, result: dict):\n    # 응답 후 비동기로 DB에 저장\n    pass\n\n@app.get(\"/health\")\nasync def health_check():\n    return {\"status\": \"healthy\"}",
+        "walkthrough": "`Field(...)`의 `...`는 필수 항목을 의미합니다. `min_length`, `max_length`, `ge`, `le`로 범위 검증을 자동화합니다. `response_model=PredictResponse`는 이 모델에 없는 필드는 응답에서 자동 제거합니다. `BackgroundTasks`는 응답을 먼저 클라이언트에 보낸 후 `log_prediction`을 비동기로 실행합니다."
+      },
+      "industryEvaluation": {
+        "overview": "FastAPI 코드는 주니어와 시니어를 명확하게 가릅니다. 작동하는 코드를 짜는 것과 안전하고 유지보수 가능한 코드를 짜는 것은 다릅니다.",
+        "whatEngineersLookFor": [
+          "response_model을 사용해 민감 필드 노출을 방지하는가",
+          "의존성 주입으로 DB 세션과 인증을 처리하는가 (전역 변수 대신)",
+          "유효성 검사 오류를 적절한 HTTP 상태 코드로 변환하는가",
+          "비동기 함수 안에서 동기 블로킹 코드를 사용하지 않는가"
+        ],
+        "redFlags": [
+          "`global` 변수로 DB 연결을 관리하는 경우",
+          "모든 에러를 `500 Internal Server Error`로 반환하는 경우",
+          "`async def`를 쓰면서 내부에서 동기 `requests` 라이브러리를 사용하는 경우"
+        ],
+        "interviewQuestions": [
+          "FastAPI에서 특정 엔드포인트에만 관리자 권한을 요구하려면 어떻게 구현하겠어요?",
+          "response_model이 단순히 직렬화를 위한 것이 아닌 이유를 설명해주세요.",
+          "수천 개의 동시 추론 요청을 처리할 때 FastAPI 레벨에서 할 수 있는 최적화는 무엇인가요?"
+        ],
+        "masteryVsFamiliar": "아는 수준은 CRUD 엔드포인트를 만들 수 있는 것입니다. 마스터 수준은 커스텀 미들웨어로 분산 트레이싱 헤더를 전파하고, 스트리밍 응답(`StreamingResponse`)으로 LLM 토큰을 실시간 전송하며, OpenAPI 커스터마이징으로 외부 팀에 명확한 API 계약을 제공하는 것입니다."
+      },
+      "keyTakeaways": [
+        {"title": "리소스 중심 URL", "content": "URL은 명사(리소스), 동작은 HTTP 메서드. /getUser 대신 GET /users/{id}."},
+        {"title": "Pydantic = 자동 검증", "content": "타입 힌트로 스키마를 정의하면 파싱·검증·직렬화·문서화가 자동으로 이루어진다."},
+        {"title": "Depends로 DI", "content": "DB 연결, 인증, 공통 쿼리 파라미터는 의존성 주입으로 재사용한다."},
+        {"title": "response_model은 보안", "content": "응답 모델에 없는 필드는 절대 노출되지 않는다. hashed_password 같은 민감 정보 보호에 필수."},
+        {"title": "BackgroundTasks", "content": "응답 후 실행할 작업(로깅, 알림)은 BackgroundTasks로 비동기 처리한다."},
+        {"title": "/docs 자동 생성", "content": "FastAPI는 코드에서 Swagger UI를 자동으로 생성한다. 별도 문서 작성이 불필요하다."}
+      ]
+    },
+    {
+      "number": 5,
+      "emoji": "🔐",
+      "title": "Authentication & Security",
+      "titleKr": "인증과 보안",
+      "tldr": "JWT 토큰과 OAuth 2.0을 사용해 안전한 API 인증을 구현하고, OWASP 10대 취약점으로부터 서비스를 보호한다.",
+      "topics": ["인증 vs 인가", "JWT 토큰 구조와 검증", "OAuth 2.0 플로우", "API Key 관리", "OWASP Top 10"],
+      "learningGoals": [
+        "인증(Authentication)과 인가(Authorization)의 차이를 명확히 구분할 수 있다",
+        "JWT의 구조(헤더.페이로드.서명)를 이해하고 직접 발급·검증할 수 있다",
+        "OAuth 2.0의 Authorization Code Flow를 구현하거나 설명할 수 있다",
+        "SQL 인젝션, XSS 같은 주요 보안 취약점을 코드에서 방지할 수 있다",
+        "API 키를 안전하게 저장·관리하는 방법을 안다"
+      ],
+      "overview": "보안은 나중에 추가하는 것이 아니라 처음부터 설계에 포함해야 합니다. AI 서비스는 특히 취약합니다 — 모델 추론 API가 무단 접근에 노출되면 GPU 비용이 폭발하고, 학습 데이터와 모델이 유출되며, 프롬프트 인젝션 공격에 악용될 수 있습니다.\n\n이 챕터에서는 현대 웹 서비스에서 가장 널리 사용되는 인증 방식인 JWT(JSON Web Token)와 OAuth 2.0을 중심으로, API 보안의 핵심을 다룹니다. 또한 OWASP(Open Web Application Security Project)가 정의한 10대 취약점 중 백엔드 개발자가 반드시 알아야 할 항목들을 코드 수준에서 살펴봅니다.\n\n\"내 서비스는 작아서 해킹 대상이 안 된다\"는 착각은 버려야 합니다. 공격자는 서비스를 직접 타겟팅하는 것이 아니라 인터넷 전체를 자동 스캔합니다. 취약한 설정(`ALLOWED_HOSTS=*`, 기본 비밀번호, 미패치 라이브러리)은 몇 분 안에 발견됩니다.",
+      "sections": [
+        {
+          "title": "인증 vs 인가: 핵심 구분",
+          "content": "두 개념의 혼동은 심각한 보안 취약점을 낳습니다.\n\n**인증(Authentication)** = \"당신은 누구인가?\" — 신원 확인. 사용자 이름 + 비밀번호, 지문, OTP가 인증 수단입니다. 성공 시 토큰이나 세션이 발급됩니다. HTTP에서 `401 Unauthorized`는 인증 실패입니다.\n\n**인가(Authorization)** = \"당신은 무엇을 할 수 있는가?\" — 권한 확인. 인증된 사용자가 특정 리소스에 접근하거나 특정 작업을 수행할 권한이 있는지 확인합니다. 성공한 인증이 모든 권한을 의미하지 않습니다. HTTP에서 `403 Forbidden`은 인가 실패입니다.\n\n**세션 기반 vs 토큰 기반 인증**\n\n| 구분 | 세션 기반 | 토큰 기반 (JWT) |\n|---|---|---|\n| 상태 저장 | 서버 (세션 저장소) | 클라이언트 (토큰 자체) |\n| 확장성 | 세션 공유 필요 | 무상태, 수평 확장 용이 |\n| 취소 방법 | 세션 삭제 | 블랙리스트 또는 짧은 TTL |\n| 모바일/SPA | 쿠키 제한 있음 | Authorization 헤더로 자유로움 |"
+        },
+        {
+          "title": "JWT: 자기 포함형 토큰",
+          "content": "JWT(JSON Web Token)는 `헤더.페이로드.서명` 세 파트를 `.`으로 연결한 문자열입니다. Base64URL로 인코딩되어 있어 사람이 읽을 수 있지만(jwt.io에서 디코딩 가능), 서명으로 위변조를 방지합니다.\n\n**헤더(Header)** 는 토큰 타입(`JWT`)과 서명 알고리즘(`HS256`, `RS256`)을 포함합니다.\n\n**페이로드(Payload)** 는 클레임(Claim)의 집합입니다. 클레임은 키-값 쌍으로, 표준 클레임(`sub`: 사용자 ID, `exp`: 만료 시간, `iat`: 발급 시간)과 커스텀 클레임(역할, 권한)을 포함합니다.\n\n**서명(Signature)** 은 헤더와 페이로드를 비밀 키(HS256) 또는 개인 키(RS256)로 서명합니다. 서명을 검증하면 토큰이 변조되지 않았음을 확인할 수 있습니다.\n\n**중요한 보안 포인트**: JWT 페이로드는 암호화되지 않습니다. 누구나 디코딩해 내용을 볼 수 있습니다. 비밀번호, 신용카드 번호 같은 민감 정보를 페이로드에 넣으면 안 됩니다. 서명은 변조 방지이지 기밀성 보장이 아닙니다.\n\nAccess Token은 짧은 TTL(15분~1시간), Refresh Token은 긴 TTL(7~30일)로 설정합니다. Access Token이 탈취되어도 짧은 시간 내에 만료됩니다."
+        },
+        {
+          "title": "OAuth 2.0: 위임된 인증",
+          "content": "OAuth 2.0은 사용자가 자신의 비밀번호를 서드파티에 주지 않고 권한을 위임하는 프로토콜입니다. \"Google로 로그인\" 버튼이 OAuth 2.0을 사용합니다.\n\n**Authorization Code Flow** (웹 앱에서 가장 안전한 방식):\n\n1. 사용자가 \"Google로 로그인\" 클릭 → 앱이 Google 로그인 페이지로 리다이렉트\n2. 사용자가 Google에서 로그인 → Google이 `code`를 앱으로 리다이렉트\n3. 앱 서버가 `code`를 Google에 보내 Access Token 교환 (서버-서버)\n4. 앱이 Access Token으로 사용자 정보 조회\n\n`code`는 단기 유효(10분)하고 한 번만 사용 가능합니다. Access Token 교환은 클라이언트가 아닌 서버에서 이루어지므로 토큰이 브라우저에 노출되지 않습니다.\n\nFastAPI에서는 `python-jose`, `authlib` 같은 라이브러리로 OAuth 클라이언트를 구현하거나, Auth0, Supabase Auth 같은 서비스를 사용해 인증을 위임할 수 있습니다."
+        },
+        {
+          "title": "OWASP Top 10: 반드시 알아야 할 취약점",
+          "content": "OWASP Top 10은 가장 흔하고 위험한 웹 취약점 목록입니다. 백엔드 개발자가 반드시 알아야 할 항목들입니다.\n\n**A01 - 접근 제어 취약점**: 인가 로직 누락. 예: 다른 사용자의 데이터를 조회할 수 있는 IDOR(Insecure Direct Object Reference). `GET /users/123/data`에서 현재 로그인 사용자가 사용자 123인지 확인하지 않는 경우.\n\n**A02 - 암호화 실패**: 민감 데이터를 평문으로 저장하거나 약한 암호화를 사용. 비밀번호는 반드시 `bcrypt` 또는 `argon2`로 해싱합니다. `MD5`, `SHA1`로 비밀번호를 저장하면 레인보우 테이블로 즉시 크래킹됩니다.\n\n**A03 - 인젝션**: SQL 인젝션, 커맨드 인젝션. 사용자 입력을 쿼리에 직접 포맷팅하면 발생. 항상 파라미터화된 쿼리(`$1`, `?`)를 사용합니다.\n\n**A07 - 인증 실패**: 약한 비밀번호 정책, JWT 검증 누락, 무제한 로그인 시도. Rate Limiting과 JWT 서명 검증이 필수입니다.\n\n**A09 - 보안 로깅 실패**: 침해 사고가 발생했을 때 로그가 없으면 원인 파악이 불가능합니다. 모든 인증 시도, 권한 실패, 중요 데이터 접근을 로깅합니다."
+        },
+        {
+          "title": "API Key 관리와 비밀 관리",
+          "content": "API 키, DB 비밀번호, JWT 시크릿 같은 민감 정보를 코드에 하드코딩하는 것은 가장 흔한 보안 실수입니다. GitHub에 공개된 코드에서 AWS 키가 발견되면 수분 안에 악용됩니다.\n\n**환경 변수** 로 분리합니다. `.env` 파일에 저장하고 `python-dotenv`로 로드합니다. `.gitignore`에 `.env`를 반드시 추가합니다.\n\n**시크릿 매니저** 를 프로덕션에서 사용합니다. AWS Secrets Manager, GCP Secret Manager, HashiCorp Vault는 비밀 값을 암호화하여 저장하고, 접근 감사 로그를 남깁니다. 코드는 시크릿 값이 아니라 \"어디서 가져올지\"만 알면 됩니다.\n\nAPI 키는 **bcrypt로 해싱**해 DB에 저장합니다. 사용자가 키를 분실하면 재발급(새 키 생성, 이전 키 무효화)해야 합니다. 비밀번호와 동일한 원칙을 적용합니다.\n\n**최소 권한 원칙(Principle of Least Privilege)**: 서비스에 필요한 최소한의 권한만 부여합니다. 읽기 전용 API는 읽기 전용 DB 계정을 사용하고, 특정 S3 버킷만 접근하는 Lambda는 해당 버킷에만 권한을 줍니다."
+        }
+      ],
+      "analogy": {
+        "title": "공항 보안 시스템",
+        "content": "인증과 인가를 공항 보안으로 이해해봅시다. 공항 입구에서 여권과 탑승권을 확인하는 것이 **인증**입니다. 여권은 신원(당신이 누구인지)을, 탑승권은 유효한 승객임을 증명합니다. 검사를 통과하면 JWT 토큰처럼 팔찌(탑승 게이트 스티커)를 받습니다.\n\n이후 비즈니스 라운지 입장 시 팔찌를 보여주면 되는데, 이때 직원이 \"이 사람이 비즈니스 라운지 이용 권한이 있는가?\"를 확인하는 것이 **인가**입니다. 이미 공항 안에 있는(인증된) 사람이라도 라운지 이용 권한은 별도입니다.\n\nOAuth는 **위임장**입니다. 내가 직접 모든 공항에 여권을 보여주는 대신, Google이라는 신뢰할 수 있는 기관이 \"이 사람을 우리가 인증했다\"고 보증합니다. 앱은 내 Google 비밀번호를 모르지만, Google의 보증서(Access Token)로 내 신원을 확인할 수 있습니다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "FastAPI에서 JWT 기반 인증 시스템을 구현합니다. 로그인 엔드포인트에서 토큰을 발급하고, 보호된 엔드포인트에서 토큰을 검증합니다.",
+        "code": "from fastapi import FastAPI, Depends, HTTPException, status\nfrom fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm\nfrom jose import JWTError, jwt\nfrom passlib.context import CryptContext\nfrom datetime import datetime, timedelta, timezone\nimport os\n\napp = FastAPI()\n\n# 설정\nSECRET_KEY = os.environ[\"JWT_SECRET_KEY\"]  # 절대 하드코딩 금지\nALGORITHM = \"HS256\"\nACCESS_TOKEN_EXPIRE_MINUTES = 30\n\npwd_context = CryptContext(schemes=[\"bcrypt\"], deprecated=\"auto\")\noauth2_scheme = OAuth2PasswordBearer(tokenUrl=\"/auth/login\")\n\n# 토큰 생성\ndef create_access_token(data: dict) -> str:\n    to_encode = data.copy()\n    expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)\n    to_encode[\"exp\"] = expire\n    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)\n\n# 현재 사용자 추출 (의존성)\nasync def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:\n    credentials_exception = HTTPException(\n        status_code=status.HTTP_401_UNAUTHORIZED,\n        detail=\"Invalid or expired token\",\n        headers={\"WWW-Authenticate\": \"Bearer\"},\n    )\n    try:\n        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])\n        user_id: str = payload.get(\"sub\")\n        if user_id is None:\n            raise credentials_exception\n        return {\"user_id\": user_id, \"role\": payload.get(\"role\", \"user\")}\n    except JWTError:\n        raise credentials_exception\n\n# 관리자 권한 체크 (인가)\ndef require_admin(current_user=Depends(get_current_user)):\n    if current_user[\"role\"] != \"admin\":\n        raise HTTPException(status_code=403, detail=\"Admin required\")\n    return current_user\n\n@app.post(\"/auth/login\")\nasync def login(form_data: OAuth2PasswordRequestForm = Depends()):\n    # 실제로는 DB에서 사용자 조회 후 비밀번호 검증\n    if not pwd_context.verify(form_data.password, \"$2b$12$hashed...\"):\n        raise HTTPException(status_code=401, detail=\"Incorrect credentials\")\n    token = create_access_token({\"sub\": form_data.username, \"role\": \"user\"})\n    return {\"access_token\": token, \"token_type\": \"bearer\"}\n\n@app.get(\"/me\")\nasync def get_me(user=Depends(get_current_user)):\n    return user  # 인증된 사용자만 접근 가능\n\n@app.delete(\"/admin/models/{model_id}\")\nasync def delete_model(model_id: str, admin=Depends(require_admin)):\n    return {\"deleted\": model_id}  # 관리자만 접근 가능",
+        "walkthrough": "`os.environ[\"JWT_SECRET_KEY\"]`는 환경 변수에서 시크릿을 가져옵니다. 없으면 `KeyError`가 발생해 서비스가 시작되지 않습니다 — 의도적으로 안전한 실패를 만든 것입니다. `CryptContext(schemes=[\"bcrypt\"])`는 bcrypt로 비밀번호를 해싱·검증합니다. `require_admin`은 `get_current_user`에 의존하므로 인증(토큰 검증) + 인가(역할 확인)를 순서대로 처리합니다."
+      },
+      "industryEvaluation": {
+        "overview": "보안은 '나중에 추가'가 없습니다. 면접에서 보안 관련 질문은 경험에서 나온 구체적인 답변을 기대합니다.",
+        "whatEngineersLookFor": [
+          "비밀번호를 평문이나 MD5로 저장하지 않고 bcrypt/argon2를 사용하는가",
+          "JWT 서명 검증을 실제로 수행하는가 (decode 시 알고리즘 명시)",
+          "SQL 인젝션 방지를 위해 파라미터화된 쿼리를 사용하는가",
+          "민감 정보를 환경 변수 또는 시크릿 매니저로 관리하는가"
+        ],
+        "redFlags": [
+          "JWT 페이로드에 비밀번호나 카드 번호를 저장하는 경우",
+          "알고리즘을 `none`으로 설정할 수 있는 JWT 구현",
+          "모든 CORS를 `*`로 허용하는 프로덕션 설정"
+        ],
+        "interviewQuestions": [
+          "JWT의 만료 시간이 지난 토큰을 사용자가 제출했을 때 어떻게 처리해야 하나요?",
+          "SQL 인젝션이 발생하는 코드 예시를 보여주고, 어떻게 수정하겠어요?",
+          "서비스가 침해당했을 때 모든 사용자의 JWT를 즉시 무효화하려면 어떻게 해야 하나요?"
+        ],
+        "masteryVsFamiliar": "아는 수준은 JWT를 발급·검증할 수 있는 것입니다. 마스터 수준은 Refresh Token Rotation 전략을 구현하고, PKCE(Proof Key for Code Exchange)를 이해하며, 보안 헤더(HSTS, CSP, X-Frame-Options)를 설정하고, 비밀 관리를 HashiCorp Vault로 중앙화할 수 있는 것입니다."
+      },
+      "keyTakeaways": [
+        {"title": "인증 ≠ 인가", "content": "인증은 신원 확인(401), 인가는 권한 확인(403). 401이 뜨면 토큰 문제, 403이 뜨면 권한 문제."},
+        {"title": "JWT = 자기 포함형", "content": "JWT는 DB 조회 없이 서버가 검증할 수 있는 토큰. 페이로드는 암호화 안 됨 — 비밀 정보 넣지 말 것."},
+        {"title": "bcrypt for 비밀번호", "content": "비밀번호는 반드시 bcrypt 또는 argon2로 해싱. MD5, SHA1은 레인보우 테이블에 취약."},
+        {"title": "환경 변수 = 시크릿", "content": "API 키, JWT 시크릿, DB 비밀번호는 코드가 아닌 환경 변수 또는 시크릿 매니저에 저장."},
+        {"title": "파라미터화된 쿼리", "content": "SQL 인젝션은 f-string으로 쿼리를 만들면 발생한다. 항상 $1, ? 플레이스홀더를 사용."},
+        {"title": "최소 권한 원칙", "content": "서비스에 필요한 최소한의 권한만 부여한다. 읽기만 하는 서비스에 쓰기 권한을 주지 않는다."}
+      ]
+    },
+    {
+      "number": 6,
+      "emoji": "🐳",
+      "title": "Containers & Docker",
+      "titleKr": "컨테이너와 Docker",
+      "tldr": "\"내 컴퓨터에서는 되는데\" 문제를 Docker로 완전히 해결하고, AI 모델 서빙 컨테이너를 직접 빌드하고 최적화한다.",
+      "topics": ["컨테이너 vs VM", "Dockerfile 작성", "레이어 캐싱 최적화", "Docker Compose", "다단계 빌드"],
+      "learningGoals": [
+        "컨테이너가 VM과 다른 이유와 장점을 설명할 수 있다",
+        "Python AI 서비스를 위한 효율적인 Dockerfile을 작성할 수 있다",
+        "레이어 캐싱을 활용해 빌드 시간을 최소화할 수 있다",
+        "Docker Compose로 다중 서비스(API + DB + Redis)를 로컬에서 실행할 수 있다",
+        "다단계 빌드(Multi-stage build)로 프로덕션 이미지 크기를 최소화할 수 있다"
+      ],
+      "overview": "\"내 맥북에서는 잘 되는데 서버에서는 왜 안 돼요?\" — 이 질문은 Docker 이전 세계에서 수백만 시간의 디버깅 시간을 낭비하게 만든 근본 원인이었습니다. 개발자 컴퓨터의 Python 버전, 라이브러리 버전, 환경 변수, OS 차이가 프로덕션 서버와 달랐기 때문입니다. Docker는 이 문제를 **환경을 코드로 정의**함으로써 완전히 해결합니다.\n\n컨테이너(Container)는 애플리케이션과 그 실행에 필요한 모든 것(코드, 런타임, 라이브러리, 설정)을 하나의 독립적인 패키지로 묶는 기술입니다. 어떤 환경에서든 동일하게 실행됩니다. MacBook, Ubuntu 서버, AWS EC2, Kubernetes 어디서든.\n\nAI 엔지니어에게 Docker는 선택이 아니라 필수입니다. PyTorch, CUDA, 수십 개의 의존성을 가진 AI 환경은 재현성 문제에 특히 취약합니다. CUDA 버전 하나가 맞지 않으면 GPU 추론이 안 됩니다. Docker는 이 복잡한 환경을 버전 관리하고, 팀 전체가 동일한 환경을 사용하도록 보장합니다.",
+      "sections": [
+        {
+          "title": "컨테이너 vs VM: 경량화의 혁명",
+          "content": "가상 머신(VM)은 하드웨어 위에 하이퍼바이저(VMware, VirtualBox)를 올리고, 그 위에 완전한 운영체제(게스트 OS)를 부팅합니다. 격리성이 높지만 무겁습니다. VM 하나가 수 GB의 디스크와 수백 MB의 RAM을 차지합니다. 부팅에 수십 초~수 분이 걸립니다.\n\n컨테이너는 호스트 OS의 커널을 공유하면서 프로세스 수준의 격리를 제공합니다. Linux의 **namespaces**(프로세스, 네트워크, 파일시스템 격리)와 **cgroups**(CPU, 메모리 제한)를 활용합니다. 결과적으로 컨테이너는 수 MB의 디스크와 수 MB의 RAM을 사용하고, 밀리초 단위로 시작합니다.\n\n| 비교 | VM | 컨테이너 |\n|---|---|---|\n| 격리 단위 | 운영체제 전체 | 프로세스 |\n| 시작 시간 | 수십 초~분 | 밀리초~초 |\n| 이미지 크기 | 수 GB | 수십~수백 MB |\n| 커널 공유 | 없음 | 호스트 커널 공유 |\n| 보안 격리 | 강함 | 중간 (gVisor, Kata로 강화 가능) |"
+        },
+        {
+          "title": "Dockerfile: 환경을 코드로",
+          "content": "Dockerfile은 Docker 이미지를 만드는 레시피입니다. 각 명령어가 하나의 **레이어(Layer)** 를 만듭니다. 레이어는 캐시됩니다 — 변경되지 않은 레이어는 다음 빌드에서 재사용됩니다.\n\n**자주 사용하는 Dockerfile 명령어**\n\n`FROM <base-image>` — 베이스 이미지 지정. AI 서버는 `python:3.11-slim` 또는 `nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04`를 많이 씁니다.\n\n`WORKDIR /app` — 작업 디렉토리 설정. 이후 명령어는 이 경로 기준으로 실행됩니다.\n\n`COPY requirements.txt .` — 파일 복사. 소스 코드보다 먼저 `requirements.txt`를 복사해 레이어 캐시를 활용합니다.\n\n`RUN pip install -r requirements.txt` — 명령 실행. RUN 결과가 레이어로 저장됩니다.\n\n`ENV PYTHONUNBUFFERED=1` — 환경 변수 설정. Python stdout 버퍼링 비활성화는 로그가 즉시 출력되게 합니다.\n\n`EXPOSE 8000` — 문서화 목적 포트 선언. 실제 포트 바인딩은 `docker run -p`에서 합니다.\n\n`CMD [\"uvicorn\", \"main:app\", \"--host\", \"0.0.0.0\"]` — 컨테이너 시작 시 실행되는 기본 명령."
+        },
+        {
+          "title": "레이어 캐싱 최적화",
+          "content": "Docker 빌드 성능의 핵심은 레이어 캐시입니다. **변경이 적은 레이어를 먼저, 변경이 잦은 레이어를 나중에** 배치해야 합니다.\n\n잘못된 순서 (매 빌드마다 pip install 재실행):\n\n```\nCOPY . .\nRUN pip install -r requirements.txt\n```\n\n소스 코드가 조금이라도 바뀌면 `COPY . .` 레이어가 무효화되어 pip install을 처음부터 다시 합니다.\n\n올바른 순서 (소스 코드 변경 시 의존성 설치 캐시 유지):\n\n```\nCOPY requirements.txt .\nRUN pip install -r requirements.txt\nCOPY . .\n```\n\n`requirements.txt`가 변경되지 않으면 pip install 결과가 캐시됩니다. 소스 코드만 변경되면 마지막 `COPY . .`만 재실행됩니다. AI 프로젝트에서 PyTorch 설치는 5~10분이 걸리므로 캐시 효율이 매우 중요합니다.\n\n**.dockerignore** 파일은 `.gitignore`와 유사하게 빌드 컨텍스트에서 제외할 파일을 지정합니다. `__pycache__`, `.git`, `*.pyc`, `venv/`, `*.ckpt`(모델 가중치)를 제외하면 빌드 컨텍스트 전송 시간과 이미지 크기를 줄일 수 있습니다."
+        },
+        {
+          "title": "다단계 빌드: 프로덕션 이미지 최소화",
+          "content": "AI 서버 이미지는 빌드 도구(gcc, cmake)와 런타임만 필요한 것(Python, 라이브러리)이 다릅니다. 다단계 빌드는 두 환경을 분리해 최종 이미지를 최소화합니다.\n\n1단계(빌더): 빌드에 필요한 모든 도구를 포함한 환경에서 패키지를 설치합니다.\n\n2단계(런타임): 빌더에서 설치된 패키지만 복사합니다. 빌드 도구는 포함되지 않습니다.\n\n이 방식으로 이미지 크기를 수 GB에서 수백 MB로 줄일 수 있습니다. 공격 표면(Attack Surface)도 줄어 보안이 향상됩니다.\n\n**non-root 사용자** 로 실행하는 것도 중요합니다. 컨테이너 내부에서 root로 실행하면, 컨테이너 탈출 취약점이 있을 때 호스트에 root 접근이 가능합니다. Dockerfile에 `RUN useradd -m appuser && USER appuser`를 추가합니다."
+        },
+        {
+          "title": "Docker Compose: 멀티 서비스 로컬 환경",
+          "content": "실제 서비스는 혼자 실행되지 않습니다. API 서버 + PostgreSQL + Redis + 모델 서버가 함께 실행됩니다. Docker Compose는 이 멀티 서비스 환경을 하나의 YAML 파일로 정의하고 `docker compose up` 한 번으로 실행합니다.\n\n`docker-compose.yml`에서 각 서비스는 이미지, 포트, 환경 변수, 볼륨, 의존 관계를 정의합니다.\n\n`depends_on`은 서비스 시작 순서를 제어합니다. 단, 프로세스 시작을 의미할 뿐 \"준비됨\"을 보장하지 않습니다. DB가 시작됐다고 연결 가능 상태가 된 것은 아닙니다. `healthcheck` + `condition: service_healthy`를 사용하거나, 애플리케이션에서 재시도 로직을 구현해야 합니다.\n\n**네임드 볼륨** 은 컨테이너가 재시작되어도 데이터가 유지되도록 합니다. `postgres_data:/var/lib/postgresql/data`처럼 설정하면 DB 데이터가 컨테이너 외부(Docker 관리 볼륨)에 저장됩니다."
+        }
+      ],
+      "analogy": {
+        "title": "배송용 표준 컨테이너",
+        "content": "Docker 컨테이너를 이해하는 가장 직관적인 비유는 국제 표준 화물 컨테이너입니다. 컨테이너 이전에는 배에 짐을 실을 때 화물의 종류(사과, 자동차 부품, 의류)마다 다른 방법으로 포장하고 선적했습니다. 항구마다 다른 규격이 있어 화물을 다시 포장해야 했습니다.\n\n표준 컨테이너가 도입된 후, 어떤 화물이든 20피트 또는 40피트 컨테이너에 넣으면 배, 기차, 트럭이 동일한 방식으로 처리합니다. 화물이 무엇인지 상관없이 운송 방법이 표준화됩니다.\n\nDocker 컨테이너가 바로 이것입니다. Python FastAPI든, Java Spring이든, Go 서버든 — 모두 동일한 Docker 형식으로 패키징됩니다. 맥북, Ubuntu EC2, GKE 어디서든 `docker run`으로 실행할 수 있습니다. 환경에 따른 포장 방법 차이가 사라집니다."
+      },
+      "codeExample": {
+        "language": "dockerfile",
+        "intro": "AI 모델 서빙을 위한 최적화된 Dockerfile과 Docker Compose 설정입니다. 레이어 캐싱, 다단계 빌드, 보안 설정을 모두 포함합니다.",
+        "code": "# ── Dockerfile (다단계 빌드) ──────────────────────────\n# Stage 1: 의존성 설치 (빌드 캐시 최적화)\nFROM python:3.11-slim AS builder\nWORKDIR /app\n\n# 시스템 패키지 설치 (거의 안 바뀜 → 캐시 유지)\nRUN apt-get update && apt-get install -y --no-install-recommends \\\n    build-essential curl \\\n    && rm -rf /var/lib/apt/lists/*\n\n# 의존성 파일만 먼저 복사 (소스 코드 변경 시 캐시 유지)\nCOPY requirements.txt .\nRUN pip install --no-cache-dir --prefix=/install -r requirements.txt\n\n# Stage 2: 런타임 이미지 (빌드 도구 제외)\nFROM python:3.11-slim AS runtime\nWORKDIR /app\n\n# 빌더에서 설치된 패키지만 복사\nCOPY --from=builder /install /usr/local\n\n# 소스 코드 복사 (가장 마지막 — 가장 자주 변경됨)\nCOPY . .\n\n# 보안: non-root 사용자\nRUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app\nUSER appuser\n\nEXPOSE 8000\nCMD [\"uvicorn\", \"main:app\", \"--host\", \"0.0.0.0\", \"--port\", \"8000\", \"--workers\", \"4\"]\n\n# ── docker-compose.yml ────────────────────────────────\n# version: '3.9'\n# services:\n#   api:\n#     build: .\n#     ports: [\"8000:8000\"]\n#     environment:\n#       DATABASE_URL: postgresql://user:pass@db:5432/mlops\n#       REDIS_URL: redis://redis:6379\n#     depends_on:\n#       db: {condition: service_healthy}\n#\n#   db:\n#     image: postgres:15\n#     volumes: [postgres_data:/var/lib/postgresql/data]\n#     healthcheck:\n#       test: [\"CMD-SHELL\", \"pg_isready -U user\"]\n#       interval: 5s\n#       retries: 5\n#\n#   redis:\n#     image: redis:7-alpine\n#\n# volumes:\n#   postgres_data:",
+        "walkthrough": "다단계 빌드의 `builder` 스테이지는 `build-essential`(gcc 등)을 포함해 패키지를 컴파일합니다. `runtime` 스테이지는 컴파일된 결과물만 `COPY --from=builder`로 가져옵니다. 최종 이미지에 빌드 도구가 없어 크기와 공격 표면이 줄어듭니다. `healthcheck`의 `pg_isready`는 PostgreSQL이 실제 연결 가능한 상태인지 확인합니다."
+      },
+      "industryEvaluation": {
+        "overview": "Docker를 \"쓸 줄 안다\"는 것과 \"잘 쓴다\"는 것 사이에는 큰 차이가 있습니다. 이미지 크기, 보안, 캐시 효율을 면접에서 구체적으로 물어봅니다.",
+        "whatEngineersLookFor": [
+          "레이어 캐싱을 의식한 COPY 순서 배치",
+          "non-root 사용자로 실행",
+          ".dockerignore로 불필요한 파일 제외",
+          "다단계 빌드로 최종 이미지 최소화"
+        ],
+        "redFlags": [
+          "Dockerfile에 API 키나 비밀번호를 하드코딩하는 경우 (이미지 히스토리에 영구적으로 남음)",
+          "`pip install`을 소스 코드 COPY 이후에 배치하는 경우",
+          "GPU 서버용 이미지에 전체 CUDA 개발 툴킷을 포함하는 경우 (수십 GB)"
+        ],
+        "interviewQuestions": [
+          "Docker 이미지에 비밀번호가 포함된 이후 그 레이어를 삭제해도 여전히 노출될 수 있는 이유는?",
+          "같은 코드인데 로컬 Docker에서는 작동하고 K8s에서는 안 될 때 어떤 것들을 확인하시겠어요?",
+          "AI 모델 가중치 파일(수 GB)을 이미지에 포함해야 할 때 어떤 접근 방식을 쓰겠어요?"
+        ],
+        "masteryVsFamiliar": "아는 수준은 Dockerfile을 작성하고 컨테이너를 실행할 수 있는 것입니다. 마스터 수준은 이미지 취약점 스캔(Trivy, Snyk), distroless 이미지로 공격 표면 최소화, BuildKit 캐시 마운트로 pip 캐시 영속화, 멀티 아키텍처 빌드(arm64 + amd64)를 구현할 수 있는 것입니다."
+      },
+      "keyTakeaways": [
+        {"title": "컨테이너 = 재현성", "content": "Docker는 '내 컴퓨터에서는 되는데' 문제를 환경을 코드로 정의함으로써 해결한다."},
+        {"title": "레이어 캐시 순서", "content": "의존성(requirements.txt) 먼저 COPY → pip install → 소스 코드 COPY. 변경이 적은 것을 앞에 배치."},
+        {"title": "다단계 빌드", "content": "빌드 도구와 런타임을 분리해 최종 이미지 크기를 최소화하고 보안을 강화한다."},
+        {"title": "non-root 실행", "content": "컨테이너는 root가 아닌 별도 사용자로 실행해 컨테이너 탈출 취약점의 영향을 최소화한다."},
+        {"title": "Docker Compose = 로컬 환경", "content": "API + DB + Redis를 한 YAML로 정의하고 docker compose up으로 전체 스택을 실행한다."},
+        {"title": "시크릿은 환경 변수", "content": "Dockerfile에 비밀번호를 절대 넣지 않는다. 이미지 히스토리에 영구적으로 남는다."}
+      ]
+    },
+    {
+      "number": 7,
+      "emoji": "☸️",
+      "title": "Kubernetes Fundamentals",
+      "titleKr": "쿠버네티스 기초",
+      "tldr": "컨테이너를 수십~수천 개로 자동 관리하는 쿠버네티스의 핵심 개념(Pod, Deployment, Service)과 AI 서비스 배포 패턴을 익힌다.",
+      "topics": ["쿠버네티스 아키텍처", "Pod, Deployment, Service", "ConfigMap과 Secret", "자동 확장(HPA)", "AI 워크로드 배포"],
+      "learningGoals": [
+        "쿠버네티스의 컨트롤 플레인과 워커 노드 아키텍처를 설명할 수 있다",
+        "Deployment로 애플리케이션을 배포하고 롤링 업데이트를 수행할 수 있다",
+        "Service 타입(ClusterIP, NodePort, LoadBalancer)의 차이를 알고 적절히 선택할 수 있다",
+        "HPA로 CPU/메모리 기반 자동 확장을 설정할 수 있다",
+        "GPU 리소스를 요청해 AI 추론 워크로드를 배포할 수 있다"
+      ],
+      "overview": "Docker가 단일 컨테이너를 관리하는 도구라면, Kubernetes(K8s)는 수십~수천 개의 컨테이너를 여러 서버에 걸쳐 자동으로 관리하는 오케스트레이터입니다. 2014년 구글이 내부에서 10년간 사용한 Borg 시스템을 오픈소스로 공개한 것으로, 현재 클라우드 네이티브 인프라의 사실상 표준입니다.\n\nK8s가 해결하는 문제들은 구체적입니다. 서버가 죽으면? → 자동으로 다른 서버에 컨테이너를 재시작. 트래픽이 갑자기 10배 증가하면? → 자동으로 컨테이너 수를 늘림. 새 버전 배포 시 다운타임 없이? → 롤링 업데이트. 이 모든 것을 선언적(declarative) YAML 파일로 관리합니다.\n\nAI 엔지니어에게 K8s는 ML 파이프라인의 인프라입니다. Kubeflow, Argo Workflows, KServe 모두 K8s 위에서 실행됩니다. GPU 노드 관리, 배치 추론 작업 스케줄링, 모델 서빙 스케일링이 모두 K8s로 이루어집니다.",
+      "sections": [
+        {
+          "title": "쿠버네티스 아키텍처",
+          "content": "K8s 클러스터는 **컨트롤 플레인(Control Plane)** 과 **워커 노드(Worker Node)** 로 구성됩니다.\n\n**컨트롤 플레인** 은 클러스터의 두뇌입니다.\n\n- **API Server**: 모든 K8s 명령의 진입점. `kubectl`은 API Server와 통신합니다.\n- **etcd**: 클러스터 상태를 저장하는 분산 키-값 저장소. \"진실의 단일 출처(Single Source of Truth)\"\n- **Scheduler**: 새 Pod를 어떤 노드에 배치할지 결정합니다. 리소스 요구사항, 노드 상태를 고려합니다.\n- **Controller Manager**: 현재 상태와 원하는 상태의 차이를 감지하고 조정합니다.\n\n**워커 노드** 는 실제 컨테이너가 실행되는 서버입니다.\n\n- **kubelet**: 각 노드에서 실행되며 컨트롤 플레인의 지시를 따릅니다. Pod를 시작/중지합니다.\n- **kube-proxy**: 네트워크 규칙을 관리해 Pod 간 통신을 처리합니다.\n- **Container Runtime**: 컨테이너를 실제로 실행하는 엔진 (containerd, CRI-O).\n\n**선언적 모델**: K8s는 \"Pod 3개를 실행하라\"는 명령이 아니라 \"Pod가 3개인 상태\"를 선언합니다. 컨트롤러가 현재 상태(현재 Pod 수)와 원하는 상태(3개)를 지속적으로 비교하고 차이를 메웁니다. Pod 하나가 죽으면 자동으로 새 Pod를 시작합니다."
+        },
+        {
+          "title": "핵심 오브젝트: Pod, Deployment, Service",
+          "content": "**Pod** 는 K8s의 최소 배포 단위입니다. 하나 이상의 컨테이너를 함께 묶습니다. 같은 Pod 안의 컨테이너들은 네트워크 네임스페이스를 공유하므로 `localhost`로 통신할 수 있습니다. Pod는 수명이 짧습니다 — 노드가 죽으면 Pod도 사라집니다.\n\n**Deployment** 는 Pod를 관리하는 오브젝트입니다. `replicas: 3`으로 항상 3개의 Pod를 유지합니다. `kubectl rollout`으로 롤링 업데이트(점진적 교체)와 롤백을 지원합니다. Deployment가 ReplicaSet을 관리하고, ReplicaSet이 Pod를 관리합니다.\n\n**Service** 는 Pod 집합에 안정적인 네트워크 엔드포인트를 제공합니다. Pod는 재시작될 때마다 IP가 바뀌지만, Service는 고정된 가상 IP(ClusterIP)와 DNS 이름을 가집니다. `app: ml-server` 레이블을 가진 모든 Pod로 트래픽을 분산합니다.\n\nService 타입 세 가지:\n\n- **ClusterIP** (기본값): 클러스터 내부에서만 접근 가능. 마이크로서비스 간 통신에 사용.\n- **NodePort**: 각 노드의 특정 포트로 외부 접근 허용. 개발·테스트 환경에 적합.\n- **LoadBalancer**: 클라우드 로드 밸런서와 연동해 외부 IP를 부여. 프로덕션 외부 노출에 사용."
+        },
+        {
+          "title": "ConfigMap과 Secret: 설정 분리",
+          "content": "12-factor 앱 원칙에 따르면 설정은 코드와 분리되어야 합니다. K8s의 ConfigMap과 Secret이 이를 담당합니다.\n\n**ConfigMap** 은 비민감 설정 데이터(환경 설정, 앱 설정 파일)를 저장합니다. 환경 변수로 주입하거나 파일로 마운트할 수 있습니다. ConfigMap을 업데이트하면 볼륨 마운트 방식은 Pod 재시작 없이 자동 반영됩니다.\n\n**Secret** 은 민감 데이터(DB 비밀번호, API 키, TLS 인증서)를 저장합니다. Base64로 인코딩되어 저장되지만 이는 인코딩이지 암호화가 아닙니다. 프로덕션에서는 etcd 암호화 또는 외부 시크릿 매니저(Vault, AWS Secrets Manager)와 연동해야 합니다.\n\nK8s Secret의 보안 모범 사례:\n\n- RBAC으로 Secret 접근 권한을 최소화합니다\n- 시크릿 값을 kubectl describe에서 숨기려면 `stringData` 대신 `data`(base64)를 사용합니다\n- External Secrets Operator로 AWS/GCP 시크릿 매니저와 동기화합니다"
+        },
+        {
+          "title": "자동 확장: HPA와 VPA",
+          "content": "K8s의 강력한 기능 중 하나는 부하에 따라 Pod 수를 자동으로 조정하는 것입니다.\n\n**HPA(Horizontal Pod Autoscaler)** 는 Pod 수를 조정합니다. CPU 사용률이 70%를 넘으면 Pod를 추가하고, 낮아지면 줄입니다. 메트릭 서버(metrics-server)가 필요합니다.\n\nHPA 설정 파라미터:\n\n- `minReplicas`: 최소 Pod 수 (트래픽이 없어도 유지)\n- `maxReplicas`: 최대 Pod 수 (비용 상한)\n- `targetCPUUtilizationPercentage`: 목표 CPU 사용률\n\nAI 서비스에서 HPA를 사용할 때 주의점이 있습니다. GPU 추론 서버는 CPU 사용률보다 **요청 큐 길이** 나 **GPU 사용률** 기반으로 확장하는 것이 더 적합합니다. Prometheus + KEDA(Kubernetes Event-Driven Autoscaling)로 커스텀 메트릭 기반 확장을 구현합니다.\n\n**VPA(Vertical Pod Autoscaler)** 는 각 Pod의 CPU/메모리 요청값을 자동으로 조정합니다. 처음 `resources.requests`를 얼마로 설정해야 할지 모를 때 VPA가 추천값을 제안합니다."
+        },
+        {
+          "title": "GPU 워크로드와 AI 서빙 패턴",
+          "content": "K8s에서 GPU 리소스를 사용하려면 NVIDIA Device Plugin이 설치되어 있어야 합니다. Pod 스펙에 `nvidia.com/gpu: 1`을 명시하면 스케줄러가 GPU가 있는 노드에만 배치합니다.\n\n**노드 셀렉터와 어피니티** 로 특정 하드웨어(GPU 모델, 메모리)를 가진 노드에만 배치할 수 있습니다. `nodeSelector: cloud.google.com/gke-accelerator: nvidia-tesla-a100` 처럼 레이블을 사용합니다.\n\n**Job** 은 일회성 배치 작업에 사용합니다. 모델 학습, 대규모 배치 추론, 데이터 전처리가 해당됩니다. Job은 완료되면 종료되고, 실패 시 재시도합니다.\n\n**CronJob** 은 주기적인 작업에 사용합니다. 매일 새벽 모델 재학습, 시간별 피처 집계 등에 활용합니다.\n\n**KServe** (구 KFServing)는 K8s 위에서 모델 서빙을 단순화하는 플랫폼입니다. InferenceService 오브젝트 하나로 모델 로딩, 스케일링, 카나리 배포, GPU 스케줄링을 자동화합니다."
+        }
+      ],
+      "analogy": {
+        "title": "항공 관제 시스템",
+        "content": "쿠버네티스를 이해하는 가장 좋은 비유는 공항 관제 시스템입니다. 공항(K8s 클러스터)에 수십~수백 대의 비행기(컨테이너)가 이착륙합니다. 항공 관제사(컨트롤 플레인)는 각 비행기의 위치를 파악하고, 활주로(노드)에 비행기를 할당하며, 비상 상황 시 대체 경로를 지시합니다.\n\n비행기(Pod)가 고장 나면(충돌, 엔진 오류) 관제탑이 즉시 교체 비행기를 활주로로 보냅니다. 갑자기 승객이 몰리면(트래픽 급증) 비행기를 더 투입합니다(HPA). 관제사의 모든 지시는 비행 계획서(YAML 매니페스트)에 따릅니다.\n\n`kubectl`은 관제탑과 통신하는 무전기입니다. `kubectl apply -f deployment.yaml`은 새 비행 계획서를 제출하는 것이고, `kubectl get pods`는 현재 비행 중인 비행기 목록을 확인하는 것입니다."
+      },
+      "codeExample": {
+        "language": "yaml",
+        "intro": "AI 추론 서버를 K8s에 배포하는 전체 매니페스트입니다. Deployment, Service, HPA, ConfigMap을 포함합니다.",
+        "code": "# deployment.yaml\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: ml-inference-server\n  labels:\n    app: ml-server\nspec:\n  replicas: 3\n  selector:\n    matchLabels:\n      app: ml-server\n  strategy:\n    type: RollingUpdate\n    rollingUpdate:\n      maxSurge: 1        # 업데이트 중 최대 추가 Pod\n      maxUnavailable: 0  # 업데이트 중 최소 가용 Pod (다운타임 없음)\n  template:\n    metadata:\n      labels:\n        app: ml-server\n    spec:\n      containers:\n      - name: inference\n        image: myregistry/ml-server:v1.2.0\n        ports:\n        - containerPort: 8000\n        resources:\n          requests:\n            cpu: \"500m\"       # 0.5 CPU 코어 요청\n            memory: \"1Gi\"\n            nvidia.com/gpu: 1 # GPU 1개 요청\n          limits:\n            cpu: \"2000m\"\n            memory: \"4Gi\"\n            nvidia.com/gpu: 1\n        envFrom:\n        - configMapRef:\n            name: ml-server-config\n        livenessProbe:\n          httpGet:\n            path: /health\n            port: 8000\n          initialDelaySeconds: 30\n          periodSeconds: 10\n---\napiVersion: v1\nkind: Service\nmetadata:\n  name: ml-inference-svc\nspec:\n  selector:\n    app: ml-server\n  ports:\n  - port: 80\n    targetPort: 8000\n  type: LoadBalancer\n---\napiVersion: autoscaling/v2\nkind: HorizontalPodAutoscaler\nmetadata:\n  name: ml-server-hpa\nspec:\n  scaleTargetRef:\n    apiVersion: apps/v1\n    kind: Deployment\n    name: ml-inference-server\n  minReplicas: 2\n  maxReplicas: 10\n  metrics:\n  - type: Resource\n    resource:\n      name: cpu\n      target:\n        type: Utilization\n        averageUtilization: 70",
+        "walkthrough": "`resources.requests`는 스케줄러가 노드 선택 시 참고하는 최소 보장 자원입니다. `nvidia.com/gpu: 1`로 GPU 1개를 요청합니다. `livenessProbe`는 Pod가 살아 있는지 주기적으로 확인하고, 실패 시 자동 재시작합니다. `maxUnavailable: 0`은 롤링 업데이트 중 항상 3개 Pod가 서빙 중임을 보장합니다."
+      },
+      "industryEvaluation": {
+        "overview": "K8s는 러닝 커브가 가파릅니다. 면접에서는 기본 개념 이해와 실제 트러블슈팅 경험을 봅니다.",
+        "whatEngineersLookFor": [
+          "resources.requests와 limits의 차이와 설정 이유를 설명하는가",
+          "OOMKilled Pod를 어떻게 디버깅하는지 아는가",
+          "liveness probe와 readiness probe의 차이를 구분하는가"
+        ],
+        "redFlags": [
+          "resources를 설정하지 않는 경우 (노드 OOM으로 다른 Pod에 영향)",
+          "Secret을 YAML 파일에 평문으로 커밋하는 경우",
+          "단일 Pod로 프로덕션 서비스를 운영하는 경우 (노드 장애 시 다운타임)"
+        ],
+        "interviewQuestions": [
+          "Pod가 CrashLoopBackOff 상태일 때 어떻게 디버깅하시나요?",
+          "새 버전 배포 중 오류가 발생했을 때 어떻게 이전 버전으로 빠르게 되돌리나요?",
+          "GPU 노드가 2개뿐인데 5개의 추론 Pod를 요청하면 어떻게 되나요?"
+        ],
+        "masteryVsFamiliar": "아는 수준은 기본 YAML로 Deployment와 Service를 배포하는 것입니다. 마스터 수준은 Pod Disruption Budget으로 유지보수 중 가용성을 보장하고, Admission Webhook으로 보안 정책을 강제하며, Operator 패턴으로 상태 있는 애플리케이션(DB)을 관리하는 것입니다."
+      },
+      "keyTakeaways": [
+        {"title": "선언적 모델", "content": "K8s는 명령이 아닌 원하는 상태를 선언한다. 컨트롤러가 현재 상태를 원하는 상태로 지속 조정한다."},
+        {"title": "Pod는 일시적", "content": "Pod는 죽고 재시작된다. 안정적 접근을 위해 Service를 통해 통신해야 한다."},
+        {"title": "resources 설정 필수", "content": "requests와 limits를 설정하지 않으면 노드 OOM으로 다른 서비스에 영향을 준다."},
+        {"title": "HPA = 자동 확장", "content": "CPU/메모리 기반 HPA로 트래픽 변화에 자동으로 대응한다. AI 서버는 커스텀 메트릭(큐 길이)이 더 적합하다."},
+        {"title": "GPU 리소스 요청", "content": "nvidia.com/gpu: 1로 GPU를 요청하면 스케줄러가 GPU 노드에 배치한다."},
+        {"title": "롤링 업데이트", "content": "maxUnavailable: 0으로 다운타임 없이 새 버전을 배포할 수 있다."}
+      ]
+    },
+    {
+      "number": 8,
+      "emoji": "📊",
+      "title": "Monitoring & Observability",
+      "titleKr": "모니터링과 관찰 가능성",
+      "tldr": "프로덕션 AI 서비스가 언제, 왜, 어떻게 실패하는지 Prometheus·Grafana·구조화 로깅으로 사전에 파악하고 빠르게 대응한다.",
+      "topics": ["관찰 가능성의 3 기둥", "Prometheus 메트릭", "Grafana 대시보드", "구조화 로깅", "알림과 온콜"],
+      "learningGoals": [
+        "메트릭, 로그, 트레이스 — 관찰 가능성의 3 기둥을 구분하고 각 사용 사례를 설명할 수 있다",
+        "FastAPI 서비스에 Prometheus 메트릭을 추가할 수 있다",
+        "Grafana로 서비스 대시보드를 구성하고 알림 룰을 설정할 수 있다",
+        "구조화 로깅(structured logging)으로 로그를 검색 가능하게 만들 수 있다",
+        "AI 서비스에 특화된 메트릭(모델 드리프트, 추론 레이턴시 분포)을 정의할 수 있다"
+      ],
+      "overview": "\"측정할 수 없으면 개선할 수 없다.\" 프로덕션 AI 서비스에서 모니터링은 선택이 아닙니다. 모델이 예측을 잘못 내리고 있는지, API 레이턴시가 SLA를 위반하는지, 특정 사용자 그룹에서 오류율이 높은지 — 이 모든 것을 모르면 서비스가 조용히 망가지고 있어도 알 수 없습니다.\n\n**관찰 가능성(Observability)** 은 시스템의 내부 상태를 외부 출력(메트릭, 로그, 트레이스)으로 추론하는 능력입니다. 단순 모니터링(\"CPU가 80%다\")을 넘어, 알 수 없는 실패 모드를 질문으로 탐색하는 능력입니다(\"왜 특정 사용자 요청만 느린가?\").\n\nAI 서비스 모니터링은 일반 서비스보다 한 층 더 복잡합니다. 코드가 변경되지 않아도 모델 성능이 저하될 수 있습니다(Data Drift). GPU 활용률과 배치 크기는 비용과 직결됩니다. 모델 예측 분포 변화는 표준 시스템 메트릭으로는 감지할 수 없습니다.",
+      "sections": [
+        {
+          "title": "관찰 가능성의 3 기둥: 메트릭, 로그, 트레이스",
+          "content": "현대 관찰 가능성은 세 가지 신호 타입으로 구성됩니다.\n\n**메트릭(Metrics)** 은 숫자로 표현된 시계열 데이터입니다. CPU 사용률, 요청 수, 오류율, 레이턴시 등. 숫자이므로 집계·비교·알림이 쉽습니다. 저장 비용이 낮고 오랜 기간 보관 가능합니다. Prometheus가 대표적입니다.\n\n**로그(Logs)** 는 이벤트의 텍스트 기록입니다. \"사용자 123이 모델 요청을 보냈다\", \"DB 쿼리가 2.3초 걸렸다\" 같은 문장 형식입니다. 상세한 문맥을 제공하지만 볼륨이 크고 검색이 느립니다. ELK Stack(Elasticsearch + Logstash + Kibana) 또는 Loki + Grafana가 사용됩니다.\n\n**트레이스(Traces)** 는 요청이 여러 서비스를 거치는 경로를 추적합니다. \"사용자 요청이 API → 인증 서비스 → 모델 서버 → DB를 거치는 데 각각 몇 ms가 걸렸는가?\" 마이크로서비스에서 어떤 서비스가 병목인지 찾는 데 핵심입니다. OpenTelemetry + Jaeger가 표준입니다.\n\n세 신호는 서로 보완합니다. 메트릭으로 이상을 감지하고, 로그로 원인을 찾고, 트레이스로 어느 서비스가 문제인지 정확히 파악합니다."
+        },
+        {
+          "title": "Prometheus: 메트릭 수집과 저장",
+          "content": "Prometheus는 풀(Pull) 방식의 메트릭 수집 시스템입니다. 서비스가 메트릭을 Prometheus에 푸시하는 것이 아니라, Prometheus가 주기적으로(보통 15초) 서비스의 `/metrics` 엔드포인트를 **스크랩(Scrape)** 합니다.\n\nPrometheus는 4가지 메트릭 타입을 지원합니다.\n\n- **Counter**: 단조 증가하는 값. 요청 수, 오류 수. 항상 증가하며 재시작 시 0으로 리셋.\n- **Gauge**: 임의로 오르내리는 값. CPU 사용률, 현재 활성 연결 수, GPU 메모리 사용량.\n- **Histogram**: 값의 분포를 버킷으로 표현. 레이턴시 분포(50th, 95th, 99th 백분위수) 계산에 사용.\n- **Summary**: Histogram과 유사하지만 분위수를 클라이언트에서 계산.\n\n**PromQL** 은 Prometheus의 쿼리 언어입니다. 강력하지만 처음엔 낯섭니다. `rate(http_requests_total[5m])`는 5분 이동 평균 초당 요청 수입니다. `histogram_quantile(0.99, rate(request_duration_seconds_bucket[5m]))`는 최근 5분간 요청의 P99 레이턴시입니다."
+        },
+        {
+          "title": "Grafana: 시각화와 알림",
+          "content": "Grafana는 Prometheus(및 다른 다수의 데이터 소스)에 저장된 메트릭을 시각화하는 대시보드 도구입니다.\n\n좋은 서비스 대시보드는 **RED 방법론** 을 따릅니다.\n\n- **R(Rate)**: 초당 요청 수 — 트래픽이 얼마나 들어오는가?\n- **E(Errors)**: 오류율 — 요청 중 몇 %가 실패하는가?\n- **D(Duration)**: 레이턴시 — 요청 처리에 얼마나 걸리는가?\n\nAI 서비스 대시보드에는 추가로 GPU 활용률, 모델별 추론 시간 분포(P50/P95/P99), 캐시 히트율, 배치 크기 분포를 포함합니다.\n\n**알림 룰** 은 특정 조건이 충족되면 Slack, PagerDuty, 이메일로 알림을 보냅니다. 예를 들어 오류율이 5분간 1%를 초과하거나, P99 레이턴시가 2초를 넘으면 온콜 담당자에게 알립니다.\n\n알림 설계 시 핵심 원칙은 **알림 피로(Alert Fatigue)** 를 피하는 것입니다. 너무 많은 알림은 무시됩니다. 실제로 대응이 필요한 상황에만, 그리고 즉시 대응 가능한 사람에게 알림을 보냅니다."
+        },
+        {
+          "title": "구조화 로깅: 검색 가능한 로그",
+          "content": "전통적인 로그는 사람이 읽기 위한 텍스트입니다. `2024-01-15 10:23:45 ERROR Request failed for user 123`. 이 로그에서 \"지난 24시간 동안 오류가 발생한 사용자 목록을 추출하라\"는 질문에 grep과 awk로 씨름해야 합니다.\n\n**구조화 로깅(Structured Logging)** 은 로그를 JSON 형태로 출력합니다.\n\n```json\n{\"level\": \"error\", \"timestamp\": \"2024-01-15T10:23:45Z\", \"user_id\": 123, \"request_id\": \"req-abc\", \"error\": \"model timeout\", \"duration_ms\": 5023}\n```\n\n이제 Elasticsearch나 CloudWatch에서 `user_id: 123 AND level: error`로 정확하게 필터링할 수 있습니다.\n\n파이썬에서는 `structlog` 라이브러리를 사용합니다. `bound_logger`로 요청별 컨텍스트(request_id, user_id)를 자동으로 모든 로그에 포함시킵니다.\n\n**로그 레벨** 은 중요도에 따라 DEBUG → INFO → WARNING → ERROR → CRITICAL로 구분합니다. 프로덕션에서는 INFO 이상만 출력합니다. DEBUG 로그를 프로덕션에 켜두면 성능 저하와 비용 폭발이 발생합니다."
+        },
+        {
+          "title": "AI 서비스 특화 모니터링: 모델 드리프트",
+          "content": "AI 서비스 모니터링에서 일반 서비스와 다른 점은 **모델 성능 모니터링** 이 필요하다는 것입니다.\n\n**데이터 드리프트(Data Drift)** 는 입력 데이터의 분포가 학습 시와 달라지는 현상입니다. 예를 들어 텍스트 분류 모델을 구어체로 학습했는데 서비스 후 문어체 데이터가 들어오기 시작하면, 코드나 인프라에 아무 변화가 없어도 모델 정확도가 하락합니다.\n\n**예측 분포 모니터링** 은 모델 출력의 통계(평균, 분산, 클래스 비율)를 시계열로 추적합니다. 갑자기 모든 예측이 특정 클래스로 몰리거나, confidence score가 낮아지면 드리프트 신호입니다.\n\n실용적인 AI 메트릭들:\n\n- **추론 레이턴시 히스토그램**: P50/P95/P99 백분위수. P99가 SLA를 위반하면 즉시 알림.\n- **GPU 활용률**: 낮으면 배치 크기를 키우거나 인스턴스를 줄여 비용을 절감할 수 있습니다.\n- **모델별 요청 수**: A/B 테스트에서 각 모델 버전의 트래픽 비율 확인.\n- **예측 신뢰도 분포**: 평균 confidence가 임계값 이하로 떨어지면 모델 재학습 트리거."
+        }
+      ],
+      "analogy": {
+        "title": "자동차 계기판",
+        "content": "자동차 없이 관찰 가능성을 이해하기 어렵습니다. 자동차를 운전할 때 우리는 항상 계기판(대시보드)을 봅니다. 속도계(현재 요청 처리 속도), 연료 게이지(남은 리소스), 온도계(CPU 온도), 체크 엔진 경고등(오류 알림).\n\n로그는 **블랙박스 기록장치** 입니다. 사고 후 무슨 일이 있었는지 정확히 재현할 수 있습니다. \"10:23에 브레이크를 밟았고, 10:23:02에 타이어가 잠겼다\"처럼 상세한 이벤트 기록입니다.\n\n분산 트레이싱은 **GPS 내비게이션의 경로 추적** 입니다. \"서울에서 부산까지 가는 동안 경부고속도로 33km 지점에서 15분간 정체가 있었다\"처럼, 마이크로서비스를 통과하는 요청의 어느 구간에서 시간이 걸렸는지 정확히 보여줍니다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "FastAPI 서비스에 Prometheus 메트릭과 구조화 로깅을 추가하는 패턴입니다. 요청 수, 레이턴시 히스토그램, 오류율을 자동으로 측정합니다.",
+        "code": "from fastapi import FastAPI, Request\nfrom prometheus_client import Counter, Histogram, Gauge, make_asgi_app\nfrom starlette.middleware.base import BaseHTTPMiddleware\nimport structlog\nimport time\n\napp = FastAPI()\n\n# ── Prometheus 메트릭 정의 ──────────────────────────────\nREQUEST_COUNT = Counter(\n    \"http_requests_total\",\n    \"Total HTTP requests\",\n    [\"method\", \"endpoint\", \"status_code\"],\n)\nREQUEST_LATENCY = Histogram(\n    \"http_request_duration_seconds\",\n    \"HTTP request latency\",\n    [\"endpoint\"],\n    buckets=[0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0],  # SLA 기준점 포함\n)\nACTIVE_REQUESTS = Gauge(\"http_active_requests\", \"Active HTTP requests\")\n\nINFERENCE_LATENCY = Histogram(\n    \"inference_duration_seconds\",\n    \"Model inference latency\",\n    [\"model_name\"],\n    buckets=[0.01, 0.05, 0.1, 0.5, 1.0, 5.0],\n)\n\n# ── 구조화 로깅 설정 ────────────────────────────────────\nstructlog.configure(\n    processors=[\n        structlog.processors.TimeStamper(fmt=\"iso\"),\n        structlog.stdlib.add_log_level,\n        structlog.processors.JSONRenderer(),  # JSON으로 출력\n    ]\n)\nlogger = structlog.get_logger()\n\n# ── 메트릭 수집 미들웨어 ────────────────────────────────\nclass MetricsMiddleware(BaseHTTPMiddleware):\n    async def dispatch(self, request: Request, call_next):\n        ACTIVE_REQUESTS.inc()\n        start = time.perf_counter()\n        response = await call_next(request)\n        duration = time.perf_counter() - start\n        ACTIVE_REQUESTS.dec()\n\n        REQUEST_COUNT.labels(\n            method=request.method,\n            endpoint=request.url.path,\n            status_code=response.status_code,\n        ).inc()\n        REQUEST_LATENCY.labels(endpoint=request.url.path).observe(duration)\n\n        # 구조화 로그\n        logger.info(\n            \"request_completed\",\n            method=request.method,\n            path=request.url.path,\n            status=response.status_code,\n            duration_ms=round(duration * 1000, 2),\n        )\n        return response\n\napp.add_middleware(MetricsMiddleware)\napp.mount(\"/metrics\", make_asgi_app())  # Prometheus 스크랩 엔드포인트",
+        "walkthrough": "`Counter`, `Histogram`, `Gauge`는 메트릭 타입입니다. 레이블(`method`, `endpoint`)을 통해 메트릭을 차원별로 세분화합니다. `Histogram`의 `buckets`는 P50/P95/P99 계산을 위한 버킷 경계입니다. `MetricsMiddleware`는 모든 요청을 투명하게 계측하므로 각 엔드포인트 함수에 계측 코드를 넣을 필요가 없습니다."
+      },
+      "industryEvaluation": {
+        "overview": "모니터링은 사고가 난 후에야 중요성을 깨닫습니다. 면접에서는 실제 장애 대응 경험과 관찰 가능성 설계 사고를 평가합니다.",
+        "whatEngineersLookFor": [
+          "메트릭, 로그, 트레이스 각각을 언제 써야 하는지 구분하는가",
+          "레이턴시를 평균이 아닌 P95/P99로 측정하는 이유를 아는가",
+          "알림 피로를 줄이기 위해 어떻게 알림 룰을 설계하는가"
+        ],
+        "redFlags": [
+          "레이턴시를 평균으로만 측정하는 경우 (꼬리 레이턴시를 놓침)",
+          "모든 DEBUG 로그를 프로덕션에 활성화하는 경우",
+          "알림이 너무 많아 온콜 담당자가 알림을 무시하게 되는 경우"
+        ],
+        "interviewQuestions": [
+          "평균 레이턴시는 정상인데 일부 사용자가 응답이 느리다고 민원을 넣습니다. 어떻게 디버깅하겠어요?",
+          "모델이 코드 변경 없이 갑자기 정확도가 떨어졌습니다. 어떻게 탐지하고 대응하겠어요?",
+          "분산 환경에서 하나의 요청이 5개 서비스를 거칠 때 병목을 어떻게 찾겠어요?"
+        ],
+        "masteryVsFamiliar": "아는 수준은 Prometheus + Grafana 스택을 설치하고 기본 대시보드를 만드는 것입니다. 마스터 수준은 SLO(Service Level Objective)와 Error Budget을 정의하고, OpenTelemetry로 분산 트레이싱을 구현하며, 모델 드리프트 자동 감지 시스템을 구축하는 것입니다."
+      },
+      "keyTakeaways": [
+        {"title": "3 기둥", "content": "메트릭(무엇이 이상한가) + 로그(무슨 일이 있었나) + 트레이스(어디서 느린가). 세 개가 함께 있어야 완전한 관찰 가능성이다."},
+        {"title": "P99 레이턴시", "content": "평균 레이턴시는 거짓말한다. 1%의 사용자가 10초를 기다리는 것도 평균엔 잘 안 보인다. 항상 P95/P99를 본다."},
+        {"title": "구조화 로깅 = JSON", "content": "로그를 JSON으로 출력하면 Elasticsearch에서 user_id: 123으로 필터링할 수 있다. 텍스트 grep은 느리고 오류가 많다."},
+        {"title": "RED 방법론", "content": "모든 서비스 대시보드는 Rate(초당 요청), Errors(오류율), Duration(레이턴시) 세 지표를 기본으로 한다."},
+        {"title": "알림 피로 주의", "content": "알림이 너무 많으면 모두 무시된다. 즉각 대응이 필요한 심각한 상황에만 알림을 보낸다."},
+        {"title": "AI 전용 메트릭", "content": "모델 confidence 분포, 입력 데이터 통계, GPU 활용률은 AI 서비스만의 모니터링 차원이다."}
+      ]
+    },
+    {
+      "number": 9,
+      "emoji": "🔄",
+      "title": "CI/CD Pipelines",
+      "titleKr": "CI/CD 파이프라인",
+      "tldr": "코드 변경이 자동으로 테스트되고 배포되는 파이프라인을 GitHub Actions로 구축해 안전하고 빠른 배포를 실현한다.",
+      "topics": ["CI vs CD 개념", "GitHub Actions 핵심", "Docker 이미지 빌드·푸시", "환경별 배포 전략", "배포 안전장치"],
+      "learningGoals": [
+        "CI(지속적 통합)와 CD(지속적 배포)의 차이를 설명하고 각 단계에서 무엇을 해야 하는지 안다",
+        "GitHub Actions로 테스트·린팅·빌드를 자동화하는 워크플로우를 작성할 수 있다",
+        "Docker 이미지를 빌드해 컨테이너 레지스트리에 푸시하는 파이프라인을 구성할 수 있다",
+        "환경별(dev/staging/prod) 배포 전략을 설계하고 롤백 절차를 안다",
+        "블루-그린 배포와 카나리 배포의 차이와 각각의 장단점을 설명할 수 있다"
+      ],
+      "overview": "\"배포가 무섭다\"는 말은 CI/CD가 없는 팀에서 자주 들립니다. 수동 배포는 실수가 잦고, 새벽에 긴급 배포하면 누가 뭘 어떻게 했는지 기억도 안 납니다. CI/CD는 이 공포를 제거합니다. 코드를 푸시하면 자동으로 테스트를 실행하고, 통과하면 배포합니다. 사람이 \"배포 스크립트 실행\"을 기억할 필요가 없습니다.\n\n**CI(Continuous Integration, 지속적 통합)** 는 개발자들이 코드 변경사항을 자주 공유 브랜치에 통합하고, 매 통합 시 자동으로 빌드·테스트를 실행하는 관행입니다. 목표는 통합 오류를 빠르게 발견하는 것입니다.\n\n**CD(Continuous Delivery/Deployment, 지속적 배포)** 는 CI를 통과한 코드를 자동(또는 승인 후)으로 프로덕션에 배포하는 관행입니다. Delivery는 배포 준비까지, Deployment는 실제 프로덕션 배포까지 자동화합니다.\n\nAI 엔지니어에게 CI/CD는 모델 서빙 파이프라인 자동화에 직결됩니다. 새 모델 버전이 평가를 통과하면 자동으로 스테이징에 배포하고, 성능 기준을 충족하면 프로덕션에 반영하는 파이프라인을 구축합니다.",
+      "sections": [
+        {
+          "title": "GitHub Actions: 워크플로우의 기초",
+          "content": "GitHub Actions는 GitHub 저장소 이벤트(push, pull_request, schedule)에 반응해 자동화된 작업을 실행하는 CI/CD 플랫폼입니다.\n\n**핵심 개념**\n\n**Workflow** 는 `.github/workflows/*.yml` 파일로 정의됩니다. 하나 이상의 Job으로 구성됩니다.\n\n**Job** 은 하나의 러너(실행 환경)에서 실행되는 Step의 집합입니다. Job들은 기본적으로 병렬로 실행되지만 `needs`로 순서를 지정할 수 있습니다.\n\n**Step** 은 Job 안의 개별 작업입니다. `uses` (Action 사용) 또는 `run` (쉘 명령 실행) 중 하나입니다.\n\n**Triggers** 는 워크플로우를 실행하는 이벤트입니다.\n\n- `push`: 브랜치에 코드가 푸시될 때\n- `pull_request`: PR이 열리거나 업데이트될 때\n- `schedule`: cron 표현식으로 주기적 실행\n- `workflow_dispatch`: 수동 실행\n\n**Actions Marketplace** 에는 수천 개의 재사용 가능한 Action이 있습니다. `actions/checkout`, `actions/setup-python`, `docker/build-push-action` 같은 공식 Action은 반드시 특정 버전(`@v4`)을 명시합니다."
+        },
+        {
+          "title": "CI 파이프라인: 코드 품질 자동화",
+          "content": "좋은 CI 파이프라인은 빠르고(5분 내) 믿을 수 있어야 합니다. 너무 느리면 개발자들이 CI 결과를 기다리지 않고 다음 작업을 시작합니다.\n\n**CI 파이프라인이 포함해야 할 단계**\n\n1. **Lint & Format**: `ruff`, `black`, `isort`로 코드 스타일 자동 검사. 팀 코드 스타일 일관성 유지.\n2. **Type Check**: `mypy`로 타입 오류 정적 분석. 런타임 오류를 사전에 방지.\n3. **Unit Test**: `pytest`로 유닛 테스트 실행. 코드 커버리지 리포트 생성.\n4. **Integration Test**: 실제 DB나 Redis를 Docker Compose로 띄워 통합 테스트.\n5. **Security Scan**: `bandit`으로 파이썬 보안 취약점 스캔. `trivy`로 Docker 이미지 취약점 스캔.\n\n**병렬 실행** 으로 시간을 줄입니다. Lint, Type Check, Unit Test는 서로 의존성이 없으므로 동시에 실행할 수 있습니다.\n\n**캐싱** 으로 반복 실행 속도를 높입니다. `actions/cache`로 pip 패키지, Docker 레이어를 캐시합니다. PyTorch 같은 대용량 패키지의 반복 다운로드를 방지합니다."
+        },
+        {
+          "title": "CD 파이프라인: 자동 배포",
+          "content": "CD는 CI가 통과한 아티팩트(Docker 이미지)를 환경별로 배포합니다.\n\n**환경 구분**\n\n- **Development (dev)**: 개발자들이 기능을 테스트하는 환경. 최신 코드를 자유롭게 배포.\n- **Staging**: 프로덕션과 동일한 설정. 출시 전 최종 검증. 실제 데이터 일부 사용.\n- **Production (prod)**: 실제 사용자들이 쓰는 환경. 배포 승인이 필요하거나 자동화(CD).\n\n**배포 전략**\n\n브랜치 전략과 배포를 연결합니다.\n\n- `main` 브랜치 push → dev 자동 배포\n- `release/*` 브랜치 push → staging 자동 배포\n- Tag (`v1.2.0`) push → production 배포 (수동 승인 or 자동)\n\n**Docker 이미지 태깅 전략**\n\n- `latest`: 최신 빌드. 프로덕션에 `latest` 사용 금지 (재현 불가)\n- `{git-sha}`: 커밋 해시. 정확한 버전 추적. `image:abc123f`\n- `{semver}`: 시맨틱 버전. `image:1.2.0`. 사람이 읽기 좋음."
+        },
+        {
+          "title": "배포 안전장치: 블루-그린과 카나리",
+          "content": "모든 배포는 잠재적으로 장애를 일으킬 수 있습니다. 안전한 배포 전략은 오류가 발생했을 때 피해를 최소화하고 빠르게 롤백합니다.\n\n**블루-그린 배포(Blue-Green Deployment)** 는 두 개의 동일한 프로덕션 환경을 유지합니다. 현재 서빙 중인 환경이 Blue이고, 새 버전을 배포할 환경이 Green입니다. Green에 새 버전을 배포하고 테스트가 완료되면 로드 밸런서가 트래픽을 Green으로 전환합니다. 문제가 있으면 즉시 Blue로 되돌립니다. 롤백이 초 단위로 가능합니다. 단점은 두 배의 인프라 비용입니다.\n\n**카나리 배포(Canary Deployment)** 는 새 버전을 전체 트래픽의 일부(1% → 5% → 20% → 100%)에게만 서빙합니다. 문제가 발생하면 카나리 트래픽을 0%로 줄입니다. AI 서비스에서 새 모델 버전을 소수 사용자에게 테스트하는 A/B 테스트에 적합합니다.\n\n**롤백(Rollback)** 은 K8s에서 `kubectl rollout undo deployment/ml-server`로 이전 Deployment 버전으로 즉시 되돌립니다. 이것이 가능하려면 이전 이미지가 레지스트리에 남아 있어야 하므로, `latest` 태그만 사용하면 안 됩니다."
+        },
+        {
+          "title": "시크릿 관리와 환경 분리",
+          "content": "CI/CD 파이프라인에서 시크릿(DB 비밀번호, API 키, K8s 클러스터 인증 정보)을 안전하게 다루는 것이 중요합니다.\n\n**GitHub Actions Secrets** 는 저장소 또는 환경(Environment) 레벨에서 시크릿을 저장합니다. `${{ secrets.MY_API_KEY }}`로 워크플로우에서 참조합니다. 로그에 시크릿 값이 노출되지 않도록 자동으로 마스킹됩니다.\n\n**환경(Environment) 보호 규칙** 을 사용하면 프로덕션 배포 시 특정 리뷰어의 승인이 필요하도록 설정할 수 있습니다. `staging` 환경은 자동 배포, `production` 환경은 팀 리드 승인 후 배포하는 정책을 GitHub에서 강제할 수 있습니다.\n\n**OIDC(OpenID Connect) 인증** 을 사용하면 장기 유효 자격증명(Access Key) 없이 CI/CD가 AWS, GCP 등에 인증할 수 있습니다. GitHub Actions가 일회용 OIDC 토큰을 발급하고, AWS가 이 토큰을 검증해 임시 자격증명을 발급합니다. 자격증명 노출 위험이 크게 줄어듭니다."
+        }
+      ],
+      "analogy": {
+        "title": "공장 품질 관리 라인",
+        "content": "CI/CD를 자동차 공장 조립 라인으로 이해해봅시다. 자동차 부품(코드)이 컨베이어 벨트(CI 파이프라인)에 올라가면 각 스테이션에서 자동 검사가 이루어집니다. 용접 품질 검사(린팅), 강도 테스트(유닛 테스트), 안전 기준 검사(보안 스캔).\n\n모든 검사를 통과한 자동차(Docker 이미지)는 창고(컨테이너 레지스트리)에 보관됩니다. 완성된 자동차가 딜러에게 배송되는 것이 CD(배포)입니다. 카나리 배포는 신모델을 일부 딜러에게만 먼저 배포해 시장 반응을 테스트하는 것과 같습니다.\n\n이전에는 모든 것을 수동으로 했습니다 — 검사원이 직접 용접부를 눈으로 보고, 수동으로 강도를 측정했습니다. 자동화된 라인은 실수가 없고, 기록이 남으며, 24시간 일합니다. CI/CD가 소프트웨어 배포에 가져온 변화와 같습니다."
+      },
+      "codeExample": {
+        "language": "yaml",
+        "intro": "AI 서비스의 전체 CI/CD 파이프라인 GitHub Actions 워크플로우입니다. 테스트, 이미지 빌드, K8s 배포를 자동화합니다.",
+        "code": "# .github/workflows/ci-cd.yml\nname: CI/CD Pipeline\n\non:\n  push:\n    branches: [main]\n  pull_request:\n    branches: [main]\n\nenv:\n  IMAGE_NAME: myregistry/ml-service\n\njobs:\n  # ── CI: 테스트 및 린팅 ────────────────────────────────\n  test:\n    runs-on: ubuntu-latest\n    strategy:\n      matrix:\n        python-version: [\"3.11\"]  # 필요 시 복수 버전 테스트\n    steps:\n    - uses: actions/checkout@v4\n\n    - uses: actions/setup-python@v5\n      with:\n        python-version: ${{ matrix.python-version }}\n        cache: pip  # pip 캐시로 반복 설치 생략\n\n    - run: pip install -r requirements.txt -r requirements-dev.txt\n\n    - name: Lint\n      run: ruff check . && ruff format --check .\n\n    - name: Type check\n      run: mypy src/\n\n    - name: Test\n      run: pytest tests/ --cov=src --cov-report=xml\n\n  # ── CD: 이미지 빌드 & 배포 (main에 push될 때만) ─────────\n  deploy:\n    needs: test  # 테스트 통과 후에만 실행\n    if: github.ref == 'refs/heads/main' && github.event_name == 'push'\n    runs-on: ubuntu-latest\n    environment: staging  # GitHub Environment 보호 규칙 적용\n\n    steps:\n    - uses: actions/checkout@v4\n\n    - name: Log in to registry\n      uses: docker/login-action@v3\n      with:\n        username: ${{ secrets.REGISTRY_USER }}\n        password: ${{ secrets.REGISTRY_PASSWORD }}\n\n    - name: Build and push image\n      uses: docker/build-push-action@v5\n      with:\n        push: true\n        tags: |\n          ${{ env.IMAGE_NAME }}:${{ github.sha }}\n          ${{ env.IMAGE_NAME }}:latest\n        cache-from: type=gha   # GitHub Actions 캐시로 Docker 레이어 재사용\n        cache-to: type=gha,mode=max\n\n    - name: Deploy to K8s\n      run: |\n        # 이미지 태그만 업데이트 (롤링 업데이트 트리거)\n        kubectl set image deployment/ml-server \\\n          inference=${{ env.IMAGE_NAME }}:${{ github.sha }} \\\n          --record",
+        "walkthrough": "`needs: test`는 test Job이 성공해야만 deploy Job을 실행합니다. `if: github.ref == 'refs/heads/main'`은 main 브랜치 push에만 배포합니다. PR은 테스트만 실행합니다. `github.sha`로 이미지를 태깅하면 어떤 커밋에서 빌드된 이미지인지 정확히 추적할 수 있습니다. `cache-from: type=gha`는 이전 빌드의 Docker 레이어를 재사용해 빌드 시간을 크게 줄입니다."
+      },
+      "industryEvaluation": {
+        "overview": "CI/CD는 팀의 배포 속도와 안정성을 직결합니다. 면접에서는 실제 파이프라인 설계 경험과 장애 대응 경험을 봅니다.",
+        "whatEngineersLookFor": [
+          "배포와 릴리스를 분리하는 개념을 이해하는가 (Feature Flag 등)",
+          "롤백 절차가 명확하고 자동화되어 있는가",
+          "시크릿을 파이프라인에서 안전하게 다루는가"
+        ],
+        "redFlags": [
+          "latest 태그만 사용해 롤백이 불가능한 경우",
+          "CI를 거치지 않고 프로덕션에 직접 배포하는 경우",
+          "DB 마이그레이션을 배포 스크립트에 포함시켜 롤백 시 충돌이 발생하는 경우"
+        ],
+        "interviewQuestions": [
+          "배포 도중 오류가 발생했을 때 30초 안에 롤백하는 방법은?",
+          "DB 스키마 변경과 코드 변경을 어떻게 안전하게 함께 배포하겠어요?",
+          "카나리 배포 중 새 버전이 5% 트래픽에서 오류율이 2% 높게 나올 때 어떻게 하겠어요?"
+        ],
+        "masteryVsFamiliar": "아는 수준은 기본 GitHub Actions 워크플로우를 작성하는 것입니다. 마스터 수준은 GitOps(ArgoCD)로 K8s 선언적 배포를 관리하고, 배포 빈도/변경 실패율/MTTR을 DORA 메트릭으로 측정하며, Dependabot으로 의존성 자동 업데이트 파이프라인을 운영하는 것입니다."
+      },
+      "keyTakeaways": [
+        {"title": "CI = 빠른 피드백", "content": "코드 변경이 5분 안에 통과/실패를 알 수 있어야 개발자가 즉시 수정한다."},
+        {"title": "이미지 태그 = 커밋 해시", "content": "latest만으로 배포하면 롤백이 불가능하다. 항상 git sha로 이미지를 태깅한다."},
+        {"title": "환경 분리", "content": "dev → staging → prod 환경을 분리하고, staging에서 검증 후 prod에 배포한다."},
+        {"title": "카나리로 리스크 감소", "content": "새 버전을 1~5%에 먼저 배포해 전체 롤아웃 전에 문제를 발견한다."},
+        {"title": "OIDC 인증", "content": "장기 유효 Access Key 대신 OIDC 임시 자격증명으로 클라우드 인증한다."},
+        {"title": "DB 마이그레이션 분리", "content": "DB 변경은 이전 버전과 호환되도록 먼저 적용하고, 코드 배포 후 이전 열을 삭제한다."}
+      ]
+    },
+    {
+      "number": 10,
+      "emoji": "🤖",
+      "title": "MLOps & AI System Design",
+      "titleKr": "MLOps와 AI 시스템 설계",
+      "tldr": "AI 엔지니어가 혼자서 모델 학습부터 프로덕션 서빙까지 전체 ML 파이프라인을 설계·운영하는 실전 패턴을 익힌다.",
+      "topics": ["ML 파이프라인 아키텍처", "모델 레지스트리와 버전 관리", "피처 스토어", "A/B 테스트와 실험 관리", "모델 모니터링과 재학습"],
+      "learningGoals": [
+        "학습-서빙-모니터링-재학습의 ML 생명주기 전체를 설계할 수 있다",
+        "MLflow나 W&B로 실험 추적과 모델 레지스트리를 운영할 수 있다",
+        "온라인 피처 스토어(Redis)와 오프라인 피처 스토어(PostgreSQL)의 차이를 이해한다",
+        "A/B 테스트 프레임워크를 설계하고 통계적 유의성을 평가할 수 있다",
+        "모델 드리프트를 자동으로 감지하고 재학습 파이프라인을 트리거하는 시스템을 설계할 수 있다"
+      ],
+      "overview": "이 코스의 마지막 챕터에서는 앞서 배운 모든 것을 AI 시스템 설계에 통합합니다. HTTP, 데이터베이스, API, 컨테이너, K8s, 모니터링, CI/CD — 이 모든 것이 ML 파이프라인의 각 컴포넌트에서 역할을 합니다.\n\n**MLOps(ML Operations)** 는 ML 모델의 개발, 배포, 모니터링, 유지보수를 DevOps 원칙으로 자동화하는 실천 방법론입니다. 2019년 Google의 [Hidden Technical Debt in Machine Learning Systems](https://proceedings.neurips.cc/paper_files/paper/2015/file/86df7dcfd896fcaf2674f757a2463eba-Paper.pdf) 논문이 ML 시스템의 복잡성을 체계화하면서 주목받기 시작했습니다.\n\nML 시스템의 독특한 과제는 코드뿐만 아니라 **데이터와 모델** 도 변경된다는 점입니다. 동일한 코드로도 다른 데이터로 학습하면 다른 모델이 나옵니다. 이 세 가지(코드, 데이터, 모델)를 함께 버전 관리하고 추적하는 것이 MLOps의 핵심입니다.",
+      "sections": [
+        {
+          "title": "ML 파이프라인 전체 아키텍처",
+          "content": "프로덕션 ML 시스템은 다섯 가지 주요 단계로 구성됩니다.\n\n**1. 데이터 수집·처리**: 원시 데이터를 수집(이벤트 로그, 사용자 행동, 외부 API)하고 특성(Feature)으로 변환합니다. Apache Kafka로 실시간 이벤트를 수집하고, Apache Spark로 배치 처리합니다.\n\n**2. 피처 엔지니어링·스토어**: 처리된 특성을 피처 스토어에 저장합니다. 학습과 서빙이 동일한 특성을 사용하도록 보장하는 것이 핵심입니다.\n\n**3. 모델 학습·실험**: 실험을 추적(MLflow/W&B)하고, 최적 하이퍼파라미터를 찾으며, 모델을 학습합니다. 각 실험의 코드·데이터·파라미터·메트릭·아티팩트를 모두 기록합니다.\n\n**4. 모델 레지스트리·배포**: 검증된 모델을 레지스트리에 등록하고, 스테이징 → 프로덕션 순서로 배포합니다. KServe, Triton Inference Server, vLLM 등 목적에 맞는 서빙 플랫폼을 선택합니다.\n\n**5. 모니터링·재학습**: 모델 성능과 데이터 드리프트를 모니터링하고, 성능이 임계값 이하로 떨어지면 자동으로 재학습 파이프라인을 트리거합니다."
+        },
+        {
+          "title": "모델 레지스트리: 모델의 Git",
+          "content": "코드에 Git이 있듯, 모델에는 **모델 레지스트리** 가 있습니다. 모델 레지스트리는 학습된 모델의 메타데이터(코드 버전, 학습 데이터, 하이퍼파라미터, 메트릭), 아티팩트(가중치 파일), 배포 상태(Staging/Production)를 관리합니다.\n\nMLflow Model Registry의 모델 생명주기:\n\n- **None**: 등록된 버전이 없는 상태\n- **Staging**: 테스트 중인 버전. 스테이징 환경에 배포.\n- **Production**: 현재 서빙 중인 버전\n- **Archived**: 더 이상 사용하지 않지만 기록 보관\n\n`mlflow.log_metric(\"accuracy\", 0.923)`, `mlflow.log_params({\"lr\": 0.001, \"epochs\": 10})`, `mlflow.log_artifact(\"model.pkl\")`로 실험의 모든 것을 기록합니다.\n\n**모델 버전 비교** 는 레지스트리의 핵심 기능입니다. 두 실험의 메트릭을 비교하고, 어떤 데이터로 학습했는지, 어떤 코드 버전인지를 추적합니다. \"지난달 정확도가 높았던 모델 조건을 재현해달라\"는 요청에 즉시 답할 수 있어야 합니다."
+        },
+        {
+          "title": "피처 스토어: 학습-서빙 일관성",
+          "content": "**학습-서빙 스큐(Training-Serving Skew)** 는 ML 시스템에서 가장 고통스러운 버그입니다. 학습 시 특성을 `age = current_year - birth_year`로 계산했는데, 서빙 시 `age = current_year - birth_year - 1`로 계산하면 모델이 학습과 다른 입력을 받습니다. 미묘한 계산 차이가 성능 저하를 만듭니다.\n\n**피처 스토어** 는 학습과 서빙에서 동일한 특성 변환 로직을 공유하도록 보장하는 플랫폼입니다. Feast, Tecton, Vertex AI Feature Store가 대표적입니다.\n\n피처 스토어의 두 저장소:\n\n- **오프라인 스토어(Offline Store)**: 과거 특성 데이터를 저장합니다. 학습 데이터셋 생성에 사용. PostgreSQL, BigQuery, S3에 Parquet 형태.\n- **온라인 스토어(Online Store)**: 최신 특성값을 낮은 레이턴시로 제공합니다. 실시간 서빙에 사용. Redis, DynamoDB.\n\n특성 정의는 단 한 번만 작성합니다. 같은 정의가 오프라인 배치 처리와 온라인 서빙 양쪽에서 사용됩니다."
+        },
+        {
+          "title": "A/B 테스트: 데이터 기반 의사결정",
+          "content": "A/B 테스트는 두 버전(A = 현재 모델, B = 새 모델)을 트래픽 일부에 노출하고 통계적으로 어느 것이 나은지 판단합니다.\n\n**A/B 테스트 설계 시 주의사항**\n\n**샘플 크기** 는 사전에 계산합니다. 통계적 유의성(p-value < 0.05)과 검정력(Power ≥ 0.8)을 만족하는 최소 샘플 수를 계산해야 합니다. 너무 일찍 결론을 내리면 통계적 오류를 범합니다.\n\n**실험 단위** 는 사용자 레벨이어야 합니다. 같은 사용자가 요청마다 A/B를 다르게 경험하면 일관성이 없어집니다. 사용자 ID의 해시값으로 실험 그룹을 고정합니다.\n\n**지표 선택** 이 중요합니다. 직접 지표(클릭률, 구매 전환율)와 간접 지표(클릭이 많아도 구매는 적을 수 있음)를 구분합니다. AI 서비스에서는 모델 정확도(오프라인 지표)보다 비즈니스 지표(사용자 체류 시간, 재방문율)가 더 중요할 수 있습니다.\n\n**Guardrail 지표** 는 실험이 다른 중요 지표를 해치지 않는지 확인하는 안전장치입니다. 클릭률은 올라갔지만 페이지 로드 시간이 2초 증가했다면 롤아웃해선 안 됩니다."
+        },
+        {
+          "title": "모델 드리프트 감지와 자동 재학습",
+          "content": "프로덕션 모델은 시간이 지날수록 성능이 저하됩니다. 세상이 변하기 때문입니다. 코로나 전에 학습한 여행 추천 모델은 코로나 이후 무의미해집니다.\n\n**드리프트의 두 종류**\n\n- **Data Drift(입력 드리프트)**: 입력 특성의 분포가 변합니다. 텍스트 분류 모델에 새로운 도메인의 텍스트가 들어오기 시작하는 경우.\n- **Concept Drift(개념 드리프트)**: 입력과 레이블의 관계가 변합니다. \"저렴한\" 기준이 1만원에서 5만원으로 바뀌는 경우.\n\n**드리프트 감지 방법**\n\n- **통계적 테스트**: Kolmogorov-Smirnov 테스트, Population Stability Index(PSI)로 분포 변화를 수치화합니다.\n- **예측 분포 모니터링**: 모델 출력의 평균, 분산, 클래스 비율 변화를 추적합니다.\n- **레이블된 실시간 데이터 활용**: 일부 예측에 대해 정답 레이블을 수집해 실시간 정확도를 측정합니다.\n\n**자동 재학습 파이프라인** 은 드리프트가 감지되거나 성능이 임계값 이하로 떨어지면 Argo Workflows 또는 GitHub Actions를 트리거해 새 데이터로 학습을 시작합니다. 새 모델이 기존 모델보다 좋으면 자동으로 모델 레지스트리에 등록하고 카나리 배포를 시작합니다."
+        }
+      ],
+      "analogy": {
+        "title": "농작물 재배와 유통 시스템",
+        "content": "ML 파이프라인을 농업 생산 시스템으로 이해해봅시다. 데이터는 **토양과 날씨** 입니다. 같은 씨앗(알고리즘)이라도 토양(데이터)이 다르면 다른 수확물(모델)이 나옵니다. 토양 분석(데이터 분석)이 선행되어야 합니다.\n\n피처 엔지니어링은 **토양 개량** 입니다. 원시 토양(로우 데이터)에 비료(정규화, 특성 추출)를 넣어 작물이 잘 자라도록 만듭니다. 피처 스토어는 이 개량된 토양 데이터를 저장해두는 창고입니다.\n\n모델 레지스트리는 **종자 은행** 입니다. 올해 가장 좋은 품종(모델)을 선별해 저장하고, 내년에 다시 심을 수 있도록 버전을 관리합니다. A/B 테스트는 **시험 농장** 입니다. 새 품종을 전체 농장에 심기 전에 일부 구획에서 기존 품종과 비교해봅니다. 모니터링은 **수확량 측정** 이고, 드리프트 감지는 **토양 산성화 경보** 입니다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "MLflow로 실험을 추적하고 모델을 레지스트리에 등록하는 전체 흐름입니다. 학습부터 레지스트리 등록, 배포 승격까지 구현합니다.",
+        "code": "import mlflow\nimport mlflow.sklearn\nfrom mlflow.tracking import MlflowClient\nfrom sklearn.ensemble import RandomForestClassifier\nfrom sklearn.model_selection import train_test_split\nfrom sklearn.metrics import accuracy_score, f1_score\nimport numpy as np\n\nMLFLOW_TRACKING_URI = \"http://mlflow-server:5000\"\nEXPERIMENT_NAME = \"sentiment-classifier\"\nMODEL_NAME = \"sentiment-model-prod\"\n\ndef train_and_register(X, y, params: dict):\n    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)\n    mlflow.set_experiment(EXPERIMENT_NAME)\n\n    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)\n\n    with mlflow.start_run() as run:\n        # 하이퍼파라미터 기록\n        mlflow.log_params(params)\n\n        # 학습\n        model = RandomForestClassifier(**params)\n        model.fit(X_train, y_train)\n\n        # 메트릭 기록\n        y_pred = model.predict(X_test)\n        acc = accuracy_score(y_test, y_pred)\n        f1 = f1_score(y_test, y_pred, average=\"weighted\")\n        mlflow.log_metrics({\"accuracy\": acc, \"f1_score\": f1})\n\n        # 모델 아티팩트 저장\n        mlflow.sklearn.log_model(\n            model,\n            artifact_path=\"model\",\n            registered_model_name=MODEL_NAME,  # 레지스트리에 자동 등록\n        )\n        print(f\"Run {run.info.run_id}: acc={acc:.4f}, f1={f1:.4f}\")\n        return run.info.run_id, acc\n\ndef promote_to_production(run_id: str, min_accuracy: float = 0.90):\n    client = MlflowClient(tracking_uri=MLFLOW_TRACKING_URI)\n\n    # 해당 run의 등록된 모델 버전 찾기\n    versions = client.search_model_versions(f\"run_id='{run_id}'\")\n    if not versions:\n        raise ValueError(\"No registered version for this run\")\n\n    version = versions[0].version\n    # 메트릭 검증 후 Production으로 승격\n    run_data = client.get_run(run_id).data\n    if run_data.metrics.get(\"accuracy\", 0) >= min_accuracy:\n        client.transition_model_version_stage(\n            name=MODEL_NAME,\n            version=version,\n            stage=\"Production\",\n            archive_existing_versions=True,  # 기존 Production을 Archived로\n        )\n        print(f\"Version {version} promoted to Production\")\n    else:\n        print(f\"Accuracy {run_data.metrics['accuracy']:.4f} below threshold {min_accuracy}\")\n\n# 실행 예시\nif __name__ == \"__main__\":\n    X = np.random.randn(1000, 20)\n    y = (X[:, 0] > 0).astype(int)\n    run_id, acc = train_and_register(X, y, {\"n_estimators\": 100, \"max_depth\": 5})\n    promote_to_production(run_id, min_accuracy=0.85)",
+        "walkthrough": "`mlflow.start_run()`은 컨텍스트 매니저로 실험 실행을 시작합니다. `log_params`, `log_metrics`, `log_model`로 실험의 모든 것을 자동으로 기록합니다. `registered_model_name`을 지정하면 모델이 레지스트리에 자동 등록됩니다. `archive_existing_versions=True`는 기존 Production 버전을 Archived로 이동해 하나의 버전만 Production 상태가 되도록 합니다."
+      },
+      "industryEvaluation": {
+        "overview": "MLOps는 아직 성숙 중인 분야입니다. 완벽한 MLOps 시스템을 처음부터 구축했다고 주장하는 것보다, 실제 트레이드오프를 경험하고 단계적으로 개선한 경험이 더 가치 있습니다.",
+        "whatEngineersLookFor": [
+          "학습-서빙 스큐(Training-Serving Skew)를 인식하고 방지하는 방법을 아는가",
+          "A/B 테스트에서 표본 크기와 실험 기간을 사전 계산하는가",
+          "모델 재학습 트리거 기준과 자동화 범위를 합리적으로 설계하는가"
+        ],
+        "redFlags": [
+          "모델을 학습 후 재현 불가능하게 저장하는 경우 (파라미터·데이터·코드 미기록)",
+          "오프라인 메트릭(정확도)만 보고 온라인 비즈니스 지표를 무시하는 경우",
+          "모든 서비스에 최신 MLOps 도구를 적용하려는 과도한 복잡화"
+        ],
+        "interviewQuestions": [
+          "프로덕션 모델의 정확도가 갑자기 떨어졌습니다. 코드 변경도 없었는데 왜 그럴 수 있고, 어떻게 디버깅하겠어요?",
+          "같은 모델을 여러 지역(한국, 미국, 일본)에 배포할 때 각 지역 데이터로 별도 학습해야 하나요? 어떻게 결정하겠어요?",
+          "MLflow 없이 작은 팀에서 실험을 관리하라면 어떻게 하겠어요?"
+        ],
+        "masteryVsFamiliar": "아는 수준은 MLflow로 실험을 기록하는 것입니다. 마스터 수준은 Feature Store를 통해 학습-서빙 스큐를 제거하고, 통계적으로 올바른 A/B 테스트 프레임워크를 구축하며, 모델 드리프트 자동 감지와 재학습 파이프라인을 완전히 자동화하는 것입니다."
+      },
+      "keyTakeaways": [
+        {"title": "ML 생명주기", "content": "데이터 → 피처 → 학습 → 레지스트리 → 배포 → 모니터링 → 재학습. 이 사이클이 자동화되어야 진짜 MLOps다."},
+        {"title": "모델 = 코드 + 데이터 + 파라미터", "content": "모델 재현을 위해 세 가지를 모두 버전 관리해야 한다. 하나라도 빠지면 재현이 불가능하다."},
+        {"title": "학습-서빙 스큐 방지", "content": "피처 스토어로 학습과 서빙이 동일한 변환 로직을 공유한다. 미묘한 차이가 모델 성능을 저하시킨다."},
+        {"title": "오프라인 ≠ 온라인 메트릭", "content": "정확도 0.95 모델이 비즈니스 가치를 항상 만드는 것은 아니다. A/B 테스트로 비즈니스 지표를 검증한다."},
+        {"title": "드리프트 = 조용한 저하", "content": "코드 변경 없이 모델이 나빠진다. 입력 분포와 예측 분포를 항상 모니터링한다."},
+        {"title": "MLOps 성숙도 단계", "content": "처음부터 모든 것을 자동화하려 하지 않는다. 수동 → 반자동 → 완전 자동화 순서로 단계적으로 발전시킨다."}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch6: Containers &amp; Docker — Backend &amp; Ops for AI Engineers — direcf</title>
+  <meta name="description" content="&quot;내 컴퓨터에서는 되는데&quot; 문제를 Docker로 완전히 해결하고, AI 모델 서빙 컨테이너를 직접 빌드하고 최적화한다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item active" href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/computer-science">Backend &amp; Ops for AI Engineers</a><span class="sep">›</span>
+        <strong>Ch06 Containers &amp; Docker</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 06 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🐳</div>
+      <h1 class="chapter-title">Containers &amp; Docker</h1>
+      <div class="chapter-title-kr">컨테이너와 Docker</div>
+      <div class="chapter-tldr">&quot;내 컴퓨터에서는 되는데&quot; 문제를 Docker로 완전히 해결하고, AI 모델 서빙 컨테이너를 직접 빌드하고 최적화한다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-06.png" alt="Chapter 6 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 6 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>컨테이너가 VM과 다른 이유와 장점을 설명할 수 있다</li><li>Python AI 서비스를 위한 효율적인 Dockerfile을 작성할 수 있다</li><li>레이어 캐싱을 활용해 빌드 시간을 최소화할 수 있다</li><li>Docker Compose로 다중 서비스(API + DB + Redis)를 로컬에서 실행할 수 있다</li><li>다단계 빌드(Multi-stage build)로 프로덕션 이미지 크기를 최소화할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>"내 맥북에서는 잘 되는데 서버에서는 왜 안 돼요?" — 이 질문은 Docker 이전 세계에서 수백만 시간의 디버깅 시간을 낭비하게 만든 근본 원인이었습니다. 개발자 컴퓨터의 Python 버전, 라이브러리 버전, 환경 변수, OS 차이가 프로덕션 서버와 달랐기 때문입니다. Docker는 이 문제를 <strong>환경을 코드로 정의</strong>함으로써 완전히 해결합니다.</p>
+<p>컨테이너(Container)는 애플리케이션과 그 실행에 필요한 모든 것(코드, 런타임, 라이브러리, 설정)을 하나의 독립적인 패키지로 묶는 기술입니다. 어떤 환경에서든 동일하게 실행됩니다. MacBook, Ubuntu 서버, AWS EC2, Kubernetes 어디서든.</p>
+<p>AI 엔지니어에게 Docker는 선택이 아니라 필수입니다. PyTorch, CUDA, 수십 개의 의존성을 가진 AI 환경은 재현성 문제에 특히 취약합니다. CUDA 버전 하나가 맞지 않으면 GPU 추론이 안 됩니다. Docker는 이 복잡한 환경을 버전 관리하고, 팀 전체가 동일한 환경을 사용하도록 보장합니다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>컨테이너 vs VM: 경량화의 혁명</h2><p>가상 머신(VM)은 하드웨어 위에 하이퍼바이저(VMware, VirtualBox)를 올리고, 그 위에 완전한 운영체제(게스트 OS)를 부팅합니다. 격리성이 높지만 무겁습니다. VM 하나가 수 GB의 디스크와 수백 MB의 RAM을 차지합니다. 부팅에 수십 초~수 분이 걸립니다.</p>
+<p>컨테이너는 호스트 OS의 커널을 공유하면서 프로세스 수준의 격리를 제공합니다. Linux의 <strong>namespaces</strong>(프로세스, 네트워크, 파일시스템 격리)와 <strong>cgroups</strong>(CPU, 메모리 제한)를 활용합니다. 결과적으로 컨테이너는 수 MB의 디스크와 수 MB의 RAM을 사용하고, 밀리초 단위로 시작합니다.</p>
+<table>
+<thead>
+<tr>
+<th>비교</th>
+<th>VM</th>
+<th>컨테이너</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>격리 단위</td>
+<td>운영체제 전체</td>
+<td>프로세스</td>
+</tr>
+<tr>
+<td>시작 시간</td>
+<td>수십 초~분</td>
+<td>밀리초~초</td>
+</tr>
+<tr>
+<td>이미지 크기</td>
+<td>수 GB</td>
+<td>수십~수백 MB</td>
+</tr>
+<tr>
+<td>커널 공유</td>
+<td>없음</td>
+<td>호스트 커널 공유</td>
+</tr>
+<tr>
+<td>보안 격리</td>
+<td>강함</td>
+<td>중간 (gVisor, Kata로 강화 가능)</td>
+</tr>
+</tbody>
+</table></div><div class="sb-block"><h2>Dockerfile: 환경을 코드로</h2><p>Dockerfile은 Docker 이미지를 만드는 레시피입니다. 각 명령어가 하나의 <strong>레이어(Layer)</strong> 를 만듭니다. 레이어는 캐시됩니다 — 변경되지 않은 레이어는 다음 빌드에서 재사용됩니다.</p>
+<p><strong>자주 사용하는 Dockerfile 명령어</strong></p>
+<p><code>FROM &lt;base-image&gt;</code> — 베이스 이미지 지정. AI 서버는 <code>python:3.11-slim</code> 또는 <code>nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04</code>를 많이 씁니다.</p>
+<p><code>WORKDIR /app</code> — 작업 디렉토리 설정. 이후 명령어는 이 경로 기준으로 실행됩니다.</p>
+<p><code>COPY requirements.txt .</code> — 파일 복사. 소스 코드보다 먼저 <code>requirements.txt</code>를 복사해 레이어 캐시를 활용합니다.</p>
+<p><code>RUN pip install -r requirements.txt</code> — 명령 실행. RUN 결과가 레이어로 저장됩니다.</p>
+<p><code>ENV PYTHONUNBUFFERED=1</code> — 환경 변수 설정. Python stdout 버퍼링 비활성화는 로그가 즉시 출력되게 합니다.</p>
+<p><code>EXPOSE 8000</code> — 문서화 목적 포트 선언. 실제 포트 바인딩은 <code>docker run -p</code>에서 합니다.</p>
+<p><code>CMD ["uvicorn", "main:app", "--host", "0.0.0.0"]</code> — 컨테이너 시작 시 실행되는 기본 명령.</p></div><div class="sb-block"><h2>레이어 캐싱 최적화</h2><p>Docker 빌드 성능의 핵심은 레이어 캐시입니다. <strong>변경이 적은 레이어를 먼저, 변경이 잦은 레이어를 나중에</strong> 배치해야 합니다.</p>
+<p>잘못된 순서 (매 빌드마다 pip install 재실행):</p>
+<pre><code>COPY . .
+RUN pip install -r requirements.txt
+</code></pre>
+<p>소스 코드가 조금이라도 바뀌면 <code>COPY . .</code> 레이어가 무효화되어 pip install을 처음부터 다시 합니다.</p>
+<p>올바른 순서 (소스 코드 변경 시 의존성 설치 캐시 유지):</p>
+<pre><code>COPY requirements.txt .
+RUN pip install -r requirements.txt
+COPY . .
+</code></pre>
+<p><code>requirements.txt</code>가 변경되지 않으면 pip install 결과가 캐시됩니다. 소스 코드만 변경되면 마지막 <code>COPY . .</code>만 재실행됩니다. AI 프로젝트에서 PyTorch 설치는 5~10분이 걸리므로 캐시 효율이 매우 중요합니다.</p>
+<p><strong>.dockerignore</strong> 파일은 <code>.gitignore</code>와 유사하게 빌드 컨텍스트에서 제외할 파일을 지정합니다. <code>__pycache__</code>, <code>.git</code>, <code>*.pyc</code>, <code>venv/</code>, <code>*.ckpt</code>(모델 가중치)를 제외하면 빌드 컨텍스트 전송 시간과 이미지 크기를 줄일 수 있습니다.</p></div><div class="sb-block"><h2>다단계 빌드: 프로덕션 이미지 최소화</h2><p>AI 서버 이미지는 빌드 도구(gcc, cmake)와 런타임만 필요한 것(Python, 라이브러리)이 다릅니다. 다단계 빌드는 두 환경을 분리해 최종 이미지를 최소화합니다.</p>
+<p>1단계(빌더): 빌드에 필요한 모든 도구를 포함한 환경에서 패키지를 설치합니다.</p>
+<p>2단계(런타임): 빌더에서 설치된 패키지만 복사합니다. 빌드 도구는 포함되지 않습니다.</p>
+<p>이 방식으로 이미지 크기를 수 GB에서 수백 MB로 줄일 수 있습니다. 공격 표면(Attack Surface)도 줄어 보안이 향상됩니다.</p>
+<p><strong>non-root 사용자</strong> 로 실행하는 것도 중요합니다. 컨테이너 내부에서 root로 실행하면, 컨테이너 탈출 취약점이 있을 때 호스트에 root 접근이 가능합니다. Dockerfile에 <code>RUN useradd -m appuser &amp;&amp; USER appuser</code>를 추가합니다.</p></div><div class="sb-block"><h2>Docker Compose: 멀티 서비스 로컬 환경</h2><p>실제 서비스는 혼자 실행되지 않습니다. API 서버 + PostgreSQL + Redis + 모델 서버가 함께 실행됩니다. Docker Compose는 이 멀티 서비스 환경을 하나의 YAML 파일로 정의하고 <code>docker compose up</code> 한 번으로 실행합니다.</p>
+<p><code>docker-compose.yml</code>에서 각 서비스는 이미지, 포트, 환경 변수, 볼륨, 의존 관계를 정의합니다.</p>
+<p><code>depends_on</code>은 서비스 시작 순서를 제어합니다. 단, 프로세스 시작을 의미할 뿐 "준비됨"을 보장하지 않습니다. DB가 시작됐다고 연결 가능 상태가 된 것은 아닙니다. <code>healthcheck</code> + <code>condition: service_healthy</code>를 사용하거나, 애플리케이션에서 재시도 로직을 구현해야 합니다.</p>
+<p><strong>네임드 볼륨</strong> 은 컨테이너가 재시작되어도 데이터가 유지되도록 합니다. <code>postgres_data:/var/lib/postgresql/data</code>처럼 설정하면 DB 데이터가 컨테이너 외부(Docker 관리 볼륨)에 저장됩니다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">배송용 표준 컨테이너</div>
+      <div class="a-body"><p>Docker 컨테이너를 이해하는 가장 직관적인 비유는 국제 표준 화물 컨테이너입니다. 컨테이너 이전에는 배에 짐을 실을 때 화물의 종류(사과, 자동차 부품, 의류)마다 다른 방법으로 포장하고 선적했습니다. 항구마다 다른 규격이 있어 화물을 다시 포장해야 했습니다.</p>
+<p>표준 컨테이너가 도입된 후, 어떤 화물이든 20피트 또는 40피트 컨테이너에 넣으면 배, 기차, 트럭이 동일한 방식으로 처리합니다. 화물이 무엇인지 상관없이 운송 방법이 표준화됩니다.</p>
+<p>Docker 컨테이너가 바로 이것입니다. Python FastAPI든, Java Spring이든, Go 서버든 — 모두 동일한 Docker 형식으로 패키징됩니다. 맥북, Ubuntu EC2, GKE 어디서든 <code>docker run</code>으로 실행할 수 있습니다. 환경에 따른 포장 방법 차이가 사라집니다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>AI 모델 서빙을 위한 최적화된 Dockerfile과 Docker Compose 설정입니다. 레이어 캐싱, 다단계 빌드, 보안 설정을 모두 포함합니다.</p></div>
+      <div class="code-bar">dockerfile</div>
+      <pre><code class="language-dockerfile"># ── Dockerfile (다단계 빌드) ──────────────────────────
+# Stage 1: 의존성 설치 (빌드 캐시 최적화)
+FROM python:3.11-slim AS builder
+WORKDIR /app
+
+# 시스템 패키지 설치 (거의 안 바뀜 → 캐시 유지)
+RUN apt-get update &amp;&amp; apt-get install -y --no-install-recommends \
+    build-essential curl \
+    &amp;&amp; rm -rf /var/lib/apt/lists/*
+
+# 의존성 파일만 먼저 복사 (소스 코드 변경 시 캐시 유지)
+COPY requirements.txt .
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+
+# Stage 2: 런타임 이미지 (빌드 도구 제외)
+FROM python:3.11-slim AS runtime
+WORKDIR /app
+
+# 빌더에서 설치된 패키지만 복사
+COPY --from=builder /install /usr/local
+
+# 소스 코드 복사 (가장 마지막 — 가장 자주 변경됨)
+COPY . .
+
+# 보안: non-root 사용자
+RUN useradd -m -u 1000 appuser &amp;&amp; chown -R appuser:appuser /app
+USER appuser
+
+EXPOSE 8000
+CMD [&quot;uvicorn&quot;, &quot;main:app&quot;, &quot;--host&quot;, &quot;0.0.0.0&quot;, &quot;--port&quot;, &quot;8000&quot;, &quot;--workers&quot;, &quot;4&quot;]
+
+# ── docker-compose.yml ────────────────────────────────
+# version: &#x27;3.9&#x27;
+# services:
+#   api:
+#     build: .
+#     ports: [&quot;8000:8000&quot;]
+#     environment:
+#       DATABASE_URL: postgresql://user:pass@db:5432/mlops
+#       REDIS_URL: redis://redis:6379
+#     depends_on:
+#       db: {condition: service_healthy}
+#
+#   db:
+#     image: postgres:15
+#     volumes: [postgres_data:/var/lib/postgresql/data]
+#     healthcheck:
+#       test: [&quot;CMD-SHELL&quot;, &quot;pg_isready -U user&quot;]
+#       interval: 5s
+#       retries: 5
+#
+#   redis:
+#     image: redis:7-alpine
+#
+# volumes:
+#   postgres_data:</code></pre>
+      <div class="c-walk"><p>다단계 빌드의 <code>builder</code> 스테이지는 <code>build-essential</code>(gcc 등)을 포함해 패키지를 컴파일합니다. <code>runtime</code> 스테이지는 컴파일된 결과물만 <code>COPY --from=builder</code>로 가져옵니다. 최종 이미지에 빌드 도구가 없어 크기와 공격 표면이 줄어듭니다. <code>healthcheck</code>의 <code>pg_isready</code>는 PostgreSQL이 실제 연결 가능한 상태인지 확인합니다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">Docker를 &quot;쓸 줄 안다&quot;는 것과 &quot;잘 쓴다&quot;는 것 사이에는 큰 차이가 있습니다. 이미지 크기, 보안, 캐시 효율을 면접에서 구체적으로 물어봅니다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>레이어 캐싱을 의식한 COPY 순서 배치</li><li>non-root 사용자로 실행</li><li>.dockerignore로 불필요한 파일 제외</li><li>다단계 빌드로 최종 이미지 최소화</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>Dockerfile에 API 키나 비밀번호를 하드코딩하는 경우 (이미지 히스토리에 영구적으로 남음)</li><li>`pip install`을 소스 코드 COPY 이후에 배치하는 경우</li><li>GPU 서버용 이미지에 전체 CUDA 개발 툴킷을 포함하는 경우 (수십 GB)</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>Docker 이미지에 비밀번호가 포함된 이후 그 레이어를 삭제해도 여전히 노출될 수 있는 이유는?</li><li>같은 코드인데 로컬 Docker에서는 작동하고 K8s에서는 안 될 때 어떤 것들을 확인하시겠어요?</li><li>AI 모델 가중치 파일(수 GB)을 이미지에 포함해야 할 때 어떤 접근 방식을 쓰겠어요?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 아는 수준은 Dockerfile을 작성하고 컨테이너를 실행할 수 있는 것입니다. 마스터 수준은 이미지 취약점 스캔(Trivy, Snyk), distroless 이미지로 공격 표면 최소화, BuildKit 캐시 마운트로 pip 캐시 영속화, 멀티 아키텍처 빌드(arm64 + amd64)를 구현할 수 있는 것입니다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>컨테이너 = 재현성</h3><p>Docker는 &#x27;내 컴퓨터에서는 되는데&#x27; 문제를 환경을 코드로 정의함으로써 해결한다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>레이어 캐시 순서</h3><p>의존성(requirements.txt) 먼저 COPY → pip install → 소스 코드 COPY. 변경이 적은 것을 앞에 배치.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>다단계 빌드</h3><p>빌드 도구와 런타임을 분리해 최종 이미지 크기를 최소화하고 보안을 강화한다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>non-root 실행</h3><p>컨테이너는 root가 아닌 별도 사용자로 실행해 컨테이너 탈출 취약점의 영향을 최소화한다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>Docker Compose = 로컬 환경</h3><p>API + DB + Redis를 한 YAML로 정의하고 docker compose up으로 전체 스택을 실행한다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>시크릿은 환경 변수</h3><p>Dockerfile에 비밀번호를 절대 넣지 않는다. 이미지 히스토리에 영구적으로 남는다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-05.html">← Authentication &amp; Security</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-07.html">Kubernetes Fundamentals →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>
