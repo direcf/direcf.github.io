@@ -1,0 +1,416 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+---
+<BaseLayout title="Portfolio" activeSlug="portfolio" crumbs={[{label:"Personal"},{label:"Portfolio"}]}>
+<style>
+/* ── Lock Screen ───────────────────────────────────────────────── */
+#lockScreen {
+  position: fixed; inset: 0; z-index: 9999;
+  background: radial-gradient(ellipse at 30% 40%, rgba(20,60,130,0.6), transparent 65%),
+              radial-gradient(ellipse at 75% 70%, rgba(10,40,100,0.45), transparent 60%),
+              #060d1e;
+  display: flex; align-items: center; justify-content: center;
+}
+.lock-card {
+  background: rgba(12,28,65,0.88);
+  border: 1px solid rgba(130,200,255,0.35);
+  border-radius: 24px; padding: 52px 48px; width: 400px; text-align: center;
+  backdrop-filter: blur(24px);
+  box-shadow: 0 0 80px rgba(50,120,255,0.15), 0 8px 48px rgba(0,0,0,0.7);
+  position: relative; overflow: hidden;
+}
+.lock-card::before {
+  content:''; position:absolute; top:0; left:0; right:0; height:1px;
+  background: linear-gradient(90deg, transparent, rgba(130,200,255,0.7), transparent);
+}
+.lock-icon { font-size:48px; margin-bottom:20px; filter:drop-shadow(0 0 14px rgba(80,170,255,0.6)); }
+.lock-title { font-size:20px; font-weight:700; color:#c4e4ff; margin-bottom:6px; }
+.lock-sub { font-size:13px; color:#92bfdf; margin-bottom:32px; }
+.lock-input {
+  width:100%; padding:14px 18px; box-sizing:border-box;
+  background:rgba(8,22,58,0.9); border:1px solid rgba(130,200,255,0.35);
+  border-radius:12px; color:#d8eeff; font-size:16px;
+  outline:none; text-align:center; letter-spacing:3px;
+  transition: border-color .2s, box-shadow .2s;
+}
+.lock-input:focus { border-color:#50aaff; box-shadow:0 0 0 3px rgba(80,170,255,0.2); }
+.lock-btn {
+  width:100%; margin-top:14px; padding:14px;
+  background:linear-gradient(135deg,#1a60d0,#0d3d9e);
+  border:1px solid rgba(80,170,255,0.4); border-radius:12px;
+  color:#c4e4ff; font-size:15px; font-weight:700; cursor:pointer;
+  transition:all .2s; letter-spacing:0.5px;
+}
+.lock-btn:hover { background:linear-gradient(135deg,#2070e0,#1050b8); transform:translateY(-1px); box-shadow:0 4px 24px rgba(30,100,255,0.4); }
+.lock-err { font-size:12px; color:#f87171; margin-top:10px; min-height:18px; }
+.lock-hint { font-size:11px; color:#6a96ba; margin-top:20px; }
+
+/* ── Resume ────────────────────────────────────────────────────── */
+#resume { display:none; }
+
+.resume-wrap {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 48px 32px 80px;
+  font-family: 'Pretendard', 'Georgia', serif;
+  color: var(--text);
+  line-height: 1.6;
+}
+
+/* Header */
+.r-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 32px;
+  padding-bottom: 28px;
+  border-bottom: 2px solid var(--accent, #3b82f6);
+  margin-bottom: 36px;
+}
+.r-avatar {
+  width: 88px; height: 88px;
+  border-radius: 50%;
+  border: 2px solid var(--accent, #3b82f6);
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.r-header-info { flex: 1; }
+.r-name {
+  font-size: 32px; font-weight: 800; letter-spacing: -0.5px;
+  color: var(--text);
+  margin: 0 0 4px;
+}
+.r-title {
+  font-size: 15px; color: var(--text-muted, #6b7280);
+  font-weight: 500; margin: 0 0 12px;
+  text-transform: uppercase; letter-spacing: 1px;
+}
+.r-contact {
+  display: flex; flex-wrap: wrap; gap: 6px 18px;
+  font-size: 13px; color: var(--text-muted, #6b7280);
+}
+.r-contact a { color: inherit; text-decoration: none; }
+.r-contact a:hover { color: var(--accent, #3b82f6); }
+.r-contact span::before { content: '· '; }
+.r-contact span:first-child::before { content: ''; }
+
+/* Sections */
+.r-section { margin-bottom: 36px; }
+.r-section-title {
+  font-size: 11px; font-weight: 700; letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--accent, #3b82f6);
+  margin: 0 0 16px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(59,130,246,0.25);
+}
+
+/* Education / Experience blocks */
+.r-block { margin-bottom: 22px; }
+.r-block-header {
+  display: flex; justify-content: space-between; align-items: baseline;
+  flex-wrap: wrap; gap: 4px;
+}
+.r-block-name { font-size: 16px; font-weight: 700; }
+.r-block-date { font-size: 12px; color: var(--text-muted, #6b7280); white-space: nowrap; }
+.r-block-sub { font-size: 13px; color: var(--text-muted, #6b7280); margin: 2px 0 8px; font-style: italic; }
+.r-block ul {
+  margin: 6px 0 0 0; padding-left: 18px;
+  font-size: 13.5px; color: var(--text);
+}
+.r-block ul li { margin-bottom: 5px; }
+
+/* Badges */
+.r-badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.badge {
+  font-size: 11.5px; font-weight: 600;
+  padding: 4px 10px; border-radius: 6px;
+  background: rgba(59,130,246,0.12);
+  border: 1px solid rgba(59,130,246,0.25);
+  color: var(--accent, #3b82f6);
+}
+
+/* Projects grid */
+.r-projects { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.r-proj-card {
+  border: 1px solid rgba(59,130,246,0.2);
+  border-radius: 12px; padding: 18px 20px;
+  background: rgba(59,130,246,0.04);
+}
+.r-proj-name { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+.r-proj-partner { font-size: 11px; color: var(--text-muted, #6b7280); margin-bottom: 8px; }
+.r-proj-desc { font-size: 12.5px; line-height: 1.55; }
+
+/* Patents / Challenges */
+.r-pills { display: flex; flex-wrap: wrap; gap: 8px; }
+.r-pill {
+  font-size: 12px; padding: 5px 12px; border-radius: 20px;
+  background: rgba(16,185,129,0.1);
+  border: 1px solid rgba(16,185,129,0.3);
+  color: #10b981;
+}
+.r-pill.accent {
+  background: rgba(245,158,11,0.1);
+  border-color: rgba(245,158,11,0.3);
+  color: #f59e0b;
+}
+
+/* Print */
+@media print {
+  #lockScreen { display: none !important; }
+  #resume { display: block !important; }
+  .resume-wrap { padding: 0; }
+}
+@media (max-width: 600px) {
+  .r-projects { grid-template-columns: 1fr; }
+  .r-header { flex-direction: column; gap: 16px; }
+}
+</style>
+
+<!-- Lock Screen -->
+<div id="lockScreen">
+  <div class="lock-card">
+    <div class="lock-icon">🔐</div>
+    <div class="lock-title">Portfolio</div>
+    <div class="lock-sub">비공개 포트폴리오입니다.</div>
+    <input id="pwInput" class="lock-input" type="password" placeholder="••••••••" autocomplete="off" />
+    <button class="lock-btn" id="unlockBtn">잠금 해제</button>
+    <div class="lock-err" id="pwErr"></div>
+    <div class="lock-hint">direcf.github.io / personal / portfolio</div>
+  </div>
+</div>
+
+<!-- Resume Content -->
+<div id="resume">
+  <div class="resume-wrap">
+
+    <!-- Header -->
+    <div class="r-header">
+      <img class="r-avatar" src="/favicon.ico" alt="Seungjun Lee" />
+      <div class="r-header-info">
+        <h1 class="r-name">Seungjun Lee</h1>
+        <p class="r-title">AI / Vision Research Engineer</p>
+        <div class="r-contact">
+          <span>hackon7120@gmail.com</span>
+          <span>Seoul, South Korea</span>
+          <span><a href="https://github.com/direcf" target="_blank">github.com/direcf</a></span>
+          <span><a href="https://direcf.github.io" target="_blank">direcf.github.io</a></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Summary -->
+    <div class="r-section">
+      <div class="r-section-title">Summary</div>
+      <p style="font-size:14px;line-height:1.75;margin:0;">
+        AI Research Engineer with a strong background in computer vision and multimodal AI, specializing in first-person (egocentric) video understanding and real-time event analysis systems. Experienced in building end-to-end AI pipelines from research to production deployment. Holder of 9 domestic patents and recipient of 3rd Prize at CVPR 2024 AVA Keypoint Challenge. Currently pursuing research at the intersection of egocentric and exocentric vision (Ego-Exo) with the goal of contributing to the academic community.
+      </p>
+    </div>
+
+    <!-- Education -->
+    <div class="r-section">
+      <div class="r-section-title">Education</div>
+
+      <div class="r-block">
+        <div class="r-block-header">
+          <span class="r-block-name">Korea Advanced Institute of Science and Technology (KAIST)</span>
+          <span class="r-block-date">2023 – Present</span>
+        </div>
+        <div class="r-block-sub">M.S. in Electrical Engineering · Vision AI Lab</div>
+        <ul>
+          <li>Research focus: Egocentric video understanding, Ego-Exo cross-view learning, multimodal AI</li>
+          <li>GPA: TBD</li>
+        </ul>
+      </div>
+
+      <div class="r-block">
+        <div class="r-block-header">
+          <span class="r-block-name">Hanyang University</span>
+          <span class="r-block-date">2017 – 2023</span>
+        </div>
+        <div class="r-block-sub">B.S. in Convergence Electronics Engineering</div>
+        <ul>
+          <li>GPA: TBD</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Skills -->
+    <div class="r-section">
+      <div class="r-section-title">Technical Skills</div>
+      <div class="r-block">
+        <div class="r-block-sub" style="font-style:normal;font-weight:600;margin-bottom:6px;">Languages & Frameworks</div>
+        <div class="r-badges">
+          <span class="badge">Python</span>
+          <span class="badge">PyTorch</span>
+          <span class="badge">C++</span>
+          <span class="badge">CUDA</span>
+          <span class="badge">FastAPI</span>
+          <span class="badge">TypeScript</span>
+        </div>
+      </div>
+      <div class="r-block" style="margin-top:14px;">
+        <div class="r-block-sub" style="font-style:normal;font-weight:600;margin-bottom:6px;">Research Areas</div>
+        <div class="r-badges">
+          <span class="badge">Egocentric Video Understanding</span>
+          <span class="badge">Ego-Exo Cross-View Learning</span>
+          <span class="badge">Action Recognition</span>
+          <span class="badge">Object Correspondence</span>
+          <span class="badge">Real-time Video Analysis</span>
+          <span class="badge">VLM / Multimodal AI</span>
+        </div>
+      </div>
+      <div class="r-block" style="margin-top:14px;">
+        <div class="r-block-sub" style="font-style:normal;font-weight:600;margin-bottom:6px;">Infrastructure</div>
+        <div class="r-badges">
+          <span class="badge">AWS</span>
+          <span class="badge">Docker</span>
+          <span class="badge">Kubernetes</span>
+          <span class="badge">NVIDIA Triton</span>
+          <span class="badge">Redis</span>
+          <span class="badge">Kafka</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Publications -->
+    <div class="r-section">
+      <div class="r-section-title">Publications</div>
+      <p style="font-size:13px;color:var(--text-muted,#6b7280);font-style:italic;">
+        In preparation — targeting CVPR / ICCV 2027.
+      </p>
+    </div>
+
+    <!-- Patents -->
+    <div class="r-section">
+      <div class="r-section-title">Patents</div>
+      <div class="r-block">
+        <div class="r-block-sub" style="font-style:normal;margin-bottom:10px;">
+          9 domestic patents registered (Korea Patent Office)
+        </div>
+        <div class="r-pills">
+          <span class="r-pill">실시간 이상행동 감지 시스템</span>
+          <span class="r-pill">1인칭 영상 기반 객체 추적 방법</span>
+          <span class="r-pill">다중 카메라 동기화 프레임워크</span>
+          <span class="r-pill">VLM 기반 안전 모니터링 방법</span>
+          <span class="r-pill">발달장애 행동 분석 AI 모델</span>
+          <span class="r-pill">엣지 디바이스 경량 추론 방법</span>
+          <span class="r-pill">이벤트 기반 비디오 압축 방법</span>
+          <span class="r-pill">크로스뷰 객체 대응 학습 방법</span>
+          <span class="r-pill">산업 현장 위험 예측 시스템</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Challenges -->
+    <div class="r-section">
+      <div class="r-section-title">Awards & Challenges</div>
+      <div class="r-block">
+        <div class="r-block-header">
+          <span class="r-block-name">CVPR 2024 — AVA Keypoint Challenge</span>
+          <span class="r-block-date">Jun 2024</span>
+        </div>
+        <div class="r-block-sub">3rd Prize (Bronze) · ActivityNet Workshop, CVPR 2024</div>
+        <ul>
+          <li>Developed a multi-scale human pose estimation pipeline on the AVA dataset</li>
+          <li>Achieved 3rd place globally among participating teams</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Projects -->
+    <div class="r-section">
+      <div class="r-section-title">Key Projects</div>
+      <div class="r-projects">
+
+        <div class="r-proj-card">
+          <div class="r-proj-name">Carevia</div>
+          <div class="r-proj-partner">SK Telecom · Developmental Disability Support</div>
+          <div class="r-proj-desc">
+            AI-powered behavioral analysis system for individuals with developmental disabilities. Leveraged egocentric video and multimodal signals to detect behavioral patterns, enabling real-time support alerts for caregivers.
+          </div>
+          <div class="r-badges" style="margin-top:10px;">
+            <span class="badge" style="font-size:10.5px;">Egocentric Vision</span>
+            <span class="badge" style="font-size:10.5px;">Behavior Analysis</span>
+            <span class="badge" style="font-size:10.5px;">EdgeAI</span>
+          </div>
+        </div>
+
+        <div class="r-proj-card">
+          <div class="r-proj-name">SynapseGo</div>
+          <div class="r-proj-partner">1st-Person VLM Video Analysis</div>
+          <div class="r-proj-desc">
+            End-to-end first-person video understanding platform using Vision-Language Models. Supports real-time scene narration, object tracking, and action recognition from wearable camera streams.
+          </div>
+          <div class="r-badges" style="margin-top:10px;">
+            <span class="badge" style="font-size:10.5px;">VLM</span>
+            <span class="badge" style="font-size:10.5px;">Egocentric</span>
+            <span class="badge" style="font-size:10.5px;">Real-time</span>
+          </div>
+        </div>
+
+        <div class="r-proj-card">
+          <div class="r-proj-name">Industrial Safety System</div>
+          <div class="r-proj-partner">Physical Security · Real-time Event Analysis</div>
+          <div class="r-proj-desc">
+            Real-time event detection and analysis platform for industrial safety and physical security. Multi-camera ingestion with sub-second anomaly alerting, deployed at scale across manufacturing sites.
+          </div>
+          <div class="r-badges" style="margin-top:10px;">
+            <span class="badge" style="font-size:10.5px;">Multi-Camera</span>
+            <span class="badge" style="font-size:10.5px;">Event Detection</span>
+            <span class="badge" style="font-size:10.5px;">Streaming</span>
+          </div>
+        </div>
+
+        <div class="r-proj-card">
+          <div class="r-proj-name">Ego-Exo Research</div>
+          <div class="r-proj-partner">KAIST Vision AI Lab · Ongoing</div>
+          <div class="r-proj-desc">
+            Research on cross-view correspondence and transfer learning between egocentric and exocentric video streams. Targeting CVPR-level publication on temporal action-level cycle-consistent alignment.
+          </div>
+          <div class="r-badges" style="margin-top:10px;">
+            <span class="badge" style="font-size:10.5px;">Ego-Exo</span>
+            <span class="badge" style="font-size:10.5px;">Self-supervised</span>
+            <span class="badge" style="font-size:10.5px;">Research</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Footer note -->
+    <p style="font-size:11px;color:var(--text-muted,#9ca3af);text-align:center;margin-top:48px;">
+      Last updated · July 2026 &nbsp;·&nbsp; Details available upon request
+    </p>
+
+  </div>
+</div>
+
+<script is:inline>
+const HASH = '99bbf103da194bbcab3a2b855888fbe0ee8432d83d1dde4bc6a55ffb4edd1416';
+const SESSION_KEY = 'port:auth';
+
+async function sha256(msg) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(msg));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+async function tryUnlock() {
+  const pw = document.getElementById('pwInput').value;
+  const h = await sha256(pw);
+  if (h === HASH) {
+    sessionStorage.setItem(SESSION_KEY, '1');
+    document.getElementById('lockScreen').style.display = 'none';
+    document.getElementById('resume').style.display = 'block';
+  } else {
+    document.getElementById('pwErr').textContent = '비밀번호가 올바르지 않습니다.';
+    document.getElementById('pwInput').value = '';
+  }
+}
+document.getElementById('unlockBtn').addEventListener('click', tryUnlock);
+document.getElementById('pwInput').addEventListener('keydown', e => { if (e.key === 'Enter') tryUnlock(); });
+if (sessionStorage.getItem(SESSION_KEY) === '1') {
+  document.getElementById('lockScreen').style.display = 'none';
+  document.getElementById('resume').style.display = 'block';
+}
+</script>
+
+</BaseLayout>
