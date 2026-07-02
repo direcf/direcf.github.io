@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch3: Cross-View Correspondence — Ego-Exo Research — direcf</title>
+  <meta name="description" content="두 시점 간의 의미적·공간적 대응을 학습하는 방법들과 CVPR 2026의 사이클 일관성 접근법을 깊이 이해한다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/computer-vision">Ego-Exo Research</a><span class="sep">›</span>
+        <strong>Ch03 Cross-View Correspondence</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 03 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🔗</div>
+      <h1 class="chapter-title">Cross-View Correspondence</h1>
+      <div class="chapter-title-kr">크로스뷰 대응점 학습</div>
+      <div class="chapter-tldr">두 시점 간의 의미적·공간적 대응을 학습하는 방법들과 CVPR 2026의 사이클 일관성 접근법을 깊이 이해한다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-03.png" alt="Chapter 3 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 3 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">4 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>크로스뷰 대응의 정의와 왜 어려운지를 설명할 수 있다</li><li>사이클 일관성(cycle consistency)을 자기지도 신호로 사용하는 방식을 수식과 함께 설명할 수 있다</li><li>CCMP 논문의 핵심 아이디어와 테스트 타임 학습(TTT) 적용을 이해한다</li><li>대응점 학습의 평가 지표와 한계를 파악한다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>두 시점의 비디오가 있을 때, '저 exo 화면의 저 사람 손이 ego 화면의 어느 부분에 해당하는가?'를 알아내는 것이 <strong>크로스뷰 대응(cross-view correspondence)</strong> 문제다. 이는 ego-exo 융합의 가장 기본적인 하위 문제로, 이를 해결하지 않고서는 의미 있는 멀티뷰 학습이 불가능하다.</p>
+<p>크로스뷰 대응은 두 층위에서 정의된다. <strong>픽셀-레벨 대응</strong>은 두 이미지에서 물리적으로 같은 3D 점에 해당하는 픽셀 쌍을 찾는 것이다 — 카메라 파라미터와 깊이 정보가 있으면 기하학적으로 계산 가능하다. <strong>의미적 대응</strong>은 '같은 의미를 가진' 패치나 객체를 매칭하는 것이다 — '저 ego의 손'과 '저 exo의 손'이 같은 손이라는 것을 의미적으로 이해해야 한다.</p>
+<p><strong>CVPR 2026</strong>의 주목할 성과 중 하나는 바로 이 대응 학습 문제에 대한 자기지도 접근법인 <strong>CCMP(Cycle-Consistent Mask Prediction)</strong> (<a href="https://arxiv.org/abs/2602.18996">arXiv:2602.18996</a>)다. 레이블 없이 사이클 일관성을 자기지도 신호로 활용하고, 테스트 타임에도 적응할 수 있는 방법을 제안한다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>크로스뷰 대응: 문제 정의와 어려움</h2><p><strong>크로스뷰 대응 문제</strong>는 ego 이미지 <span class="math-inline">\(I_e\)</span>와 exo 이미지 <span class="math-inline">\(I_x\)</span>가 주어졌을 때, 특정 ego 영역 <span class="math-inline">\(R_e\)</span>에 해당하는 exo 영역 <span class="math-inline">\(R_x\)</span>를 찾는 것으로 형식화할 수 있다:</p>
+<p><span class="math-display">\[f_{\text{corr}}: (I_e, R_e, I_x) \to R_x\]</span></p>
+<p>이 문제가 어려운 이유는 다층적이다. 첫째, <strong>극단적 뷰포인트 변화</strong>: 같은 손이 ego에서는 클로즈업으로, exo에서는 작은 영역으로 보인다. 크기, 방향, 배경이 완전히 다르다. 둘째, <strong>가려짐(occlusion)</strong>: 한 시점에서 보이는 물체가 다른 시점에서는 가려질 수 있다. 셋째, <strong>레이블 획득의 어려움</strong>: 픽셀 대응 어노테이션은 인간에게도 어렵고 시간이 많이 든다. 이런 이유로 자기지도 방법이 중요하다.</p>
+<p>기존 접근법들은 주로 카메라 파라미터를 이용한 <strong>기하학적 대응 계산</strong>에 의존했다. Ego-Exo4D의 캘리브레이션 데이터가 있으면 에피폴라 기하학을 통해 이론적 대응을 구할 수 있다. 하지만 이 방법은 정적 장면에서만 잘 작동하며, 움직이는 물체(손, 도구)에서는 깊이 추정 오차로 인해 부정확하다.</p></div><div class="sb-block"><h2>CCMP: 사이클 일관성으로 레이블 없이 학습 (CVPR 2026)</h2><p><strong>CCMP(Learning Cross-View Object Correspondence via Cycle-Consistent Mask Prediction)</strong> (<a href="https://arxiv.org/abs/2602.18996">arXiv:2602.18996</a>, CVPR 2026)는 레이블 없이 ego-exo 간 객체 대응을 학습하는 자기지도 방법이다. 코드: <a href="https://github.com/shannany0606/CCMP">github.com/shannany0606/CCMP</a>.</p>
+<p><strong>핵심 아이디어</strong>: 순방향과 역방향 예측의 사이클 일관성을 자기지도 신호로 사용한다.</p>
+<ol>
+<li><strong>순방향(ego → exo)</strong>: ego 소스 마스크 <span class="math-inline">\(M_e\)</span>를 잠재 표현 <span class="math-inline">\(z\)</span>로 인코딩해 exo 이미지에서 해당 영역 <span class="math-inline">\(\hat{M}_x\)</span>를 예측한다</li>
+<li><strong>역방향(exo → ego)</strong>: 예측된 타깃 마스크 <span class="math-inline">\(\hat{M}_x\)</span>를 다시 ego 이미지로 투영해 원래 소스 마스크 <span class="math-inline">\(M_e\)</span>를 재구성한다</li>
+<li><strong>사이클 손실(cycle loss)</strong>: 재구성된 마스크 <span class="math-inline">\(\hat{M}_e\)</span>가 원래 <span class="math-inline">\(M_e\)</span>와 일치해야 한다</li>
+</ol>
+<p>수식으로:</p>
+<p><span class="math-display">\[\mathcal{L}_{\text{cycle}} = \mathcal{D}(\hat{M}_e, M_e) = \mathcal{D}(\text{Pred}(\hat{M}_x, I_e), M_e)\]</span></p>
+<p>이 양방향 제약이 <strong>레이블 없이도 강력한 자기지도 신호</strong>를 제공한다. 만약 예측이 틀리면 역방향에서 원본 마스크를 재구성할 수 없으므로, 이 사이클 일관성 조건 자체가 올바른 대응을 학습하도록 강제한다.</p></div><div class="sb-block"><h2>테스트 타임 학습(Test-Time Training, TTT)으로 추론 시 적응</h2><p>CCMP의 또 다른 핵심 기여는 <strong>테스트 타임 학습(TTT)</strong>을 지원한다는 점이다. 일반적인 딥러닝 모델은 추론(inference) 단계에서 가중치를 고정시킨다. 하지만 새로운 ego-exo 장면이 훈련 분포와 크게 다를 경우, 고정된 모델은 잘 대응하지 못한다.</p>
+<p>CCMP는 추론 시에도 사이클 일관성 손실을 사용해 <strong>어노테이션 없이 모델을 해당 테스트 장면에 맞게 미세 적응</strong>할 수 있다. 이는 특히 도메인 이동(domain shift)이 큰 ego-exo 환경에서 유용하다.</p>
+<p>TTT의 핵심 장점:</p>
+<ul>
+<li><strong>어노테이션 불필요</strong>: 테스트 장면의 레이블이 없어도 사이클 일관성 신호만으로 적응 가능</li>
+<li><strong>온라인 적응</strong>: 각 테스트 샘플에 대해 순간적으로 적응 가능</li>
+<li><strong>도메인 강건성</strong>: 훈련/테스트 분포 차이를 실시간으로 보상</li>
+</ul>
+<p>단점도 있다: TTT는 추론 시간이 늘어난다. 각 테스트 샘플마다 최적화 단계를 거쳐야 하므로 실시간 응용에는 계산 비용이 문제가 될 수 있다.</p></div><div class="sb-block"><h2>대응 학습의 평가와 한계</h2><p>크로스뷰 대응의 성능을 어떻게 측정하는가? 일반적으로 사용되는 평가 지표:</p>
+<p><strong>IoU(Intersection over Union)</strong>: 예측 마스크 <span class="math-inline">\(\hat{M}_x\)</span>와 실제 타깃 마스크 <span class="math-inline">\(M_x\)</span>의 겹침 비율. <span class="math-inline">\(\text{IoU} = \frac{|\hat{M}_x \cap M_x|}{|\hat{M}_x \cup M_x|}\)</span></p>
+<p><strong>PCK(Percentage of Correct Keypoints)</strong>: 예측 키포인트가 실제 키포인트로부터 특정 거리 내에 있는 비율.</p>
+<p><strong>Consistency@K</strong>: 사이클 일관성 메트릭 — ego→exo→ego 라운드트립 후 원래 위치에서 K 픽셀 이내로 돌아오는 비율.</p>
+<p>현재 방법들의 한계:</p>
+<ul>
+<li><strong>정적 객체에 편향</strong>: 대부분의 방법이 정적 또는 느리게 움직이는 객체에서는 잘 작동하지만, 빠른 손 움직임이나 도구 사용 시 성능이 급감한다</li>
+<li><strong>의미적 대응 vs. 기하적 대응의 혼재</strong>: 같은 '손'이지만 다른 시점에서 완전히 다른 포즈로 보일 때, 픽셀 대응이 의미론적으로 얼마나 유효한지 불명확하다</li>
+<li><strong>시간적 확장</strong>: 대부분의 방법이 단일 프레임 쌍에서 작동하며 시간적 일관성을 보장하지 않는다</li>
+</ul></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">통역사의 일: 두 언어 간의 의미 보존</div>
+      <div class="a-body"><p>크로스뷰 대응 학습은 통역 작업과 비슷하다. 한국어 문장과 영어 문장이 있을 때 '저 한국어 단어가 영어의 어느 단어에 해당하는가?'를 찾는 것처럼, ego 영역과 exo 영역 간의 의미적 매핑을 찾는다.</p>
+<p>좋은 통역사는 단어를 직역(픽셀-레벨 대응)하지 않는다 — 의미를 번역(의미적 대응)한다. '손이 냄비를 잡고 있다'는 ego의 클로즈업 장면이 exo에서는 '요리사가 조리대 앞에 서서 냄비를 조작하고 있다'로 보인다. 단어(픽셀)를 직역하면 맞지 않지만, 의미(행동의 의미)를 연결하면 맞다.</p>
+<p>CCMP의 사이클 일관성은 '번역한 문장을 다시 원래 언어로 번역했을 때 원문과 같아야 한다'는 백번역(back-translation)과 정확히 같은 원리다. NLP에서 비지도 기계 번역에 성공적으로 적용된 사이클 일관성 원리가 이제 비전에서 ego-exo 대응으로 확장된 것이다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>CCMP의 핵심 아이디어인 사이클 일관성 손실을 구현하는 간단한 예시다. PyTorch로 작성되었으며 실제 CCMP 구현의 핵심 구조를 반영한다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+class CycleConsistencyLoss(nn.Module):
+    &quot;&quot;&quot;CCMP의 사이클 일관성 손실 (CVPR 2026, arXiv:2602.18996).&quot;&quot;&quot;
+
+    def __init__(self, loss_type: str = &quot;bce&quot;):
+        super().__init__()
+        self.loss_type = loss_type
+
+    def forward(
+        self,
+        src_mask: torch.Tensor,   # [B, 1, H, W] ego 소스 마스크
+        pred_tgt: torch.Tensor,   # [B, 1, H, W] 예측된 exo 타깃 마스크
+        recon_src: torch.Tensor,  # [B, 1, H, W] 재구성된 ego 마스크
+    ) -&gt; torch.Tensor:
+        &quot;&quot;&quot;순방향: src → pred_tgt, 역방향: pred_tgt → recon_src.&quot;&quot;&quot;
+        # 사이클 일관성: 재구성된 마스크가 원본과 일치해야 함
+        if self.loss_type == &quot;bce&quot;:
+            cycle_loss = F.binary_cross_entropy_with_logits(
+                recon_src, src_mask.float()
+            )
+        elif self.loss_type == &quot;dice&quot;:
+            recon_prob = torch.sigmoid(recon_src)
+            intersection = (recon_prob * src_mask).sum(dim=(2, 3))
+            dice = 1 - (2 * intersection + 1) / (
+                recon_prob.sum(dim=(2,3)) + src_mask.sum(dim=(2,3)) + 1
+            )
+            cycle_loss = dice.mean()
+        return cycle_loss
+
+
+class CCMPForwardPass(nn.Module):
+    def __init__(self, encoder, predictor):
+        super().__init__()
+        self.encoder = encoder     # 마스크를 잠재 표현으로 인코딩
+        self.predictor = predictor  # 소스 뷰 특징 + 잠재 표현 → 타깃 마스크
+        self.cycle_loss = CycleConsistencyLoss(&quot;dice&quot;)
+
+    def forward(self, ego_feat, exo_feat, ego_mask):
+        # 순방향: ego 마스크 → exo 마스크 예측
+        latent_z = self.encoder(ego_mask)
+        pred_exo_mask = self.predictor(exo_feat, latent_z)
+
+        # 역방향: 예측된 exo 마스크 → ego 마스크 재구성
+        latent_z_recon = self.encoder(pred_exo_mask.detach().sigmoid())
+        recon_ego_mask = self.predictor(ego_feat, latent_z_recon)
+
+        loss = self.cycle_loss(ego_mask, pred_exo_mask, recon_ego_mask)
+        return pred_exo_mask, loss
+</code></pre>
+      <div class="c-walk"><p>핵심은 두 번의 <code>predictor</code> 호출이다: 첫 번째는 ego→exo 방향, 두 번째는 다시 exo→ego 방향. <code>recon_ego_mask</code>와 원래 <code>ego_mask</code>의 차이가 사이클 손실이다. <code>pred_exo_mask.detach()</code>를 사용해 역방향 그래디언트가 순방향 예측을 불안정하게 만들지 않도록 주의한다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">크로스뷰 대응 학습은 ego-exo 연구의 핵심 하위 문제로, 기술적 깊이가 중요하다. 사이클 일관성과 TTT는 컴퓨터 비전에서 넓게 쓰이는 원리이므로 이를 ego-exo에 어떻게 적용하는지 설명할 수 있어야 한다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>사이클 일관성의 수학적 정의와 자기지도 신호로의 활용 방식</li><li>TTT가 필요한 시나리오와 그 계산 비용 상의 트레이드오프</li><li>픽셀-레벨 대응과 의미적 대응의 차이와 각각의 활용 케이스</li><li>대응 학습 평가 지표(IoU, PCK, Consistency@K)의 의미와 한계</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>사이클 일관성을 단순히 &#x27;왕복 일치&#x27;라고만 설명하고 수식이나 구현 디테일을 모르는 경우</li><li>TTT가 무엇인지 모르거나 추론 시간 비용 문제를 인식하지 못하는 경우</li><li>대응 학습을 &#x27;오광류(optical flow) 추정과 같다&#x27;고만 설명하는 경우</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>CCMP의 TTT에서 사이클 일관성 손실만으로 충분한가, 아니면 추가 정규화가 필요한가? 왜?</li><li>Ego-Exo4D의 캘리브레이션 데이터가 있을 때 기하학적 대응과 CCMP 같은 학습 기반 대응 중 어떤 것이 언제 더 적합한가?</li><li>크로스뷰 객체 대응을 크로스뷰 행동 대응으로 확장하려면 어떤 추가 요소가 필요한가?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 표면적 이해: &#x27;사이클 일관성으로 레이블 없이 대응을 학습한다.&#x27; 깊은 이해: 사이클 손실의 수식을 쓸 수 있고, TTT의 계산 비용과 이점을 정량적으로 분석하며, 이 방법이 정적 객체에서는 잘 작동하지만 빠른 움직임에서 어려운 이유와 이를 해결하기 위한 방향(시간적 일관성 추가, 모션 보상 등)을 제안할 수 있다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>대응 학습이 융합의 전제</h3><p>어느 ego 영역이 어느 exo 영역에 해당하는지 모르면 의미 있는 멀티뷰 학습이 불가능하다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>사이클 일관성 = 레이블 없는 자기지도</h3><p>ego→exo→ego 라운드트립에서 원본 마스크를 재구성하는 일관성이 강력한 자기지도 신호다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>CCMP (CVPR 2026)</h3><p>잠재 표현 기반 마스크 예측 + 사이클 손실 + TTT — 레이블 없이 ego-exo 객체 대응을 학습한다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>TTT: 추론 시 적응</h3><p>어노테이션 없이 테스트 샘플에 모델을 실시간 적응시키는 TTT는 도메인 이동이 큰 ego-exo에 특히 유용하다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>의미적 대응 ≠ 픽셀 대응</h3><p>같은 물리적 점을 찾는 것(기하학적)과 같은 의미를 가진 영역을 찾는 것(의미적)은 다른 문제다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>시간적 확장이 미해결 과제</h3><p>대부분의 대응 방법이 단일 프레임 쌍에서 작동하며, 시간적으로 일관된 크로스뷰 대응은 열린 문제다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-02.html">← Datasets and Benchmarks</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-04.html">Why Naive Fusion Fails →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

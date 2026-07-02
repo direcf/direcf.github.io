@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch4: Why Naive Fusion Fails — Ego-Exo Research — direcf</title>
+  <meta name="description" content="두 시점을 단순히 합쳐 훈련하면 오히려 성능이 낮아지는 현상을 이해하고, 그 근본 원인과 구조적 해결 방향을 파악한다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/computer-vision">Ego-Exo Research</a><span class="sep">›</span>
+        <strong>Ch04 Why Naive Fusion Fails</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 04 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">⚠️</div>
+      <h1 class="chapter-title">Why Naive Fusion Fails</h1>
+      <div class="chapter-title-kr">왜 단순 융합은 실패하는가</div>
+      <div class="chapter-tldr">두 시점을 단순히 합쳐 훈련하면 오히려 성능이 낮아지는 현상을 이해하고, 그 근본 원인과 구조적 해결 방향을 파악한다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-04.png" alt="Chapter 4 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 4 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">4 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>Naive dual-viewpoint 훈련이 single-viewpoint 대비 성능이 낮은 현상을 구체적 수치로 설명할 수 있다</li><li>이 실패의 근본 원인을 최적화 목표 충돌과 분포 차이 관점에서 분석할 수 있다</li><li>EgoExo-Con(NeurIPS 2025) 논문의 실험 설계와 핵심 발견을 설명할 수 있다</li><li>이 문제를 해결하기 위한 방향 세 가지를 제안할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>Ego-exo 연구에서 가장 중요하고 반직관적인 발견 중 하나는 <strong>단순히 두 시점 데이터를 합쳐 훈련하면 오히려 성능이 나빠진다</strong>는 것이다. 직관적으로는 더 많은 데이터와 더 다양한 시점이 도움이 될 것 같지만, 실험 결과는 정반대다.</p>
+<p><strong>EgoExo-Con</strong> (<a href="https://arxiv.org/html/2510.26113">arXiv:2510.26113</a>, NeurIPS 2025)은 이 현상을 체계적으로 측정했다. CharadesEgo의 G-ExoEgo 일관성 메트릭에서 TimeSuite 모델의 결과:</p>
+<table>
+<thead>
+<tr>
+<th>훈련 설정</th>
+<th>G-ExoEgo 점수</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Exo-only</td>
+<td>59.5%</td>
+</tr>
+<tr>
+<td>Dual-viewpoint (EgoExo)</td>
+<td>51.3%</td>
+</tr>
+<tr>
+<td><strong>갭</strong></td>
+<td><strong>-8.1%</strong></td>
+</tr>
+</tbody>
+</table>
+<p>단일 exo 뷰만으로 훈련한 것보다 ego와 exo를 함께 훈련했을 때 8.1%p가 낮다. 이 패턴은 테스트한 4개 모델 모두에서 관찰됐다. 이 발견은 <strong>뷰 융합이 공짜 점심(free lunch)이 아니라는 것</strong>을 명확히 한다 — 구조적 정렬과 의미 있는 크로스뷰 연결 없이는 두 시점이 서로를 방해한다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>실패의 해부: 무엇이 일어나는가</h2><p>Naive dual-viewpoint 훈련이 실패하는 메커니즘을 이해하려면 최적화 과정을 들여다봐야 한다. 모델이 ego 비디오와 exo 비디오를 함께 받아 각각을 이해하도록 훈련된다고 할 때, 문제는 두 분포의 <strong>근본적 이질성</strong>에서 시작한다.</p>
+<p><strong>분포 충돌(distribution conflict)</strong>: Ego 비디오의 통계적 특성(모션 패턴, 배경 분포, 객체 크기 분포)이 exo와 다르다. 모델은 두 분포를 동시에 설명해야 하므로 어느 쪽에도 최적화하지 못한 절충안으로 수렴한다.</p>
+<p><strong>특징 공간 오염(feature space contamination)</strong>: 공유된 인코더가 ego와 exo의 특징을 같은 공간에 매핑하려 한다. 하지만 두 뷰의 같은 활동이 시각적으로 매우 다르게 보이기 때문에, 활동에 불변하면서도 뷰에 불변한 표현을 학습하기가 극히 어렵다.</p>
+<p><strong>그래디언트 충돌(gradient conflict)</strong>: 두 뷰에서 온 손실 그래디언트가 파라미터 업데이트 방향을 놓고 충돌한다. Ego 샘플은 특정 방향으로 가중치를 밀고, exo 샘플은 다른 방향으로 민다. 이 충돌이 수렴을 방해한다.</p>
+<p>MTL(Multi-Task Learning) 연구에서 이미 알려진 <strong>negative transfer</strong> 현상과 동일하다. 서로 관련은 있지만 분포가 다른 작업들을 단순 공동 훈련하면 각 작업을 독립적으로 훈련할 때보다 성능이 낮아질 수 있다.</p></div><div class="sb-block"><h2>EgoExo-Con: 크로스뷰 일관성의 체계적 측정 (NeurIPS 2025)</h2><p><strong>EgoExo-Con</strong> (<a href="https://arxiv.org/html/2510.26113">arXiv:2510.26113</a>)은 NeurIPS 2025에서 발표된 크로스뷰 일관성 벤치마크 및 분석 논문이다. 핵심 기여는 <strong>G-ExoEgo</strong> 메트릭의 도입이다 — 같은 활동을 ego와 exo 두 시점에서 쿼리했을 때 모델의 응답이 얼마나 일관된지를 측정한다.</p>
+<p>실험 대상 모델: VideoChat2, Video-LLaMA2, TimeChat, TimeSuite (총 4개의 대표적 비디오 LLM).</p>
+<p>공통 발견:</p>
+<ul>
+<li>모든 모델에서 dual-viewpoint 훈련 &lt; exo-only 훈련</li>
+<li>특히 ego 비디오에서 쿼리할 때 성능 저하가 심함</li>
+<li>모델이 exo 분포에 편향되어 있어 ego 쿼리에 적응하지 못함</li>
+</ul>
+<p>이 결과가 가진 의미:</p>
+<ol>
+<li><strong>단순 데이터 증가로는 해결 안 됨</strong>: 더 많은 ego 데이터를 추가하더라도 naive 훈련 방식으로는 근본 문제를 해결하지 못한다</li>
+<li><strong>정렬이 핵심</strong>: 두 뷰를 단순 concatenation이나 early/late fusion이 아닌, <strong>구조적으로 정렬된 방식</strong>으로 다뤄야 한다</li>
+<li><strong>뷰-특정 어댑터의 필요성</strong>: 뷰에 따라 다른 프로세싱 경로나 어댑터가 필요할 수 있다</li>
+</ol></div><div class="sb-block"><h2>Negative Transfer와 Multi-Task Learning 관점</h2><p>Ego-exo의 naive fusion 실패는 MTL의 <strong>negative transfer</strong> 문제와 동일한 메커니즘이다. MTL 연구(<a href="https://arxiv.org/abs/1905.07553">Standley et al., 2020</a>)는 어떤 태스크를 함께 훈련해야 도움이 되고 어떤 것은 해가 되는지가 비자명하다는 것을 보였다.</p>
+<p>Ego-exo 맥락에서 두 뷰는 '같은 태스크의 다른 데이터 소스'처럼 보이지만, 실제로는 서로 다른 분포를 가진 두 도메인이다. 이를 단순히 병합하는 것은 두 도메인을 동시에 학습하면서 어느 쪽에도 최적화되지 않는 결과를 낳는다.</p>
+<p><strong>그래디언트 코사인 유사도</strong> 분석:</p>
+<p><span class="math-display">\[\cos(\nabla_{\theta} \mathcal{L}_{\text{ego}}, \nabla_{\theta} \mathcal{L}_{\text{exo}}) &lt; 0\]</span></p>
+<p>두 손실의 그래디언트가 반대 방향을 가리키는 경우(코사인 유사도가 음수), 두 태스크는 서로 방해한다. Ego-exo에서 이 값이 얼마나 음수인지, 그리고 어느 레이어에서 가장 충돌이 심한지 분석하는 것이 흥미로운 연구 방향이다.</p></div><div class="sb-block"><h2>구조적 해결 방향 세 가지</h2><p>Naive fusion의 실패를 극복하기 위한 세 가지 구조적 접근이 있다.</p>
+<p><strong>1. 크로스뷰 정렬 사전훈련(Cross-View Alignment Pre-training)</strong>: 두 뷰를 동시에 넣기 전에 먼저 대응점을 학습하는 자기지도 사전훈련 단계를 추가한다. CCMP(챕터 3)처럼 두 뷰 간의 의미적 대응을 먼저 학습하면, 이후 파인튜닝에서 두 뷰가 더 잘 정렬된 특징 공간에서 만난다.</p>
+<p><strong>2. 뷰-어댑티브 아키텍처(View-Adaptive Architecture)</strong>: 공유 인코더 + 뷰-특정 어댑터 구조를 사용한다. 공통 특징은 공유 인코더에서 추출하되, ego와 exo의 뷰-특정 통계를 다루는 어댑터 레이어를 별도로 둔다. 이는 두 뷰 간의 부정적 전이를 줄이면서 공통 표현을 활용한다.</p>
+<p><strong>3. 적응적 뷰 가중치(Adaptive View Weighting)</strong>: 태스크와 입력에 따라 두 뷰의 기여를 동적으로 가중한다. 손 움직임을 물어보는 쿼리에는 ego 가중치를 높이고, 전신 자세를 물어보는 쿼리에는 exo 가중치를 높이는 메커니즘. Cross-attention을 통해 이를 학습으로 달성할 수 있다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">두 선생님의 동시 수업: 목소리가 겹치면 더 안 들린다</div>
+      <div class="a-body"><p>Naive dual-viewpoint 훈련을 같은 교실에서 두 선생님이 동시에 다른 목소리로 수업하는 것에 비유할 수 있다. 두 선생님 모두 같은 과목(활동 이해)을 가르치지만, 한 명은 한국어로(ego 시점의 손-물체 관점), 다른 한 명은 영어로(exo 시점의 전신 관점) 말한다.</p>
+<p>학생(모델)은 두 목소리를 동시에 들으면서 양쪽 모두를 이해하려 한다. 결과적으로 어느 선생님도 제대로 이해하지 못하게 된다 — 두 언어를 동시에 처리하는 인지 부하가 너무 크다. 차라리 한 선생님의 수업만 들을 때 더 잘 이해한다.</p>
+<p>해결책은? 먼저 두 언어 간의 번역 사전(크로스뷰 대응 사전훈련)을 만들어 두거나, 각 선생님의 강점에 따라 번갈아 집중하는 체계(적응적 뷰 가중치)를 갖추거나, 두 목소리를 체계적으로 통합하는 통역사(크로스뷰 attention)를 두는 것이다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>Naive fusion과 구조적 정렬 fusion을 비교하는 간단한 실험 코드다. 그래디언트 충돌을 측정해 naive fusion의 문제를 시각화한다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import torch
+import torch.nn as nn
+from torch.nn.functional import cosine_similarity
+
+def measure_gradient_conflict(
+    model: nn.Module,
+    ego_batch: dict,
+    exo_batch: dict,
+    criterion: nn.Module,
+) -&gt; float:
+    &quot;&quot;&quot;Ego 손실과 exo 손실의 그래디언트 코사인 유사도를 계산.&quot;&quot;&quot;
+    # Ego 손실 그래디언트
+    model.zero_grad()
+    ego_loss = criterion(model(ego_batch[&quot;video&quot;]), ego_batch[&quot;label&quot;])
+    ego_loss.backward()
+    ego_grad = torch.cat([
+        p.grad.flatten() for p in model.parameters() if p.grad is not None
+    ])
+
+    # Exo 손실 그래디언트
+    model.zero_grad()
+    exo_loss = criterion(model(exo_batch[&quot;video&quot;]), exo_batch[&quot;label&quot;])
+    exo_loss.backward()
+    exo_grad = torch.cat([
+        p.grad.flatten() for p in model.parameters() if p.grad is not None
+    ])
+
+    model.zero_grad()
+
+    # 코사인 유사도: 음수 = 충돌, 양수 = 협력
+    cos_sim = cosine_similarity(ego_grad.unsqueeze(0), exo_grad.unsqueeze(0))
+    return cos_sim.item()
+
+
+class ViewAdaptiveFusion(nn.Module):
+    &quot;&quot;&quot;뷰-어댑티브 late fusion: 쿼리에 따라 뷰 가중치를 동적으로 결정.&quot;&quot;&quot;
+
+    def __init__(self, feat_dim: int = 768):
+        super().__init__()
+        # 쿼리 기반 뷰 가중치 예측
+        self.view_gate = nn.Sequential(
+            nn.Linear(feat_dim, 128),
+            nn.ReLU(),
+            nn.Linear(128, 2),   # [ego_weight, exo_weight]
+            nn.Softmax(dim=-1),
+        )
+
+    def forward(
+        self,
+        ego_feat: torch.Tensor,   # [B, feat_dim]
+        exo_feat: torch.Tensor,   # [B, feat_dim]
+        query_feat: torch.Tensor, # [B, feat_dim]
+    ) -&gt; torch.Tensor:
+        # 쿼리에 따라 어느 뷰에 더 집중할지 결정
+        weights = self.view_gate(query_feat)  # [B, 2]
+        fused = weights[:, 0:1] * ego_feat + weights[:, 1:2] * exo_feat
+        return fused
+</code></pre>
+      <div class="c-walk"><p><code>measure_gradient_conflict</code>는 Naive fusion의 핵심 문제를 수치로 드러낸다. 코사인 유사도가 음수라면 두 뷰의 그래디언트가 충돌하고 있다는 증거다. <code>ViewAdaptiveFusion</code>은 쿼리의 의도에 따라 동적으로 뷰 가중치를 결정하는 간단한 게이팅 메커니즘이다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">이 현상을 알고 있는 것이 연구자로서의 실력을 드러내는 구분자다. &#x27;Naive하게 두 뷰를 합치면 당연히 좋겠죠&#x27;라는 가정이 틀렸다는 것을 알고 그 이유를 설명할 수 있어야 한다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>EgoExo-Con의 8.1% 성능 저하 실험 결과를 인용하고 그 의미를 설명하는 능력</li><li>Negative transfer를 MTL 문헌의 맥락에서 이해하고 ego-exo에 적용하는 능력</li><li>그래디언트 충돌을 수식으로 표현하고 어느 레이어에서 발생할지 예측하는 능력</li><li>구조적 해결책(대응점 사전훈련, 뷰-어댑터, 적응적 가중치)을 구체적으로 제안</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>&#x27;두 시점을 합치면 무조건 좋다&#x27;는 가정을 가진 경우</li><li>Negative transfer를 모르는 경우</li><li>해결책으로 단순히 &#x27;더 많은 데이터&#x27;나 &#x27;더 큰 모델&#x27;만 제안하는 경우</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>EgoExo-Con에서 관찰된 dual-viewpoint 훈련의 성능 저하를 gradient conflict 관점에서 설명하라.</li><li>이 negative transfer 문제를 해결하기 위해 architecture 설계 단계에서 어떤 선택을 해야 하는가?</li><li>Ego 데이터를 더 많이 추가하면 이 문제가 해결되는가? 왜 아닌가?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 표면적 이해: &#x27;두 뷰를 합치면 오히려 나빠질 수 있다.&#x27; 깊은 이해: 그래디언트 충돌과 분포 불일치의 수학적 메커니즘을 설명하고, 레이어별 충돌 강도를 측정하는 실험을 설계하며, 충돌을 최소화하는 구조(projection head, stop-gradient 등)를 제안할 수 있다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>Naive Fusion의 반직관적 실패</h3><p>두 시점 데이터를 단순히 합치면 단일 시점보다 8.1%p 낮은 성능을 보일 수 있다 (EgoExo-Con, NeurIPS 2025).</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>그래디언트 충돌이 근본 원인</h3><p>Ego와 exo 손실의 그래디언트가 반대 방향을 가리켜 최적화를 방해한다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>Negative Transfer 현상</h3><p>이 실패는 MTL에서 잘 알려진 negative transfer의 ego-exo 버전이다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>분포 충돌이 원인</h3><p>Ego와 exo의 시각적 통계가 근본적으로 달라 단일 모델이 양쪽을 동시에 최적화하기 어렵다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>구조적 정렬이 해답</h3><p>사전훈련 기반 정렬, 뷰-어댑터, 적응적 가중치 — 단순 데이터 병합이 아닌 구조적 해결이 필요하다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>뷰 융합 = 미해결 문제</h3><p>EgoExo-Con은 이 문제를 공식화했지만, 그 해결책은 아직 연구 중이다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-03.html">← Cross-View Correspondence</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-05.html">Cross-View Transfer Learning →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

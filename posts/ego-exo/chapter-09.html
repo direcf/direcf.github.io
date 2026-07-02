@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch9: Multimodal Ego-Exo Learning — Ego-Exo Research — direcf</title>
+  <meta name="description" content="비디오에 언어, 오디오, 포즈를 더한 멀티모달 ego-exo 이해와 그라운딩 문제를 다룬다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/computer-vision">Ego-Exo Research</a><span class="sep">›</span>
+        <strong>Ch09 Multimodal Ego-Exo Learning</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 09 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🗣️</div>
+      <h1 class="chapter-title">Multimodal Ego-Exo Learning</h1>
+      <div class="chapter-title-kr">멀티모달 Ego-Exo 학습</div>
+      <div class="chapter-tldr">비디오에 언어, 오디오, 포즈를 더한 멀티모달 ego-exo 이해와 그라운딩 문제를 다룬다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-09.png" alt="Chapter 9 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 9 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">4 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>비디오-언어 그라운딩을 ego-exo 맥락에서 정의하고 주요 방법을 설명할 수 있다</li><li>오디오가 ego-exo 이해에 어떻게 기여하는지 구체적 예시로 설명할 수 있다</li><li>3D 손/신체 포즈 추정에서 ego와 exo 정보가 어떻게 상호보완적으로 작동하는지 이해한다</li><li>멀티모달 정렬을 위한 목적 함수 설계를 논할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>현실 세계에서 인간의 활동은 비디오만으로 이루어지지 않는다. 말소리, 도구 소리, 음악, 주변 소음 — 오디오가 활동의 의미를 보완한다. 내레이션, 지시문, 텍스트 레이블 — 언어가 의미를 명시화한다. 관절의 위치와 방향 — 포즈가 동작을 수량화한다.</p>
+<p>Ego-exo 연구에서 이 추가 모달리티들은 두 시점 융합 문제를 더 풍부하게, 그리고 더 복잡하게 만든다. 언어 그라운딩은 자연어 쿼리로 비디오 내 특정 순간이나 객체를 찾게 한다. 오디오는 어떤 도구를 사용했는지, 어떤 활동이 진행 중인지를 비디오와 독립적으로 신호한다. 포즈는 ego의 제한된 시야를 보완해 착용자의 전신 움직임을 이해하게 한다.</p>
+<p>이 모달리티들의 정렬과 통합이 <strong>진정한 의미의 활동 이해</strong>를 가능하게 한다 — 단순한 행동 분류를 넘어 '누가, 어디서, 무엇으로, 어떻게, 왜'를 이해하는 것.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>비디오-언어 그라운딩: 말과 장면의 연결</h2><p><strong>Video-Language Grounding</strong>은 자연어 쿼리와 비디오 내용을 연결하는 태스크다. Ego-exo 맥락에서는 두 가지 형태:</p>
+<p><strong>Temporal Grounding</strong>: '피아노 연주자가 실수를 하는 순간' → 비디오 시간 구간 [t_s, t_e]</p>
+<p><strong>Spatial Grounding</strong>: '요리사가 사용한 냄비' → 비디오 프레임 내 bounding box</p>
+<p>Ego-exo 병렬 비디오에서 그라운딩의 흥미로운 확장:</p>
+<ul>
+<li><strong>크로스뷰 그라운딩</strong>: ego 비디오의 쿼리로 exo 비디오의 공간/시간 위치 찾기</li>
+<li><strong>뷰-불가지 그라운딩</strong>: 쿼리가 어느 시점을 지칭하는지 모르지만 두 시점 중 하나에서 찾기</li>
+</ul>
+<p>Ego-Exo4D의 <strong>내레이션 어노테이션</strong>이 이 연구를 지원한다. 참여자들이 활동 중에 무엇을 하는지 말로 설명한 오디오 트랜스크립트가 타임스탬프와 함께 제공된다. 이를 통해 '방금 바퀴를 분리했습니다'라는 내레이션이 ego 비디오의 정확한 구간에 대응되는 자연 언어-비디오 정렬 데이터를 구축할 수 있다.</p></div><div class="sb-block"><h2>오디오: 세 번째 모달리티의 기여</h2><p>오디오는 ego-exo 이해에서 종종 간과되지만 중요한 역할을 한다. 몇 가지 구체적 사례:</p>
+<p><strong>도구 인식</strong>: 드라이버가 나사를 조이는 소리, 피아노 건반 소리, 요리 시 볶는 소리 — 이 오디오 신호들은 어떤 도구가 사용됐는지, 현재 활동 단계가 무엇인지 비디오와 독립적으로 신호한다.</p>
+<p><strong>시간적 정렬 보조</strong>: 두 비디오 스트림(ego, exo)이 오디오를 공유하면 (Ego-Exo4D에서 동기화된 오디오), 오디오가 시간적 정렬의 앵커 역할을 한다. '쾅'하는 도구 충돌음이 정확히 어느 프레임에 있는지로 ego와 exo를 동기화할 수 있다.</p>
+<p><strong>모달리티 보완</strong>: 시각적으로 가려진 물체의 조작을 오디오로 추론할 수 있다. Ego에서 손이 구석을 건드릴 때 소리가 나면, 그 소리가 exo에서 보이지 않는 무언가와의 상호작용을 시사한다.</p>
+<p>오디오-비주얼 ego-exo 모델 (<a href="https://arxiv.org/abs/2602.06139">arXiv:2602.06139</a>)에서는 오디오를 추가 모달리티로 통합해 ego-exo 행동 인식 정확도를 향상시켰다. 특히 시각적으로 유사한 행동(예: 다른 종류의 피아노 연주 기법)을 오디오 신호로 구분하는 데 유효했다.</p></div><div class="sb-block"><h2>포즈 추정: Ego와 Exo의 상호보완</h2><p><strong>3D 신체 포즈 추정</strong>은 비디오에서 관절(joint) 위치와 방향을 복원하는 태스크다. Ego-exo에서 두 시점은 포즈 추정에서 서로 다른 강점을 가진다.</p>
+<p>Exo에서의 포즈 추정:
+- 전신이 보이므로 전체 골격 추정 용이
+- 깊이 애매성(depth ambiguity)이 있음 — 2D 투영만으로 3D 포즈 추정 시 불명확</p>
+<p>Ego에서의 포즈 추정:
+- 전신이 보이지 않음 — 상체/하체를 동시에 보기 어려움
+- 손과 머리 방향 추정에 유리 (HMD 센서, IMU 활용 가능)</p>
+<p>두 시점을 합친 <strong>Ego-Exo Joint Pose Estimation</strong>:</p>
+<ol>
+<li>Exo에서 전신 포즈 추정 (OpenPose, HRNet 등 사용)</li>
+<li>Ego IMU 데이터로 머리 자세 추정</li>
+<li>두 정보를 통합해 더 정확한 전신 3D 포즈 복원</li>
+</ol>
+<p>수식:
+<span class="math-display">\[\hat{P}_{3D} = \arg\min_{P} \left[ \lambda_e \mathcal{L}_{\text{ego}}(P) + \lambda_x \mathcal{L}_{\text{exo}}(P) + \mathcal{L}_{\text{prior}}(P) \right]\]</span></p>
+<p><span class="math-inline">\(\mathcal{L}_{\text{ego}}\)</span>, <span class="math-inline">\(\mathcal{L}_{\text{exo}}\)</span>는 각 시점에서의 포즈 관찰 일관성 손실, <span class="math-inline">\(\mathcal{L}_{\text{prior}}\)</span>는 신체 구조 사전(joint angle limits, bone length ratios 등).</p></div><div class="sb-block"><h2>멀티모달 정렬: 비디오 + 언어 + 오디오 + 포즈</h2><p>모든 모달리티를 통합하는 학습 목적 함수 설계는 복잡하다. 기본 접근은 <strong>멀티모달 대조 학습</strong>:</p>
+<p><span class="math-display">\[\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{VL}} + \mathcal{L}_{\text{VA}} + \mathcal{L}_{\text{ego-exo}} + \mathcal{L}_{\text{pose}}\]</span></p>
+<ul>
+<li><span class="math-inline">\(\mathcal{L}_{\text{VL}}\)</span>: 비디오-언어 대조 손실 (같은 활동의 비디오와 내레이션을 가까이)</li>
+<li><span class="math-inline">\(\mathcal{L}_{\text{VA}}\)</span>: 비디오-오디오 대조 손실 (동시에 발생한 비디오와 오디오를 가까이)</li>
+<li><span class="math-inline">\(\mathcal{L}_{\text{ego-exo}}\)</span>: Ego-exo 크로스뷰 대조 손실 (챕터 5)</li>
+<li><span class="math-inline">\(\mathcal{L}_{\text{pose}}\)</span>: 포즈 재구성 손실</li>
+</ul>
+<p>이 모든 손실을 동시에 최적화하면 다시 <strong>negative transfer 문제</strong>가 발생할 수 있다. 각 손실 간의 상충 관계를 관리하는 <strong>그래디언트 조절</strong>이나 <strong>Pareto-optimal 훈련</strong>이 필요할 수 있다.</p>
+<p>실용적 접근: <strong>단계적 훈련(staged training)</strong>이 효과적이다 — 먼저 ego-exo 크로스뷰 정렬을 학습하고, 그 다음 언어 그라운딩을 추가하고, 마지막으로 오디오와 포즈를 통합한다. 한 번에 모든 모달리티를 학습하는 것보다 단계적 추가가 안정적으로 수렴한다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">오케스트라 지휘: 여러 악기를 동시에</div>
+      <div class="a-body"><p>멀티모달 ego-exo 학습은 오케스트라 지휘와 같다. 비디오(ego + exo)는 현악기, 언어는 관악기, 오디오는 타악기, 포즈는 피아노다. 각 파트가 혼자 연주할 때는 나름의 음악을 만든다. 하지만 좋은 연주는 이 모든 파트가 조화롭게 어우러질 때 나온다.</p>
+<p>지휘자(학습 알고리즘)의 역할은 어느 파트가 언제 더 강조되어야 하는지, 어느 파트들이 함께 어우러져야 하는지를 결정하는 것이다. '여기서는 현악기(ego 비디오)가 주제를 가져가고, 저기서는 오보에(오디오)가 강조되어야 한다' — 이 동적 조율이 좋은 멀티모달 학습이다.</p>
+<p>Negative transfer 문제는 '두 파트가 서로 다른 박자로 연주하는 것'이다. 강제로 하나의 박자에 맞추면 양쪽 모두 어색해진다. 해결책은 각 파트가 자신의 역할을 하면서도 전체 화음에 기여하는 구조적 조율이다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>비디오, 오디오, 언어 세 모달리티의 대조 학습을 통합하는 멀티모달 ego-exo 목적 함수 구현이다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import torch
+import torch.nn.functional as F
+
+class EgoExoMultimodalLoss:
+    &quot;&quot;&quot;멀티모달 ego-exo 통합 손실 함수.&quot;&quot;&quot;
+
+    def __init__(
+        self,
+        tau_vl: float = 0.07,   # 비디오-언어 온도
+        tau_va: float = 0.1,    # 비디오-오디오 온도
+        tau_ee: float = 0.07,   # ego-exo 온도
+        lambda_vl: float = 1.0,
+        lambda_va: float = 0.5,
+        lambda_ee: float = 1.0,
+    ):
+        self.tau_vl = tau_vl
+        self.tau_va = tau_va
+        self.tau_ee = tau_ee
+        self.lam = {&quot;vl&quot;: lambda_vl, &quot;va&quot;: lambda_va, &quot;ee&quot;: lambda_ee}
+
+    def infonce(self, z1, z2, tau):
+        &quot;&quot;&quot;대칭 InfoNCE 손실.&quot;&quot;&quot;
+        z1 = F.normalize(z1, dim=-1)
+        z2 = F.normalize(z2, dim=-1)
+        B = z1.size(0)
+        logits = torch.mm(z1, z2.T) / tau
+        labels = torch.arange(B, device=z1.device)
+        return (F.cross_entropy(logits, labels) + F.cross_entropy(logits.T, labels)) / 2
+
+    def __call__(
+        self,
+        z_ego: torch.Tensor,    # [B, D] ego 비디오 임베딩
+        z_exo: torch.Tensor,    # [B, D] exo 비디오 임베딩
+        z_lang: torch.Tensor,   # [B, D] 언어 임베딩
+        z_audio: torch.Tensor,  # [B, D] 오디오 임베딩
+    ) -&gt; dict:
+        # 각 쌍의 대조 손실
+        loss_ee = self.infonce(z_ego, z_exo, self.tau_ee)   # ego↔exo
+        loss_vl = (
+            self.infonce(z_ego, z_lang, self.tau_vl) +
+            self.infonce(z_exo, z_lang, self.tau_vl)
+        ) / 2                                                # video↔language
+        loss_va = (
+            self.infonce(z_ego, z_audio, self.tau_va) +
+            self.infonce(z_exo, z_audio, self.tau_va)
+        ) / 2                                                # video↔audio
+
+        total = (
+            self.lam[&quot;ee&quot;] * loss_ee
+            + self.lam[&quot;vl&quot;] * loss_vl
+            + self.lam[&quot;va&quot;] * loss_va
+        )
+        return {&quot;total&quot;: total, &quot;ego_exo&quot;: loss_ee, &quot;vl&quot;: loss_vl, &quot;va&quot;: loss_va}
+</code></pre>
+      <div class="c-walk"><p>각 쌍마다 별도의 온도(tau)를 사용한다 — 모달리티 간 유사도 분포가 다르기 때문이다. <code>lambda_va</code>를 낮게 설정(0.5)한 것은 오디오가 비디오보다 약한 신호임을 반영한다. <code>loss_vl</code>에서 ego와 exo 양쪽 모두를 언어와 정렬하는 것이 크로스뷰 일관성 있는 언어 그라운딩을 위해 중요하다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">멀티모달 학습은 산업에서 가장 활발하게 활용되는 분야다. 이를 ego-exo에 적용할 때의 구체적 설계 선택들을 설명할 수 있는 것이 중요하다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>각 모달리티의 ego-exo 이해 기여를 구체적 사례로 설명하는 능력</li><li>여러 손실을 합칠 때의 negative transfer 문제와 그 관리 전략(그래디언트 조절, 단계적 훈련)</li><li>오디오-비주얼 대응에서 positive pair 정의의 엄밀성 (시간적 동기화된 쌍 vs. 의미적으로 관련된 쌍)</li><li>포즈 추정에서 ego IMU와 exo 비주얼 정보의 Bayesian fusion 접근</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>모든 모달리티를 단순히 concatenate하면 된다고 생각하는 경우</li><li>각 모달리티 손실의 가중치를 임의로 설정하고 그 선택 이유를 설명하지 못하는 경우</li><li>오디오를 ego-exo 연구에서 무관한 것으로 보는 경우</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>Ego-Exo4D의 내레이션을 언어 그라운딩 데이터로 사용할 때 발생하는 노이즈 문제는 무엇이며 어떻게 처리해야 하는가?</li><li>오디오-비주얼 대조 학습에서 같은 비디오 클립에서 추출한 오디오와 비디오를 positive pair로 사용하는 것의 한계는?</li><li>멀티모달 모델의 각 모달리티 기여도를 ablation study로 측정하는 설계를 제안하라.</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 표면적 이해: 여러 모달리티를 loss로 합산하면 된다. 깊은 이해: 모달리티 간 gradient 충돌을 PCGrad나 gradient normalization으로 관리하고, 각 모달리티의 최적 온도를 calibration으로 선택하며, 모달리티가 없는 추론 시나리오(예: 오디오 없는 경우)를 우아하게 처리하는 missing-modality 강건성 설계를 논할 수 있다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>오디오가 도구 인식에 강력</h3><p>드라이버 소리, 피아노 음 등 오디오 신호는 시각적으로 유사한 행동을 구분하는 데 비디오를 보완한다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>언어 그라운딩의 크로스뷰 확장</h3><p>한 시점의 언어 쿼리로 다른 시점에서 공간/시간 위치를 찾는 크로스뷰 그라운딩이 미개척 분야다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>포즈 추정의 시점 역할 분담</h3><p>Exo는 전신 포즈, ego IMU는 머리 방향 — 두 시점의 보완으로 더 정확한 3D 포즈 복원이 가능하다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>멀티모달 negative transfer</h3><p>여러 손실을 합칠 때도 negative transfer가 발생한다 — 단계적 훈련과 그래디언트 조절이 효과적이다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>내레이션 어노테이션이 자연 정렬 데이터</h3><p>Ego-Exo4D의 타임스탬프 내레이션이 비디오-언어 정렬 연구를 위한 자연스러운 weak supervision을 제공한다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>멀티모달 설계 = 트레이드오프</h3><p>각 모달리티의 기여와 비용, 손실 가중치의 의미 있는 선택이 멀티모달 모델 품질을 결정한다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-08.html">← Novel View Synthesis &amp; 3D</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-10.html">Open Problems &amp; Research Directions →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

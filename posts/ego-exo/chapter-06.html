@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch6: Foundation Models for Ego-Exo — Ego-Exo Research — direcf</title>
+  <meta name="description" content="대형 비디오-언어 모델이 ego-exo 이해에서 어디까지 왔고 어디서 근본적으로 실패하는지를 파악한다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
+      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/machine-learning">
+      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item " href="../../index.html#/category/diary">
+      <span class="icon">✍️</span><span class="label">Diary</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/computer-vision">Ego-Exo Research</a><span class="sep">›</span>
+        <strong>Ch06 Foundation Models for Ego-Exo</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 06 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🤖</div>
+      <h1 class="chapter-title">Foundation Models for Ego-Exo</h1>
+      <div class="chapter-title-kr">Ego-Exo를 위한 파운데이션 모델</div>
+      <div class="chapter-tldr">대형 비디오-언어 모델이 ego-exo 이해에서 어디까지 왔고 어디서 근본적으로 실패하는지를 파악한다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-06.png" alt="Chapter 6 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 6 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">4 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>주요 egocentric video foundation model들(EgoVideo, EgoCOT 등)을 알고 그 아키텍처를 설명할 수 있다</li><li>현재 MLLM이 크로스뷰 이해에서 실패하는 근본 원인을 분석할 수 있다</li><li>비디오 입력 추가가 성능을 10%p밖에 높이지 못하는 이유를 설명할 수 있다</li><li>파운데이션 모델을 ego-exo 태스크에 적응시키는 전략을 비교할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>2024-2026년 동안 대형 비디오-언어 모델(Video LLM, MLLM)의 발전은 놀랍다. 수백만 시간의 비디오-텍스트 쌍으로 사전학습된 모델들이 일반 비디오 이해, 질문응답, 요약 등에서 인상적인 성능을 보인다. 그런데 이 강력한 모델들이 <strong>ego-exo 크로스뷰 이해에서는 왜 55%에 그치는가?</strong></p>
+<p>이 질문이 2025-2026년 연구의 핵심 주제 중 하나다. 파운데이션 모델의 실패를 이해하면 <strong>무엇이 새로운 접근법의 기회인지</strong> 보인다. 단순히 더 큰 모델, 더 많은 데이터가 해결책이 아닌 이유 — 그리고 구조적으로 무엇이 다르게 설계되어야 하는지를 이해하는 것이 이 챕터의 목표다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>Egocentric Video를 위한 파운데이션 모델들</h2><p>순수 ego 비디오를 위한 파운데이션 모델 연구가 2024-2025년에 활발히 이루어졌다.</p>
+<p><strong>EgoVideo</strong> (<a href="https://arxiv.org/abs/2406.18070">arXiv:2406.18070</a>): Ego-Exo4D와 EPIC-Kitchens 등 egocentric 데이터에 특화된 비디오-텍스트 모델. CLIP과 VideoLLaMA를 ego 데이터로 파인튜닝한 계열이다. EK-100 행동 인식, 멀티스텝 추론 등에서 강점을 보인다.</p>
+<p><strong>EgoCOT</strong> (<a href="https://arxiv.org/abs/2503.09143">arXiv:2503.09143</a>): Ego 비디오에서 Chain-of-Thought 추론을 활성화하는 접근법. 단순히 답을 예측하는 것이 아니라 '왜 그런 답인가?'를 단계적으로 추론하게 훈련한다. 절차적 활동 이해(procedural activity understanding)에서 강점.</p>
+<p><strong>EgoVideo-ProCo</strong> (<a href="https://arxiv.org/abs/2603.27184">arXiv:2603.27184</a>): 절차적 맥락(procedural context)을 ego 비디오에서 학습하는 모델. 요리 레시피, 가구 조립 등 단계별 활동에서 현재 단계를 파악하고 다음 단계를 예측한다.</p>
+<p>공통점: 이들 모두 <strong>단일 ego 시점</strong>에 집중한다. Exo 뷰 없이 ego만으로 최대한 많은 것을 이해하려는 접근이다. 하지만 ego만으로는 얻기 어려운 정보(전신 자세, 공간 구조)가 있고, 이 때문에 ego-exo 상호보완성이 여전히 중요하다.</p></div><div class="sb-block"><h2>현재 MLLM이 크로스뷰 이해에서 실패하는 이유</h2><p>EgoExoMem에서 Gemini 2.5 Flash가 55.3%에 그치는 이유는 무엇인가? 단순히 모델이 작아서가 아니다. 더 구조적인 이유들이 있다.</p>
+<p><strong>1. 사전학습 분포 편향</strong>: 대부분의 MLLM은 단일 시점 비디오(주로 exo)로 사전학습된다. YouTube, 영화, TV 쇼는 모두 exo 중심이다. 모델이 두 시점의 연결을 학습할 기회가 없었다.</p>
+<p><strong>2. 크로스뷰 토큰 연결 부재</strong>: 언어 모델이 두 비디오 스트림을 입력받을 때, ego 프레임과 exo 프레임 사이의 명시적 연결(correspondence)이 없다. 모델은 두 독립적인 비디오 시퀀스로 처리하며, 어떤 ego 토큰이 어떤 exo 토큰과 연결되는지 모른다.</p>
+<p><strong>3. 공간적 이해 제한</strong>: 현재 MLLM의 비디오 인코더(ViT 기반)는 개별 프레임을 독립적으로 처리하거나 제한적인 시간적 풀링만 수행한다. 두 시점 간의 3D 공간적 관계를 이해하는 능력이 부족하다.</p>
+<p><strong>4. 메모리 통합 부재</strong>: EgoExoMem에서 모델은 비디오 전체를 보고 특정 순간의 크로스뷰 관계를 기억해야 한다. 하지만 현재 아키텍처는 긴 비디오에서 중요 순간을 선택적으로 메모리에 유지하는 능력이 부족하다.</p></div><div class="sb-block"><h2>비디오 입력의 10%p 효과: 왜 더 높지 않은가</h2><p>EgoExoMem에서 관찰된 충격적인 결과: Text-only GPT-4o (~45%) 대비 Video+Text 모델(Gemini 2.5 Flash, 55.3%)의 향상이 10%p에 불과하다. 이 격차가 왜 이렇게 작은가?</p>
+<p><strong>프레임 샘플링 문제</strong>: 현재 MLLM들은 긴 비디오에서 균일하게 프레임을 샘플링한다. EgoExoMem 질문에 답하기 위해 필요한 결정적 프레임이 샘플링되지 않으면, 비디오 입력이 있더라도 관련 정보를 보지 못한다. E2-Select 방법이 58.2%를 달성한 것이 이를 확인한다 — 스마트한 프레임 선택만으로도 3%p 향상된다.</p>
+<p><strong>크로스뷰 attention 부재</strong>: 입력받은 ego와 exo 프레임들이 주의 메커니즘을 통해 서로 연결되지 않는다. 두 비디오가 순차적으로 텍스트처럼 처리되며, 어느 ego 토큰이 어느 exo 토큰에 주의를 기울여야 하는지 모른다.</p>
+<p><strong>시공간 표현의 한계</strong>: 비디오 인코더가 시공간적 구조를 충분히 포착하지 못한다. 8~16프레임으로 서브샘플링된 비디오에서 빠른 손 움직임, 미세 도구 조작 등이 유실된다.</p>
+<p>이 분석은 새로운 논문의 기회를 명확히 보여준다: 크로스뷰 연결을 명시적으로 모델링하고, 스마트한 프레임 선택을 통합하며, 공간적 관계를 3D로 이해하는 모델이 현재 MLLM의 한계를 극복할 수 있다.</p></div><div class="sb-block"><h2>파운데이션 모델 적응 전략: 파인튜닝 vs. 프롬프팅</h2><p>기존 파운데이션 모델을 ego-exo 태스크에 적응시키는 두 가지 주요 전략:</p>
+<p><strong>프롬프팅 전략</strong>: 파라미터 변경 없이 입력 프롬프트만으로 모델을 유도한다.</p>
+<ul>
+<li>Chain-of-thought 프롬프팅: '먼저 ego 뷰에서 보이는 것을 설명하고, 그 다음 exo 뷰에서 보이는 것을 설명하고, 두 뷰의 정보를 통합하라'</li>
+<li>프레임 인터리빙: Ego와 exo 프레임을 번갈아 제공해 자연스러운 교차 참조 유도</li>
+<li>기준점 제공: '00:30의 ego 프레임과 00:30의 exo 프레임을 비교하라'</li>
+</ul>
+<p><strong>파인튜닝 전략</strong>: Ego-Exo4D 같은 paired 데이터로 모델 파라미터를 업데이트한다.</p>
+<ul>
+<li>Full fine-tuning: 모든 파라미터 업데이트 (고비용, 과적합 위험)</li>
+<li>LoRA 파인튜닝: 저차원 어댑터만 학습 (효율적, 포지이 보존)</li>
+<li>Instruction tuning: Ego-exo 크로스뷰 태스크를 지시 형식으로 변환해 instruction 파인튜닝</li>
+</ul>
+<p>두 전략의 트레이드오프:</p>
+<table>
+<thead>
+<tr>
+<th>전략</th>
+<th>비용</th>
+<th>유연성</th>
+<th>성능</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>프롬프팅</td>
+<td>낮음</td>
+<td>높음</td>
+<td>제한적</td>
+</tr>
+<tr>
+<td>LoRA 파인튜닝</td>
+<td>중간</td>
+<td>중간</td>
+<td>좋음</td>
+</tr>
+<tr>
+<td>Full 파인튜닝</td>
+<td>높음</td>
+<td>낮음</td>
+<td>최대 (잠재적)</td>
+</tr>
+</tbody>
+</table></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">글로벌 관광 가이드: 모든 도시를 알지만 한 도시를 깊이 모른다</div>
+      <div class="a-body"><p>현재 대형 MLLM은 전 세계 수백만 시간의 비디오를 봤다 — 마치 수백 개 도시를 여행한 경험 많은 글로벌 여행자와 같다. 파리의 에펠탑, 도쿄의 스카이트리, 뉴욕의 자유의 여신상을 다 안다. 하지만 파리의 골목 하나하나, 현지인만 아는 카페, 지역 교통 시스템의 세부는 모른다.</p>
+<p>크로스뷰 메모리 추론은 이 '현지 전문 지식'을 요구한다. Ego 카메라가 찍은 주방의 특정 서랍(현지 골목)과 exo 카메라가 찍은 전체 주방 풍경(도시 전경)을 연결하는 것 — 이건 글로벌 여행 경험이 아닌, 그 주방을 직접 학습한 경험이 필요하다.</p>
+<p>파운데이션 모델의 한계는 여기서 온다: 너무 광범위하게, 너무 얕게 학습됐다. Ego-exo 크로스뷰 추론에 필요한 '현지 지식'(두 시점의 구체적 연결)은 충분히 학습하지 못했다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>EgoExoMem 스타일 평가에서 기존 MLLM에 크로스뷰 프롬프팅을 적용하는 예시다. Chain-of-Thought와 View-Interleaving 두 가지 전략을 구현한다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">from transformers import AutoTokenizer, AutoModelForCausalLM
+from typing import Literal
+
+def build_crossview_prompt(
+    question: str,
+    options: list[str],
+    strategy: Literal[&quot;cot&quot;, &quot;interleave&quot;],
+    ego_timestamps: list[str] = None,
+    exo_timestamps: list[str] = None,
+) -&gt; str:
+    if strategy == &quot;cot&quot;:
+        # Chain-of-thought: 두 뷰를 순서대로 설명한 후 통합
+        return (
+            &quot;You are analyzing synchronized egocentric (first-person) and &quot;
+            &quot;exocentric (third-person) videos of the same activity.\n\n&quot;
+            f&quot;Question: {question}\n&quot;
+            f&quot;Options: {&#x27;, &#x27;.join(options)}\n\n&quot;
+            &quot;Please reason step by step:\n&quot;
+            &quot;Step 1: What can you observe from the EGOCENTRIC video?&quot;
+            &quot; (focus on hands and objects)\n&quot;
+            &quot;Step 2: What can you observe from the EXOCENTRIC video?&quot;
+            &quot; (focus on full body and environment)\n&quot;
+            &quot;Step 3: Integrate both views to answer the question.\n&quot;
+            &quot;Final Answer:&quot;
+        )
+    elif strategy == &quot;interleave&quot;:
+        # 시간 축 정렬 명시
+        ts_hint = &quot;&quot;
+        if ego_timestamps and exo_timestamps:
+            ts_hint = (
+                f&quot;\nEgo frames sampled at: {ego_timestamps}&quot;
+                f&quot;\nExo frames sampled at: {exo_timestamps}&quot;
+                &quot;\n(Both cameras are synchronized.)&quot;
+            )
+        return (
+            &quot;You are watching synchronized ego and exo views.&quot;
+            f&quot;{ts_hint}\n\n&quot;
+            f&quot;Question: {question}\n&quot;
+            f&quot;Options: {&#x27;, &#x27;.join(options)}\n&quot;
+            &quot;Use BOTH views together. Answer with the option letter:&quot;
+        )
+
+# 예시 사용
+prompt = build_crossview_prompt(
+    question=&quot;At 00:45, which object did the person pick up in the ego view?&quot;,
+    options=[&quot;A. knife&quot;, &quot;B. fork&quot;, &quot;C. spoon&quot;],
+    strategy=&quot;cot&quot;,
+)
+print(prompt)
+</code></pre>
+      <div class="c-walk"><p>CoT 프롬프트는 모델이 두 뷰를 순차적으로 분석하도록 강제해 명시적 크로스뷰 추론을 유도한다. Interleave 전략은 동기화된 타임스탬프를 힌트로 제공해 두 비디오가 같은 시간 축에 있음을 명시한다. 실험에서는 두 전략을 비교해 태스크 유형별로 어느 것이 더 효과적인지 분석하는 것이 중요하다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">파운데이션 모델의 능력과 한계를 정확히 아는 것이 연구자와 엔지니어 모두에게 핵심 역량이다. 특히 &#x27;더 큰 모델이면 해결된다&#x27;는 안이한 가정을 버리고 구조적 한계를 파악하는 것이 중요하다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>현재 최고 MLLM의 ego-exo 성능 수준을 수치로 인식 (55.3%)</li><li>비디오 입력이 10%p밖에 도움되지 않는 근본 원인 분석</li><li>프롬프팅과 파인튜닝 전략의 트레이드오프를 실험적으로 비교하는 방법</li><li>LoRA 파인튜닝의 기본 원리와 ego-exo 파인튜닝에서의 적절한 rank 선택</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>&#x27;GPT-4V/Gemini를 쓰면 해결된다&#x27;는 안이한 가정</li><li>비디오 입력이 텍스트-only 모델과 성능 차이가 크지 않은 이유를 설명하지 못하는 경우</li><li>파인튜닝과 프롬프팅을 같은 것으로 취급하는 경우</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>EgoExoMem에서 비디오 입력 추가가 10%p밖에 도움이 되지 않는 이유를 세 가지 관점에서 설명하라.</li><li>Ego-Exo4D 데이터로 Gemini를 파인튜닝한다면 어떤 instruction 형식으로 데이터를 구성해야 하는가?</li><li>현재 MLLM의 어떤 구조적 한계가 크로스뷰 이해를 막고 있으며, 이를 해결하기 위해 아키텍처를 어떻게 수정해야 하는가?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 표면적 이해: MLLM이 ego-exo에서 55%라는 걸 안다. 깊은 이해: 왜 55%인지를 사전학습 분포 편향, 크로스뷰 토큰 연결 부재, 공간적 이해 한계, 메모리 통합 부재 네 가지로 분해하고, 각 한계를 해결하기 위한 구체적인 아키텍처 수정이나 훈련 전략을 제안할 수 있다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>Ego-specific 파운데이션 모델 존재</h3><p>EgoVideo, EgoCOT, EgoVideo-ProCo 등 단일 ego 시점에 특화된 모델들이 2024-2025년에 등장했다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>MLLM의 크로스뷰 이해 한계</h3><p>최강 MLLM도 EgoExoMem에서 55.3% — 사전학습 분포 편향과 크로스뷰 연결 부재가 근본 원인이다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>비디오 입력이 10%p만 도움</h3><p>텍스트-only 대비 비디오 추가의 미미한 이득은 모델이 비디오 크로스뷰 정보를 활용하지 못함을 의미한다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>프레임 선택이 중요</h3><p>E2-Select가 보여주듯 스마트한 프레임 샘플링만으로도 3%p 향상 가능 — 균일 샘플링이 문제다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>파인튜닝 전략의 트레이드오프</h3><p>Full 파인튜닝 &gt; LoRA &gt; 프롬프팅 순으로 성능이 높지만 비용과 유연성은 반대다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>구조적 혁신이 필요</h3><p>더 큰 모델이 아니라, 크로스뷰 연결을 명시적으로 모델링하는 새로운 아키텍처가 필요하다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-05.html">← Cross-View Transfer Learning</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-07.html">Action Recognition Across Views →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

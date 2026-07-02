@@ -1,0 +1,736 @@
+{
+  "topic": "Ego-Exo Research",
+  "topicKr": "Ego-Exo 연구",
+  "topicSlug": "ego-exo",
+  "level": "advanced",
+  "codeLanguage": "Python",
+  "categorySlug": "computer-vision",
+  "description": "2024–2026년 최신 논문을 기반으로 Egocentric(1인칭)과 Exocentric(3인칭) 시점 융합 연구의 핵심 문제와 해결 방향을 다룬다. Ego-Exo4D, EgoExoBench, EgoExoMem 등 주요 벤치마크와 cross-view transfer, 대응점 학습, foundation model의 한계까지 — 논문을 쓰기 위한 연구자 관점의 커리큘럼.",
+  "references": [
+    "2311.18259",
+    "2507.18342",
+    "2605.18734",
+    "2510.26113",
+    "2602.18996",
+    "2410.20621",
+    "2406.18070",
+    "2503.09143",
+    "2406.19811",
+    "2602.06139"
+  ],
+  "chapters": [
+    {
+      "number": 1,
+      "emoji": "👁️",
+      "title": "Two Perspectives, One World",
+      "titleKr": "두 시점, 하나의 세계",
+      "tldr": "Egocentric과 Exocentric 시점이 왜 정보적으로 상호보완적인지, 그리고 왜 이 융합이 단순하지 않은지 이해한다.",
+      "topics": ["Egocentric vs Exocentric 정의", "정보 상호보완성", "역사적 맥락", "연구 동기"],
+      "learningGoals": [
+        "1인칭(ego)과 3인칭(exo) 시점이 각각 어떤 정보를 포착하는지 정확히 설명할 수 있다",
+        "두 시점의 상호보완성을 실제 작업 예시로 논증할 수 있다",
+        "ego-exo 연구의 역사적 흐름을 CharadesEgo → EPIC-Kitchens → Ego-Exo4D로 서술할 수 있다",
+        "이 분야가 단순한 '데이터 추가'가 아닌 구조적 문제를 다루는 이유를 설명할 수 있다"
+      ],
+      "overview": "컴퓨터 비전에서 '시점(viewpoint)'은 단순한 카메라 위치가 아니다. 카메라를 어디에 다느냐는 **무엇을 볼 수 있는가**를 근본적으로 바꾼다. Egocentric(1인칭, ego) 카메라는 머리에 착용해 행위자의 시선을 직접 포착한다 — 손과 물체의 상호작용, 시선이 향하는 곳, 세밀한 작업의 세부 사항이 고해상도로 담긴다. Exocentric(3인칭, exo) 카메라는 외부 고정 위치에서 행위자를 관찰한다 — 전신 자세, 공간 내 이동 궤적, 주변 환경과의 관계가 보인다.\n\n이 두 시점은 단순히 '같은 장면을 다른 각도에서 찍은 것'이 아니다. Ego-Exo4D 논문([CVPR 2024](https://arxiv.org/abs/2311.18259))은 이를 정확하게 표현한다:\n\n> *\"The first-person perspective captures the details of close-by hand-object interactions and the camera wearer's attention, whereas the third-person perspective captures the full body pose and surrounding environment context.\"*\n\n이 말은 두 시점이 **정보적으로 상호보완적**이라는 뜻이다. 요리 장면을 상상해보자: ego 카메라는 칼이 채소를 써는 방식, 손의 그립, 칼날 각도를 보여주지만 전신은 보이지 않는다. Exo 카메라는 셰프의 어깨 자세, 발의 위치, 조리대와의 거리를 보여주지만 손-칼 상호작용의 세밀함은 흐릿하다. 두 시점을 합치면 비로소 완전한 이해가 가능하다.\n\n하지만 이 보완성이 곧 '두 시점을 같이 쓰면 무조건 좋다'는 의미는 아니다. 이 강의의 핵심 주제 중 하나는 **왜 naive하게 두 시점을 합치면 오히려 성능이 떨어지는가**이다. 단순 데이터 병합이 실패하는 이유, 그리고 구조적으로 뷰를 정렬하고 전이하는 방법 — 이것이 2024-2026년 ego-exo 연구의 중심 문제다.",
+      "sections": [
+        {
+          "title": "Egocentric 시점: 행위자의 눈",
+          "content": "Egocentric 비디오는 웨어러블 카메라로 촬영된다. 2024년 기준으로 가장 대표적인 기기는 Meta의 **Project Aria 안경**이다 — 8MP RGB 카메라, 두 개의 SLAM 카메라, IMU, 오디오 마이크가 통합된 리서치 기기다. 착용자의 눈높이에서 세상을 포착하기 때문에 카메라가 착용자의 움직임을 그대로 따라간다.\n\nEgo 시점의 강점은 **손-물체 상호작용(hand-object interaction, HOI)**에 있다. 피아노 연주, 도구 수리, 요리 등 정밀한 손 기술이 필요한 작업에서 ego 카메라만이 그 세부 움직임을 포착할 수 있다. 또한 착용자의 **시각적 주의(visual attention)** 자체가 데이터에 반영된다 — 착용자가 무엇을 보고 있는지가 곧 카메라의 시야다.\n\nEgo 시점의 약점은 **자기 폐색(self-occlusion)**과 **자기 포함(self-exclusion)**이다. 착용자 자신의 전신이 보이지 않고, 빠른 머리 움직임에 의한 모션 블러가 심하다. 배경은 끊임없이 움직이고, 시점 변화가 불규칙해서 시간적 일관성이 낮다.\n\n**EPIC-Kitchens** ([2018](https://epic-kitchens.github.io/))는 순수 ego 비디오 데이터셋의 대표주자다. 100시간, 주방 환경, 55명의 참여자로 구성되어 있으며 행동 인식, 물체 검출, 예측 등 다양한 태스크를 지원한다. 하지만 exo 뷰가 없기 때문에 cross-view 연구에는 직접 활용하기 어렵다."
+        },
+        {
+          "title": "Exocentric 시점: 외부 관찰자의 눈",
+          "content": "Exocentric 비디오는 고정된 외부 카메라로 촬영된다. 일반적인 스포츠 중계, 감시 카메라, 교육 영상이 모두 exo 시점이다. 기계학습 커뮤니티에서 exo 데이터는 훨씬 풍부하다 — YouTube 비디오, 영화, TV 쇼 등 대부분의 대규모 비디오 데이터가 exo 기반이다. 그 결과 사전학습된 비디오 모델들은 대부분 exo 분포에 최적화되어 있다.\n\nExo 시점의 강점은 **전신 자세(full-body pose)**와 **공간 관계(spatial relationship)**다. 행위자가 전신으로 보이기 때문에 걷기, 뛰기, 넘어지기 등 몸 전체를 쓰는 동작 인식에 유리하다. 복수의 사람 간의 상호작용도 포착할 수 있고, 환경의 전체 구조(방의 레이아웃, 도구 위치 등)가 프레임에 담긴다.\n\nExo 시점의 약점은 **원거리에서의 세부 손실**과 **고정 뷰의 제약**이다. 멀리서 촬영할수록 손-물체 상호작용의 세밀한 움직임이 흐릿해진다. 또한 카메라가 고정되어 있어 행위자가 이동하면 가려지거나 프레임 밖으로 나갈 수 있다.\n\n중요한 현실적 불균형이 있다: **알고리즘은 exo 태스크에서는 잘 작동하지만 ego 태스크에서는 성능이 현저히 낮다.** CVIU 2025 리뷰([arXiv:2410.20621](https://arxiv.org/abs/2410.20621))는 이를 명시적으로 지적한다 — exo 비디오 데이터의 압도적인 양 때문에 모델 편향이 형성되어 있다. 이 격차를 메우는 것이 ego-exo 연구의 핵심 동기 중 하나다."
+        },
+        {
+          "title": "역사적 흐름: CharadesEgo에서 Ego-Exo4D까지",
+          "content": "Ego-Exo 연구는 2016년 **CharadesEgo** 데이터셋으로 본격 시작됐다. 이 데이터셋은 동일한 가정 내 활동을 ego와 exo 두 시점으로 동시 촬영한 최초의 대규모 paired 데이터셋 중 하나다. 하지만 규모가 제한적이었고 (약 68.8시간), 동기화 정밀도가 낮았으며, 활동 범위가 가정 내 일상 동작으로 제한됐다.\n\n이후 **Assembly101** (2022), **LEMMA** 등 특정 도메인(조립 작업, 요리 등)에 집중한 paired 데이터셋들이 등장했다. 이들은 정밀한 시간 동기화와 더 세밀한 어노테이션을 제공했지만 범용성이 부족했다.\n\n**Ego-Exo4D** (CVPR 2024 Oral, [arXiv:2311.18259](https://arxiv.org/abs/2311.18259))는 이 분야의 패러다임을 바꿨다. 1,286시간, 740명의 참여자, 13개 도시, 123개의 자연적 장면 컨텍스트. 피아노 연주, 농구, 요리, 자전거 수리, 댄스 등 다양한 기술 기반 활동(skilled human activities)을 커버한다. Aria 안경 + 4~5대의 시간 동기화된 GoPro라는 멀티뷰 캡처 리그는 지금도 이 분야의 표준 설정이다.\n\n2025-2026년에는 벤치마크의 질적 도약이 이루어졌다. 단순 행동 인식을 넘어 **cross-view semantic reasoning** (EgoExoBench, [arXiv:2507.18342](https://arxiv.org/abs/2507.18342))과 **cross-view memory reasoning** (EgoExoMem, [arXiv:2605.18734](https://arxiv.org/abs/2605.18734))을 측정하는 벤치마크가 등장하면서 현재 모델들의 근본적 한계가 드러나고 있다."
+        },
+        {
+          "title": "왜 이것이 어려운가: 기본적인 문제들",
+          "content": "Ego-exo 융합이 단순히 '데이터를 더 많이 사용하는 것'이 아닌 이유는 여러 층위의 도전이 존재하기 때문이다.\n\n**도메인 갭(domain gap)**: Ego와 exo 비디오는 시각적으로 매우 다르게 보인다. 모션 패턴, 배경 통계, 객체 크기, 카메라 움직임 등이 근본적으로 다르다. 같은 '요리하기' 동작이더라도 ego에서는 클로즈업된 손과 냄비가 보이고, exo에서는 주방 전체와 셰프 전신이 보인다. 이 분포 차이를 극복하지 못하면 하나의 모델이 두 시점 모두를 잘 이해하기 어렵다.\n\n**시간적 정렬(temporal alignment) 문제**: Ego와 exo 카메라는 물리적으로 동기화되어 있더라도, 의미론적으로 같은 '순간'을 공유하지 않을 수 있다. 행위자의 ego 관점에서 중요한 순간(물체를 집는 순간)이 exo 카메라에서는 폐색되어 보이지 않을 수도 있다.\n\n**부합 어노테이션(correspondence annotation)의 어려움**: 어느 ego 픽셀이 어느 exo 픽셀에 대응하는지를 레이블링하는 것은 극히 어렵고 비싸다. 카메라 파라미터와 3D 재구성 없이는 픽셀 레벨 대응을 자동으로 구하기 어렵다. 이것이 자기지도 학습(self-supervised learning) 방법들이 중요한 이유다.\n\n**뷰 비대칭(view asymmetry)**: Ego와 exo는 정보의 양과 종류가 다르기 때문에 단순 앙상블이나 concatenation이 효과적이지 않다. 어떤 태스크에는 ego가 더 유용하고, 어떤 태스크에는 exo가 더 유용하다 — 이 적응적 가중치 결정이 아직 해결되지 않은 문제다."
+        }
+      ],
+      "analogy": {
+        "title": "의사와 환자 차트: 두 관점의 상호보완",
+        "content": "Ego와 exo의 관계를 생각하는 좋은 비유는 **의사(exo)와 환자 일지(ego)**의 관계다. 의사는 외부에서 환자를 관찰한다 — 걸음걸이, 자세, 피부색, 움직임의 이상함을 포착한다. 환자는 자신의 내부를 직접 경험한다 — 통증의 위치, 구체적인 감각, 언제 어떤 상황에서 악화되는지.\n\n두 관점 모두 진단에 필요하다. 의사만의 관찰로는 환자가 경험하는 내면의 세부 사항을 놓친다. 환자의 자기 보고만으로는 외부에서 보이는 객관적 패턴을 놓친다. 좋은 진단은 두 정보를 통합하는 것이다 — 하지만 두 정보를 단순히 나란히 놓는다고 해서 저절로 통합되지 않는다. 의사는 두 관점을 의미 있게 연결하는 **해석의 틀**이 필요하다.\n\nEgo-exo 연구에서의 도전도 똑같다. 두 카메라 스트림을 단순히 같이 입력으로 넣는다고 해서 모델이 두 시점을 의미 있게 융합하지 않는다. 구조적인 정렬, 대응점 학습, 적응적 융합 — 이것들이 필요한 '해석의 틀'이다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "간단한 예시로, Ego-Exo4D 데이터를 불러와 기본적인 통계를 확인하는 코드다. 실제 연구 시작점에서 데이터 분포를 파악하는 것이 중요하다.",
+        "code": "import json\nimport numpy as np\nfrom pathlib import Path\n\ndef analyze_ego_exo_takes(manifest_path: str):\n    \"\"\"Ego-Exo4D take manifest에서 기본 통계를 추출한다.\"\"\"\n    with open(manifest_path) as f:\n        manifest = json.load(f)\n\n    takes = manifest[\"takes\"]\n    print(f\"Total takes: {len(takes)}\")\n\n    # 각 take의 ego vs exo 카메라 수 분포\n    ego_counts = []\n    exo_counts = []\n\n    for take in takes:\n        n_ego = sum(1 for cam in take[\"cameras\"] if cam[\"is_ego\"])\n        n_exo = sum(1 for cam in take[\"cameras\"] if not cam[\"is_ego\"])\n        ego_counts.append(n_ego)\n        exo_counts.append(n_exo)\n\n    print(f\"Ego cameras per take: mean={np.mean(ego_counts):.2f}, \")\n    print(f\"  min={min(ego_counts)}, max={max(ego_counts)}\")\n    print(f\"Exo cameras per take: mean={np.mean(exo_counts):.2f}, \")\n    print(f\"  min={min(exo_counts)}, max={max(exo_counts)}\")\n\n    # 활동(scenario) 분포\n    scenarios = {}\n    for take in takes:\n        s = take.get(\"scenario_uid\", \"unknown\")\n        scenarios[s] = scenarios.get(s, 0) + 1\n    print(f\"\\nUnique scenarios: {len(scenarios)}\")\n    print(f\"Top 5: {sorted(scenarios.items(), key=lambda x: -x[1])[:5]}\")\n\n    return {\"ego\": ego_counts, \"exo\": exo_counts}\n\n# 실제 실행 (다운로드 후)\n# stats = analyze_ego_exo_takes(\"ego_exo4d/takes.json\")\n",
+        "walkthrough": "`is_ego` 필드로 ego와 exo 카메라를 구분한다. Ego-Exo4D는 take당 1개의 Aria(ego)와 4-5개의 GoPro(exo)가 기본 구성이다. 실제 연구에서는 이 manifest를 통해 캡처 설정의 분포를 먼저 이해하고, 어떤 take에서 모든 카메라가 유효한 데이터를 가지고 있는지 필터링하는 것이 첫 번째 단계다."
+      },
+      "industryEvaluation": {
+        "overview": "연구자 및 AI 엔지니어 면접에서 ego-exo를 다룰 때, 단순히 '시점이 다른 비디오'라는 수준을 넘어서 각 시점의 정보 특성과 그 융합이 왜 비자명한 문제인지를 설명할 수 있어야 한다.",
+        "whatEngineersLookFor": [
+          "두 시점의 정보 상호보완성을 구체적인 태스크 예시로 설명하는 능력",
+          "왜 exo에서 잘 작동하는 모델이 ego에서 성능이 낮은지 도메인 갭 관점에서 설명",
+          "Ego-Exo4D의 캡처 설정(Aria + GoPro 리그)을 이해하고 그 설계 의도를 파악",
+          "naive multi-view training의 실패 원인을 데이터 분포 관점에서 설명"
+        ],
+        "redFlags": [
+          "'두 시점을 concatenate하면 무조건 좋다'는 단순한 믿음",
+          "ego와 exo의 차이를 단순히 '카메라 위치 차이'로만 설명하는 경우",
+          "Ego-Exo4D 이전의 연구 흐름을 모르는 경우"
+        ],
+        "interviewQuestions": [
+          "Ego-Exo4D 데이터셋에서 synchronized ego-exo pair를 훈련 데이터로 사용할 때 어떤 augmentation 전략이 적절한가?",
+          "같은 활동을 ego와 exo 두 시점으로 촬영한 경우, 모델이 두 시점 모두에서 잘 동작하도록 훈련하려면 어떤 loss function을 설계해야 하는가?",
+          "EPIC-Kitchens에서 사전학습한 모델을 Ego-Exo4D의 exo 비디오에 파인튜닝할 때 예상되는 문제는 무엇인가?"
+        ],
+        "masteryVsFamiliar": "표면적 이해: '1인칭은 착용 카메라, 3인칭은 고정 카메라.' 깊은 이해: 두 시점의 정보 특성이 태스크 유형에 따라 다르게 유용하며, 단순 fusion이 실패하는 이유가 분포 차이와 최적화 목표의 충돌에 있음을 설명하고, 이를 극복하기 위한 구조적 접근(대응점 학습, 적응적 융합, 자기지도 정렬)을 제안할 수 있는 수준."
+      },
+      "keyTakeaways": [
+        {"title": "정보 상호보완성", "content": "Ego는 손-물체 상호작용, exo는 전신 자세와 환경 — 두 시점은 정보가 다르며 보완적이다."},
+        {"title": "도메인 갭의 존재", "content": "알고리즘은 exo에서는 잘 작동하지만 ego에서는 성능이 낮다 — 데이터 분포 편향 때문이다."},
+        {"title": "Naive Fusion의 함정", "content": "두 시점 데이터를 단순히 합쳐 훈련하면 오히려 단일 시점보다 성능이 낮아질 수 있다."},
+        {"title": "Ego-Exo4D가 표준", "content": "1,286시간, 740명, 13개 도시의 synchronized 멀티뷰 데이터셋이 2024년 이후 표준 벤치마크다."},
+        {"title": "역사적 맥락", "content": "CharadesEgo(2016) → Assembly101(2022) → Ego-Exo4D(2024) 순으로 규모와 다양성이 급격히 성장했다."},
+        {"title": "구조적 정렬의 필요성", "content": "의미 있는 ego-exo 융합을 위해서는 단순 데이터 병합이 아닌 대응점 학습과 적응적 정렬이 필요하다."},
+        {"title": "8개 응용 도메인", "content": "행동 인식, 신원 인식, 추적, 합성, 어포던스, 지식 전이, 공동 표현, 로보틱스/VR/VLM 응용까지 확장됐다."}
+      ]
+    },
+    {
+      "number": 2,
+      "emoji": "📊",
+      "title": "Datasets and Benchmarks",
+      "titleKr": "데이터셋과 벤치마크",
+      "tldr": "Ego-Exo4D부터 EgoExoBench, EgoExoMem까지 — 연구의 기반이 되는 데이터셋과 평가 체계를 정밀하게 이해한다.",
+      "topics": ["Ego-Exo4D 상세 분석", "EgoExoBench", "EgoExoMem", "EPIC-Kitchens", "벤치마크 설계 원칙"],
+      "learningGoals": [
+        "Ego-Exo4D의 캡처 설정, 규모, 어노테이션 체계를 정확히 설명할 수 있다",
+        "EgoExoBench의 11개 서브태스크 체계를 이해하고 각 태스크가 측정하는 능력을 설명할 수 있다",
+        "EgoExoMem이 기존 벤치마크와 다른 점과 현재 MLLM의 성능 수준(55.3%)을 설명할 수 있다",
+        "새로운 벤치마크를 설계할 때 고려해야 할 원칙들을 논할 수 있다"
+      ],
+      "overview": "좋은 연구는 좋은 측정에서 시작된다. Ego-exo 연구의 발전은 항상 새로운 데이터셋과 벤치마크의 등장과 함께했다. 어떤 능력을 측정할 것인가, 어떻게 수집할 것인가, 인간 성능 수준은 어디인가 — 이 질문들에 대한 답이 곧 연구 방향을 결정한다.\n\n2024-2026년 동안 ego-exo 벤치마크는 **행동 인식 중심**에서 **크로스뷰 이해 중심**으로 패러다임이 이동했다. 단순히 '이 비디오에서 무슨 행동을 하는가?'를 묻는 것에서, '두 시점을 연결해서 이해할 수 있는가?', '한 시점에서 본 것을 다른 시점에서 기억할 수 있는가?'로 진화했다. 이 진화가 현재 모델들의 근본적 한계를 드러내고 있다.\n\n특히 중요한 발견은 현재 최강 MLLM인 Gemini 2.5 Flash가 EgoExoMem에서 55.3%만 달성한다는 사실이다 (EgoExoMem, [arXiv:2605.18734](https://arxiv.org/html/2605.18734)). 텍스트만 쓰는 GPT-4o는 약 45%로, 비디오 입력을 더해도 10%p밖에 향상되지 않는다 — 이는 현재 모델들이 비디오의 크로스뷰 정보를 거의 활용하지 못하고 있음을 의미한다.",
+      "sections": [
+        {
+          "title": "Ego-Exo4D: 현장의 표준 (CVPR 2024 Oral)",
+          "content": "**Ego-Exo4D** ([arXiv:2311.18259](https://arxiv.org/abs/2311.18259))는 Kristen Grauman 등이 CVPR 2024에서 발표한 대규모 멀티뷰 데이터셋이다. 규모: **1,286시간**, **740명의 참여자**, **13개 도시**, **123개 자연 장면 컨텍스트**.\n\n캡처 설정:\n\n- **Ego 카메라**: Meta Project Aria 안경 (8MP RGB + 2개의 SLAM 카메라 + IMU)\n- **Exo 카메라**: 장면당 4~5대의 시간 동기화된 GoPro (캘리브레이션 완료)\n- **오디오**: 모든 카메라에 동기화된 오디오 스트림\n\n활동 커버리지: 피아노/기타 연주, 농구/배드민턴, 요리, 자전거/오토바이 수리, 댄스 등 **기술 기반 인간 활동(skilled human activities)** 중심. 이는 의도적 선택이다 — 기술 수준이 다른 숙련자와 초심자를 비교하는 **능숙도 추정(proficiency estimation)** 연구가 가능하기 때문이다.\n\n어노테이션 레이어: (1) 타임스탬프된 Keystep 어노테이션 (2) 자유 형식 내레이션 (3) 능숙도 평가 (4) 관계 어노테이션 (ego-exo 의미적 대응). 멀티레이어 어노테이션이 다양한 태스크 연구를 가능하게 한다.\n\n| 속성 | 값 |\n|---|---|\n| 총 시간 | 1,286 시간 |\n| 참여자 수 | 740 명 |\n| 도시 수 | 13 개 |\n| 장면 컨텍스트 | 123 개 |\n| Exo 카메라/장면 | 4~5 대 |\n| 캡처 기기 | Aria + GoPro |"
+        },
+        {
+          "title": "EgoExoBench: 크로스뷰 이해의 첫 체계적 벤치마크 (NeurIPS 2025)",
+          "content": "**EgoExoBench** ([arXiv:2507.18342](https://arxiv.org/abs/2507.18342))는 NeurIPS 2025에 발표된 종합 벤치마크다. **7,330개의 다지선다형 QA 쌍**을 **11개 서브태스크**에 걸쳐 구성한다. 이 11개 태스크는 세 가지 핵심 과제로 묶인다:\n\n**1. Ego-Exo 의미적 관계 (Semantic Relation)**\n\n- 두 시점에서 같은 물체/행동/사람을 인식하는 능력\n- 예: '이 ego 클립에서 보이는 손이 잡고 있는 물체가 exo 클립의 어디에 있는가?'\n\n**2. 뷰 전환 (View Transition)**\n\n- 한 시점에서 관찰한 것을 다른 시점으로 '번역'하는 능력\n- 예: 'exo에서 보이는 행동을 ego에서 보면 어떻게 보일 것인가?'\n\n**3. 시간적 추론 (Temporal Reasoning)**\n\n- 두 시점 비디오 스트림에서 사건의 시간적 순서를 이해하는 능력\n- 예: 'ego에서 X 동작이 일어난 후 exo에서 어떤 변화가 관찰되는가?'\n\n이 벤치마크의 핵심 가치는 **기존 MLLM들이 이 태스크들에서 얼마나 실패하는지**를 체계적으로 드러낸다는 데 있다. 인간 정확도와 최고 모델 간의 격차가 크며, 이는 크로스뷰 이해가 아직 해결되지 않은 문제임을 공식화한다."
+        },
+        {
+          "title": "EgoExoMem: 크로스뷰 메모리 추론 (May 2026)",
+          "content": "**EgoExoMem** ([arXiv:2605.18734](https://arxiv.org/html/2605.18734))은 2026년 5월에 공개된 최신 벤치마크로, 동기화된 ego-exo 비디오 위에서의 **크로스뷰 메모리 추론**을 최초로 평가한다.\n\n규모: **2,600개의 객관식 문항**, **8가지 QA 유형**.\n\n8가지 QA 유형:\n\n1. **Object Memory (Ego→Exo)**: ego에서 관찰한 물체를 exo에서 찾기\n2. **Object Memory (Exo→Ego)**: exo에서 관찰한 물체를 ego에서 찾기\n3. **Action Memory (Ego→Exo)**: ego 행동을 exo 관점에서 설명\n4. **Action Memory (Exo→Ego)**: exo 행동을 ego 관점에서 설명\n5. **Spatial Memory**: 한 시점에서 관찰한 공간 관계를 다른 시점에서 추론\n6. **Temporal Memory**: 두 시점의 시간적 사건 순서 통합\n7. **Identity Memory**: 두 시점에서 같은 사람/물체 식별\n8. **Dual-View Required**: 어느 하나의 시점으로만은 답할 수 없는 문항\n\n**핵심 결과**: 최강 MLLM인 Gemini 2.5 Flash가 **55.3%**에 그친다. Text-only GPT-4o는 ~45%. 비디오 추가 이득이 10%p에 불과하다는 것은 모델이 비디오의 크로스뷰 정보를 거의 활용하지 못하고 있음을 시사한다. 논문이 제안한 E2-Select 프레임 선택 방법은 58.2%를 달성하지만, 이는 독립형 MLLM이 아니라 프레임 선택 전략이다."
+        },
+        {
+          "title": "벤치마크 설계 원칙: 무엇이 좋은 평가를 만드는가",
+          "content": "새로운 벤치마크를 설계하거나 기존 벤치마크를 비판적으로 평가할 때, 다음 원칙들이 중요하다.\n\n**1. 뷰-불가결성(view-indispensability)**: 어느 시점 하나로 답할 수 없는 문항이 있어야 한다. EgoExoMem의 'Dual-View Required' 카테고리가 이것이다. 이 없으면 모델이 한 시점만 보고도 정답을 맞출 수 있어 진정한 크로스뷰 이해를 측정하지 못한다.\n\n**2. 단순 암기 방지**: 자주 등장하는 패턴이나 편향을 막아야 한다. 예를 들어 'exo 뷰에서는 항상 오른손을 사용한다'는 편향이 있으면 모델이 시점을 이해하지 않고 편향을 외워서 답할 수 있다.\n\n**3. 인간 기준선 제공**: 인간 정확도가 없으면 모델의 55.3%가 좋은 건지 나쁜 건지 판단할 수 없다. 상한(인간 성능)과 하한(무작위 선택)을 모두 제시해야 한다.\n\n**4. 세분화된 서브태스크**: 단일 정확도 점수는 어디서 실패하는지 알기 어렵다. EgoExoBench의 11개 서브태스크나 EgoExoMem의 8개 QA 유형처럼 세분화해야 모델의 능력 프로필을 정확히 파악할 수 있다.\n\n**5. 난이도 계층화**: 쉬운 문항(단일 시점으로 답 가능)부터 어려운 문항(양 시점 통합 필요)까지 계층화해야 모델의 발전을 세밀하게 추적할 수 있다."
+        }
+      ],
+      "analogy": {
+        "title": "의대 시험의 진화: 암기에서 임상 추론으로",
+        "content": "초기 ego-exo 벤치마크(예: 행동 인식)는 의대 시험에서 '해부학 용어 암기' 단계와 같다. 정해진 정답이 있고, 외우면 맞출 수 있다. 성능 향상도 더 많은 데이터로 더 잘 외우는 것에 의존한다.\n\nEgoExoBench와 EgoExoMem은 '임상 케이스 추론' 단계에 해당한다. 환자(비디오)를 보고 여러 정보원(두 시점)을 통합해 진단(정답)을 내려야 한다. 이 단계에서는 암기만으로 부족하다 — 추론 능력, 여러 정보를 연결하는 능력, 불확실성 처리 능력이 필요하다.\n\n현재 최강 AI 모델이 이 '임상 추론' 시험에서 55%를 받는다는 것은 의대생이 임상 실습에서 절반도 못 맞춘다는 것과 같다. 아직 갈 길이 멀다는 명확한 신호이며, 동시에 이 문제를 해결하는 연구가 큰 임팩트를 가질 수 있음을 의미한다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "EgoExoMem 벤치마크에서 MLLM을 평가하는 간단한 프레임워크 코드다. 실제 평가 파이프라인의 구조를 이해하는 데 도움이 된다.",
+        "code": "import json\nfrom pathlib import Path\nfrom typing import Literal\n\nQAType = Literal[\n    \"object_ego2exo\", \"object_exo2ego\",\n    \"action_ego2exo\", \"action_exo2ego\",\n    \"spatial\", \"temporal\", \"identity\", \"dual_view\"\n]\n\nclass EgoExoMemEvaluator:\n    def __init__(self, benchmark_path: str):\n        with open(benchmark_path) as f:\n            self.data = json.load(f)\n        # qa_type별 정답 추적\n        self.results: dict[QAType, list[bool]] = {qt: [] for qt in QAType.__args__}\n\n    def evaluate_sample(self, sample: dict, model_answer: str) -> bool:\n        \"\"\"단일 샘플의 정답 여부를 반환하고 누적 추적.\"\"\"\n        correct = (model_answer.strip().upper() == sample[\"answer\"].strip().upper())\n        qa_type = sample[\"qa_type\"]\n        self.results[qa_type].append(correct)\n        return correct\n\n    def summary(self) -> dict:\n        \"\"\"QA 유형별 정확도와 전체 정확도를 반환.\"\"\"\n        report = {}\n        all_scores = []\n        for qa_type, scores in self.results.items():\n            if not scores:\n                continue\n            acc = sum(scores) / len(scores)\n            report[qa_type] = {\"accuracy\": acc, \"n\": len(scores)}\n            all_scores.extend(scores)\n        report[\"overall\"] = sum(all_scores) / len(all_scores) if all_scores else 0.0\n        return report\n\n# 사용 예시\n# evaluator = EgoExoMemEvaluator(\"egoexomem_benchmark.json\")\n# for sample in evaluator.data[\"samples\"]:\n#     pred = model.predict(sample[\"ego_video\"], sample[\"exo_video\"], sample[\"question\"])\n#     evaluator.evaluate_sample(sample, pred)\n# print(evaluator.summary())\n",
+        "walkthrough": "핵심은 `qa_type`별로 정확도를 분리 추적하는 것이다. 전체 정확도가 55%더라도 `dual_view` 유형에서는 40%이고 `identity` 유형에서는 70%일 수 있다 — 이 세분화된 분석이 모델의 실제 능력 프로필을 드러내고 개선 방향을 제시한다."
+      },
+      "industryEvaluation": {
+        "overview": "연구자 면접이나 논문 심사에서 데이터셋 지식은 기본 중의 기본이다. 단순히 이름만 아는 수준에서, 설계 의도와 한계를 파악하는 수준으로 올라가야 한다.",
+        "whatEngineersLookFor": [
+          "Ego-Exo4D의 규모와 캡처 설정을 정확히 인용할 수 있는 능력",
+          "EgoExoBench와 EgoExoMem이 측정하는 능력의 차이를 설명",
+          "현재 SOTA 모델의 성능 수준과 인간 성능 간의 격차를 수치로 인식",
+          "벤치마크의 설계 한계를 비판적으로 분석하는 능력 (예: self-certification 편향)"
+        ],
+        "redFlags": [
+          "데이터셋을 이름으로만 알고 규모나 구조를 모르는 경우",
+          "벤치마크 성능 수치를 맥락 없이 인용 (인간 기준선과의 비교 없이 55.3%가 좋다고 생각)",
+          "모든 벤치마크를 동일하게 취급하며 설계 원칙을 무시"
+        ],
+        "interviewQuestions": [
+          "Ego-Exo4D의 proficiency estimation 태스크란 무엇이고, 왜 이것이 기존 행동 인식과 다른가?",
+          "EgoExoMem의 'Dual-View Required' 카테고리가 존재하는 이유와, 이 카테고리에서 모델 성능이 낮은 이유를 설명하라.",
+          "새로운 ego-exo 벤치마크를 설계한다면 어떤 능력을 측정할 것인가? 기존 벤치마크와의 차별점은?"
+        ],
+        "masteryVsFamiliar": "표면적 이해: 데이터셋의 이름과 규모를 안다. 깊은 이해: 각 데이터셋의 설계 철학, 어노테이션 체계, 한계, 그리고 각 벤치마크 결과가 모델 능력에 대해 무엇을 말해주고 무엇을 말해주지 않는지를 비판적으로 분석한다."
+      },
+      "keyTakeaways": [
+        {"title": "Ego-Exo4D가 현장 표준", "content": "1,286시간, 740명, Aria + GoPro 리그 — 이 세팅이 2024년 이후 ego-exo 연구의 기준이다."},
+        {"title": "벤치마크의 진화", "content": "행동 인식 → 크로스뷰 의미 추론(EgoExoBench) → 크로스뷰 메모리 추론(EgoExoMem)으로 패러다임 이동."},
+        {"title": "55.3%의 의미", "content": "최강 MLLM도 EgoExoMem에서 55.3%에 그친다 — 크로스뷰 이해는 아직 근본적으로 해결되지 않은 문제다."},
+        {"title": "비디오 입력의 미미한 기여", "content": "텍스트-only GPT-4o 대비 비디오 추가 이득이 10%p에 불과 — 모델이 비디오 크로스뷰 정보를 충분히 활용하지 못한다."},
+        {"title": "뷰-불가결성이 핵심 설계 원칙", "content": "한 시점만으로는 답할 수 없는 문항이 있어야 진정한 크로스뷰 이해를 측정할 수 있다."},
+        {"title": "EgoExoBench의 3대 과제", "content": "의미적 관계, 뷰 전환, 시간적 추론 — 11개 서브태스크로 크로스뷰 이해를 체계적으로 분해."}
+      ]
+    },
+    {
+      "number": 3,
+      "emoji": "🔗",
+      "title": "Cross-View Correspondence",
+      "titleKr": "크로스뷰 대응점 학습",
+      "tldr": "두 시점 간의 의미적·공간적 대응을 학습하는 방법들과 CVPR 2026의 사이클 일관성 접근법을 깊이 이해한다.",
+      "topics": ["픽셀-레벨 대응 vs. 의미적 대응", "자기지도 대응 학습", "CCMP (CVPR 2026)", "테스트 타임 학습"],
+      "learningGoals": [
+        "크로스뷰 대응의 정의와 왜 어려운지를 설명할 수 있다",
+        "사이클 일관성(cycle consistency)을 자기지도 신호로 사용하는 방식을 수식과 함께 설명할 수 있다",
+        "CCMP 논문의 핵심 아이디어와 테스트 타임 학습(TTT) 적용을 이해한다",
+        "대응점 학습의 평가 지표와 한계를 파악한다"
+      ],
+      "overview": "두 시점의 비디오가 있을 때, '저 exo 화면의 저 사람 손이 ego 화면의 어느 부분에 해당하는가?'를 알아내는 것이 **크로스뷰 대응(cross-view correspondence)** 문제다. 이는 ego-exo 융합의 가장 기본적인 하위 문제로, 이를 해결하지 않고서는 의미 있는 멀티뷰 학습이 불가능하다.\n\n크로스뷰 대응은 두 층위에서 정의된다. **픽셀-레벨 대응**은 두 이미지에서 물리적으로 같은 3D 점에 해당하는 픽셀 쌍을 찾는 것이다 — 카메라 파라미터와 깊이 정보가 있으면 기하학적으로 계산 가능하다. **의미적 대응**은 '같은 의미를 가진' 패치나 객체를 매칭하는 것이다 — '저 ego의 손'과 '저 exo의 손'이 같은 손이라는 것을 의미적으로 이해해야 한다.\n\n**CVPR 2026**의 주목할 성과 중 하나는 바로 이 대응 학습 문제에 대한 자기지도 접근법인 **CCMP(Cycle-Consistent Mask Prediction)** ([arXiv:2602.18996](https://arxiv.org/abs/2602.18996))다. 레이블 없이 사이클 일관성을 자기지도 신호로 활용하고, 테스트 타임에도 적응할 수 있는 방법을 제안한다.",
+      "sections": [
+        {
+          "title": "크로스뷰 대응: 문제 정의와 어려움",
+          "content": "**크로스뷰 대응 문제**는 ego 이미지 $I_e$와 exo 이미지 $I_x$가 주어졌을 때, 특정 ego 영역 $R_e$에 해당하는 exo 영역 $R_x$를 찾는 것으로 형식화할 수 있다:\n\n$$f_{\\text{corr}}: (I_e, R_e, I_x) \\to R_x$$\n\n이 문제가 어려운 이유는 다층적이다. 첫째, **극단적 뷰포인트 변화**: 같은 손이 ego에서는 클로즈업으로, exo에서는 작은 영역으로 보인다. 크기, 방향, 배경이 완전히 다르다. 둘째, **가려짐(occlusion)**: 한 시점에서 보이는 물체가 다른 시점에서는 가려질 수 있다. 셋째, **레이블 획득의 어려움**: 픽셀 대응 어노테이션은 인간에게도 어렵고 시간이 많이 든다. 이런 이유로 자기지도 방법이 중요하다.\n\n기존 접근법들은 주로 카메라 파라미터를 이용한 **기하학적 대응 계산**에 의존했다. Ego-Exo4D의 캘리브레이션 데이터가 있으면 에피폴라 기하학을 통해 이론적 대응을 구할 수 있다. 하지만 이 방법은 정적 장면에서만 잘 작동하며, 움직이는 물체(손, 도구)에서는 깊이 추정 오차로 인해 부정확하다."
+        },
+        {
+          "title": "CCMP: 사이클 일관성으로 레이블 없이 학습 (CVPR 2026)",
+          "content": "**CCMP(Learning Cross-View Object Correspondence via Cycle-Consistent Mask Prediction)** ([arXiv:2602.18996](https://arxiv.org/abs/2602.18996), CVPR 2026)는 레이블 없이 ego-exo 간 객체 대응을 학습하는 자기지도 방법이다. 코드: [github.com/shannany0606/CCMP](https://github.com/shannany0606/CCMP).\n\n**핵심 아이디어**: 순방향과 역방향 예측의 사이클 일관성을 자기지도 신호로 사용한다.\n\n1. **순방향(ego → exo)**: ego 소스 마스크 $M_e$를 잠재 표현 $z$로 인코딩해 exo 이미지에서 해당 영역 $\\hat{M}_x$를 예측한다\n2. **역방향(exo → ego)**: 예측된 타깃 마스크 $\\hat{M}_x$를 다시 ego 이미지로 투영해 원래 소스 마스크 $M_e$를 재구성한다\n3. **사이클 손실(cycle loss)**: 재구성된 마스크 $\\hat{M}_e$가 원래 $M_e$와 일치해야 한다\n\n수식으로:\n\n$$\\mathcal{L}_{\\text{cycle}} = \\mathcal{D}(\\hat{M}_e, M_e) = \\mathcal{D}(\\text{Pred}(\\hat{M}_x, I_e), M_e)$$\n\n이 양방향 제약이 **레이블 없이도 강력한 자기지도 신호**를 제공한다. 만약 예측이 틀리면 역방향에서 원본 마스크를 재구성할 수 없으므로, 이 사이클 일관성 조건 자체가 올바른 대응을 학습하도록 강제한다."
+        },
+        {
+          "title": "테스트 타임 학습(Test-Time Training, TTT)으로 추론 시 적응",
+          "content": "CCMP의 또 다른 핵심 기여는 **테스트 타임 학습(TTT)**을 지원한다는 점이다. 일반적인 딥러닝 모델은 추론(inference) 단계에서 가중치를 고정시킨다. 하지만 새로운 ego-exo 장면이 훈련 분포와 크게 다를 경우, 고정된 모델은 잘 대응하지 못한다.\n\nCCMP는 추론 시에도 사이클 일관성 손실을 사용해 **어노테이션 없이 모델을 해당 테스트 장면에 맞게 미세 적응**할 수 있다. 이는 특히 도메인 이동(domain shift)이 큰 ego-exo 환경에서 유용하다.\n\nTTT의 핵심 장점:\n\n- **어노테이션 불필요**: 테스트 장면의 레이블이 없어도 사이클 일관성 신호만으로 적응 가능\n- **온라인 적응**: 각 테스트 샘플에 대해 순간적으로 적응 가능\n- **도메인 강건성**: 훈련/테스트 분포 차이를 실시간으로 보상\n\n단점도 있다: TTT는 추론 시간이 늘어난다. 각 테스트 샘플마다 최적화 단계를 거쳐야 하므로 실시간 응용에는 계산 비용이 문제가 될 수 있다."
+        },
+        {
+          "title": "대응 학습의 평가와 한계",
+          "content": "크로스뷰 대응의 성능을 어떻게 측정하는가? 일반적으로 사용되는 평가 지표:\n\n**IoU(Intersection over Union)**: 예측 마스크 $\\hat{M}_x$와 실제 타깃 마스크 $M_x$의 겹침 비율. $\\text{IoU} = \\frac{|\\hat{M}_x \\cap M_x|}{|\\hat{M}_x \\cup M_x|}$\n\n**PCK(Percentage of Correct Keypoints)**: 예측 키포인트가 실제 키포인트로부터 특정 거리 내에 있는 비율.\n\n**Consistency@K**: 사이클 일관성 메트릭 — ego→exo→ego 라운드트립 후 원래 위치에서 K 픽셀 이내로 돌아오는 비율.\n\n현재 방법들의 한계:\n\n- **정적 객체에 편향**: 대부분의 방법이 정적 또는 느리게 움직이는 객체에서는 잘 작동하지만, 빠른 손 움직임이나 도구 사용 시 성능이 급감한다\n- **의미적 대응 vs. 기하적 대응의 혼재**: 같은 '손'이지만 다른 시점에서 완전히 다른 포즈로 보일 때, 픽셀 대응이 의미론적으로 얼마나 유효한지 불명확하다\n- **시간적 확장**: 대부분의 방법이 단일 프레임 쌍에서 작동하며 시간적 일관성을 보장하지 않는다"
+        }
+      ],
+      "analogy": {
+        "title": "통역사의 일: 두 언어 간의 의미 보존",
+        "content": "크로스뷰 대응 학습은 통역 작업과 비슷하다. 한국어 문장과 영어 문장이 있을 때 '저 한국어 단어가 영어의 어느 단어에 해당하는가?'를 찾는 것처럼, ego 영역과 exo 영역 간의 의미적 매핑을 찾는다.\n\n좋은 통역사는 단어를 직역(픽셀-레벨 대응)하지 않는다 — 의미를 번역(의미적 대응)한다. '손이 냄비를 잡고 있다'는 ego의 클로즈업 장면이 exo에서는 '요리사가 조리대 앞에 서서 냄비를 조작하고 있다'로 보인다. 단어(픽셀)를 직역하면 맞지 않지만, 의미(행동의 의미)를 연결하면 맞다.\n\nCCMP의 사이클 일관성은 '번역한 문장을 다시 원래 언어로 번역했을 때 원문과 같아야 한다'는 백번역(back-translation)과 정확히 같은 원리다. NLP에서 비지도 기계 번역에 성공적으로 적용된 사이클 일관성 원리가 이제 비전에서 ego-exo 대응으로 확장된 것이다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "CCMP의 핵심 아이디어인 사이클 일관성 손실을 구현하는 간단한 예시다. PyTorch로 작성되었으며 실제 CCMP 구현의 핵심 구조를 반영한다.",
+        "code": "import torch\nimport torch.nn as nn\nimport torch.nn.functional as F\n\nclass CycleConsistencyLoss(nn.Module):\n    \"\"\"CCMP의 사이클 일관성 손실 (CVPR 2026, arXiv:2602.18996).\"\"\"\n\n    def __init__(self, loss_type: str = \"bce\"):\n        super().__init__()\n        self.loss_type = loss_type\n\n    def forward(\n        self,\n        src_mask: torch.Tensor,   # [B, 1, H, W] ego 소스 마스크\n        pred_tgt: torch.Tensor,   # [B, 1, H, W] 예측된 exo 타깃 마스크\n        recon_src: torch.Tensor,  # [B, 1, H, W] 재구성된 ego 마스크\n    ) -> torch.Tensor:\n        \"\"\"순방향: src → pred_tgt, 역방향: pred_tgt → recon_src.\"\"\"\n        # 사이클 일관성: 재구성된 마스크가 원본과 일치해야 함\n        if self.loss_type == \"bce\":\n            cycle_loss = F.binary_cross_entropy_with_logits(\n                recon_src, src_mask.float()\n            )\n        elif self.loss_type == \"dice\":\n            recon_prob = torch.sigmoid(recon_src)\n            intersection = (recon_prob * src_mask).sum(dim=(2, 3))\n            dice = 1 - (2 * intersection + 1) / (\n                recon_prob.sum(dim=(2,3)) + src_mask.sum(dim=(2,3)) + 1\n            )\n            cycle_loss = dice.mean()\n        return cycle_loss\n\n\nclass CCMPForwardPass(nn.Module):\n    def __init__(self, encoder, predictor):\n        super().__init__()\n        self.encoder = encoder     # 마스크를 잠재 표현으로 인코딩\n        self.predictor = predictor  # 소스 뷰 특징 + 잠재 표현 → 타깃 마스크\n        self.cycle_loss = CycleConsistencyLoss(\"dice\")\n\n    def forward(self, ego_feat, exo_feat, ego_mask):\n        # 순방향: ego 마스크 → exo 마스크 예측\n        latent_z = self.encoder(ego_mask)\n        pred_exo_mask = self.predictor(exo_feat, latent_z)\n\n        # 역방향: 예측된 exo 마스크 → ego 마스크 재구성\n        latent_z_recon = self.encoder(pred_exo_mask.detach().sigmoid())\n        recon_ego_mask = self.predictor(ego_feat, latent_z_recon)\n\n        loss = self.cycle_loss(ego_mask, pred_exo_mask, recon_ego_mask)\n        return pred_exo_mask, loss\n",
+        "walkthrough": "핵심은 두 번의 `predictor` 호출이다: 첫 번째는 ego→exo 방향, 두 번째는 다시 exo→ego 방향. `recon_ego_mask`와 원래 `ego_mask`의 차이가 사이클 손실이다. `pred_exo_mask.detach()`를 사용해 역방향 그래디언트가 순방향 예측을 불안정하게 만들지 않도록 주의한다."
+      },
+      "industryEvaluation": {
+        "overview": "크로스뷰 대응 학습은 ego-exo 연구의 핵심 하위 문제로, 기술적 깊이가 중요하다. 사이클 일관성과 TTT는 컴퓨터 비전에서 넓게 쓰이는 원리이므로 이를 ego-exo에 어떻게 적용하는지 설명할 수 있어야 한다.",
+        "whatEngineersLookFor": [
+          "사이클 일관성의 수학적 정의와 자기지도 신호로의 활용 방식",
+          "TTT가 필요한 시나리오와 그 계산 비용 상의 트레이드오프",
+          "픽셀-레벨 대응과 의미적 대응의 차이와 각각의 활용 케이스",
+          "대응 학습 평가 지표(IoU, PCK, Consistency@K)의 의미와 한계"
+        ],
+        "redFlags": [
+          "사이클 일관성을 단순히 '왕복 일치'라고만 설명하고 수식이나 구현 디테일을 모르는 경우",
+          "TTT가 무엇인지 모르거나 추론 시간 비용 문제를 인식하지 못하는 경우",
+          "대응 학습을 '오광류(optical flow) 추정과 같다'고만 설명하는 경우"
+        ],
+        "interviewQuestions": [
+          "CCMP의 TTT에서 사이클 일관성 손실만으로 충분한가, 아니면 추가 정규화가 필요한가? 왜?",
+          "Ego-Exo4D의 캘리브레이션 데이터가 있을 때 기하학적 대응과 CCMP 같은 학습 기반 대응 중 어떤 것이 언제 더 적합한가?",
+          "크로스뷰 객체 대응을 크로스뷰 행동 대응으로 확장하려면 어떤 추가 요소가 필요한가?"
+        ],
+        "masteryVsFamiliar": "표면적 이해: '사이클 일관성으로 레이블 없이 대응을 학습한다.' 깊은 이해: 사이클 손실의 수식을 쓸 수 있고, TTT의 계산 비용과 이점을 정량적으로 분석하며, 이 방법이 정적 객체에서는 잘 작동하지만 빠른 움직임에서 어려운 이유와 이를 해결하기 위한 방향(시간적 일관성 추가, 모션 보상 등)을 제안할 수 있다."
+      },
+      "keyTakeaways": [
+        {"title": "대응 학습이 융합의 전제", "content": "어느 ego 영역이 어느 exo 영역에 해당하는지 모르면 의미 있는 멀티뷰 학습이 불가능하다."},
+        {"title": "사이클 일관성 = 레이블 없는 자기지도", "content": "ego→exo→ego 라운드트립에서 원본 마스크를 재구성하는 일관성이 강력한 자기지도 신호다."},
+        {"title": "CCMP (CVPR 2026)", "content": "잠재 표현 기반 마스크 예측 + 사이클 손실 + TTT — 레이블 없이 ego-exo 객체 대응을 학습한다."},
+        {"title": "TTT: 추론 시 적응", "content": "어노테이션 없이 테스트 샘플에 모델을 실시간 적응시키는 TTT는 도메인 이동이 큰 ego-exo에 특히 유용하다."},
+        {"title": "의미적 대응 ≠ 픽셀 대응", "content": "같은 물리적 점을 찾는 것(기하학적)과 같은 의미를 가진 영역을 찾는 것(의미적)은 다른 문제다."},
+        {"title": "시간적 확장이 미해결 과제", "content": "대부분의 대응 방법이 단일 프레임 쌍에서 작동하며, 시간적으로 일관된 크로스뷰 대응은 열린 문제다."}
+      ]
+    },
+    {
+      "number": 4,
+      "emoji": "⚠️",
+      "title": "Why Naive Fusion Fails",
+      "titleKr": "왜 단순 융합은 실패하는가",
+      "tldr": "두 시점을 단순히 합쳐 훈련하면 오히려 성능이 낮아지는 현상을 이해하고, 그 근본 원인과 구조적 해결 방향을 파악한다.",
+      "topics": ["Naive Multi-View Training의 실패", "EgoExo-Con 분석", "도메인 갭과 분포 충돌", "구조적 정렬의 필요성"],
+      "learningGoals": [
+        "Naive dual-viewpoint 훈련이 single-viewpoint 대비 성능이 낮은 현상을 구체적 수치로 설명할 수 있다",
+        "이 실패의 근본 원인을 최적화 목표 충돌과 분포 차이 관점에서 분석할 수 있다",
+        "EgoExo-Con(NeurIPS 2025) 논문의 실험 설계와 핵심 발견을 설명할 수 있다",
+        "이 문제를 해결하기 위한 방향 세 가지를 제안할 수 있다"
+      ],
+      "overview": "Ego-exo 연구에서 가장 중요하고 반직관적인 발견 중 하나는 **단순히 두 시점 데이터를 합쳐 훈련하면 오히려 성능이 나빠진다**는 것이다. 직관적으로는 더 많은 데이터와 더 다양한 시점이 도움이 될 것 같지만, 실험 결과는 정반대다.\n\n**EgoExo-Con** ([arXiv:2510.26113](https://arxiv.org/html/2510.26113), NeurIPS 2025)은 이 현상을 체계적으로 측정했다. CharadesEgo의 G-ExoEgo 일관성 메트릭에서 TimeSuite 모델의 결과:\n\n| 훈련 설정 | G-ExoEgo 점수 |\n|---|---|\n| Exo-only | 59.5% |\n| Dual-viewpoint (EgoExo) | 51.3% |\n| **갭** | **-8.1%** |\n\n단일 exo 뷰만으로 훈련한 것보다 ego와 exo를 함께 훈련했을 때 8.1%p가 낮다. 이 패턴은 테스트한 4개 모델 모두에서 관찰됐다. 이 발견은 **뷰 융합이 공짜 점심(free lunch)이 아니라는 것**을 명확히 한다 — 구조적 정렬과 의미 있는 크로스뷰 연결 없이는 두 시점이 서로를 방해한다.",
+      "sections": [
+        {
+          "title": "실패의 해부: 무엇이 일어나는가",
+          "content": "Naive dual-viewpoint 훈련이 실패하는 메커니즘을 이해하려면 최적화 과정을 들여다봐야 한다. 모델이 ego 비디오와 exo 비디오를 함께 받아 각각을 이해하도록 훈련된다고 할 때, 문제는 두 분포의 **근본적 이질성**에서 시작한다.\n\n**분포 충돌(distribution conflict)**: Ego 비디오의 통계적 특성(모션 패턴, 배경 분포, 객체 크기 분포)이 exo와 다르다. 모델은 두 분포를 동시에 설명해야 하므로 어느 쪽에도 최적화하지 못한 절충안으로 수렴한다.\n\n**특징 공간 오염(feature space contamination)**: 공유된 인코더가 ego와 exo의 특징을 같은 공간에 매핑하려 한다. 하지만 두 뷰의 같은 활동이 시각적으로 매우 다르게 보이기 때문에, 활동에 불변하면서도 뷰에 불변한 표현을 학습하기가 극히 어렵다.\n\n**그래디언트 충돌(gradient conflict)**: 두 뷰에서 온 손실 그래디언트가 파라미터 업데이트 방향을 놓고 충돌한다. Ego 샘플은 특정 방향으로 가중치를 밀고, exo 샘플은 다른 방향으로 민다. 이 충돌이 수렴을 방해한다.\n\nMTL(Multi-Task Learning) 연구에서 이미 알려진 **negative transfer** 현상과 동일하다. 서로 관련은 있지만 분포가 다른 작업들을 단순 공동 훈련하면 각 작업을 독립적으로 훈련할 때보다 성능이 낮아질 수 있다."
+        },
+        {
+          "title": "EgoExo-Con: 크로스뷰 일관성의 체계적 측정 (NeurIPS 2025)",
+          "content": "**EgoExo-Con** ([arXiv:2510.26113](https://arxiv.org/html/2510.26113))은 NeurIPS 2025에서 발표된 크로스뷰 일관성 벤치마크 및 분석 논문이다. 핵심 기여는 **G-ExoEgo** 메트릭의 도입이다 — 같은 활동을 ego와 exo 두 시점에서 쿼리했을 때 모델의 응답이 얼마나 일관된지를 측정한다.\n\n실험 대상 모델: VideoChat2, Video-LLaMA2, TimeChat, TimeSuite (총 4개의 대표적 비디오 LLM).\n\n공통 발견:\n\n- 모든 모델에서 dual-viewpoint 훈련 < exo-only 훈련\n- 특히 ego 비디오에서 쿼리할 때 성능 저하가 심함\n- 모델이 exo 분포에 편향되어 있어 ego 쿼리에 적응하지 못함\n\n이 결과가 가진 의미:\n\n1. **단순 데이터 증가로는 해결 안 됨**: 더 많은 ego 데이터를 추가하더라도 naive 훈련 방식으로는 근본 문제를 해결하지 못한다\n2. **정렬이 핵심**: 두 뷰를 단순 concatenation이나 early/late fusion이 아닌, **구조적으로 정렬된 방식**으로 다뤄야 한다\n3. **뷰-특정 어댑터의 필요성**: 뷰에 따라 다른 프로세싱 경로나 어댑터가 필요할 수 있다"
+        },
+        {
+          "title": "Negative Transfer와 Multi-Task Learning 관점",
+          "content": "Ego-exo의 naive fusion 실패는 MTL의 **negative transfer** 문제와 동일한 메커니즘이다. MTL 연구([Standley et al., 2020](https://arxiv.org/abs/1905.07553))는 어떤 태스크를 함께 훈련해야 도움이 되고 어떤 것은 해가 되는지가 비자명하다는 것을 보였다.\n\nEgo-exo 맥락에서 두 뷰는 '같은 태스크의 다른 데이터 소스'처럼 보이지만, 실제로는 서로 다른 분포를 가진 두 도메인이다. 이를 단순히 병합하는 것은 두 도메인을 동시에 학습하면서 어느 쪽에도 최적화되지 않는 결과를 낳는다.\n\n**그래디언트 코사인 유사도** 분석:\n\n$$\\cos(\\nabla_{\\theta} \\mathcal{L}_{\\text{ego}}, \\nabla_{\\theta} \\mathcal{L}_{\\text{exo}}) < 0$$\n\n두 손실의 그래디언트가 반대 방향을 가리키는 경우(코사인 유사도가 음수), 두 태스크는 서로 방해한다. Ego-exo에서 이 값이 얼마나 음수인지, 그리고 어느 레이어에서 가장 충돌이 심한지 분석하는 것이 흥미로운 연구 방향이다."
+        },
+        {
+          "title": "구조적 해결 방향 세 가지",
+          "content": "Naive fusion의 실패를 극복하기 위한 세 가지 구조적 접근이 있다.\n\n**1. 크로스뷰 정렬 사전훈련(Cross-View Alignment Pre-training)**: 두 뷰를 동시에 넣기 전에 먼저 대응점을 학습하는 자기지도 사전훈련 단계를 추가한다. CCMP(챕터 3)처럼 두 뷰 간의 의미적 대응을 먼저 학습하면, 이후 파인튜닝에서 두 뷰가 더 잘 정렬된 특징 공간에서 만난다.\n\n**2. 뷰-어댑티브 아키텍처(View-Adaptive Architecture)**: 공유 인코더 + 뷰-특정 어댑터 구조를 사용한다. 공통 특징은 공유 인코더에서 추출하되, ego와 exo의 뷰-특정 통계를 다루는 어댑터 레이어를 별도로 둔다. 이는 두 뷰 간의 부정적 전이를 줄이면서 공통 표현을 활용한다.\n\n**3. 적응적 뷰 가중치(Adaptive View Weighting)**: 태스크와 입력에 따라 두 뷰의 기여를 동적으로 가중한다. 손 움직임을 물어보는 쿼리에는 ego 가중치를 높이고, 전신 자세를 물어보는 쿼리에는 exo 가중치를 높이는 메커니즘. Cross-attention을 통해 이를 학습으로 달성할 수 있다."
+        }
+      ],
+      "analogy": {
+        "title": "두 선생님의 동시 수업: 목소리가 겹치면 더 안 들린다",
+        "content": "Naive dual-viewpoint 훈련을 같은 교실에서 두 선생님이 동시에 다른 목소리로 수업하는 것에 비유할 수 있다. 두 선생님 모두 같은 과목(활동 이해)을 가르치지만, 한 명은 한국어로(ego 시점의 손-물체 관점), 다른 한 명은 영어로(exo 시점의 전신 관점) 말한다.\n\n학생(모델)은 두 목소리를 동시에 들으면서 양쪽 모두를 이해하려 한다. 결과적으로 어느 선생님도 제대로 이해하지 못하게 된다 — 두 언어를 동시에 처리하는 인지 부하가 너무 크다. 차라리 한 선생님의 수업만 들을 때 더 잘 이해한다.\n\n해결책은? 먼저 두 언어 간의 번역 사전(크로스뷰 대응 사전훈련)을 만들어 두거나, 각 선생님의 강점에 따라 번갈아 집중하는 체계(적응적 뷰 가중치)를 갖추거나, 두 목소리를 체계적으로 통합하는 통역사(크로스뷰 attention)를 두는 것이다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "Naive fusion과 구조적 정렬 fusion을 비교하는 간단한 실험 코드다. 그래디언트 충돌을 측정해 naive fusion의 문제를 시각화한다.",
+        "code": "import torch\nimport torch.nn as nn\nfrom torch.nn.functional import cosine_similarity\n\ndef measure_gradient_conflict(\n    model: nn.Module,\n    ego_batch: dict,\n    exo_batch: dict,\n    criterion: nn.Module,\n) -> float:\n    \"\"\"Ego 손실과 exo 손실의 그래디언트 코사인 유사도를 계산.\"\"\"\n    # Ego 손실 그래디언트\n    model.zero_grad()\n    ego_loss = criterion(model(ego_batch[\"video\"]), ego_batch[\"label\"])\n    ego_loss.backward()\n    ego_grad = torch.cat([\n        p.grad.flatten() for p in model.parameters() if p.grad is not None\n    ])\n\n    # Exo 손실 그래디언트\n    model.zero_grad()\n    exo_loss = criterion(model(exo_batch[\"video\"]), exo_batch[\"label\"])\n    exo_loss.backward()\n    exo_grad = torch.cat([\n        p.grad.flatten() for p in model.parameters() if p.grad is not None\n    ])\n\n    model.zero_grad()\n\n    # 코사인 유사도: 음수 = 충돌, 양수 = 협력\n    cos_sim = cosine_similarity(ego_grad.unsqueeze(0), exo_grad.unsqueeze(0))\n    return cos_sim.item()\n\n\nclass ViewAdaptiveFusion(nn.Module):\n    \"\"\"뷰-어댑티브 late fusion: 쿼리에 따라 뷰 가중치를 동적으로 결정.\"\"\"\n\n    def __init__(self, feat_dim: int = 768):\n        super().__init__()\n        # 쿼리 기반 뷰 가중치 예측\n        self.view_gate = nn.Sequential(\n            nn.Linear(feat_dim, 128),\n            nn.ReLU(),\n            nn.Linear(128, 2),   # [ego_weight, exo_weight]\n            nn.Softmax(dim=-1),\n        )\n\n    def forward(\n        self,\n        ego_feat: torch.Tensor,   # [B, feat_dim]\n        exo_feat: torch.Tensor,   # [B, feat_dim]\n        query_feat: torch.Tensor, # [B, feat_dim]\n    ) -> torch.Tensor:\n        # 쿼리에 따라 어느 뷰에 더 집중할지 결정\n        weights = self.view_gate(query_feat)  # [B, 2]\n        fused = weights[:, 0:1] * ego_feat + weights[:, 1:2] * exo_feat\n        return fused\n",
+        "walkthrough": "`measure_gradient_conflict`는 Naive fusion의 핵심 문제를 수치로 드러낸다. 코사인 유사도가 음수라면 두 뷰의 그래디언트가 충돌하고 있다는 증거다. `ViewAdaptiveFusion`은 쿼리의 의도에 따라 동적으로 뷰 가중치를 결정하는 간단한 게이팅 메커니즘이다."
+      },
+      "industryEvaluation": {
+        "overview": "이 현상을 알고 있는 것이 연구자로서의 실력을 드러내는 구분자다. 'Naive하게 두 뷰를 합치면 당연히 좋겠죠'라는 가정이 틀렸다는 것을 알고 그 이유를 설명할 수 있어야 한다.",
+        "whatEngineersLookFor": [
+          "EgoExo-Con의 8.1% 성능 저하 실험 결과를 인용하고 그 의미를 설명하는 능력",
+          "Negative transfer를 MTL 문헌의 맥락에서 이해하고 ego-exo에 적용하는 능력",
+          "그래디언트 충돌을 수식으로 표현하고 어느 레이어에서 발생할지 예측하는 능력",
+          "구조적 해결책(대응점 사전훈련, 뷰-어댑터, 적응적 가중치)을 구체적으로 제안"
+        ],
+        "redFlags": [
+          "'두 시점을 합치면 무조건 좋다'는 가정을 가진 경우",
+          "Negative transfer를 모르는 경우",
+          "해결책으로 단순히 '더 많은 데이터'나 '더 큰 모델'만 제안하는 경우"
+        ],
+        "interviewQuestions": [
+          "EgoExo-Con에서 관찰된 dual-viewpoint 훈련의 성능 저하를 gradient conflict 관점에서 설명하라.",
+          "이 negative transfer 문제를 해결하기 위해 architecture 설계 단계에서 어떤 선택을 해야 하는가?",
+          "Ego 데이터를 더 많이 추가하면 이 문제가 해결되는가? 왜 아닌가?"
+        ],
+        "masteryVsFamiliar": "표면적 이해: '두 뷰를 합치면 오히려 나빠질 수 있다.' 깊은 이해: 그래디언트 충돌과 분포 불일치의 수학적 메커니즘을 설명하고, 레이어별 충돌 강도를 측정하는 실험을 설계하며, 충돌을 최소화하는 구조(projection head, stop-gradient 등)를 제안할 수 있다."
+      },
+      "keyTakeaways": [
+        {"title": "Naive Fusion의 반직관적 실패", "content": "두 시점 데이터를 단순히 합치면 단일 시점보다 8.1%p 낮은 성능을 보일 수 있다 (EgoExo-Con, NeurIPS 2025)."},
+        {"title": "그래디언트 충돌이 근본 원인", "content": "Ego와 exo 손실의 그래디언트가 반대 방향을 가리켜 최적화를 방해한다."},
+        {"title": "Negative Transfer 현상", "content": "이 실패는 MTL에서 잘 알려진 negative transfer의 ego-exo 버전이다."},
+        {"title": "분포 충돌이 원인", "content": "Ego와 exo의 시각적 통계가 근본적으로 달라 단일 모델이 양쪽을 동시에 최적화하기 어렵다."},
+        {"title": "구조적 정렬이 해답", "content": "사전훈련 기반 정렬, 뷰-어댑터, 적응적 가중치 — 단순 데이터 병합이 아닌 구조적 해결이 필요하다."},
+        {"title": "뷰 융합 = 미해결 문제", "content": "EgoExo-Con은 이 문제를 공식화했지만, 그 해결책은 아직 연구 중이다."}
+      ]
+    },
+    {
+      "number": 5,
+      "emoji": "🔄",
+      "title": "Cross-View Transfer Learning",
+      "titleKr": "크로스뷰 전이 학습",
+      "tldr": "Exo에서 학습한 지식을 ego로 전이하거나, 두 뷰 사이의 공통 표현을 학습하는 방법들을 이해한다.",
+      "topics": ["Exo-to-Ego 전이", "도메인 어댑테이션", "대조 학습 기반 크로스뷰", "공통 잠재 공간"],
+      "learningGoals": [
+        "Exo-to-ego 전이 학습의 동기와 왜 단순 파인튜닝이 부족한지 설명할 수 있다",
+        "대조 학습을 활용한 크로스뷰 공통 표현 학습을 수식으로 설명할 수 있다",
+        "도메인 어댑테이션 기법을 ego-exo 문제에 적용하는 방법을 논할 수 있다",
+        "전이 방향(exo→ego vs. ego→exo)의 비대칭성을 이해한다"
+      ],
+      "overview": "Ego와 exo의 데이터 불균형을 생각하면 자연스러운 접근이 등장한다: **풍부한 exo 데이터에서 학습한 후, 희귀한 ego 데이터에 전이**하자. YouTube의 수백만 시간 비디오, ImageNet 급의 대규모 exo 데이터셋이 있는 반면, 착용 카메라 데이터는 여전히 상대적으로 희귀하고 비싸게 수집된다.\n\n하지만 전이 학습도 단순하지 않다. Exo에서 학습한 특징은 exo 분포에 최적화되어 있어, ego 분포에 적용하면 성능이 낮다. 이는 단순한 domain shift 문제이기도 하지만, 더 깊이는 **두 시점이 포착하는 정보의 종류 자체가 다르다**는 문제이기도 하다.\n\n크로스뷰 전이 학습의 핵심 질문은: **어떻게 두 시점에서 공통된 의미 표현을 학습하는가?** 물체 인식, 행동 이해, 공간 관계 — 이 의미들은 두 시점 모두에서 공통적이다. 이 공통 의미를 뷰에 불변한(view-invariant) 표현으로 학습하는 것이 전이의 핵심이다.",
+      "sections": [
+        {
+          "title": "전이의 비대칭성: Exo→Ego가 Ego→Exo보다 쉬운 이유",
+          "content": "크로스뷰 전이는 방향성이 있다. **Exo→Ego 전이**가 **Ego→Exo 전이**보다 일반적으로 더 많이 연구되고 더 성능이 좋다. 이유가 있다.\n\nExo 데이터는 훨씬 풍부하다 — 사전학습 모델들이 대부분 exo 기반이다. Ego 데이터는 희귀하다 — 착용 카메라 데이터 수집 비용이 높고, 이미 학습된 exo 특징을 ego에서 재사용하는 것이 자원 효율적이다.\n\n더 근본적으로, **exo에서 학습한 의미론(활동, 물체 범주)은 ego에서도 유효하다**. 요리하기, 피아노 치기 같은 활동 개념은 시점에 무관하다. 시각적 외양만 다를 뿐이다. 이 의미론을 새로운 시각적 외양(ego)에 적응시키는 것이 exo→ego 전이다.\n\n반면 Ego→Exo 전이는 덜 연구됐다. Ego에만 있는 정보(예: 착용자의 시선 방향, 손 클로즈업)는 exo에 없기 때문에 ego에서 exo로 지식을 '번역'하기 위해 더 많은 가정이 필요하다."
+        },
+        {
+          "title": "대조 학습으로 공통 표현 학습하기",
+          "content": "Ego와 exo에서 같은 의미를 공유하는 표현을 학습하는 가장 유망한 접근이 **크로스뷰 대조 학습(cross-view contrastive learning)**이다.\n\n기본 아이디어: 같은 활동의 ego 클립과 exo 클립을 positive pair, 다른 활동의 쌍을 negative pair로 정의하고 InfoNCE 손실로 표현 공간을 정렬한다.\n\n$$\\mathcal{L}_{\\text{XViewNCE}} = -\\log \\frac{\\exp(\\text{sim}(z_e^i, z_x^i) / \\tau)}{\\sum_{j=1}^{N} \\exp(\\text{sim}(z_e^i, z_x^j) / \\tau)}$$\n\n여기서 $z_e^i$, $z_x^i$는 각각 i번째 ego와 exo 클립의 표현, $\\tau$는 온도 하이퍼파라미터.\n\n이 손실을 최소화하면 같은 활동의 ego와 exo 표현이 임베딩 공간에서 가까워진다 — 즉 **뷰에 불변한(view-invariant) 의미 표현**이 학습된다.\n\n추가 고려사항:\n\n- **Hard negative mining**: 같은 참여자의 다른 활동 쌍이 더 유용한 negative일 수 있다\n- **모달리티 비대칭**: 인코더를 공유할지 분리할지 — 분리 인코더가 각 뷰의 특성을 더 잘 포착한다\n- **시간적 정렬**: 같은 시간 창에서 추출한 쌍이 더 강한 시간적 일관성을 학습하게 한다"
+        },
+        {
+          "title": "도메인 어댑테이션 기법의 적용",
+          "content": "전이 학습과 유관한 도메인 어댑테이션(domain adaptation, DA) 기법들도 ego-exo 문제에 적용된다. DA의 목표는 소스 도메인(exo)에서 학습하고 타깃 도메인(ego)에서 잘 동작하도록 적응시키는 것이다.\n\n**DANN(Domain Adversarial Neural Network)** 스타일 접근: 도메인 분류기(exo vs. ego인지 분류)를 대적적으로 훈련해 도메인에 불변한 특징 추출기를 학습한다. 특징 추출기는 도메인 분류기를 속이도록(도메인 구분 불가능하게), 도메인 분류기는 도메인을 맞추도록 학습된다.\n\n**어댑터 기반 접근(Adapter-based)**: 사전학습된 exo 모델을 고정하고 작은 어댑터 레이어만 ego 데이터로 파인튜닝한다. 이는 소규모 ego 데이터로도 효과적인 적응이 가능하며, 모델 용량 낭비를 줄인다.\n\n**Meta-learning 기반**: Ego 데이터가 매우 적은 경우 (few-shot), MAML(Model-Agnostic Meta-Learning) 계열의 방법이 효과적이다. 다양한 exo 활동에서 빠른 적응 능력을 메타-학습하고, 새로운 ego 활동에 적용한다."
+        },
+        {
+          "title": "전이 학습의 평가: 무엇이 성공인가",
+          "content": "크로스뷰 전이 학습의 성공을 어떻게 측정하는가? 몇 가지 프로토콜:\n\n**Zero-shot 크로스뷰 전이**: Ego 데이터 없이 exo에서만 사전학습 후, ego 테스트셋에서 성능 측정. 이는 전이의 '상한'을 보여준다.\n\n**Linear probing**: 전이된 표현 위에 선형 분류기만 추가해 훈련. 표현의 질 자체를 측정한다.\n\n**Few-shot 파인튜닝**: N개의 ego 샘플(보통 1~10개)으로만 파인튜닝 후 성능 측정. 현실적인 소규모 데이터 시나리오를 반영한다.\n\n주의해야 할 평가 트릭:\n\n- **훈련/테스트 분포 누출**: Ego-Exo4D에서 같은 취 ID의 ego와 exo 클립이 각각 훈련/테스트에 들어가면 누출이 발생한다. 참여자 단위로 분할해야 한다\n- **시나리오 편향**: 특정 활동(예: 피아노)만의 결과를 일반화하지 않도록 주의\n- **뷰-대칭 메트릭**: 전이 성능을 ego→exo와 exo→ego 두 방향 모두 측정해야 한다"
+        }
+      ],
+      "analogy": {
+        "title": "외국어 통역사의 연수: 문자에서 회화로",
+        "content": "Exo→ego 전이는 '교재(exo) 학습자가 현장(ego) 투입'되는 상황과 비슷하다. 외국어 통역사를 생각해보자 — 책과 교재(풍부한 exo 데이터)로 언어를 완벽히 익혔지만, 실제 원어민과 빠른 대화(ego 시점의 클로즈업 손동작, 빠른 움직임)를 마주하면 처음에는 어렵다. 발음, 속도, 맥락이 교재와 다르기 때문이다.\n\n대조 학습 방식의 전이는 '두 언어를 같이 쓰는 연습(language pair training)'과 같다. 교재 문장(exo)과 그에 해당하는 실전 대화(ego)를 쌍으로 연습하면서, 교재 지식이 실전 상황에 대응하는 방식을 학습한다. 같은 의미를 가진 교재 표현과 실전 표현이 머릿속(임베딩 공간)에서 가까운 위치에 자리잡게 된다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "크로스뷰 대조 학습의 핵심인 XView-InfoNCE 손실 구현이다. Ego와 exo 인코더는 분리되어 있으며 공유 투영 공간에서 정렬한다.",
+        "code": "import torch\nimport torch.nn as nn\nimport torch.nn.functional as F\n\nclass CrossViewInfoNCE(nn.Module):\n    \"\"\"Ego-Exo 크로스뷰 대조 손실.\"\"\"\n\n    def __init__(self, temperature: float = 0.07):\n        super().__init__()\n        self.tau = temperature\n\n    def forward(\n        self,\n        z_ego: torch.Tensor,  # [B, D] ego 임베딩 (L2 정규화됨)\n        z_exo: torch.Tensor,  # [B, D] exo 임베딩 (L2 정규화됨)\n    ) -> torch.Tensor:\n        B = z_ego.size(0)\n\n        # 유사도 행렬: [B, B]\n        sim = torch.mm(z_ego, z_exo.T) / self.tau\n\n        # 정답 쌍은 대각선 (같은 인덱스 = 같은 활동)\n        labels = torch.arange(B, device=z_ego.device)\n\n        # 양방향 손실 (ego→exo + exo→ego)\n        loss_e2x = F.cross_entropy(sim, labels)\n        loss_x2e = F.cross_entropy(sim.T, labels)\n        return (loss_e2x + loss_x2e) / 2\n\n\nclass EgoExoEncoder(nn.Module):\n    \"\"\"분리 인코더 + 공유 투영 헤드.\"\"\"\n\n    def __init__(self, backbone_ego, backbone_exo, proj_dim: int = 256):\n        super().__init__()\n        self.enc_ego = backbone_ego  # ego-specific backbone\n        self.enc_exo = backbone_exo  # exo-specific backbone\n        # 공유 투영 헤드 — 공통 임베딩 공간으로 매핑\n        self.proj = nn.Sequential(\n            nn.Linear(768, 512), nn.ReLU(),\n            nn.Linear(512, proj_dim)\n        )\n        self.xview_loss = CrossViewInfoNCE(temperature=0.07)\n\n    def forward(self, ego_video, exo_video):\n        h_ego = self.enc_ego(ego_video)   # [B, 768]\n        h_exo = self.enc_exo(exo_video)   # [B, 768]\n        z_ego = F.normalize(self.proj(h_ego), dim=-1)  # L2 정규화\n        z_exo = F.normalize(self.proj(h_exo), dim=-1)\n        loss = self.xview_loss(z_ego, z_exo)\n        return z_ego, z_exo, loss\n",
+        "walkthrough": "핵심은 공유 투영 헤드(`self.proj`)다 — 두 뷰의 인코더는 분리해 각 뷰 특성을 충분히 포착하게 하고, 마지막 투영 단계에서만 공통 임베딩 공간으로 모은다. L2 정규화로 단위 구면에 올리면 코사인 유사도가 내적으로 계산된다."
+      },
+      "industryEvaluation": {
+        "overview": "전이 학습은 실제 프로덕션 ML에서 중심 기술이다. 이를 ego-exo 맥락에 적용하는 방법은 연구자뿐 아니라 실무 엔지니어에게도 중요하다.",
+        "whatEngineersLookFor": [
+          "InfoNCE 손실의 수식과 temperature 파라미터의 역할을 정확히 설명",
+          "공유 인코더 vs. 분리 인코더의 트레이드오프를 실험적으로 평가하는 방법",
+          "도메인 어댑테이션 기법(DANN, Adapter)을 ego-exo에 적용하는 구체적 방법",
+          "평가 프로토콜(zero-shot, linear probing, few-shot)의 차이와 각각이 측정하는 것"
+        ],
+        "redFlags": [
+          "대조 학습을 '양성/음성 쌍을 가까이/멀리'로만 설명하고 수식이나 구현 세부를 모르는 경우",
+          "분리 인코더와 공유 인코더의 차이를 이해하지 못하는 경우",
+          "전이 학습 평가에서 데이터 누출 위험을 인식하지 못하는 경우"
+        ],
+        "interviewQuestions": [
+          "크로스뷰 대조 학습에서 'hard negative'를 어떻게 정의하고 왜 중요한가?",
+          "Ego-Exo4D의 같은 활동 내 다른 숙련도(beginner vs. expert)를 negative로 사용해야 하는가, positive로 사용해야 하는가?",
+          "DANN 기반 도메인 어댑테이션을 ego-exo에 적용할 때 'domain label'을 어떻게 정의해야 하는가?"
+        ],
+        "masteryVsFamiliar": "표면적 이해: 대조 학습으로 ego-exo 임베딩을 정렬한다. 깊은 이해: 공유 vs. 분리 인코더 설계의 트레이드오프, hard negative mining 전략, 평가 시 데이터 누출 방지 방법을 설명하며, ego-exo 도메인 어댑테이션에서 도메인 경계를 어떻게 정의할지 비판적으로 논할 수 있다."
+      },
+      "keyTakeaways": [
+        {"title": "Exo→Ego 전이가 주된 방향", "content": "풍부한 exo 데이터에서 학습한 후 희귀한 ego 데이터에 전이하는 것이 자원 효율적이다."},
+        {"title": "크로스뷰 대조 학습", "content": "같은 활동의 ego-exo 쌍을 positive로 InfoNCE 손실로 훈련하면 뷰-불변 의미 표현이 학습된다."},
+        {"title": "분리 인코더 + 공유 투영 헤드", "content": "인코더는 뷰-특정으로 분리해 각 뷰 특성을 포착하고, 마지막에 공통 공간으로 투영한다."},
+        {"title": "도메인 어댑테이션 적용 가능", "content": "DANN, 어댑터 기반 파인튜닝 등 DA 기법이 ego-exo 도메인 이동 극복에 유효하다."},
+        {"title": "평가 프로토콜이 중요", "content": "Zero-shot, linear probing, few-shot 등 서로 다른 평가 프로토콜이 서로 다른 능력을 측정한다."},
+        {"title": "전이 방향의 비대칭", "content": "Exo→ego와 ego→exo는 정보 특성의 차이로 인해 비대칭적으로 어렵다 — 연구 시 이를 구분해야 한다."}
+      ]
+    },
+    {
+      "number": 6,
+      "emoji": "🤖",
+      "title": "Foundation Models for Ego-Exo",
+      "titleKr": "Ego-Exo를 위한 파운데이션 모델",
+      "tldr": "대형 비디오-언어 모델이 ego-exo 이해에서 어디까지 왔고 어디서 근본적으로 실패하는지를 파악한다.",
+      "topics": ["Video LLM 현황", "EgoVideo 계열 모델", "MLLM의 크로스뷰 이해 한계", "파인튜닝 vs. 프롬프팅"],
+      "learningGoals": [
+        "주요 egocentric video foundation model들(EgoVideo, EgoCOT 등)을 알고 그 아키텍처를 설명할 수 있다",
+        "현재 MLLM이 크로스뷰 이해에서 실패하는 근본 원인을 분석할 수 있다",
+        "비디오 입력 추가가 성능을 10%p밖에 높이지 못하는 이유를 설명할 수 있다",
+        "파운데이션 모델을 ego-exo 태스크에 적응시키는 전략을 비교할 수 있다"
+      ],
+      "overview": "2024-2026년 동안 대형 비디오-언어 모델(Video LLM, MLLM)의 발전은 놀랍다. 수백만 시간의 비디오-텍스트 쌍으로 사전학습된 모델들이 일반 비디오 이해, 질문응답, 요약 등에서 인상적인 성능을 보인다. 그런데 이 강력한 모델들이 **ego-exo 크로스뷰 이해에서는 왜 55%에 그치는가?**\n\n이 질문이 2025-2026년 연구의 핵심 주제 중 하나다. 파운데이션 모델의 실패를 이해하면 **무엇이 새로운 접근법의 기회인지** 보인다. 단순히 더 큰 모델, 더 많은 데이터가 해결책이 아닌 이유 — 그리고 구조적으로 무엇이 다르게 설계되어야 하는지를 이해하는 것이 이 챕터의 목표다.",
+      "sections": [
+        {
+          "title": "Egocentric Video를 위한 파운데이션 모델들",
+          "content": "순수 ego 비디오를 위한 파운데이션 모델 연구가 2024-2025년에 활발히 이루어졌다.\n\n**EgoVideo** ([arXiv:2406.18070](https://arxiv.org/abs/2406.18070)): Ego-Exo4D와 EPIC-Kitchens 등 egocentric 데이터에 특화된 비디오-텍스트 모델. CLIP과 VideoLLaMA를 ego 데이터로 파인튜닝한 계열이다. EK-100 행동 인식, 멀티스텝 추론 등에서 강점을 보인다.\n\n**EgoCOT** ([arXiv:2503.09143](https://arxiv.org/abs/2503.09143)): Ego 비디오에서 Chain-of-Thought 추론을 활성화하는 접근법. 단순히 답을 예측하는 것이 아니라 '왜 그런 답인가?'를 단계적으로 추론하게 훈련한다. 절차적 활동 이해(procedural activity understanding)에서 강점.\n\n**EgoVideo-ProCo** ([arXiv:2603.27184](https://arxiv.org/abs/2603.27184)): 절차적 맥락(procedural context)을 ego 비디오에서 학습하는 모델. 요리 레시피, 가구 조립 등 단계별 활동에서 현재 단계를 파악하고 다음 단계를 예측한다.\n\n공통점: 이들 모두 **단일 ego 시점**에 집중한다. Exo 뷰 없이 ego만으로 최대한 많은 것을 이해하려는 접근이다. 하지만 ego만으로는 얻기 어려운 정보(전신 자세, 공간 구조)가 있고, 이 때문에 ego-exo 상호보완성이 여전히 중요하다."
+        },
+        {
+          "title": "현재 MLLM이 크로스뷰 이해에서 실패하는 이유",
+          "content": "EgoExoMem에서 Gemini 2.5 Flash가 55.3%에 그치는 이유는 무엇인가? 단순히 모델이 작아서가 아니다. 더 구조적인 이유들이 있다.\n\n**1. 사전학습 분포 편향**: 대부분의 MLLM은 단일 시점 비디오(주로 exo)로 사전학습된다. YouTube, 영화, TV 쇼는 모두 exo 중심이다. 모델이 두 시점의 연결을 학습할 기회가 없었다.\n\n**2. 크로스뷰 토큰 연결 부재**: 언어 모델이 두 비디오 스트림을 입력받을 때, ego 프레임과 exo 프레임 사이의 명시적 연결(correspondence)이 없다. 모델은 두 독립적인 비디오 시퀀스로 처리하며, 어떤 ego 토큰이 어떤 exo 토큰과 연결되는지 모른다.\n\n**3. 공간적 이해 제한**: 현재 MLLM의 비디오 인코더(ViT 기반)는 개별 프레임을 독립적으로 처리하거나 제한적인 시간적 풀링만 수행한다. 두 시점 간의 3D 공간적 관계를 이해하는 능력이 부족하다.\n\n**4. 메모리 통합 부재**: EgoExoMem에서 모델은 비디오 전체를 보고 특정 순간의 크로스뷰 관계를 기억해야 한다. 하지만 현재 아키텍처는 긴 비디오에서 중요 순간을 선택적으로 메모리에 유지하는 능력이 부족하다."
+        },
+        {
+          "title": "비디오 입력의 10%p 효과: 왜 더 높지 않은가",
+          "content": "EgoExoMem에서 관찰된 충격적인 결과: Text-only GPT-4o (~45%) 대비 Video+Text 모델(Gemini 2.5 Flash, 55.3%)의 향상이 10%p에 불과하다. 이 격차가 왜 이렇게 작은가?\n\n**프레임 샘플링 문제**: 현재 MLLM들은 긴 비디오에서 균일하게 프레임을 샘플링한다. EgoExoMem 질문에 답하기 위해 필요한 결정적 프레임이 샘플링되지 않으면, 비디오 입력이 있더라도 관련 정보를 보지 못한다. E2-Select 방법이 58.2%를 달성한 것이 이를 확인한다 — 스마트한 프레임 선택만으로도 3%p 향상된다.\n\n**크로스뷰 attention 부재**: 입력받은 ego와 exo 프레임들이 주의 메커니즘을 통해 서로 연결되지 않는다. 두 비디오가 순차적으로 텍스트처럼 처리되며, 어느 ego 토큰이 어느 exo 토큰에 주의를 기울여야 하는지 모른다.\n\n**시공간 표현의 한계**: 비디오 인코더가 시공간적 구조를 충분히 포착하지 못한다. 8~16프레임으로 서브샘플링된 비디오에서 빠른 손 움직임, 미세 도구 조작 등이 유실된다.\n\n이 분석은 새로운 논문의 기회를 명확히 보여준다: 크로스뷰 연결을 명시적으로 모델링하고, 스마트한 프레임 선택을 통합하며, 공간적 관계를 3D로 이해하는 모델이 현재 MLLM의 한계를 극복할 수 있다."
+        },
+        {
+          "title": "파운데이션 모델 적응 전략: 파인튜닝 vs. 프롬프팅",
+          "content": "기존 파운데이션 모델을 ego-exo 태스크에 적응시키는 두 가지 주요 전략:\n\n**프롬프팅 전략**: 파라미터 변경 없이 입력 프롬프트만으로 모델을 유도한다.\n\n- Chain-of-thought 프롬프팅: '먼저 ego 뷰에서 보이는 것을 설명하고, 그 다음 exo 뷰에서 보이는 것을 설명하고, 두 뷰의 정보를 통합하라'\n- 프레임 인터리빙: Ego와 exo 프레임을 번갈아 제공해 자연스러운 교차 참조 유도\n- 기준점 제공: '00:30의 ego 프레임과 00:30의 exo 프레임을 비교하라'\n\n**파인튜닝 전략**: Ego-Exo4D 같은 paired 데이터로 모델 파라미터를 업데이트한다.\n\n- Full fine-tuning: 모든 파라미터 업데이트 (고비용, 과적합 위험)\n- LoRA 파인튜닝: 저차원 어댑터만 학습 (효율적, 포지이 보존)\n- Instruction tuning: Ego-exo 크로스뷰 태스크를 지시 형식으로 변환해 instruction 파인튜닝\n\n두 전략의 트레이드오프:\n\n| 전략 | 비용 | 유연성 | 성능 |\n|---|---|---|---|\n| 프롬프팅 | 낮음 | 높음 | 제한적 |\n| LoRA 파인튜닝 | 중간 | 중간 | 좋음 |\n| Full 파인튜닝 | 높음 | 낮음 | 최대 (잠재적) |"
+        }
+      ],
+      "analogy": {
+        "title": "글로벌 관광 가이드: 모든 도시를 알지만 한 도시를 깊이 모른다",
+        "content": "현재 대형 MLLM은 전 세계 수백만 시간의 비디오를 봤다 — 마치 수백 개 도시를 여행한 경험 많은 글로벌 여행자와 같다. 파리의 에펠탑, 도쿄의 스카이트리, 뉴욕의 자유의 여신상을 다 안다. 하지만 파리의 골목 하나하나, 현지인만 아는 카페, 지역 교통 시스템의 세부는 모른다.\n\n크로스뷰 메모리 추론은 이 '현지 전문 지식'을 요구한다. Ego 카메라가 찍은 주방의 특정 서랍(현지 골목)과 exo 카메라가 찍은 전체 주방 풍경(도시 전경)을 연결하는 것 — 이건 글로벌 여행 경험이 아닌, 그 주방을 직접 학습한 경험이 필요하다.\n\n파운데이션 모델의 한계는 여기서 온다: 너무 광범위하게, 너무 얕게 학습됐다. Ego-exo 크로스뷰 추론에 필요한 '현지 지식'(두 시점의 구체적 연결)은 충분히 학습하지 못했다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "EgoExoMem 스타일 평가에서 기존 MLLM에 크로스뷰 프롬프팅을 적용하는 예시다. Chain-of-Thought와 View-Interleaving 두 가지 전략을 구현한다.",
+        "code": "from transformers import AutoTokenizer, AutoModelForCausalLM\nfrom typing import Literal\n\ndef build_crossview_prompt(\n    question: str,\n    options: list[str],\n    strategy: Literal[\"cot\", \"interleave\"],\n    ego_timestamps: list[str] = None,\n    exo_timestamps: list[str] = None,\n) -> str:\n    if strategy == \"cot\":\n        # Chain-of-thought: 두 뷰를 순서대로 설명한 후 통합\n        return (\n            \"You are analyzing synchronized egocentric (first-person) and \"\n            \"exocentric (third-person) videos of the same activity.\\n\\n\"\n            f\"Question: {question}\\n\"\n            f\"Options: {', '.join(options)}\\n\\n\"\n            \"Please reason step by step:\\n\"\n            \"Step 1: What can you observe from the EGOCENTRIC video?\"\n            \" (focus on hands and objects)\\n\"\n            \"Step 2: What can you observe from the EXOCENTRIC video?\"\n            \" (focus on full body and environment)\\n\"\n            \"Step 3: Integrate both views to answer the question.\\n\"\n            \"Final Answer:\"\n        )\n    elif strategy == \"interleave\":\n        # 시간 축 정렬 명시\n        ts_hint = \"\"\n        if ego_timestamps and exo_timestamps:\n            ts_hint = (\n                f\"\\nEgo frames sampled at: {ego_timestamps}\"\n                f\"\\nExo frames sampled at: {exo_timestamps}\"\n                \"\\n(Both cameras are synchronized.)\"\n            )\n        return (\n            \"You are watching synchronized ego and exo views.\"\n            f\"{ts_hint}\\n\\n\"\n            f\"Question: {question}\\n\"\n            f\"Options: {', '.join(options)}\\n\"\n            \"Use BOTH views together. Answer with the option letter:\"\n        )\n\n# 예시 사용\nprompt = build_crossview_prompt(\n    question=\"At 00:45, which object did the person pick up in the ego view?\",\n    options=[\"A. knife\", \"B. fork\", \"C. spoon\"],\n    strategy=\"cot\",\n)\nprint(prompt)\n",
+        "walkthrough": "CoT 프롬프트는 모델이 두 뷰를 순차적으로 분석하도록 강제해 명시적 크로스뷰 추론을 유도한다. Interleave 전략은 동기화된 타임스탬프를 힌트로 제공해 두 비디오가 같은 시간 축에 있음을 명시한다. 실험에서는 두 전략을 비교해 태스크 유형별로 어느 것이 더 효과적인지 분석하는 것이 중요하다."
+      },
+      "industryEvaluation": {
+        "overview": "파운데이션 모델의 능력과 한계를 정확히 아는 것이 연구자와 엔지니어 모두에게 핵심 역량이다. 특히 '더 큰 모델이면 해결된다'는 안이한 가정을 버리고 구조적 한계를 파악하는 것이 중요하다.",
+        "whatEngineersLookFor": [
+          "현재 최고 MLLM의 ego-exo 성능 수준을 수치로 인식 (55.3%)",
+          "비디오 입력이 10%p밖에 도움되지 않는 근본 원인 분석",
+          "프롬프팅과 파인튜닝 전략의 트레이드오프를 실험적으로 비교하는 방법",
+          "LoRA 파인튜닝의 기본 원리와 ego-exo 파인튜닝에서의 적절한 rank 선택"
+        ],
+        "redFlags": [
+          "'GPT-4V/Gemini를 쓰면 해결된다'는 안이한 가정",
+          "비디오 입력이 텍스트-only 모델과 성능 차이가 크지 않은 이유를 설명하지 못하는 경우",
+          "파인튜닝과 프롬프팅을 같은 것으로 취급하는 경우"
+        ],
+        "interviewQuestions": [
+          "EgoExoMem에서 비디오 입력 추가가 10%p밖에 도움이 되지 않는 이유를 세 가지 관점에서 설명하라.",
+          "Ego-Exo4D 데이터로 Gemini를 파인튜닝한다면 어떤 instruction 형식으로 데이터를 구성해야 하는가?",
+          "현재 MLLM의 어떤 구조적 한계가 크로스뷰 이해를 막고 있으며, 이를 해결하기 위해 아키텍처를 어떻게 수정해야 하는가?"
+        ],
+        "masteryVsFamiliar": "표면적 이해: MLLM이 ego-exo에서 55%라는 걸 안다. 깊은 이해: 왜 55%인지를 사전학습 분포 편향, 크로스뷰 토큰 연결 부재, 공간적 이해 한계, 메모리 통합 부재 네 가지로 분해하고, 각 한계를 해결하기 위한 구체적인 아키텍처 수정이나 훈련 전략을 제안할 수 있다."
+      },
+      "keyTakeaways": [
+        {"title": "Ego-specific 파운데이션 모델 존재", "content": "EgoVideo, EgoCOT, EgoVideo-ProCo 등 단일 ego 시점에 특화된 모델들이 2024-2025년에 등장했다."},
+        {"title": "MLLM의 크로스뷰 이해 한계", "content": "최강 MLLM도 EgoExoMem에서 55.3% — 사전학습 분포 편향과 크로스뷰 연결 부재가 근본 원인이다."},
+        {"title": "비디오 입력이 10%p만 도움", "content": "텍스트-only 대비 비디오 추가의 미미한 이득은 모델이 비디오 크로스뷰 정보를 활용하지 못함을 의미한다."},
+        {"title": "프레임 선택이 중요", "content": "E2-Select가 보여주듯 스마트한 프레임 샘플링만으로도 3%p 향상 가능 — 균일 샘플링이 문제다."},
+        {"title": "파인튜닝 전략의 트레이드오프", "content": "Full 파인튜닝 > LoRA > 프롬프팅 순으로 성능이 높지만 비용과 유연성은 반대다."},
+        {"title": "구조적 혁신이 필요", "content": "더 큰 모델이 아니라, 크로스뷰 연결을 명시적으로 모델링하는 새로운 아키텍처가 필요하다."}
+      ]
+    },
+    {
+      "number": 7,
+      "emoji": "🎬",
+      "title": "Action Recognition Across Views",
+      "titleKr": "두 시점에서의 행동 인식",
+      "tldr": "같은 행동을 두 시점에서 인식하고, 세밀한 행동 단계(keystep)를 이해하며, 능숙도를 추정하는 문제들을 다룬다.",
+      "topics": ["Fine-grained Action Recognition", "Keystep Recognition", "Proficiency Estimation", "Temporal Grounding"],
+      "learningGoals": [
+        "Keystep recognition이 일반 행동 인식과 어떻게 다른지 설명할 수 있다",
+        "Ego-Exo4D의 proficiency estimation 태스크 정의와 그 평가 방법을 이해한다",
+        "두 시점에서의 temporal grounding 문제를 수식으로 정의할 수 있다",
+        "현재 방법들의 성능 병목을 분석하고 개선 방향을 제안할 수 있다"
+      ],
+      "overview": "행동 인식(action recognition)은 ego-exo 연구의 출발점이었다. '이 비디오에서 무슨 행동을 하는가?' — 이 단순한 질문이 발전을 거듭하면서 이제는 '피아노의 어떤 키를 어떤 순서로 치는가?', '이 요리사는 초보인가 숙련자인가?', '어느 시점에서 요리의 이 단계가 시작되는가?'로 확장됐다.\n\nEgo-Exo4D는 이 세밀한 행동 이해를 위한 태스크들을 체계적으로 정의했다. **Keystep Recognition**은 복잡한 절차적 활동(자전거 수리, 요리 등)의 각 세부 단계를 인식하는 것이다. **Proficiency Estimation**은 같은 활동을 수행하는 사람의 숙련도를 평가한다. 이 두 태스크 모두 ego와 exo 두 시점의 정보를 통합하면 더 잘 수행할 수 있다는 가설이 있지만, 실제로 어떻게 통합해야 하는지는 여전히 열려있는 문제다.",
+      "sections": [
+        {
+          "title": "Keystep Recognition: 세밀한 절차 이해",
+          "content": "**Keystep Recognition**은 절차적 활동(procedural activity)의 세부 단계를 시간적으로 인식하는 태스크다. 예: 자전거 수리에서 '바퀴를 분리한다', '타이어를 제거한다', '튜브를 교체한다', '타이어를 재조립한다' 등 각 단계의 시작-끝 시간을 인식하는 것.\n\n이 태스크의 어려움은 **세밀한 시간적 경계**와 **활동 내 위치 의존성**에 있다. 같은 '손으로 잡기' 동작이 맥락에 따라 '바퀴 분리 시작'일 수도, '타이어 제거 중'일 수도 있다. 이전 단계 완료 여부를 기억하는 시간적 맥락이 필요하다.\n\nEgo와 exo의 역할 분담:\n\n- **Ego**: 세밀한 손 움직임과 도구 상호작용 → 어느 특정 단계인지 판단에 유리\n- **Exo**: 전신 자세와 작업 공간 전체 맥락 → 현재 단계가 절차의 어느 위치인지 판단에 유리\n\n예를 들어 '나사 조이기' 단계는 ego에서 손과 드라이버가 보이고, exo에서는 자전거 전체와 조여지는 부품의 위치가 보인다. 두 정보를 합쳐야 정확한 keystep 인식이 가능하다."
+        },
+        {
+          "title": "Proficiency Estimation: 숙련도를 어떻게 측정하는가",
+          "content": "**Proficiency Estimation**은 행동 비디오를 보고 수행자의 숙련도를 평가하는 태스크다. 스포츠 코칭, 직업 훈련, 의료 교육 등 실용적 응용이 많다.\n\nEgo-Exo4D에서 proficiency는 '초보(novice) vs. 숙련(expert)'의 이진 분류부터, 세밀한 스케일(1-5점)까지 다양하게 정의된다. 평가자들이 비디오를 보고 숙련도를 평가한 어노테이션이 데이터셋에 포함된다.\n\n핵심 도전: **무엇이 숙련도를 구성하는가?** 단순히 더 빠른 것이 숙련된 것은 아니다. 스무스한 움직임, 불필요한 동작의 부재, 도구의 효율적 사용, 오류 수정 패턴 등 복합적 요소가 숙련도를 결정한다.\n\nEgo vs. Exo의 역할:\n\n- **Ego**: 손의 정밀도, 도구 그립, 세밀한 조작 방식 → 손-기술 숙련도 평가에 핵심\n- **Exo**: 자세, 효율적 몸통 움직임, 공간 활용 → 전체적 기술 완성도 평가에 유리\n\n흥미로운 연구 방향: **숙련도 피드백 생성**. 단순히 '숙련도 = 3.2점'을 출력하는 것을 넘어, '왼손의 그립이 불안정합니다', '자세를 더 낮추면 힘 효율이 좋아집니다' 같은 구체적 피드백을 자동으로 생성하는 것. 이 때 ego와 exo 두 시점의 정보를 결합한 세밀한 이해가 필수다."
+        },
+        {
+          "title": "Temporal Grounding: 시간적 위치 찾기",
+          "content": "**Temporal Grounding**은 자연어 쿼리가 주어졌을 때 비디오에서 그 쿼리에 해당하는 시간 구간을 찾는 태스크다. 예: '자전거 바퀴가 분리된 순간' 쿼리 → 비디오에서 [1:23, 1:47] 구간 반환.\n\nEgo-exo에서의 temporal grounding은 두 가지 변형이 있다:\n\n**1. Single-view temporal grounding**: 한 시점에서 시간 구간 찾기 (비교적 잘 연구됨)\n\n**2. Cross-view temporal grounding**: 한 시점의 쿼리를 다른 시점 비디오에서 찾기\n\n예: 'ego 비디오에서 손이 냄비를 집는 순간' 쿼리로 exo 비디오에서 같은 시간 구간 찾기. 이 때 두 비디오가 시간 동기화되어 있으면 기하학적으로 해결 가능하지만, 비동기화 상황이나 의미적 매칭이 필요한 경우 더 어렵다.\n\n수식: $f: (\\text{query}, V_{\\text{ego}}) \\to [t_s, t_e]_{\\text{exo}}$\n\n현재 접근법들의 한계: 대부분의 temporal grounding 방법이 단일 비디오 내 탐색에 최적화되어 있어, cross-view 버전에 직접 적용하면 성능이 낮다. Cross-view attention이나 명시적 시간적 대응 메커니즘이 필요하다."
+        },
+        {
+          "title": "행동 인식에서 두 시점 통합 전략",
+          "content": "행동 인식 태스크에서 ego와 exo를 어떻게 통합하는가? 세 가지 주요 전략:\n\n**Early Fusion**: 두 시점의 비디오를 초기에 결합해 단일 스트림으로 처리한다. 빠르지만 각 시점의 특성을 충분히 학습하기 어렵다.\n\n**Late Fusion**: 각 시점을 독립적으로 처리해 별도 예측을 내놓고, 마지막에 앙상블한다. 각 시점을 충분히 활용하지만 두 시점 간의 상호작용을 포착하지 못한다.\n\n**Cross-View Attention (Mid Fusion)**: 각 시점의 특징을 추출한 후 Cross-attention으로 두 시점이 서로를 참조하면서 표현을 정제한다.\n\n$$\\text{Attn}(Q_{\\text{ego}}, K_{\\text{exo}}, V_{\\text{exo}}) = \\text{softmax}\\left(\\frac{Q_{\\text{ego}} K_{\\text{exo}}^T}{\\sqrt{d}}\\right) V_{\\text{exo}}$$\n\nEgo 특징이 쿼리, exo 특징이 키/값이 되어 ego가 exo에서 어떤 정보를 참조할지를 attention으로 결정한다.\n\n경험적으로 Mid Fusion (Cross-View Attention)이 행동 인식에서 가장 좋은 성능을 보이는 경향이 있다 — 하지만 이것도 태스크에 따라 다르다. Keystep recognition처럼 세밀한 시간적 경계가 필요한 태스크에서는 temporal attention이 중요하고, proficiency estimation처럼 전반적 패턴이 중요한 태스크에서는 global aggregation이 더 유효할 수 있다."
+        }
+      ],
+      "analogy": {
+        "title": "무술 심사: 사범님의 두 시선",
+        "content": "무술 승단 심사를 생각해보자. 사범님이 앞에서 보는 것(exo 시점)과 학생이 자신의 수련 영상(ego 시점)을 보는 것은 완전히 다른 정보를 준다.\n\n사범님(exo)은 전체 자세, 균형, 체중 이동, 타이밍을 본다. 학생의 ego 시점은 자신의 손이 목표를 정확히 가격하는지, 그립이 맞는지, 시선이 적절한지를 확인한다. 숙련도를 정확히 평가하려면 두 시점이 모두 필요하다.\n\nKeystep recognition은 초보 학생이 '지금 제가 어느 단계를 하고 있나요?'를 물어볼 때 사범님이 '3초 전에 이미 다음 단계로 넘어갔어야 했는데, 아직 전 단계에 있네요'라고 대답하는 것과 같다. 큰 그림(exo)에서 보면 진도를 알 수 있고, 클로즈업(ego)에서 보면 기술의 정밀도를 알 수 있다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "Cross-view attention을 사용한 행동 인식 모델의 핵심 구현이다. Ego 특징이 exo 특징을 참조하면서 크로스뷰 표현을 학습한다.",
+        "code": "import torch\nimport torch.nn as nn\nfrom torch.nn import MultiheadAttention\n\nclass CrossViewActionRecognizer(nn.Module):\n    \"\"\"Cross-View Attention 기반 행동 인식기.\"\"\"\n\n    def __init__(\n        self,\n        feat_dim: int = 768,\n        num_heads: int = 8,\n        num_classes: int = 115,  # Ego-Exo4D 기준\n        dropout: float = 0.1,\n    ):\n        super().__init__()\n        # 시점별 독립 시간적 인코더\n        self.ego_encoder = nn.TransformerEncoder(\n            nn.TransformerEncoderLayer(feat_dim, num_heads, 2048, dropout),\n            num_layers=3,\n        )\n        self.exo_encoder = nn.TransformerEncoder(\n            nn.TransformerEncoderLayer(feat_dim, num_heads, 2048, dropout),\n            num_layers=3,\n        )\n        # Cross-view attention: ego가 exo를 참조\n        self.cross_attn = MultiheadAttention(\n            embed_dim=feat_dim, num_heads=num_heads,\n            dropout=dropout, batch_first=True,\n        )\n        # 최종 분류 헤드\n        self.classifier = nn.Sequential(\n            nn.LayerNorm(feat_dim * 2),\n            nn.Linear(feat_dim * 2, 512),\n            nn.GELU(),\n            nn.Dropout(dropout),\n            nn.Linear(512, num_classes),\n        )\n\n    def forward(\n        self,\n        ego_feat: torch.Tensor,  # [B, T, D]\n        exo_feat: torch.Tensor,  # [B, T', D]\n    ) -> torch.Tensor:\n        # 각 시점 독립 인코딩\n        h_ego = self.ego_encoder(ego_feat)   # [B, T, D]\n        h_exo = self.exo_encoder(exo_feat)   # [B, T', D]\n\n        # Cross-view attention: ego가 exo를 참조해 정보를 보완\n        ego_enhanced, _ = self.cross_attn(\n            query=h_ego, key=h_exo, value=h_exo\n        )   # [B, T, D]\n\n        # 전역 풀링 후 두 시점 연결\n        ego_global = ego_enhanced.mean(dim=1)  # [B, D]\n        exo_global = h_exo.mean(dim=1)         # [B, D]\n        fused = torch.cat([ego_global, exo_global], dim=-1)  # [B, 2D]\n\n        return self.classifier(fused)  # [B, num_classes]\n",
+        "walkthrough": "핵심은 `cross_attn`에서 `query=h_ego, key=h_exo, value=h_exo`로 설정하는 것이다. Ego 특징이 'exo에서 어떤 정보를 가져올지'를 attention 가중치로 결정한다. 최종적으로 ego가 exo를 참조해 보완된 표현(`ego_enhanced`)과 원래 exo 표현을 결합해 분류에 사용한다."
+      },
+      "industryEvaluation": {
+        "overview": "행동 인식은 가장 오래된 ego-exo 태스크이자 여전히 활발히 연구 중인 분야다. 세밀한 태스크(keystep, proficiency)와 그 평가 방법을 이해하는 것이 중요하다.",
+        "whatEngineersLookFor": [
+          "Keystep recognition을 일반 행동 인식과 구분하고 왜 더 어려운지 설명",
+          "Cross-view attention의 수식을 쓰고 어떤 정보가 어느 방향으로 흐르는지 설명",
+          "Proficiency estimation에서 평가 지표(Spearman 상관관계 vs. 분류 정확도)의 선택 이유",
+          "Early/Late/Mid fusion의 트레이드오프를 태스크 종류별로 분석"
+        ],
+        "redFlags": [
+          "모든 행동 인식 문제를 단일 분류 태스크로 취급하는 경우",
+          "Cross-view attention에서 Q/K/V의 역할을 혼동하는 경우",
+          "Temporal grounding과 행동 분류를 같은 문제로 보는 경우"
+        ],
+        "interviewQuestions": [
+          "Keystep recognition에서 ego와 exo 중 어느 시점이 더 중요한가? 태스크(어느 keystep인가 vs. 언제 시작했는가)에 따라 다른가?",
+          "Proficiency estimation에서 같은 행동을 빠르게 하는 것이 반드시 숙련됐다는 신호인가? 어떤 지표를 사용해야 하는가?",
+          "Cross-view attention에서 exo→ego 방향과 ego→exo 방향 중 어느 것이 행동 인식에 더 유익한가? 왜?"
+        ],
+        "masteryVsFamiliar": "표면적 이해: Cross-attention으로 두 시점을 연결한다. 깊은 이해: 어느 방향 attention이 어느 태스크에 유익한지, attention 가중치를 시각화해 모델이 어떤 exo 영역을 참조하는지 분석하며, proficiency estimation에서 단일 숫자 출력을 넘어 설명 가능한 피드백 생성으로 확장하는 방향을 제안할 수 있다."
+      },
+      "keyTakeaways": [
+        {"title": "Keystep Recognition의 세밀함", "content": "복잡한 절차적 활동의 세부 단계를 시간적으로 인식하는 것 — 단순 행동 분류보다 훨씬 어렵고 실용적이다."},
+        {"title": "Proficiency Estimation의 응용 가치", "content": "숙련도 자동 평가는 스포츠 코칭, 직업 훈련, 의료 교육에서 큰 가치를 가진다."},
+        {"title": "Cross-View Attention이 핵심", "content": "Ego가 query, exo가 key/value인 cross-attention이 두 시점 정보를 가장 효과적으로 통합한다."},
+        {"title": "태스크별 최적 fusion이 다르다", "content": "Keystep 인식은 temporal cross-attention이, proficiency 추정은 global aggregation이 더 유효할 수 있다."},
+        {"title": "Temporal Grounding의 크로스뷰 확장", "content": "한 시점의 쿼리로 다른 시점에서 시간 구간을 찾는 cross-view temporal grounding이 미해결 문제다."},
+        {"title": "피드백 생성이 미래 방향", "content": "숫자 점수를 넘어 ego/exo 두 시점에서 구체적 개선 피드백을 생성하는 것이 고부가가치 연구 방향이다."}
+      ]
+    },
+    {
+      "number": 8,
+      "emoji": "🌐",
+      "title": "Novel View Synthesis & 3D",
+      "titleKr": "새 시점 합성과 3D 이해",
+      "tldr": "Ego에서 Exo를 생성하거나 그 반대로, 그리고 두 시점에서 3D 장면을 재구성하는 방법들을 탐색한다.",
+      "topics": ["Ego-to-Exo View Synthesis", "Exo-to-Ego Synthesis", "3D Gaussian Splatting", "NeRF 기반 접근"],
+      "learningGoals": [
+        "Novel view synthesis를 ego-exo 맥락에서 정의하고 그 어려움을 설명할 수 있다",
+        "3D Gaussian Splatting의 기본 원리와 ego-exo 3D 재구성에의 적용을 이해한다",
+        "Ego와 exo 데이터를 결합한 3D 재구성이 단일 시점 재구성보다 유리한 이유를 설명할 수 있다",
+        "Ego-to-Exo 생성에서의 현재 방법과 한계를 파악한다"
+      ],
+      "overview": "컴퓨터 비전의 궁극적 목표 중 하나는 **장면을 3D로 이해하는 것**이다. Ego와 exo 두 시점의 비디오가 있으면, 이 두 관점을 결합해 더 완전한 3D 이해를 달성할 수 있다는 희망이 있다. 또한 **Novel View Synthesis** — 새로운 시점에서 장면이 어떻게 보일지 생성하는 것 — 은 VR/AR, 로보틱스, 영화 제작 등에서 폭넓은 응용이 있다.\n\nEgo-exo 맥락에서 novel view synthesis는 특별한 의미를 가진다: **ego 비디오에서 exo 뷰를 생성**하거나 (ego-to-exo), **exo 비디오에서 ego 뷰를 생성**하는 것 (exo-to-ego). 이를 통해 데이터 증강, 임퇴직 훈련 시뮬레이션, 스포츠 전술 분석 등 다양한 응용이 가능하다.\n\n2025-2026년에 **3D Gaussian Splatting** 기반 방법들이 주목받고 있으며, 여러 ego-exo 비디오를 입력받아 실시간 렌더링이 가능한 3D 장면 표현을 학습하는 연구들이 등장했다.",
+      "sections": [
+        {
+          "title": "Novel View Synthesis: 정의와 ego-exo 특수성",
+          "content": "**Novel View Synthesis(NVS)**는 주어진 뷰들로부터 임의의 새로운 시점에서의 이미지를 생성하는 문제다. 수식:\n\n$$I_{\\text{novel}} = f(I_1, I_2, ..., I_N, c_{\\text{novel}})$$\n\n여기서 $I_i$는 입력 뷰, $c_{\\text{novel}}$은 새 카메라 파라미터.\n\nEgo-exo 맥락에서 NVS는 두 가지 특수한 형태를 가진다:\n\n**Ego-to-Exo Synthesis**: 착용 카메라(ego) 뷰만 있을 때, 외부 관찰자(exo) 시점의 이미지를 생성한다. 이는 착용자의 전신을 생성하는 것을 포함하기 때문에 특히 어렵다 — ego 비디오에는 착용자 자신이 보이지 않기 때문이다.\n\n**Exo-to-Ego Synthesis**: 외부 카메라에서 촬영된 비디오로부터 착용자 시점의 이미지를 생성한다. 이는 VR 체험 생성, 1인칭 스포츠 영상 합성 등에 응용된다.\n\nEgo-exo NVS의 핵심 어려움: **착용자의 몸 모델링**. 착용자의 몸은 ego 카메라에서는 대부분 보이지 않지만, exo 합성 시 자신이 생성되어야 한다. 이를 위해 exo 데이터에서 학습한 신체 모델이나 diffusion model 기반 인페인팅이 필요하다."
+        },
+        {
+          "title": "3D Gaussian Splatting: 실시간 3D 표현",
+          "content": "**3D Gaussian Splatting (3DGS)** ([Kerbl et al., SIGGRAPH 2023](https://arxiv.org/abs/2308.04079))은 NeRF 이후 가장 중요한 3D 표현 방법이다. NeRF가 암묵적 함수(MLP)로 장면을 표현하는 것과 달리, 3DGS는 **수백만 개의 3D Gaussian**으로 장면을 명시적으로 표현한다.\n\n각 Gaussian은 다음 속성을 가진다: 위치 $\\mu \\in \\mathbb{R}^3$, 공분산 $\\Sigma \\in \\mathbb{R}^{3 \\times 3}$, 색상(구면 조화 함수), 불투명도 $\\alpha$.\n\n렌더링: 새 시점에서 Gaussian들을 이미지 평면에 투영하고 $\\alpha$-블렌딩으로 합성한다. NeRF보다 10~100배 빠른 실시간 렌더링이 가능하다.\n\nEgo-exo 응용: **EgoSplat** ([arXiv:2406.19811](https://arxiv.org/abs/2406.19811))과 같은 연구에서 ego와 exo 프레임을 함께 사용해 더 완전한 3DGS를 학습한다. Ego 카메라는 클로즈업 영역(손, 도구)의 고해상도 Gaussian을 제공하고, exo 카메라는 넓은 영역의 기하학적 구조를 제공한다. 두 시점의 상호보완성이 3D 재구성 품질 향상에 직접 기여한다."
+        },
+        {
+          "title": "Ego-Exo 결합 3D 재구성의 장점",
+          "content": "단일 시점(ego만 또는 exo만)으로 3D 재구성 대비 ego-exo 결합의 구체적 장점:\n\n**1. 가려짐 보완**: Ego에서 가려진 영역을 exo가 보완하고, 그 반대도 성립한다. 예: 도구를 집는 손은 ego에서 전면에 있어 배경 물체를 가리지만, exo에서는 그 배경 물체가 보인다.\n\n**2. 뷰 다양성 증가**: 두 개 이상의 서로 다른 시점에서 촬영된 데이터를 이용하면 3D 재구성의 기하적 제약이 강해진다. 삼각측량(triangulation)의 정확도가 뷰 수와 분산에 비례해 향상된다.\n\n**3. 스케일 앰비규이티 해소**: 단일 카메라 ego 비디오에서는 스케일이 불명확하다 ('이 물체가 멀리 있는 큰 것인가, 가까이 있는 작은 것인가?'). Exo와 함께 삼각측량하면 절대 스케일을 복원할 수 있다.\n\n**4. 동적 객체 추적**: 행위자의 손이나 도구가 움직일 때, 단일 시점에서는 모션 방향 추정이 불명확할 수 있다. 두 시점 삼각측량으로 3D 궤적을 정확히 복원할 수 있다.\n\n수식으로: 두 카메라 $C_1, C_2$의 내재 파라미터 $K_1, K_2$와 상대 자세 $[R|t]$가 알려져 있을 때, 3D 점 $X$는:\n\n$$X = \\text{DLT}(P_1 x_1, P_2 x_2)$$\n\n$P_i = K_i [R_i | t_i]$는 투영 행렬, $x_i$는 이미지 좌표, DLT는 직접 선형 변환(Direct Linear Transform)."
+        },
+        {
+          "title": "생성 모델 기반 Ego-to-Exo Synthesis",
+          "content": "최근 Diffusion Model의 발전으로 ego-to-exo 합성에 생성 모델을 활용하는 연구들이 등장했다. 핵심 아이디어: ego 비디오를 조건으로 exo 비디오를 생성하는 조건부 비디오 생성 모델.\n\n**주요 논문** ([arXiv:2506.17896](https://arxiv.org/abs/2506.17896), [arXiv:2511.20186](https://arxiv.org/abs/2511.20186)):\n\n방법론의 핵심 도전:\n\n- **신체 생성**: Ego에서 보이지 않는 착용자의 전신을 hallucinate해야 한다. 이를 위해 별도의 신체 모델(SMPL 등)이나 in-context 신체 예측이 필요하다\n- **일관성 유지**: 생성된 exo 비디오가 ego와 시간적으로 일관되어야 한다 — 같은 행동을 해야 한다\n- **카메라 파라미터 제어**: 어떤 각도에서 exo를 생성할지를 제어할 수 있어야 한다\n\n생성 기반 접근의 한계:\n\n- Ego와 exo의 신체 일관성 보장이 어려움\n- 생성된 영상의 물리적 정확성 부족 (관절 각도, 물체 물리 등)\n- 고해상도 실시간 생성이 아직 어려움\n\n이 한계들이 새로운 논문의 기회이기도 하다."
+        }
+      ],
+      "analogy": {
+        "title": "지도 제작: 여러 탐험가의 보고를 합치다",
+        "content": "Ego-exo 3D 재구성은 여러 탐험가의 탐험 보고를 합쳐 지도를 만드는 것과 같다. 한 탐험가(ego)는 협곡 안에서 탐험해 세밀한 지형(손이 닿는 바위의 질감, 좁은 통로의 구조)을 보고한다. 다른 탐험가(exo)는 협곡 밖에서 전체 윤곽을 관찰해 큰 그림(협곡의 전체 길이, 입구 위치, 높이)을 보고한다.\n\n두 보고를 합치면 가장 완전한 지도가 만들어진다. 안(ego)에서만 본 지도는 세부 지형은 정확하지만 전체 맥락을 놓친다. 밖(exo)에서만 본 지도는 큰 그림은 맞지만 내부 세부가 부족하다. 3D Gaussian Splatting이 이 '지도 합성'의 현대적 방법이다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "ego와 exo 두 시점에서 3D 점을 삼각측량하는 기본 코드다. Ego-Exo4D의 캘리브레이션 데이터가 있을 때 이 방법으로 손 키포인트의 3D 위치를 복원할 수 있다.",
+        "code": "import numpy as np\nfrom typing import NamedTuple\n\nclass Camera(NamedTuple):\n    K: np.ndarray  # [3, 3] 내재 파라미터\n    R: np.ndarray  # [3, 3] 회전\n    t: np.ndarray  # [3] 이동\n\n    def projection_matrix(self) -> np.ndarray:\n        \"\"\"[3, 4] 투영 행렬 P = K [R | t] 반환.\"\"\"\n        Rt = np.hstack([self.R, self.t.reshape(3, 1)])\n        return self.K @ Rt\n\ndef triangulate_dlt(\n    cam1: Camera, pt1: np.ndarray,  # [2] 이미지 좌표\n    cam2: Camera, pt2: np.ndarray,  # [2] 이미지 좌표\n) -> np.ndarray:\n    \"\"\"DLT로 두 카메라에서 3D 점 복원.\"\"\"\n    P1 = cam1.projection_matrix()  # [3, 4]\n    P2 = cam2.projection_matrix()\n\n    # 선형 시스템: A @ X = 0\n    A = np.array([\n        pt1[0] * P1[2] - P1[0],\n        pt1[1] * P1[2] - P1[1],\n        pt2[0] * P2[2] - P2[0],\n        pt2[1] * P2[2] - P2[1],\n    ])\n\n    # SVD로 최소 노름 해 구하기\n    _, _, Vt = np.linalg.svd(A)\n    X_hom = Vt[-1]            # 동차 좌표 [4]\n    X = X_hom[:3] / X_hom[3]  # 비동차 [3]\n    return X\n\n# 예시: ego 카메라 (Aria)와 exo 카메라 (GoPro) 설정\n# 실제 사용 시 Ego-Exo4D의 calibration JSON에서 파라미터를 로드한다\ncam_ego = Camera(\n    K=np.array([[800, 0, 540], [0, 800, 960], [0, 0, 1]], dtype=float),\n    R=np.eye(3),\n    t=np.zeros(3),\n)\ncam_exo = Camera(\n    K=np.array([[600, 0, 960], [0, 600, 540], [0, 0, 1]], dtype=float),\n    R=np.array([[0.99, -0.1, 0.0], [0.1, 0.99, 0.0], [0.0, 0.0, 1.0]]),\n    t=np.array([2.0, 0.5, 3.0]),\n)\n\n# 손 키포인트 이미지 좌표 (예시)\npt_ego = np.array([540.0, 800.0])   # ego에서 관찰된 손 위치\npt_exo = np.array([420.0, 350.0])   # exo에서 관찰된 같은 손 위치\n\nX_3d = triangulate_dlt(cam_ego, pt_ego, cam_exo, pt_exo)\nprint(f\"3D hand position: {X_3d}\")\n",
+        "walkthrough": "DLT의 핵심은 각 대응 점이 `x_i * P_i[2] - P_i[row]` 형태의 선형 제약을 만든다는 것이다. 4개 제약(2 카메라 × 2 좌표)을 쌓은 행렬 A의 SVD 최소 특이값 벡터가 3D 점의 동차 좌표가 된다. 실제 ego-exo 연구에서는 여러 exo 카메라를 사용해 더 많은 제약으로 더 정확한 복원이 가능하다."
+      },
+      "industryEvaluation": {
+        "overview": "3D 이해와 view synthesis는 로보틱스, XR, 자율주행 등 응용 영역과 연결되는 중요한 기술이다. 기본 기하학을 알면서 최신 방법(3DGS)도 이해하는 것이 중요하다.",
+        "whatEngineersLookFor": [
+          "삼각측량(DLT)의 수식을 쓰고 SVD로 해를 구하는 과정 설명",
+          "3DGS와 NeRF의 차이, 특히 렌더링 속도와 표현 방식의 차이",
+          "Ego-to-Exo synthesis에서 착용자 신체 생성이 왜 특히 어려운지",
+          "여러 exo 카메라를 사용할 때 3D 재구성 품질이 어떻게 향상되는지"
+        ],
+        "redFlags": [
+          "삼각측량을 '두 카메라로 거리를 재는 것'으로만 설명하는 경우",
+          "3DGS를 NeRF와 같은 것으로 취급하는 경우",
+          "ego에서 착용자 전신이 보이지 않는다는 기본 사실을 놓치는 경우"
+        ],
+        "interviewQuestions": [
+          "Ego-Exo4D의 캘리브레이션 데이터를 이용해 손 키포인트의 3D 궤적을 복원하는 파이프라인을 설계하라.",
+          "3DGS로 ego-exo 장면을 재구성할 때 ego와 exo 카메라의 exposure 차이(밝기, 노출)를 어떻게 처리해야 하는가?",
+          "ego-to-exo synthesis에서 생성된 영상의 물리적 일관성을 평가하는 메트릭은 무엇을 사용해야 하는가?"
+        ],
+        "masteryVsFamiliar": "표면적 이해: 두 카메라로 3D를 복원할 수 있다. 깊은 이해: DLT의 수식을 유도하고, 카메라 수가 늘어날 때 SVD 기반 overdetermined 최소제곱해를 이해하며, 동적 장면(움직이는 손)에서 3DGS를 확장하는 방법(dynamic Gaussian splatting)을 논할 수 있다."
+      },
+      "keyTakeaways": [
+        {"title": "Ego-to-Exo Synthesis의 핵심 어려움", "content": "Ego에서 보이지 않는 착용자 자신의 전신을 생성해야 하는 것이 근본적 어려움이다."},
+        {"title": "3DGS가 현재 SOTA", "content": "수백만 3D Gaussian으로 장면을 표현하며 실시간 렌더링이 가능 — NeRF 대비 10-100배 빠르다."},
+        {"title": "두 시점이 3D 재구성을 완성한다", "content": "Ego는 클로즈업 세부, exo는 전체 구조 — 두 시점의 상호보완성이 3D 재구성 품질에 직접 기여한다."},
+        {"title": "삼각측량으로 절대 스케일 복원", "content": "Ego만으로는 불명확한 스케일을 exo 카메라와의 삼각측량으로 복원할 수 있다."},
+        {"title": "생성 모델 기반 접근 등장", "content": "Diffusion 모델로 ego 조건부 exo 비디오 생성이 가능해졌지만, 물리적 일관성 보장이 여전히 과제."},
+        {"title": "동적 장면이 미해결 과제", "content": "움직이는 손과 도구를 포함한 ego-exo 동적 장면의 3D 재구성과 synthesis가 열린 연구 문제다."}
+      ]
+    },
+    {
+      "number": 9,
+      "emoji": "🗣️",
+      "title": "Multimodal Ego-Exo Learning",
+      "titleKr": "멀티모달 Ego-Exo 학습",
+      "tldr": "비디오에 언어, 오디오, 포즈를 더한 멀티모달 ego-exo 이해와 그라운딩 문제를 다룬다.",
+      "topics": ["Video-Language Grounding", "Audio-Visual Correspondence", "Pose Estimation from Ego/Exo", "Multimodal Fusion"],
+      "learningGoals": [
+        "비디오-언어 그라운딩을 ego-exo 맥락에서 정의하고 주요 방법을 설명할 수 있다",
+        "오디오가 ego-exo 이해에 어떻게 기여하는지 구체적 예시로 설명할 수 있다",
+        "3D 손/신체 포즈 추정에서 ego와 exo 정보가 어떻게 상호보완적으로 작동하는지 이해한다",
+        "멀티모달 정렬을 위한 목적 함수 설계를 논할 수 있다"
+      ],
+      "overview": "현실 세계에서 인간의 활동은 비디오만으로 이루어지지 않는다. 말소리, 도구 소리, 음악, 주변 소음 — 오디오가 활동의 의미를 보완한다. 내레이션, 지시문, 텍스트 레이블 — 언어가 의미를 명시화한다. 관절의 위치와 방향 — 포즈가 동작을 수량화한다.\n\nEgo-exo 연구에서 이 추가 모달리티들은 두 시점 융합 문제를 더 풍부하게, 그리고 더 복잡하게 만든다. 언어 그라운딩은 자연어 쿼리로 비디오 내 특정 순간이나 객체를 찾게 한다. 오디오는 어떤 도구를 사용했는지, 어떤 활동이 진행 중인지를 비디오와 독립적으로 신호한다. 포즈는 ego의 제한된 시야를 보완해 착용자의 전신 움직임을 이해하게 한다.\n\n이 모달리티들의 정렬과 통합이 **진정한 의미의 활동 이해**를 가능하게 한다 — 단순한 행동 분류를 넘어 '누가, 어디서, 무엇으로, 어떻게, 왜'를 이해하는 것.",
+      "sections": [
+        {
+          "title": "비디오-언어 그라운딩: 말과 장면의 연결",
+          "content": "**Video-Language Grounding**은 자연어 쿼리와 비디오 내용을 연결하는 태스크다. Ego-exo 맥락에서는 두 가지 형태:\n\n**Temporal Grounding**: '피아노 연주자가 실수를 하는 순간' → 비디오 시간 구간 [t_s, t_e]\n\n**Spatial Grounding**: '요리사가 사용한 냄비' → 비디오 프레임 내 bounding box\n\nEgo-exo 병렬 비디오에서 그라운딩의 흥미로운 확장:\n\n- **크로스뷰 그라운딩**: ego 비디오의 쿼리로 exo 비디오의 공간/시간 위치 찾기\n- **뷰-불가지 그라운딩**: 쿼리가 어느 시점을 지칭하는지 모르지만 두 시점 중 하나에서 찾기\n\nEgo-Exo4D의 **내레이션 어노테이션**이 이 연구를 지원한다. 참여자들이 활동 중에 무엇을 하는지 말로 설명한 오디오 트랜스크립트가 타임스탬프와 함께 제공된다. 이를 통해 '방금 바퀴를 분리했습니다'라는 내레이션이 ego 비디오의 정확한 구간에 대응되는 자연 언어-비디오 정렬 데이터를 구축할 수 있다."
+        },
+        {
+          "title": "오디오: 세 번째 모달리티의 기여",
+          "content": "오디오는 ego-exo 이해에서 종종 간과되지만 중요한 역할을 한다. 몇 가지 구체적 사례:\n\n**도구 인식**: 드라이버가 나사를 조이는 소리, 피아노 건반 소리, 요리 시 볶는 소리 — 이 오디오 신호들은 어떤 도구가 사용됐는지, 현재 활동 단계가 무엇인지 비디오와 독립적으로 신호한다.\n\n**시간적 정렬 보조**: 두 비디오 스트림(ego, exo)이 오디오를 공유하면 (Ego-Exo4D에서 동기화된 오디오), 오디오가 시간적 정렬의 앵커 역할을 한다. '쾅'하는 도구 충돌음이 정확히 어느 프레임에 있는지로 ego와 exo를 동기화할 수 있다.\n\n**모달리티 보완**: 시각적으로 가려진 물체의 조작을 오디오로 추론할 수 있다. Ego에서 손이 구석을 건드릴 때 소리가 나면, 그 소리가 exo에서 보이지 않는 무언가와의 상호작용을 시사한다.\n\n오디오-비주얼 ego-exo 모델 ([arXiv:2602.06139](https://arxiv.org/abs/2602.06139))에서는 오디오를 추가 모달리티로 통합해 ego-exo 행동 인식 정확도를 향상시켰다. 특히 시각적으로 유사한 행동(예: 다른 종류의 피아노 연주 기법)을 오디오 신호로 구분하는 데 유효했다."
+        },
+        {
+          "title": "포즈 추정: Ego와 Exo의 상호보완",
+          "content": "**3D 신체 포즈 추정**은 비디오에서 관절(joint) 위치와 방향을 복원하는 태스크다. Ego-exo에서 두 시점은 포즈 추정에서 서로 다른 강점을 가진다.\n\nExo에서의 포즈 추정:\n- 전신이 보이므로 전체 골격 추정 용이\n- 깊이 애매성(depth ambiguity)이 있음 — 2D 투영만으로 3D 포즈 추정 시 불명확\n\nEgo에서의 포즈 추정:\n- 전신이 보이지 않음 — 상체/하체를 동시에 보기 어려움\n- 손과 머리 방향 추정에 유리 (HMD 센서, IMU 활용 가능)\n\n두 시점을 합친 **Ego-Exo Joint Pose Estimation**:\n\n1. Exo에서 전신 포즈 추정 (OpenPose, HRNet 등 사용)\n2. Ego IMU 데이터로 머리 자세 추정\n3. 두 정보를 통합해 더 정확한 전신 3D 포즈 복원\n\n수식:\n$$\\hat{P}_{3D} = \\arg\\min_{P} \\left[ \\lambda_e \\mathcal{L}_{\\text{ego}}(P) + \\lambda_x \\mathcal{L}_{\\text{exo}}(P) + \\mathcal{L}_{\\text{prior}}(P) \\right]$$\n\n$\\mathcal{L}_{\\text{ego}}$, $\\mathcal{L}_{\\text{exo}}$는 각 시점에서의 포즈 관찰 일관성 손실, $\\mathcal{L}_{\\text{prior}}$는 신체 구조 사전(joint angle limits, bone length ratios 등)."
+        },
+        {
+          "title": "멀티모달 정렬: 비디오 + 언어 + 오디오 + 포즈",
+          "content": "모든 모달리티를 통합하는 학습 목적 함수 설계는 복잡하다. 기본 접근은 **멀티모달 대조 학습**:\n\n$$\\mathcal{L}_{\\text{total}} = \\mathcal{L}_{\\text{VL}} + \\mathcal{L}_{\\text{VA}} + \\mathcal{L}_{\\text{ego-exo}} + \\mathcal{L}_{\\text{pose}}$$\n\n- $\\mathcal{L}_{\\text{VL}}$: 비디오-언어 대조 손실 (같은 활동의 비디오와 내레이션을 가까이)\n- $\\mathcal{L}_{\\text{VA}}$: 비디오-오디오 대조 손실 (동시에 발생한 비디오와 오디오를 가까이)\n- $\\mathcal{L}_{\\text{ego-exo}}$: Ego-exo 크로스뷰 대조 손실 (챕터 5)\n- $\\mathcal{L}_{\\text{pose}}$: 포즈 재구성 손실\n\n이 모든 손실을 동시에 최적화하면 다시 **negative transfer 문제**가 발생할 수 있다. 각 손실 간의 상충 관계를 관리하는 **그래디언트 조절**이나 **Pareto-optimal 훈련**이 필요할 수 있다.\n\n실용적 접근: **단계적 훈련(staged training)**이 효과적이다 — 먼저 ego-exo 크로스뷰 정렬을 학습하고, 그 다음 언어 그라운딩을 추가하고, 마지막으로 오디오와 포즈를 통합한다. 한 번에 모든 모달리티를 학습하는 것보다 단계적 추가가 안정적으로 수렴한다."
+        }
+      ],
+      "analogy": {
+        "title": "오케스트라 지휘: 여러 악기를 동시에",
+        "content": "멀티모달 ego-exo 학습은 오케스트라 지휘와 같다. 비디오(ego + exo)는 현악기, 언어는 관악기, 오디오는 타악기, 포즈는 피아노다. 각 파트가 혼자 연주할 때는 나름의 음악을 만든다. 하지만 좋은 연주는 이 모든 파트가 조화롭게 어우러질 때 나온다.\n\n지휘자(학습 알고리즘)의 역할은 어느 파트가 언제 더 강조되어야 하는지, 어느 파트들이 함께 어우러져야 하는지를 결정하는 것이다. '여기서는 현악기(ego 비디오)가 주제를 가져가고, 저기서는 오보에(오디오)가 강조되어야 한다' — 이 동적 조율이 좋은 멀티모달 학습이다.\n\nNegative transfer 문제는 '두 파트가 서로 다른 박자로 연주하는 것'이다. 강제로 하나의 박자에 맞추면 양쪽 모두 어색해진다. 해결책은 각 파트가 자신의 역할을 하면서도 전체 화음에 기여하는 구조적 조율이다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "비디오, 오디오, 언어 세 모달리티의 대조 학습을 통합하는 멀티모달 ego-exo 목적 함수 구현이다.",
+        "code": "import torch\nimport torch.nn.functional as F\n\nclass EgoExoMultimodalLoss:\n    \"\"\"멀티모달 ego-exo 통합 손실 함수.\"\"\"\n\n    def __init__(\n        self,\n        tau_vl: float = 0.07,   # 비디오-언어 온도\n        tau_va: float = 0.1,    # 비디오-오디오 온도\n        tau_ee: float = 0.07,   # ego-exo 온도\n        lambda_vl: float = 1.0,\n        lambda_va: float = 0.5,\n        lambda_ee: float = 1.0,\n    ):\n        self.tau_vl = tau_vl\n        self.tau_va = tau_va\n        self.tau_ee = tau_ee\n        self.lam = {\"vl\": lambda_vl, \"va\": lambda_va, \"ee\": lambda_ee}\n\n    def infonce(self, z1, z2, tau):\n        \"\"\"대칭 InfoNCE 손실.\"\"\"\n        z1 = F.normalize(z1, dim=-1)\n        z2 = F.normalize(z2, dim=-1)\n        B = z1.size(0)\n        logits = torch.mm(z1, z2.T) / tau\n        labels = torch.arange(B, device=z1.device)\n        return (F.cross_entropy(logits, labels) + F.cross_entropy(logits.T, labels)) / 2\n\n    def __call__(\n        self,\n        z_ego: torch.Tensor,    # [B, D] ego 비디오 임베딩\n        z_exo: torch.Tensor,    # [B, D] exo 비디오 임베딩\n        z_lang: torch.Tensor,   # [B, D] 언어 임베딩\n        z_audio: torch.Tensor,  # [B, D] 오디오 임베딩\n    ) -> dict:\n        # 각 쌍의 대조 손실\n        loss_ee = self.infonce(z_ego, z_exo, self.tau_ee)   # ego↔exo\n        loss_vl = (\n            self.infonce(z_ego, z_lang, self.tau_vl) +\n            self.infonce(z_exo, z_lang, self.tau_vl)\n        ) / 2                                                # video↔language\n        loss_va = (\n            self.infonce(z_ego, z_audio, self.tau_va) +\n            self.infonce(z_exo, z_audio, self.tau_va)\n        ) / 2                                                # video↔audio\n\n        total = (\n            self.lam[\"ee\"] * loss_ee\n            + self.lam[\"vl\"] * loss_vl\n            + self.lam[\"va\"] * loss_va\n        )\n        return {\"total\": total, \"ego_exo\": loss_ee, \"vl\": loss_vl, \"va\": loss_va}\n",
+        "walkthrough": "각 쌍마다 별도의 온도(tau)를 사용한다 — 모달리티 간 유사도 분포가 다르기 때문이다. `lambda_va`를 낮게 설정(0.5)한 것은 오디오가 비디오보다 약한 신호임을 반영한다. `loss_vl`에서 ego와 exo 양쪽 모두를 언어와 정렬하는 것이 크로스뷰 일관성 있는 언어 그라운딩을 위해 중요하다."
+      },
+      "industryEvaluation": {
+        "overview": "멀티모달 학습은 산업에서 가장 활발하게 활용되는 분야다. 이를 ego-exo에 적용할 때의 구체적 설계 선택들을 설명할 수 있는 것이 중요하다.",
+        "whatEngineersLookFor": [
+          "각 모달리티의 ego-exo 이해 기여를 구체적 사례로 설명하는 능력",
+          "여러 손실을 합칠 때의 negative transfer 문제와 그 관리 전략(그래디언트 조절, 단계적 훈련)",
+          "오디오-비주얼 대응에서 positive pair 정의의 엄밀성 (시간적 동기화된 쌍 vs. 의미적으로 관련된 쌍)",
+          "포즈 추정에서 ego IMU와 exo 비주얼 정보의 Bayesian fusion 접근"
+        ],
+        "redFlags": [
+          "모든 모달리티를 단순히 concatenate하면 된다고 생각하는 경우",
+          "각 모달리티 손실의 가중치를 임의로 설정하고 그 선택 이유를 설명하지 못하는 경우",
+          "오디오를 ego-exo 연구에서 무관한 것으로 보는 경우"
+        ],
+        "interviewQuestions": [
+          "Ego-Exo4D의 내레이션을 언어 그라운딩 데이터로 사용할 때 발생하는 노이즈 문제는 무엇이며 어떻게 처리해야 하는가?",
+          "오디오-비주얼 대조 학습에서 같은 비디오 클립에서 추출한 오디오와 비디오를 positive pair로 사용하는 것의 한계는?",
+          "멀티모달 모델의 각 모달리티 기여도를 ablation study로 측정하는 설계를 제안하라."
+        ],
+        "masteryVsFamiliar": "표면적 이해: 여러 모달리티를 loss로 합산하면 된다. 깊은 이해: 모달리티 간 gradient 충돌을 PCGrad나 gradient normalization으로 관리하고, 각 모달리티의 최적 온도를 calibration으로 선택하며, 모달리티가 없는 추론 시나리오(예: 오디오 없는 경우)를 우아하게 처리하는 missing-modality 강건성 설계를 논할 수 있다."
+      },
+      "keyTakeaways": [
+        {"title": "오디오가 도구 인식에 강력", "content": "드라이버 소리, 피아노 음 등 오디오 신호는 시각적으로 유사한 행동을 구분하는 데 비디오를 보완한다."},
+        {"title": "언어 그라운딩의 크로스뷰 확장", "content": "한 시점의 언어 쿼리로 다른 시점에서 공간/시간 위치를 찾는 크로스뷰 그라운딩이 미개척 분야다."},
+        {"title": "포즈 추정의 시점 역할 분담", "content": "Exo는 전신 포즈, ego IMU는 머리 방향 — 두 시점의 보완으로 더 정확한 3D 포즈 복원이 가능하다."},
+        {"title": "멀티모달 negative transfer", "content": "여러 손실을 합칠 때도 negative transfer가 발생한다 — 단계적 훈련과 그래디언트 조절이 효과적이다."},
+        {"title": "내레이션 어노테이션이 자연 정렬 데이터", "content": "Ego-Exo4D의 타임스탬프 내레이션이 비디오-언어 정렬 연구를 위한 자연스러운 weak supervision을 제공한다."},
+        {"title": "멀티모달 설계 = 트레이드오프", "content": "각 모달리티의 기여와 비용, 손실 가중치의 의미 있는 선택이 멀티모달 모델 품질을 결정한다."}
+      ]
+    },
+    {
+      "number": 10,
+      "emoji": "🚀",
+      "title": "Open Problems & Research Directions",
+      "titleKr": "열린 문제와 연구 방향",
+      "tldr": "Ego-exo 분야의 미해결 핵심 문제들을 분석하고, 2026년 현재 가장 임팩트 있는 논문 아이디어를 도출하는 방법을 배운다.",
+      "topics": ["현재 분야의 공백 지도", "논문 아이디어 발굴", "연구 포지셔닝 전략", "평가 프레임워크 설계"],
+      "learningGoals": [
+        "ego-exo 분야의 4-5개 핵심 미해결 문제를 정확히 진술할 수 있다",
+        "기존 연구의 가정과 한계를 비판적으로 분석하는 방법을 적용할 수 있다",
+        "새 논문의 기여를 명확히 포지셔닝하는 방법을 이해한다",
+        "연구 가설을 falsifiable한 형태로 설계하고 실험 계획을 수립할 수 있다"
+      ],
+      "overview": "강의의 마지막 챕터는 지금까지 배운 내용을 논문 작성이라는 실용적 목표와 연결하는 시간이다. 좋은 논문은 중요하고 미해결된 문제를 발굴하고, 그 문제에 대한 새로운 해결책이나 통찰을 제공하며, 그 주장을 실험적으로 검증한다.\n\nDeep-research로 확인된 ego-exo 분야의 핵심 미해결 문제들:\n\n1. **Naive fusion의 실패를 극복하는 아키텍처**: EgoExo-Con은 문제를 공식화했지만 명확한 해결책이 없다\n2. **Foundation model의 크로스뷰 이해 병목**: 55.3%의 벽을 깨는 방법\n3. **Cycle-consistent 대응의 시간적/행동 확장**: CCMP가 객체 대응에서 작동하지만 행동 대응으로 확장이 미해결\n4. **Ego-to-Exo 비디오 합성의 일관성**: 생성된 영상의 물리적 일관성 보장\n5. **크로스뷰 메모리 추론**: EgoExoMem이 정의했지만 55.3%는 충분하지 않다\n\n이 중 어디에 기여할 것인가? 이를 결정하는 체계적 방법을 이 챕터에서 다룬다.",
+      "sections": [
+        {
+          "title": "연구 공간의 지도 그리기: 무엇이 알려져 있고 무엇이 모르는가",
+          "content": "좋은 연구는 **이미 알려진 것**과 **아직 모르는 것** 사이의 경계를 정확히 파악하는 것에서 시작한다. Ego-exo 분야의 현재 지형을 표로 정리하면:\n\n| 문제 | 현재 상태 | 기회 |\n|---|---|---|\n| 데이터셋 구축 | Ego-Exo4D로 잘 커버됨 | 특정 도메인 집중 데이터셋 |\n| 행동 인식 | 단일 시점 성숙, 크로스뷰는 초기 단계 | 크로스뷰 행동 이해 |\n| 대응점 학습 | CCMP(2026)로 진전 | 시간적 행동 대응 |\n| Naive fusion 실패 | EgoExo-Con이 문제 공식화 | 해결 아키텍처 제안 |\n| MLLM 크로스뷰 | 55.3%로 낮음 | 구조적 개선 |\n| Novel view synthesis | 초기 단계 | 물리적 일관성 |\n| 3D 재구성 | 단일 시점 성숙, ego-exo는 초기 | 동적 장면 재구성 |\n| 멀티모달 통합 | 언어+비디오 초기, 오디오+포즈 미개척 | 모달리티 확장 |\n\n이 표에서 '현재 상태'가 '초기 단계'이고 '기회' 열이 명확한 행들이 가장 임팩트 있는 논문 영역이다."
+        },
+        {
+          "title": "논문 아이디어 발굴: 미해결 질문에서 시작하라",
+          "content": "Deep-research 결과에서 확인된 **open questions** (연구자들이 명시한 미해결 질문):\n\n**Q1. Naive multi-view training 실패를 극복하는 아키텍처는?**\n\nEgoExo-Con은 문제를 보였지만 해결책은 없다. 가능한 논문 방향:\n- Cross-view alignment pre-training이 naive fusion 실패를 얼마나 완화하는가?\n- Gradient conflict를 줄이는 specific architecture (view-specific adapters)의 효과\n- 두 시점의 최적 fusion 전략이 태스크 종류에 따라 어떻게 다른가?\n\n**Q2. Foundation model의 크로스뷰 이해를 55.3% 이상으로 올리는 방법은?**\n\n가능한 논문 방향:\n- 크로스뷰 attention mechanism을 기존 MLLM에 삽입하는 plug-in 방법\n- Ego-exo 대응점을 token-level에서 명시적으로 모델링하는 방법\n- EgoExoMem 특화 instruction tuning 데이터셋 구축\n\n**Q3. Cycle-consistent 대응이 행동 수준으로 확장 가능한가?**\n\nCCMP는 물체 마스크 대응이지만 행동(keystep) 수준 대응은 미탐구. 가능한 방향:\n- 행동 구간 대응을 cycle-consistent 방식으로 학습\n- 의미적 레이블 없이 ego-exo 행동 alignment 달성\n- Temporal cycle consistency loss 설계"
+        },
+        {
+          "title": "연구 포지셔닝: 기존 연구와 어떻게 다른가",
+          "content": "새 논문의 기여를 명확히 포지셔닝하는 것은 논문 통과의 핵심이다. 포지셔닝을 위한 체계적 접근:\n\n**1. 문제 정의의 명확성**: 어떤 정확한 문제를 푸는가? EgoExoMem의 크로스뷰 메모리 추론 vs. EgoExoBench의 크로스뷰 의미 이해 vs. EgoExo-Con의 일관성 — 각각 다른 문제다. 명확하게 하나를 골라야 한다.\n\n**2. 기존 방법의 한계 명시**: 기존 방법이 왜 이 문제를 못 푸는가? '단순히 concat하면 성능이 낮다'는 관찰이 아니라, 왜 낮은지 메커니즘 수준에서 설명해야 설득력 있다.\n\n**3. 기여의 신기성(novelty)**: 새로운 무엇을 제안하는가? 새 아키텍처, 새 훈련 목적 함수, 새 데이터셋, 새 평가 프레임워크 — 명확한 기여 유형이 있어야 한다.\n\n**4. 실험적 검증**: 제안한 방법이 기존보다 우월함을 실험으로 보여야 한다. 어떤 벤치마크에서 얼마나 향상됐는가?\n\n**포지셔닝 예시** (좋은 예):\n> 'EgoExo-Con이 naive fusion의 실패를 보였지만 해결책을 제시하지 않았다. 우리는 크로스뷰 alignment pre-training이 이 실패를 X%p 완화할 수 있음을 보이고, 어느 레이어에서 alignment가 가장 중요한지를 분석한다.'\n\n**포지셔닝 예시** (나쁜 예):\n> 'Ego-exo 연구는 중요하다. 우리는 ego와 exo를 함께 사용하는 새로운 방법을 제안한다.'"
+        },
+        {
+          "title": "실험 설계: Falsifiable 가설과 Ablation Study",
+          "content": "좋은 논문 실험의 핵심 원칙들:\n\n**Falsifiable 가설**: 실험이 가설을 반증할 수 있어야 한다. '크로스뷰 alignment pre-training이 naive fusion의 gradient conflict를 감소시킬 것이다'는 falsifiable하다 — gradient cosine similarity를 측정해 검증 가능. '더 좋은 방법을 제안한다'는 falsifiable하지 않다.\n\n**ablation study 설계**: 논문에서 제안하는 각 구성 요소가 기여하는지를 제거 실험으로 보여야 한다.\n\n예시 ablation 구조:\n\n| 방법 | EgoExoMem | EgoExoBench | CharadesEgo |\n|---|---|---|---|\n| Baseline (단일 exo) | 45.0% | 40.0% | 59.5% |\n| + Ego input (naive) | 51.0% | 43.0% | 51.3% |\n| + Cross-view alignment | 57.0% | 48.0% | 57.0% |\n| + View-adaptive gate | 59.0% | 50.0% | 59.0% |\n| Full model | 61.0% | 52.0% | 61.0% |\n\n각 행이 구성 요소 하나를 추가하며, 전체 향상에서 각 요소의 기여를 볼 수 있다.\n\n**비교 방법(baselines) 선택**: 최신 방법들과 공정하게 비교해야 한다. EgoExoMem 논문이 보고한 Gemini 2.5 Flash (55.3%)를 baseline으로 포함해야 한다. 이전 시대 방법만 이기면 설득력이 낮다.\n\n**통계적 유의성**: 여러 run의 평균과 표준 편차를 보고해야 한다. 단일 run 결과는 신뢰도가 낮다."
+        }
+      ],
+      "analogy": {
+        "title": "미지 영토의 탐험가: 지도의 빈 곳을 찾아라",
+        "content": "연구는 미지 영토를 탐험하는 것과 같다. 좋은 탐험가는 먼저 이미 알려진 지형(기존 논문)을 파악하고, 그 지도에서 '여기는 아무도 가보지 않았다'는 빈 곳을 찾는다. 그 빈 곳을 향해 탐험(연구)을 출발한다.\n\nEgo-exo 분야의 현재 지도에는 여러 빈 곳이 있다: naive fusion 실패의 해결 영토, 55.3% 이상의 크로스뷰 이해 영토, 행동 수준 크로스뷰 대응 영토. 탐험가가 이 빈 곳으로 들어가 새로운 발견(논문 기여)을 가져오는 것이 연구의 본질이다.\n\n중요한 것은 '진짜 빈 곳'을 찾는 것이다. 이미 다른 팀이 먼저 탐험했거나(이미 발표된 논문), 탐험할 가치가 없는 불모지(중요하지 않은 문제)를 향해 출발하면 안 된다. 충분한 문헌 조사와 deep-research가 진짜 미개척 영토를 찾는 나침반이 된다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "논문 실험에서 자주 필요한 ablation study 결과 정리 및 통계 검증 코드다. 여러 run의 결과를 받아 신뢰 구간과 유의성을 계산한다.",
+        "code": "import numpy as np\nfrom scipy import stats\nfrom typing import NamedTuple\n\nclass AblationResult(NamedTuple):\n    name: str\n    scores: list[float]  # 여러 랜덤 시드의 결과\n\ndef ablation_summary(\n    baseline: AblationResult,\n    variants: list[AblationResult],\n    alpha: float = 0.05,\n) -> None:\n    \"\"\"Ablation study 결과를 mean±std 및 통계 검증과 함께 출력.\"\"\"\n    b_scores = np.array(baseline.scores)\n    b_mean, b_std = b_scores.mean(), b_scores.std()\n    print(f\"{'Method':<35} {'Mean±Std':<15} {'Delta':<10} {'p-value':<10}\")\n    print(\"-\" * 72)\n    print(f\"{baseline.name:<35} {b_mean:.1f}±{b_std:.1f}\")\n\n    for v in variants:\n        v_scores = np.array(v.scores)\n        v_mean, v_std = v_scores.mean(), v_scores.std()\n        delta = v_mean - b_mean\n\n        # Welch's t-test (분산 다를 수 있어 more robust)\n        t_stat, p_val = stats.ttest_ind(v_scores, b_scores, equal_var=False)\n        sig = \"*\" if p_val < alpha else \"\"\n\n        print(\n            f\"{v.name:<35} {v_mean:.1f}±{v_std:.1f}  \"\n            f\"{delta:+.1f}      {p_val:.3f} {sig}\"\n        )\n\n# 논문 실험 예시: EgoExoMem 정확도 비교\nablation_summary(\n    baseline=AblationResult(\n        \"Baseline (exo only)\",\n        [45.1, 44.8, 45.3, 44.9, 45.2],  # 5 seeds\n    ),\n    variants=[\n        AblationResult(\"+ Ego input (naive)\",   [51.2, 50.8, 51.5, 50.9, 51.1]),\n        AblationResult(\"+ Cross-view align\",     [57.1, 56.9, 57.4, 56.8, 57.2]),\n        AblationResult(\"+ View-adaptive gate\",   [59.3, 59.0, 59.5, 58.9, 59.2]),\n        AblationResult(\"Full model\",             [61.1, 60.8, 61.4, 60.7, 61.2]),\n    ],\n)\n",
+        "walkthrough": "Welch's t-test를 사용하는 것은 두 방법의 분산이 다를 수 있기 때문이다. `p < 0.05`에 별표(*)를 표시해 통계적으로 유의한 향상을 명확히 한다. 논문 submission 시 이런 통계 검증 없이 단일 run 결과만 보고하면 리뷰어의 지적을 받기 쉽다."
+      },
+      "industryEvaluation": {
+        "overview": "연구 능력은 단순히 코딩 능력과 다르다. 중요한 문제를 찾고, 그 문제에 대한 통찰 있는 해결책을 제안하며, 실험으로 검증하는 사이클 — 이것이 연구 능력의 핵심이다.",
+        "whatEngineersLookFor": [
+          "분야의 공백 지도를 그리고 중요한 미해결 문제를 명확히 특정하는 능력",
+          "연구 가설을 falsifiable한 형태로 설계하는 방법론적 엄밀성",
+          "ablation study 설계와 통계적 유의성 검증의 중요성 인식",
+          "기존 방법의 한계를 비판적으로 분석하고 그 한계로부터 새 아이디어를 도출하는 능력"
+        ],
+        "redFlags": [
+          "문제를 명확히 특정하지 않고 '전반적인 ego-exo 이해'를 목표로 하는 경우",
+          "ablation study 없이 최종 결과만 보고하는 경우",
+          "단일 run 결과만 있고 통계적 유의성을 검증하지 않는 경우",
+          "최신 baselines(Gemini 2.5 Flash 55.3% 등)과 비교하지 않는 경우"
+        ],
+        "interviewQuestions": [
+          "Ego-exo 분야에서 지금 당장 가장 임팩트 있는 논문을 쓴다면 어떤 문제를 선택하고 왜인가?",
+          "CCMP(CVPR 2026)를 행동 수준 대응으로 확장하려면 어떤 기술적 도전을 극복해야 하는가?",
+          "EgoExoMem에서 Gemini 2.5 Flash의 55.3%를 70% 이상으로 올리기 위해 어떤 아키텍처적 변화가 필요한가?"
+        ],
+        "masteryVsFamiliar": "표면적 이해: 연구 주제가 흥미롭다. 깊은 이해: 분야의 공백 지도를 그려 가장 임팩트 있는 미해결 문제를 특정하고, 그 문제에 대한 falsifiable 가설을 설계하며, 제안 방법의 신기성을 기존 문헌과의 차별점으로 명확히 표현하고, 통계적으로 검증된 실험으로 주장을 뒷받침할 수 있다."
+      },
+      "keyTakeaways": [
+        {"title": "공백 지도가 연구의 출발점", "content": "이미 알려진 것과 아직 모르는 것을 표로 정리하면 가장 임팩트 있는 연구 기회가 보인다."},
+        {"title": "5개 핵심 미해결 문제", "content": "Naive fusion 극복, MLLM 55.3% 한계 돌파, 대응의 행동 확장, Ego-Exo 합성 일관성, 메모리 추론 — 이 5개가 현재 필드의 주요 공백이다."},
+        {"title": "Falsifiable 가설이 좋은 연구의 기초", "content": "실험으로 반증 가능한 형태로 가설을 설계해야 의미 있는 과학적 기여가 된다."},
+        {"title": "Ablation = 기여의 분해", "content": "제안 방법의 각 구성 요소가 실제로 도움이 되는지를 제거 실험으로 보여야 한다."},
+        {"title": "통계적 유의성은 필수", "content": "여러 랜덤 시드로 실험하고 t-test로 유의성을 검증해야 신뢰할 수 있는 결과다."},
+        {"title": "포지셔닝이 논문의 절반", "content": "'왜 기존 방법이 안 되는가'와 '우리 방법이 어떻게 다른가'를 메커니즘 수준에서 설명할 수 있어야 한다."},
+        {"title": "Deep-Research가 방향을 준다", "content": "문헌의 open questions 섹션, rejected claims, 검증된 발견들이 새 논문의 출발점이 된다."}
+      ]
+    }
+  ]
+}
