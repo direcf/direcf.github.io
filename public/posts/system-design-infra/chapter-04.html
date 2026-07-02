@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch4: Load Balancing: 7 Algorithms &amp; Implementation — System Design: APIs, Databases, Scaling &amp; Production Infra — direcf</title>
+  <meta name="description" content="로드밸런서가 트래픽을 어떻게 분배하는지 7가지 알고리즘을 이해하고, Nginx/HAProxy/AWS ELB 등 실제 구현 옵션을 안다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item active" href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon">☁️</span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon">🔐</span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon">🔐</span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/computer-science">System Design: APIs, Databases, Scaling &amp; Production Infra</a><span class="sep">›</span>
+        <strong>Ch04 Load Balancing: 7 Algorithms &amp; Implementation</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 04 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">⚖️</div>
+      <h1 class="chapter-title">Load Balancing: 7 Algorithms &amp; Implementation</h1>
+      <div class="chapter-title-kr">로드밸런싱: 7가지 알고리즘과 구현</div>
+      <div class="chapter-tldr">로드밸런서가 트래픽을 어떻게 분배하는지 7가지 알고리즘을 이해하고, Nginx/HAProxy/AWS ELB 등 실제 구현 옵션을 안다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-04.png" alt="Chapter 4 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 4 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>로드밸런서의 역할과 동작 원리를 설명할 수 있다</li><li>7가지 로드밸런싱 알고리즘을 상황에 맞게 선택할 수 있다</li><li>Consistent Hashing이 왜 샤딩과 캐싱에서 중요한지 이해한다</li><li>소프트웨어(Nginx), 하드웨어(F5), 클라우드(AWS ELB) LB의 차이를 안다</li><li>헬스체크가 로드밸런서에서 어떻게 동작하는지 설명할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>수평으로 확장된 서버들이 있다. 그런데 클라이언트는 어느 서버에 요청을 보내야 할지 모른다. 이 문제를 해결하는 것이 로드밸런서다. 로드밸런서는 모든 요청을 받아서 가장 적절한 서버로 전달한다 — 마치 교통 경찰관처럼.</p>
+<p>단순히 트래픽을 나누는 것 이상으로, 로드밸런서는 시스템의 신뢰성을 높이는 핵심 컴포넌트다. 서버 하나가 다운되면 자동으로 해당 서버에 트래픽을 보내지 않고, 살아있는 서버들로만 요청을 분배한다. 이를 위해 <strong>헬스체크(Health Check)</strong> 를 지속적으로 수행한다.</p>
+<p>로드밸런서의 가장 중요한 역할은 세 가지다: ① 트래픽 분산으로 과부하 방지, ② 장애 서버 자동 제외로 가용성 향상, ③ 새 서버 추가를 클라이언트 변경 없이 가능하게 함. 이 챕터에서는 로드밸런서가 어떤 알고리즘으로 트래픽을 분배하는지, 그리고 실제로 어떻게 구현하는지 배운다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>로드밸런싱 알고리즘 1-4: Round Robin부터 IP Hash까지</h2><p><strong>Round Robin</strong> = 가장 단순한 방식. 요청이 들어올 때마다 서버 1, 2, 3 순서로 돌아가며 배분한다. 서버 3 이후에는 다시 1로 돌아간다. 모든 서버의 성능이 동일할 때 가장 효과적이다. 구현이 단순하고 예측 가능하다.</p>
+<p><strong>Least Connections</strong> = 현재 활성 연결이 가장 적은 서버로 트래픽을 보낸다. 서버 1에 10개, 서버 2에 9개, 서버 3에 30개의 활성 연결이 있다면, 다음 요청은 서버 2로 간다. 세션 길이가 가변적인 서비스(파일 업로드, 스트리밍)에 특히 유용하다. 짧은 요청과 긴 요청이 섞여 있을 때 Round Robin보다 균등한 부하 분산을 실현한다.</p>
+<p><strong>Least Response Time</strong> = 응답 시간이 가장 빠르고 활성 연결이 적은 서버를 선택한다. 서버의 성능과 현재 부하를 모두 고려해 사용자에게 가장 빠른 응답을 제공한다. 다양한 사양의 서버가 혼재하는 환경에서 효과적이다.</p>
+<p><strong>IP Hash</strong> = 클라이언트 IP 주소를 해시해 항상 같은 서버로 라우팅한다. 클라이언트 A의 모든 요청은 항상 서버 2로, 클라이언트 B의 모든 요청은 항상 서버 3으로 간다. 서버가 클라이언트별 상태를 로컬에 캐싱할 때 유용하다. 단, 특정 IP가 집중되면 해당 서버에 과부하가 생길 수 있다.</p></div><div class="sb-block"><h2>로드밸런싱 알고리즘 5-7: Weighted, Geographical, Consistent Hashing</h2><p><strong>Weighted Algorithms</strong> = Round Robin이나 Least Connections에 가중치를 더한다. 서버 1이 16GB RAM, 서버 2가 32GB RAM이면, 서버 2에 2배의 가중치를 부여해 2배 더 많은 요청을 보낸다. 다양한 사양의 서버를 혼합 운영할 때 각 서버의 실제 처리 능력을 반영할 수 있다.</p>
+<p><strong>Geographical Algorithms</strong> = 사용자의 지리적 위치를 기반으로 가장 가까운 서버로 라우팅한다. 미국 사용자는 US-East 서버로, 유럽 사용자는 Europe 서버로. 네트워크 레이턴시를 줄이는 데 효과적이다. CDN(Content Delivery Network)의 기본 원리와 같다. 글로벌 서비스에서 지연 시간 감소에 직접적으로 기여한다.</p>
+<p><strong>Consistent Hashing</strong> = 가장 정교한 알고리즘. 서버들을 해시 링(Hash Ring) 위에 배치하고, 요청을 해시한 값에 가장 가까운 서버로 라우팅한다. 핵심 장점은 서버 추가/제거 시 영향받는 키의 비율이 최소화된다는 것이다. 일반 해시(<code>key % N</code>)로 10대 서버 중 1대가 추가되면 거의 모든 키가 다른 서버로 재배치된다. Consistent Hashing은 1/N의 키만 이동한다. 분산 캐시(Redis Cluster), 분산 데이터베이스 샤딩에 필수적으로 사용된다.</p></div><div class="sb-block"><h2>헬스체크: 로드밸런서가 서버 상태를 아는 방법</h2><p>로드밸런서가 다운된 서버에 트래픽을 보내지 않으려면, 먼저 어떤 서버가 다운됐는지 알아야 한다. 이것이 헬스체크의 역할이다.</p>
+<p>로드밸런서는 주기적으로(보통 5~30초마다) 각 서버의 헬스체크 엔드포인트(<code>/health</code> 또는 <code>/ping</code>)에 HTTP 요청을 보낸다. 서버가 200 OK로 응답하면 정상, 응답이 없거나 5xx 에러면 비정상으로 판단한다.</p>
+<p>비정상으로 판단된 서버는 풀(Pool)에서 즉시 제외된다. 이후 헬스체크에서 다시 정상 응답을 보내면 자동으로 풀에 복귀한다. 이 과정이 자동화되어 있어 운영자가 수동으로 개입할 필요가 없다.</p>
+<p>헬스체크 엔드포인트는 단순한 <code>/health</code>가 아니어야 한다. 서버 프로세스가 살아있더라도 데이터베이스 연결이 끊어져 있다면 실질적으로 서비스 불가 상태다. 따라서 헬스체크에서는 DB 연결, 캐시 연결, 의존 서비스 등 핵심 의존성을 함께 확인해야 한다.</p>
+<p><strong>소프트웨어 LB</strong>: Nginx(가장 일반적), HAProxy(오픈소스, 고성능)</p>
+<p><strong>하드웨어 LB</strong>: F5, Citrix (엔터프라이즈 환경, 매우 고성능, 고가)</p>
+<p><strong>클라우드 LB</strong>: AWS ELB(Elastic Load Balancer), GCP Load Balancer, Azure Load Balancer (Auto Scaling, 헬스체크, 보안 자동 지원)</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">공항 보안 검색대</div>
+      <div class="a-body"><p>로드밸런서는 공항 보안 검색대 운영자와 같다. 보안 구역 앞에 서서 여러 개의 검색대 중 줄이 가장 짧은 곳으로 승객들을 안내한다. 이것이 Least Connections 알고리즘이다.</p>
+<p>VIP 승객(헤비 유저)을 항상 같은 검색대로 안내해 해당 검색 요원이 그 승객의 특성을 잘 파악하도록 하는 것은 IP Hash다. 어떤 검색대가 고장났다면(서버 다운) 그쪽으로 승객을 보내지 않는 것이 헬스체크다.</p>
+<p>Consistent Hashing은 더 정교하다. 검색대 하나가 새로 열리거나 닫힐 때, 최소한의 승객만 다른 검색대로 이동시킨다. 일반적인 방법으로는 새 검색대가 열릴 때 거의 모든 줄을 재배치해야 하지만, Consistent Hashing은 1/N의 승객만 이동한다 — 혼란을 최소화한다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>Round Robin과 Least Connections 알고리즘을 순수 Python으로 구현해 보자. 실제 프로덕션에서는 Nginx나 AWS ELB를 사용하지만, 알고리즘 자체를 구현해보면 내부 동작을 명확히 이해할 수 있다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import threading
+from collections import defaultdict
+
+class RoundRobinLoadBalancer:
+    def __init__(self, servers):
+        self.servers = servers
+        self.index = 0
+        self.lock = threading.Lock()
+    
+    def get_server(self):
+        with self.lock:  # 동시성 안전
+            server = self.servers[self.index]
+            self.index = (self.index + 1) % len(self.servers)
+            return server
+
+class LeastConnectionsLoadBalancer:
+    def __init__(self, servers):
+        self.servers = servers
+        # 각 서버의 현재 활성 연결 수 추적
+        self.connections = defaultdict(int)
+        self.lock = threading.Lock()
+    
+    def get_server(self):
+        with self.lock:
+            # 활성 연결이 가장 적은 서버 선택
+            server = min(self.servers, key=lambda s: self.connections[s])
+            self.connections[server] += 1
+            return server
+    
+    def release(self, server):
+        with self.lock:
+            self.connections[server] = max(0, self.connections[server] - 1)
+
+# 테스트
+servers = [&#x27;server1:8080&#x27;, &#x27;server2:8080&#x27;, &#x27;server3:8080&#x27;]
+rr = RoundRobinLoadBalancer(servers)
+lc = LeastConnectionsLoadBalancer(servers)
+
+print(&quot;Round Robin:&quot;, [rr.get_server() for _ in range(6)])
+
+# Least Connections 시뮬레이션: server1에 인위적 부하
+lc.connections[&#x27;server1:8080&#x27;] = 10
+lc.connections[&#x27;server2:8080&#x27;] = 2
+print(&quot;Least Conn:&quot;, lc.get_server())  # server2 선택</code></pre>
+      <div class="c-walk"><p><code>threading.Lock()</code>은 여러 스레드가 동시에 <code>index</code>를 수정하는 경쟁 조건(Race Condition)을 방지한다. <code>defaultdict(int)</code>는 처음 접근하는 서버 키에 자동으로 0을 할당해 초기화 코드를 줄인다. <code>release()</code> 메서드는 요청 처리가 완료되면 연결 수를 감소시킨다 — 실제 LB는 TCP 연결 종료 이벤트를 감지해 이를 자동 처리한다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">면접에서 로드밸런서를 설계에 포함시키는 것은 기본이다. 더 나아가 어떤 알고리즘을 선택하고 왜 그 선택을 했는지 설명할 수 있어야 한다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>서비스 특성(세션 길이, 서버 균일성)에 맞는 알고리즘을 선택하는가</li><li>로드밸런서 자체가 SPOF가 되지 않도록 이중화를 고려하는가</li><li>L4(TCP/UDP 레벨) vs L7(HTTP 레벨) 로드밸런싱의 차이를 아는가</li><li>Sticky Session이 왜 문제가 되고 어떻게 피하는가</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>로드밸런서 자체를 단일 구성으로 설계 (SPOF)</li><li>Sticky Session으로 무상태 설계 원칙 위반</li><li>Consistent Hashing을 모름 (분산 시스템 면접에서 자주 나옴)</li><li>헬스체크 누락</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>Consistent Hashing은 언제 일반 해시보다 유리한가요? Redis 클러스터에서 어떻게 사용되나요?</li><li>로드밸런서 자체가 SPOF가 되면 어떻게 해결하겠습니까?</li><li>L4 로드밸런서와 L7 로드밸런서의 차이점과 각각의 사용 사례는 무엇인가요?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 익숙한 수준: &#x27;Round Robin은 순서대로 분배합니다.&#x27; 마스터 수준: &#x27;이 서비스는 파일 업로드 세션이 길어 연결 시간이 1초~10분까지 가변적입니다. Round Robin보다 Least Connections가 더 균등한 부하 분산을 보장하고, 업로드 중인 서버에 새 요청이 집중되는 문제를 방지합니다.&#x27;</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>Round Robin</h3><p>가장 단순. 모든 서버 성능이 동일할 때 효과적.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>Least Connections</h3><p>세션 길이가 가변적일 때 균등 부하 분산에 최적.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>IP Hash</h3><p>같은 클라이언트를 항상 같은 서버로 — 서버 로컬 캐시 활용 시.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>Consistent Hashing</h3><p>서버 추가/제거 시 최소 키 이동 — 분산 캐시와 DB 샤딩의 핵심.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>헬스체크 필수</h3><p>LB는 주기적으로 /health를 호출해 비정상 서버를 자동으로 풀에서 제외한다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>LB의 SPOF 문제</h3><p>로드밸런서 자체도 이중화(Active-Passive 또는 Active-Active)해야 한다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>클라우드 LB의 편리함</h3><p>AWS ELB는 Auto Scaling, 헬스체크, SSL Termination을 자동으로 처리한다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-03.html">← Scaling Strategies: Vertical vs Horizontal</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-05.html">High Availability: Health Checks &amp; SPOF Elimination →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

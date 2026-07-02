@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch1: System Design Fundamentals &amp; Single Server — System Design: APIs, Databases, Scaling &amp; Production Infra — direcf</title>
+  <meta name="description" content="시스템 디자인이 무엇인지, AI 시대에도 왜 중요한지 이해하고 단일 서버 구조의 한계를 파악한다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item active" href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon">☁️</span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon">🔐</span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon">🔐</span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/computer-science">System Design: APIs, Databases, Scaling &amp; Production Infra</a><span class="sep">›</span>
+        <strong>Ch01 System Design Fundamentals &amp; Single Server</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 01 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🏗️</div>
+      <h1 class="chapter-title">System Design Fundamentals &amp; Single Server</h1>
+      <div class="chapter-title-kr">시스템 디자인 입문 &amp; 단일 서버 구조</div>
+      <div class="chapter-tldr">시스템 디자인이 무엇인지, AI 시대에도 왜 중요한지 이해하고 단일 서버 구조의 한계를 파악한다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-01.png" alt="Chapter 1 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 1 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>시스템 디자인의 정의와 중요성을 설명할 수 있다</li><li>단일 서버 아키텍처의 전체 요청 흐름을 그릴 수 있다</li><li>클라이언트-서버 모델에서 DNS의 역할을 이해한다</li><li>단일 서버 구조의 확장 한계와 문제점을 식별할 수 있다</li><li>빅테크 면접에서 시스템 디자인이 평가되는 이유를 안다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>AI가 코드를 작성하는 시대가 왔다. GitHub Copilot, Claude, ChatGPT는 구현 코드를 순식간에 생성한다. 하지만 바로 그렇기 때문에 시스템 디자인 능력이 더 중요해졌다 — <strong>무엇을</strong> 만들어야 하는지, <strong>어떤 구조로</strong> 만들어야 하는지를 아는 엔지니어가 AI를 지휘하는 자리에 서게 된다. 구현 능력이 상향 평준화될수록, 아키텍처를 설계하는 능력은 차별화된 경쟁력이 된다.</p>
+<p><strong>시스템 디자인(System Design)</strong> = 확장 가능하고, 신뢰할 수 있으며, 유지보수하기 쉬운 소프트웨어 시스템을 계획하고 구조화하는 과정. 단순한 코딩 문제가 아니라, 트레이드오프를 인식하고 요구사항에 맞는 최선의 선택을 내리는 능력이다.</p>
+<p>이 챕터에서는 가장 단순한 시스템 — 단일 서버(Single Server) 구조 — 에서 출발한다. 모든 복잡한 분산 시스템은 이 기초 위에 쌓인다. 단일 서버가 어떻게 동작하는지 정확히 이해해야, 왜 나중에 데이터베이스를 분리하고, 로드밸런서를 추가하고, 캐시를 도입하는지를 직관적으로 이해할 수 있다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>시스템 디자인이란 무엇인가</h2><p>시스템 디자인은 주어진 요구사항을 충족하는 소프트웨어 아키텍처를 설계하는 기술이다. &#x27;이 앱이 1억 명의 사용자를 처리할 수 있는가?&#x27;, &#x27;서버 하나가 다운되면 전체 서비스가 멈추는가?&#x27;, &#x27;데이터베이스가 느려질 때 어떻게 대응할 것인가?&#x27; — 이런 질문들이 시스템 디자인의 영역이다.</p>
+<p>빅테크(Google, Amazon, Meta)의 시니어 엔지니어 면접에서는 반드시 시스템 디자인 라운드가 포함된다. 이유는 명확하다 — 시니어 엔지니어의 핵심 업무가 바로 이것이기 때문이다. 기능 하나를 구현하는 것이 아니라, 수백만 명이 사용할 수 있는 확장 가능한 시스템을 만드는 것.</p>
+<p><strong>확장성(Scalability)</strong> = 사용자가 10배 늘어도 시스템이 버틸 수 있는 능력.</p>
+<p><strong>신뢰성(Reliability)</strong> = 일부 구성 요소가 실패해도 전체 시스템이 동작하는 능력.</p>
+<p><strong>유지보수성(Maintainability)</strong> = 시스템을 이해하고, 수정하고, 운영하기 쉬운 정도.</p></div><div class="sb-block"><h2>단일 서버 구조의 전체 요청 흐름</h2><p>가장 단순한 웹 시스템은 단일 서버 위에서 동작한다. 사용자가 <code>www.example.com</code>에 접속하면 정확히 무슨 일이 일어나는지 추적해 보자.</p>
+<p><strong>1단계: DNS 조회.</strong> 사용자의 브라우저는 <code>www.example.com</code>이라는 도메인 이름을 IP 주소로 변환해야 한다. DNS(Domain Name System) 서버에 쿼리를 보내면 <code>198.51.100.42</code> 같은 IP 주소를 돌려받는다. DNS는 인터넷의 전화번호부다.</p>
+<p><strong>2단계: HTTP 요청.</strong> 브라우저는 해당 IP 주소로 HTTP 요청(GET /index.html)을 보낸다.</p>
+<p><strong>3단계: 서버 처리.</strong> 서버는 요청을 받아 처리한다 — 웹서버(Nginx)가 정적 파일을 반환하거나, 애플리케이션 서버(Flask, Django)가 비즈니스 로직을 실행한 뒤 데이터베이스에서 데이터를 가져온다.</p>
+<p><strong>4단계: HTTP 응답.</strong> 서버는 HTML, JSON 등을 담아 응답을 돌려보낸다. 브라우저는 이를 렌더링한다.</p>
+<p>이 모든 일이 단일 서버에서 일어난다. 웹서버, 애플리케이션 서버, 데이터베이스가 모두 한 머신 위에 있다.</p></div><div class="sb-block"><h2>단일 서버의 한계: 왜 이것만으로는 부족한가</h2><p>단일 서버는 작은 앱에 완벽하다. 빠르게 시작할 수 있고, 운영이 단순하다. 하지만 트래픽이 늘어나면 문제가 생긴다.</p>
+<p><strong>메모리 부족.</strong> 동시 사용자가 1,000명을 넘으면 RAM이 부족해진다. 각 요청이 메모리를 사용하고, 단일 서버의 RAM에는 한계가 있다.</p>
+<p><strong>CPU 병목.</strong> 이미지 처리, 복잡한 쿼리, 암호화 — 이런 작업들이 CPU를 점유하면 다른 요청들이 대기 줄에서 기다려야 한다.</p>
+<p><strong>단일 장애점(SPOF).</strong> 단일 서버 구조의 가장 치명적인 문제다. 서버 하나가 멈추면 전체 서비스가 멈춘다. 데이터센터 정전, OS 패치 재시작, 메모리 누수 — 어떤 이유로든 서버가 멈추면 모든 사용자가 영향받는다.</p>
+<p><strong>디스크 I/O 경쟁.</strong> 웹 요청 처리, 데이터베이스 쿼리, 로그 기록이 동시에 같은 디스크에서 경쟁한다. 이는 전체 응답 속도를 저하시킨다.</p>
+<p>이러한 한계들이 바로 이후 챕터에서 다룰 데이터베이스 분리, 수평 스케일링, 로드밸런싱, 캐싱의 이유다.</p></div><div class="sb-block"><h2>웹서버 vs 애플리케이션 서버 vs 데이터베이스</h2><p>단일 서버 안에는 실제로 여러 역할을 하는 계층이 존재한다. 이를 명확히 구분하면 나중에 각 계층을 분리하는 아키텍처를 이해하기 쉽다.</p>
+<p><strong>웹서버(Web Server)</strong> = 정적 파일(HTML, CSS, JS, 이미지)을 클라이언트에게 제공하고, 동적 요청을 애플리케이션 서버로 전달하는 계층. Nginx, Apache가 대표적이다. 매우 빠르고 많은 동시 연결을 처리할 수 있도록 최적화되어 있다.</p>
+<p><strong>애플리케이션 서버(Application Server)</strong> = 비즈니스 로직을 실행하는 계층. &#x27;주문을 처리한다&#x27;, &#x27;사용자를 인증한다&#x27;, &#x27;추천 알고리즘을 실행한다&#x27; 같은 동적 작업을 담당한다. Flask, Django, Express, Spring Boot가 여기에 해당한다.</p>
+<p><strong>데이터베이스(Database)</strong> = 데이터를 영속적으로 저장하고 조회하는 계층. 애플리케이션 서버가 데이터베이스에 쿼리를 보내 필요한 데이터를 가져온다.</p>
+<p>단일 서버에서는 이 세 계층이 하나의 머신에 동거한다. 확장이 필요해지면 이들을 분리하는 것이 첫 번째 단계다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">동네 식당에서 프랜차이즈로</div>
+      <div class="a-body"><p>단일 서버는 혼자 모든 일을 하는 동네 식당과 같다. 주방장 한 명이 주문을 받고, 요리하고, 서빙하고, 계산까지 한다. 손님이 5명이면 완벽하게 돌아간다. 하지만 갑자기 손님이 50명이 몰려오면 어떻게 될까?</p>
+<p>주방장이 지쳐 쓰러지거나(서버 과부하), 주문이 밀리거나(응답 지연), 심하면 가게 문을 닫아야 한다(서비스 다운). 이것이 단일 서버의 한계다.</p>
+<p>해결책은 단계적 분리다. 먼저 홀 직원(웹서버)과 주방(애플리케이션 서버)을 분리한다. 그리고 메뉴 관리 시스템(데이터베이스)을 별도로 둔다. 나중에 손님이 더 많아지면 지점을 여러 개 낸다(수평 스케일링). 각 지점으로 손님을 적절히 배분하는 예약 시스템이 로드밸런서다. 이 모든 과정이 시스템 디자인이다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>Flask로 단일 서버의 전형적인 구조를 구현해 보자. 웹서버 역할(정적 파일 서빙), 애플리케이션 서버 역할(비즈니스 로직), 데이터베이스 연결이 하나의 프로세스에서 동작하는 방식이다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">from flask import Flask, jsonify
+import sqlite3
+import os
+
+app = Flask(__name__)
+
+# 애플리케이션 서버 역할: 비즈니스 로직
+@app.route(&#x27;/api/users/&lt;int:user_id&gt;&#x27;)
+def get_user(user_id):
+    # 데이터베이스 연결 (같은 서버 위의 SQLite)
+    conn = sqlite3.connect(&#x27;local.db&#x27;)
+    cursor = conn.cursor()
+    
+    cursor.execute(&#x27;SELECT id, name, email FROM users WHERE id = ?&#x27;, (user_id,))
+    user = cursor.fetchone()
+    conn.close()
+    
+    if not user:
+        # 404: 리소스 없음
+        return jsonify({&#x27;error&#x27;: &#x27;User not found&#x27;}), 404
+    
+    # 200: 정상 응답
+    return jsonify({&#x27;id&#x27;: user[0], &#x27;name&#x27;: user[1], &#x27;email&#x27;: user[2]})
+
+@app.route(&#x27;/health&#x27;)
+def health_check():
+    # 로드밸런서가 이 엔드포인트를 호출해 서버 상태 확인
+    return jsonify({&#x27;status&#x27;: &#x27;healthy&#x27;}), 200
+
+if __name__ == &#x27;__main__&#x27;:
+    # 단일 서버: 모든 것이 한 프로세스에서 실행
+    app.run(host=&#x27;0.0.0.0&#x27;, port=8080)</code></pre>
+      <div class="c-walk"><p><code>get_user</code> 함수가 애플리케이션 서버의 역할을 한다 — HTTP 요청을 받아 비즈니스 로직을 처리하고 데이터베이스에 쿼리한다. <code>/health</code> 엔드포인트는 나중에 로드밸런서가 이 서버가 살아있는지 확인할 때 사용한다. 지금은 모든 것이 하나의 <code>app.run()</code>에서 실행되지만, 이후 챕터에서 이 구조를 레이어별로 분리하게 된다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">시니어 엔지니어 면접에서 시스템 디자인 라운드는 보통 45분~1시간이다. 지원자가 요구사항을 명확히 하고, 트레이드오프를 인식하며, 점진적으로 시스템을 확장하는 사고방식을 보여주는지를 평가한다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>요구사항 명확화를 먼저 하는가 (DAU, QPS, 데이터 크기, 레이턴시 요구사항)</li><li>단순한 구조에서 시작해 점진적으로 복잡성을 추가하는가</li><li>각 설계 결정의 트레이드오프를 명시적으로 언급하는가</li><li>실제 프로덕션 도구(Nginx, Redis, PostgreSQL)를 언급하는가</li><li>병목 지점을 스스로 찾고 해결책을 제안하는가</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>요구사항 확인 없이 바로 설계를 시작함</li><li>단순한 것에서 복잡한 것으로 가는 흐름 없이 처음부터 과도하게 복잡한 설계</li><li>트레이드오프 언급 없이 특정 기술을 &#x27;최선&#x27;이라고 단정</li><li>단일 장애점(SPOF)을 인식하지 못하는 것</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>URL 단축 서비스(bit.ly)를 설계해 보세요. 초당 1,000건의 쓰기, 10만 건의 읽기를 처리해야 합니다.</li><li>인스타그램 뉴스피드를 설계해 보세요. 1억 명의 MAU를 가정합니다.</li><li>이 설계에서 가장 먼저 병목이 될 것은 어디인가요? 어떻게 해결하시겠습니까?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 단순히 &#x27;단일 서버는 SPOF다&#x27;를 아는 것은 기초 지식이다. 마스터 수준은 &#x27;이 특정 서비스의 트래픽 패턴(읽기 중심 vs 쓰기 중심)을 분석했을 때, 데이터베이스를 먼저 분리하는 것이 웹서버를 분리하는 것보다 더 높은 ROI를 가져다 주는 이유&#x27;를 설명할 수 있는 것이다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>AI 시대의 역설</h3><p>AI가 코드를 쓰는 시대일수록, 무엇을 어떻게 만들지 아는 아키텍처 능력이 더 중요해진다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>단일 서버 흐름</h3><p>DNS 조회 → IP 획득 → HTTP 요청 → 서버 처리(웹서버→앱서버→DB) → HTTP 응답</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>3계층 분리</h3><p>웹서버(정적 파일), 애플리케이션 서버(비즈니스 로직), 데이터베이스(데이터 영속성)은 역할이 다르다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>단일 서버의 치명적 한계</h3><p>SPOF — 서버 하나가 멈추면 전체 서비스가 멈춘다. 이것이 모든 스케일링의 출발점이다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>/health 엔드포인트</h3><p>로드밸런서가 서버 상태를 확인하기 위해 호출하는 헬스체크 엔드포인트는 모든 서버에 필수다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>점진적 복잡성</h3><p>시스템 디자인은 항상 단순한 것에서 시작해 필요에 따라 복잡성을 추가하는 방식으로 접근한다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>요구사항이 먼저</h3><p>면접에서는 설계 전에 DAU, QPS, 데이터 크기, 레이턴시 요구사항을 반드시 확인한다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <span></span>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-02.html">Databases Deep Dive: SQL vs NoSQL vs Graph →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

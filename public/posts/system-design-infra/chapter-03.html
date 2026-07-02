@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch3: Scaling Strategies: Vertical vs Horizontal — System Design: APIs, Databases, Scaling &amp; Production Infra — direcf</title>
+  <meta name="description" content="수직 확장의 한계를 이해하고, 수평 확장이 대규모 시스템의 표준인 이유와 무상태(Stateless) 설계의 중요성을 배운다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;font-size:16px;text-align:center;flex-shrink:0}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon">🏠</span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item active" href="../../index.html#/category/computer-science">
+      <span class="icon">💻</span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon">☁️</span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon">👁️</span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon">🎨</span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon">⚙️</span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon">🔐</span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon">🔐</span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/computer-science">System Design: APIs, Databases, Scaling &amp; Production Infra</a><span class="sep">›</span>
+        <strong>Ch03 Scaling Strategies: Vertical vs Horizontal</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 03 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">📈</div>
+      <h1 class="chapter-title">Scaling Strategies: Vertical vs Horizontal</h1>
+      <div class="chapter-title-kr">확장 전략: 수직 vs 수평 스케일링</div>
+      <div class="chapter-tldr">수직 확장의 한계를 이해하고, 수평 확장이 대규모 시스템의 표준인 이유와 무상태(Stateless) 설계의 중요성을 배운다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-03.png" alt="Chapter 3 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 3 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>수직 확장과 수평 확장의 차이와 트레이드오프를 설명할 수 있다</li><li>무상태(Stateless) 서버 설계가 수평 확장에 왜 필수인지 이해한다</li><li>데이터베이스 읽기 레플리케이션(Read Replica) 패턴을 안다</li><li>수평 확장 시 로드밸런서가 필요한 이유를 설명할 수 있다</li><li>면접에서 확장 병목 지점을 찾아 해결 방안을 제시할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>사용자가 늘어날 때 시스템을 어떻게 확장하는가? 이것이 스케일링의 핵심 질문이다. 두 가지 기본 전략이 있다 — 기존 서버를 더 강하게 만들거나(수직), 서버를 더 많이 추가하거나(수평). 초기에는 수직 확장이 간단하지만, 결국 수평 확장으로 전환해야 한다.</p>
+<p><strong>수직 스케일링(Vertical Scaling, Scale Up)</strong> = 기존 서버의 CPU, RAM, 디스크를 업그레이드한다. 코드 변경 없이 즉시 성능을 높일 수 있다.</p>
+<p><strong>수평 스케일링(Horizontal Scaling, Scale Out)</strong> = 동일한 서버를 여러 대 추가해 부하를 분산한다. 이론적으로 무한 확장이 가능하지만, 애플리케이션이 무상태(Stateless)로 설계되어야 한다.</p>
+<p>대형 시스템(Google, Amazon, Netflix)은 모두 수평 확장을 기반으로 구축되어 있다. 이 챕터에서는 수평 확장이 왜 더 나은지, 그리고 수평 확장을 가능하게 하는 무상태 설계가 무엇인지 깊이 이해한다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>수직 스케일링: 단순하지만 한계가 있다</h2><p>수직 스케일링은 직관적이다. 서버가 느리면 RAM을 32GB에서 64GB로 늘리고, CPU를 더 빠른 것으로 교체한다. 코드는 전혀 바꿀 필요가 없다. 데이터베이스, 웹서버, 모든 것이 그대로 동작한다.</p>
+<p>이 단순함이 수직 스케일링의 장점이다. 초기 스타트업에서 트래픽이 처음 급증할 때 가장 빠른 대응 방법은 서버 사양을 올리는 것이다. AWS에서는 인스턴스 타입을 t3.medium에서 m5.4xlarge로 변경하는 것이 5분이면 된다.</p>
+<p>하지만 한계는 명확하다. 첫째, <strong>물리적 상한선</strong>이 있다. 세상에서 가장 강력한 단일 서버도 결국 CPU 코어 수와 RAM 용량의 한계가 있다. 둘째, <strong>단일 장애점(SPOF)</strong>이다. 아무리 좋은 서버도 하드웨어 장애, OS 패닉, 메모리 누수로 다운될 수 있다. 단일 서버에 모든 것을 집중하면 그 서버가 멈출 때 전체 서비스가 멈춘다. 셋째, <strong>비용 비효율</strong>이다. 서버 사양이 올라갈수록 가격 대비 성능은 급격히 낮아진다.</p></div><div class="sb-block"><h2>수평 스케일링: 무한 확장의 가능성</h2><p>수평 스케일링은 서버를 여러 대 추가해 부하를 나눈다. 서버 3대가 각각 1/3의 요청을 처리한다. 한 대가 다운되면 나머지 2대가 전체를 감당한다 — 결함 허용성(Fault Tolerance)이 생긴다.</p>
+<p>수평 확장의 이론적 장점은 무한 확장 가능성이다. 트래픽이 3배 늘면 서버를 3배 추가하면 된다. 클라우드 환경에서는 Auto Scaling이 이를 자동으로 처리한다.</p>
+<p>하지만 수평 확장에는 전제 조건이 있다 — <strong>무상태(Stateless) 서버 설계</strong>다. 만약 사용자 A의 세션이 서버 1번 메모리에 저장되어 있다면, 그 다음 요청이 서버 2번으로 가면 로그인이 풀려버린다. 서버가 여러 대이면 어느 서버로 요청이 가더라도 동일하게 처리할 수 있어야 한다.</p>
+<p>해결책은 세션, 사용자 상태를 서버 메모리가 아닌 외부 스토리지(Redis, 데이터베이스)에 저장하는 것이다. 이렇게 하면 어떤 서버로 요청이 가더라도 같은 Redis에서 상태를 읽어온다. 서버 자체는 완전히 무상태가 된다.</p>
+<p><strong>로드밸런서(Load Balancer)</strong> = 여러 서버 앞에 위치해 들어오는 요청을 적절히 분배하는 컴포넌트. 수평 확장의 핵심 인프라다.</p></div><div class="sb-block"><h2>데이터베이스 확장: 레플리케이션과 샤딩</h2><p>애플리케이션 서버는 수평 확장이 비교적 쉽지만, 데이터베이스는 다르다. 모든 서버가 동일한 데이터베이스에 접근하기 때문에 데이터베이스가 새로운 병목이 된다.</p>
+<p><strong>읽기 레플리케이션(Read Replica)</strong> = 가장 흔한 첫 번째 해결책. 마스터 DB는 쓰기를, 레플리카 DB들은 읽기를 담당한다. 대부분의 서비스는 읽기가 쓰기보다 훨씬 많다(90:10 비율 이상). 읽기 트래픽을 여러 레플리카로 분산하면 마스터 DB의 부하가 크게 줄어든다.</p>
+<p><strong>샤딩(Sharding)</strong> = 데이터 자체를 여러 데이터베이스에 나누어 저장하는 방법. 사용자 ID를 기준으로 샤딩하면, 사용자 1~100만은 DB1에, 100만~200만은 DB2에 저장된다. 각 DB의 데이터 크기가 줄어들고, 쓰기도 분산된다. 하지만 여러 샤드에 걸친 JOIN이 복잡해지고, 샤드 재배분(Resharding)이 어렵다는 단점이 있다.</p>
+<p>| 확장 방법 | 해결하는 문제 | 단점 |
+|---|---|---|
+| 읽기 레플리카 | 읽기 트래픽 분산 | 레플리케이션 지연, 쓰기는 여전히 단일 |
+| 샤딩 | 쓰기 트래픽 + 데이터 크기 | JOIN 복잡도 증가, 운영 복잡 |</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">혼자 하는 피자 가게 vs 체인점</div>
+      <div class="a-body"><p>수직 스케일링은 혼자 하는 피자 가게 주인이 더 빠른 오븐을 사고, 더 큰 주방으로 이사하는 것이다. 처음에는 효과가 있다. 오븐 하나로 시간당 10판 굽다가 20판을 굽게 된다. 하지만 결국 한 명의 사람이 할 수 있는 일의 양에는 한계가 있다. 그리고 그 사람이 아프면 가게가 닫힌다.</p>
+<p>수평 스케일링은 체인점을 여는 것이다. 같은 레시피(코드)로 피자를 만드는 가게를 여러 곳에 연다. 한 가게가 불이 나도(서버 다운) 다른 가게들이 영업을 계속한다. 그리고 수요가 늘면 가게를 더 열면 된다.</p>
+<p>단, 체인점이 되려면 &#x27;표준화&#x27;가 필요하다 — 각 가게가 같은 재료(공유 스토리지), 같은 레시피(무상태 서버)를 사용해야 한다. 만약 가게마다 다른 재료를 쓰면(서버 메모리에 상태 저장) 고객이 어느 가게에 가도 같은 맛을 경험할 수 없다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>유상태(Stateful) 서버와 무상태(Stateless) 서버의 차이를 코드로 보여준다. 세션을 서버 메모리에 저장하면 수평 확장이 불가능하고, Redis에 저장하면 가능해진다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import redis
+import json
+from flask import Flask, request, jsonify
+
+# ========== 잘못된 방식: Stateful 서버 (수평 확장 불가) ==========
+app_bad = Flask(&#x27;bad&#x27;)
+sessions_in_memory = {}  # 서버 메모리에 저장 — 이 서버에만 존재!
+
+@app_bad.route(&#x27;/login_bad&#x27;, methods=[&#x27;POST&#x27;])
+def login_bad():
+    user_id = request.json[&#x27;user_id&#x27;]
+    # 서버 1의 메모리에만 저장 → 다음 요청이 서버 2로 가면 세션 없음!
+    sessions_in_memory[f&#x27;session_xyz&#x27;] = {&#x27;user_id&#x27;: user_id}
+    return jsonify({&#x27;session_id&#x27;: &#x27;session_xyz&#x27;})
+
+# ========== 올바른 방식: Stateless 서버 (수평 확장 가능) ==========
+app_good = Flask(&#x27;good&#x27;)
+r = redis.Redis(host=&#x27;redis-cluster&#x27;, port=6379)  # 외부 공유 스토리지
+
+@app_good.route(&#x27;/login_good&#x27;, methods=[&#x27;POST&#x27;])
+def login_good():
+    user_id = request.json[&#x27;user_id&#x27;]
+    session_id = f&#x27;sess_{user_id}_abc123&#x27;
+    
+    # Redis에 저장 → 어느 서버에서든 읽을 수 있음!
+    r.setex(
+        name=session_id,
+        time=3600,            # 1시간 TTL
+        value=json.dumps({&#x27;user_id&#x27;: user_id, &#x27;role&#x27;: &#x27;user&#x27;})
+    )
+    return jsonify({&#x27;session_id&#x27;: session_id})
+
+@app_good.route(&#x27;/profile&#x27;)
+def profile():
+    session_id = request.headers.get(&#x27;X-Session-ID&#x27;)
+    # 서버 2, 3, 4 어느 서버에서든 Redis에서 읽을 수 있음
+    session = r.get(session_id)
+    if not session:
+        return jsonify({&#x27;error&#x27;: &#x27;Unauthorized&#x27;}), 401
+    return jsonify(json.loads(session))</code></pre>
+      <div class="c-walk"><p><code>sessions_in_memory</code> 딕셔너리는 서버 1의 메모리에만 존재한다. 로드밸런서가 다음 요청을 서버 2로 보내면 세션을 찾을 수 없어 인증이 풀린다. Redis를 사용하면 모든 서버 인스턴스가 동일한 Redis 클러스터에서 세션을 읽고 쓴다. 어느 서버로 요청이 가든 상관없다 — 이것이 무상태 설계다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">확장 전략은 거의 모든 시스템 디자인 면접 질문에서 다루어진다. 특히 &#x27;만약 이 시스템이 10배 더 커진다면 어떻게 하겠습니까?&#x27;라는 후속 질문에 대비해야 한다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>읽기/쓰기 비율을 먼저 파악하고 그에 맞는 확장 전략을 선택하는가</li><li>Stateless 설계를 자연스럽게 적용하는가 (세션을 Redis에 저장)</li><li>데이터베이스 레플리케이션 vs 샤딩을 언제 선택하는지 구분하는가</li><li>Auto Scaling과 그 트리거 조건(CPU, 메모리, 큐 길이)을 아는가</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>수평 확장만 언급하고 무상태 설계가 전제임을 모름</li><li>데이터베이스 확장 방법(레플리케이션, 샤딩)을 모름</li><li>&#x27;서버를 더 사면 됩니다&#x27;라는 막연한 답변</li><li>CAP 정리에서 샤딩 시 Consistency 트레이드오프를 언급 못 함</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>현재 단일 서버로 초당 100 RPS를 처리하는데, 내일 1만 RPS가 예상됩니다. 어떻게 하겠습니까?</li><li>세션 기반 인증을 쓰는 서비스를 수평 확장하려면 무엇을 바꿔야 하나요?</li><li>데이터베이스 레플리케이션 지연(Replication Lag)이 문제가 되는 시나리오는 무엇인가요?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 익숙한 수준: &#x27;수평 확장은 서버를 여러 대 추가하는 것이고 로드밸런서가 필요합니다.&#x27; 마스터 수준: &#x27;이 서비스의 읽기:쓰기 비율이 95:5이므로 Read Replica를 5대 추가하면 DB 병목을 해소할 수 있습니다. 쓰기 병목이 생기면 User ID 기준으로 4-shard 샤딩을 적용하되, 크로스-샤드 JOIN을 피하도록 데이터 모델을 재설계해야 합니다.&#x27;</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>수직 확장의 한계</h3><p>물리적 상한선 + SPOF. 빠른 해결책이지만 장기적 답이 아니다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>수평 확장의 전제</h3><p>Stateless 서버 설계. 세션과 상태를 서버 메모리가 아닌 Redis/DB에 저장한다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>결함 허용성</h3><p>수평 확장 시 한 서버가 죽어도 나머지가 서비스를 유지한다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>읽기 레플리케이션</h3><p>읽기 부하가 크다면 Read Replica를 추가해 마스터 DB 부하를 줄인다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>샤딩의 복잡성</h3><p>샤딩은 쓰기 확장이 필요할 때 사용하지만, 크로스 샤드 JOIN과 재샤딩이 복잡하다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>Auto Scaling</h3><p>클라우드에서는 CPU/메모리 임계값 기반으로 서버를 자동으로 추가/제거한다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>로드밸런서 필수</h3><p>수평 확장된 서버들 앞에 로드밸런서 없이는 트래픽을 분산할 수 없다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-02.html">← Databases Deep Dive: SQL vs NoSQL vs Graph</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-04.html">Load Balancing: 7 Algorithms &amp; Implementation →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>
