@@ -6,6 +6,7 @@
   <title>Ch6: Long-Video Sampling — LongVU, Hour-LLaVA, VideoMarathon — Frame Sampling for Multimodal AI — direcf</title>
   <meta name="description" content="5분 클립과 1시간 영상은 다른 시스템이다. LongVU의 DINOv2 기반 temporal pruning, Hour-LLaVA의 MemAug 메모리 모듈, 9.7K-hour VideoMarathon 데이터셋, 그리고 HourVideo 벤치마크가 hour-scale의 phase transition을 어떻게 다루는지 본다.">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
   <style>
 :root {
   --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
@@ -114,6 +115,10 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 .sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
 .sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
 .sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
 
 /* analogy */
 .analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
@@ -187,6 +192,9 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
   .ie-grid{grid-template-columns:1fr}
   .chapter-nav{flex-direction:column}
 }
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
 </style>
 </head>
 <body>
@@ -211,14 +219,11 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
     <a class="nav-item " href="../../index.html#/category/computer-science">
       <span class="icon">💻</span><span class="label">Computer Science</span>
     </a>
-    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
-      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
-    </a>
     <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
       <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
     </a>
-    <a class="nav-item " href="../../index.html#/category/machine-learning">
-      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon">☁️</span><span class="label">Cloud/Infra</span>
     </a>
     <a class="nav-item " href="../../index.html#/category/computer-vision">
       <span class="icon">👁️</span><span class="label">Computer Vision</span>
@@ -230,8 +235,11 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
       <span class="icon">⚙️</span><span class="label">AI Engineering</span>
     </a>
     <div class="nav-section">Personal</div>
-    <a class="nav-item " href="../../index.html#/category/diary">
-      <span class="icon">✍️</span><span class="label">Diary</span>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon">🔐</span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon">🔐</span><span class="label">Property</span>
     </a></nav>
   <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
 </aside>
@@ -310,8 +318,12 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 <p>결론: hour-scale은 'sampler를 더 영리하게'가 아니라 'memory 시스템을 추가'하는 새로운 design axis를 요구한다.</p></div><div class="sb-block"><h2>2. LongVU — DINOv2 temporal pruning + cross-attention spatial reduction</h2><p>LongVU(Shen et al., Meta, ICLR 2025, arXiv:2410.17434)는 hour-scale의 첫 production-ready 솔루션 중 하나다. 핵심 통찰은 <strong>spatiotemporal adaptive compression</strong>: 시간 축과 공간 축을 <em>서로 다른 방법</em>으로 압축한다.</p>
 <p><strong>Temporal axis — DINOv2 similarity pruning.</strong> 인접 frame이 비슷하면 둘 중 하나를 버린다. 여기서 결정적인 디테일은 <em>어떤 encoder의 similarity를 쓰느냐</em>다. LongVU는 CLIP이 아니라 <strong>DINOv2</strong> embedding의 cosine similarity를 쓴다. 이유는 분명하다:</p>
 <ul>
-<li>CLIP은 <em>언어-정렬</em> representation이라 'a person walking'과 'a person standing'을 의미적으로 비슷하다고 평가한다. redundancy 판정에 부적합.</li>
-<li>DINOv2는 <em>self-supervised visual</em> representation이라 픽셀 수준 변화(자세, 시점, 조명)에 민감하다. 진짜로 시각적 정보가 새로운지 판단하는 데 적합.</li>
+<li>
+<p>CLIP은 <em>언어-정렬</em> representation이라 'a person walking'과 'a person standing'을 의미적으로 비슷하다고 평가한다. redundancy 판정에 부적합.</p>
+</li>
+<li>
+<p>DINOv2는 <em>self-supervised visual</em> representation이라 픽셀 수준 변화(자세, 시점, 조명)에 민감하다. 진짜로 시각적 정보가 새로운지 판단하는 데 적합.</p>
+</li>
 </ul>
 <p>즉 'semantically similar but visually different' frame을 CLIP similarity로 자르면 정보가 날아간다. DINOv2 similarity는 visual redundancy를 정확히 잡는다. 이게 LongVU의 핵심 design choice다.</p>
 <p><strong>Spatial axis — cross-attention reduction.</strong> Temporal pruning을 통과한 frame에 대해서도, 모든 patch를 다 LLM에 넣지 않는다. Query text를 condition으로 cross-attention을 돌려서 query와 관련 있는 patch만 살린다. 결과적으로 같은 token budget으로 훨씬 긴 영상을 처리한다.</p>
@@ -479,4 +491,7 @@ class MemoryAugmentedSampler:
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
 </body></html>

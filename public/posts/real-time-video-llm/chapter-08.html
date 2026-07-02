@@ -6,6 +6,7 @@
   <title>Ch8: End-to-End Latency Profiling — Real-time Video LLM — direcf</title>
   <meta name="description" content="실시간 비디오 LLM의 latency는 6개 stage(capture → decode → sample → encode → reduce → LLM → response)로 쪼개진다. 각 stage의 p50/p95/p99을 따로 측정하고 Amdahl&#x27;s law로 bottleneck을 찾아야 한다. SLA를 &#x27;overall p99&#x27;으로 잡는 건 게으른 답이고, stage별 budget을 분해해야 production에서 reproducible debugging이 가능해진다.">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
   <style>
 :root {
   --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
@@ -114,6 +115,10 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 .sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
 .sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
 .sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
 
 /* analogy */
 .analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
@@ -187,6 +192,9 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
   .ie-grid{grid-template-columns:1fr}
   .chapter-nav{flex-direction:column}
 }
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
 </style>
 </head>
 <body>
@@ -211,14 +219,11 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
     <a class="nav-item " href="../../index.html#/category/computer-science">
       <span class="icon">💻</span><span class="label">Computer Science</span>
     </a>
-    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
-      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
-    </a>
     <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
       <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
     </a>
-    <a class="nav-item " href="../../index.html#/category/machine-learning">
-      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon">☁️</span><span class="label">Cloud/Infra</span>
     </a>
     <a class="nav-item " href="../../index.html#/category/computer-vision">
       <span class="icon">👁️</span><span class="label">Computer Vision</span>
@@ -230,8 +235,11 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
       <span class="icon">⚙️</span><span class="label">AI Engineering</span>
     </a>
     <div class="nav-section">Personal</div>
-    <a class="nav-item " href="../../index.html#/category/diary">
-      <span class="icon">✍️</span><span class="label">Diary</span>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon">🔐</span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon">🔐</span><span class="label">Property</span>
     </a></nav>
   <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
 </aside>
@@ -332,7 +340,7 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 <li>'인터랙티브 대화 응답' → p50 &lt; 500ms, p95 &lt; 1s</li>
 </ul>
 <p>SLA 설정의 정치학: 'p99 &lt; 33ms' 같은 aggressive SLA는 비용이 제곱으로 증가한다. p95에서 p99로 옮기는 데 GPU 2-3배 필요한 경우가 많다. Product에서 '진짜 어디 percentile이 product 가치를 결정하는가'를 명시 안 하면 무한한 비용을 쓰게 된다.</p></div><div class="sb-block"><h2>3. Amdahl&#x27;s law for streaming pipeline — ROI 계산</h2><p>Bottleneck을 찾았다고 최적화가 정당화되는 게 아니다. Amdahl's law를 streaming pipeline 버전으로 적용해야 한다. 총 latency가 L이고 한 stage가 f × L을 차지하면, 그 stage를 s배 빠르게 했을 때 전체 speedup은:</p>
-<pre><code>speedup = 1 / ((1 - f) + f/s)
+<pre><code><span class="math-display">\[S = \frac{1}{(1-f) + f/s}\]</span>
 </code></pre>
 <p>실전 예. 총 latency 100ms, encoder가 40ms(f=0.4). Encoder를 4배 빠르게 했을 때:</p>
 <pre><code>speedup = 1 / (0.6 + 0.4/4) = 1 / 0.7 ≈ 1.43x
@@ -576,4 +584,7 @@ class PipelineProfiler:
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
 </body></html>

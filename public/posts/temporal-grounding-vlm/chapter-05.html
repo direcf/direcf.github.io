@@ -6,6 +6,7 @@
   <title>Ch5: RL Fine-tuning Era — Time-R1, TempSamp-R1, VideoTemp-o3, TimeLens — Temporal Grounding for Video VLMs (2026) — direcf</title>
   <meta name="description" content="2025년 하반기부터 temporal grounding의 SOTA는 SFT가 아니라 GRPO 기반 RL post-training이 잡았다. Time-R1 (NeurIPS 2025, arXiv:2503.13377)이 Qwen2.5-VL-7B를 단 2.5K의 TimeRFT 데이터로 RL fine-tune하여 zero-shot Charades-STA R1@0.5=60.8을 달성, VideoChat-Flash·VideoMind·TimeSuite 같은 대규모 SFT baseline들을 한 번에 추월했다. 핵심 무기는 tIoU + format reward라는 verifiable reward — LLM-judge가 아니라 정수 계산 한 줄로 정답을 채점할 수 있다는 점이 RL을 가능하게 했다. 그러나 IoU 한 가지만 최대화하면 model은 semantic alignment를 버리고 boundary length를 키우는 reward hacking을 학습한다. VideoTemp-o3 (arXiv:2602.07801)의 penalty-aware IoU와 TimeLens (CVPR 2026)의 thinking-free RLVR이 이 함정에 대응하는 두 가지 설계 패턴이다.">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
   <style>
 :root {
   --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
@@ -191,6 +192,9 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
   .ie-grid{grid-template-columns:1fr}
   .chapter-nav{flex-direction:column}
 }
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
 </style>
 </head>
 <body>
@@ -215,14 +219,11 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
     <a class="nav-item " href="../../index.html#/category/computer-science">
       <span class="icon">💻</span><span class="label">Computer Science</span>
     </a>
-    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
-      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
-    </a>
     <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
       <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
     </a>
-    <a class="nav-item " href="../../index.html#/category/machine-learning">
-      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon">☁️</span><span class="label">Cloud/Infra</span>
     </a>
     <a class="nav-item " href="../../index.html#/category/computer-vision">
       <span class="icon">👁️</span><span class="label">Computer Vision</span>
@@ -234,8 +235,11 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
       <span class="icon">⚙️</span><span class="label">AI Engineering</span>
     </a>
     <div class="nav-section">Personal</div>
-    <a class="nav-item " href="../../index.html#/category/diary">
-      <span class="icon">✍️</span><span class="label">Diary</span>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon">🔐</span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon">🔐</span><span class="label">Property</span>
     </a></nav>
   <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
 </aside>
@@ -283,16 +287,20 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 <p>L = E[min(ratio_i · A_i, clip(ratio_i, 1-ε, 1+ε) · A_i)] - β · KL(π || π_ref)</p>
 <p>Grounding 관점에서 GRPO의 장점: (1) critic 없음 = memory 절약. (2) group 안에서의 자연스러운 contrastive signal. (3) 1-step nature에 잘 맞음.</p>
 <p>Downside: K개를 sampling해야 하므로 forward pass cost가 K배. Time-R1은 K=8을 쓴다.</p></div><div class="sb-block"><h2>5.3 Time-R1 (NeurIPS 2025)</h2><p>Time-R1 (Ye Wang et al., Renmin/Xiaomi, arXiv:2503.13377)은 RL post-training으로 temporal grounding의 SOTA를 잡은 첫 작품이다. NeurIPS 2025에 accept되었다.</p>
-<p><strong>Setup</strong>:
-- Base: Qwen2.5-VL-7B-Instruct
-- Algorithm: GRPO with K=8 samples per prompt
-- Reward: r = α · r_format + (1-α) · r_tIoU
-- Data: TimeRFT — 2.5K curated video-query pairs
-- Compute: ~8×A100 80GB, 수 시간</p>
-<p><strong>Zero-shot SOTA</strong>:
-- Charades-STA: R1@0.3=78.1, R1@0.5=60.8, R1@0.7=35.3
-- ActivityNet: R1@0.3=58.6, R1@0.5=39.0, R1@0.7=21.4
-- 비교: VideoChat-Flash R1@0.3 74.5, VideoMind 73.5, TimeSuite 69.9 — 모두 zero-shot에서 추월</p>
+<p><strong>Setup</strong>:</p>
+<ul>
+<li>Base: Qwen2.5-VL-7B-Instruct</li>
+<li>Algorithm: GRPO with K=8 samples per prompt</li>
+<li>Reward: r = α · r_format + (1-α) · r_tIoU</li>
+<li>Data: TimeRFT — 2.5K curated video-query pairs</li>
+<li>Compute: ~8×A100 80GB, 수 시간</li>
+</ul>
+<p><strong>Zero-shot SOTA</strong>:</p>
+<ul>
+<li>Charades-STA: R1@0.3=78.1, R1@0.5=60.8, R1@0.7=35.3</li>
+<li>ActivityNet: R1@0.3=58.6, R1@0.5=39.0, R1@0.7=21.4</li>
+<li>비교: VideoChat-Flash R1@0.3 74.5, VideoMind 73.5, TimeSuite 69.9 — 모두 zero-shot에서 추월</li>
+</ul>
 <p><strong>Time-R1* (Charades / ActivityNet에 추가 fine-tune)</strong>:
 - Charades-STA: R1@0.5=72.2, R1@0.7=50.1
 - ActivityNet: R1@0.5=55.6, R1@0.7=34.0
@@ -313,12 +321,14 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 1. <strong>Length inflation</strong>: span을 길게 늘려 partial overlap 노림
 2. <strong>Center bias 학습</strong>: Charades-STA의 ground-truth가 영상 시작 근처에 몰려 있다. Model이 query를 무시하고 항상 0-8초를 출력해도 평균 IoU가 의외로 높다
 3. <strong>Format gaming</strong>: format reward를 분리하지 않으면, model이 IoU만 올리려고 format을 망가뜨림</p>
-<p><strong>Design patterns</strong>:
-- <strong>Composite reward</strong>: r = r_format + r_IoU
-- <strong>Length penalty</strong>: r_pa = IoU - λ · over_length (VideoTemp-o3)
-- <strong>KL anchor</strong>: β · KL term. β를 너무 낮추면 빠르게 hacking
-- <strong>Eval on shift split</strong>: Charades-CD, ActivityNet-CD 같은 OOD split
-- <strong>Group size K</strong>: K=8이 sweet spot</p></div>
+<p><strong>Design patterns</strong>:</p>
+<ul>
+<li><strong>Composite reward</strong>: r = r_format + r_IoU</li>
+<li><strong>Length penalty</strong>: r_pa = IoU - λ · over_length (VideoTemp-o3)</li>
+<li><strong>KL anchor</strong>: β · KL term. β를 너무 낮추면 빠르게 hacking</li>
+<li><strong>Eval on shift split</strong>: Charades-CD, ActivityNet-CD 같은 OOD split</li>
+<li><strong>Group size K</strong>: K=8이 sweet spot</li>
+</ul></div>
       <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
     <div class="analogy-card">
       <div class="a-head">Analogy</div>
@@ -419,4 +429,7 @@ def grpo_step(policy, ref_policy, prompts, gts, video_lens, optim, K=8, eps=0.2,
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
 </body></html>

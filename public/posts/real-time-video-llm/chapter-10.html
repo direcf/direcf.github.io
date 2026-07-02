@@ -6,6 +6,7 @@
   <title>Ch10: Production Deployment &amp; Monitoring — Real-time Video LLM — direcf</title>
   <meta name="description" content="Real-time video LLM의 production은 latency histogram, drop rate, GPU utilization 3대 metric으로 운영된다. A/B 비교는 same-frame replay나 shadow traffic으로 신뢰성을 확보하고, canary rollout으로 배포 위험을 격리한다. Overload 시 &#x27;drop frame vs drop quality&#x27;의 graceful degradation 정책, cost-aware autoscaling, Gemini Live / GPT-4o Realtime / Twelve Labs Marengo 같은 실제 시스템의 운영 패턴을 정리한다.">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
   <style>
 :root {
   --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
@@ -114,6 +115,10 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 .sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
 .sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
 .sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
 
 /* analogy */
 .analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
@@ -187,6 +192,9 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
   .ie-grid{grid-template-columns:1fr}
   .chapter-nav{flex-direction:column}
 }
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
 </style>
 </head>
 <body>
@@ -211,14 +219,11 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
     <a class="nav-item " href="../../index.html#/category/computer-science">
       <span class="icon">💻</span><span class="label">Computer Science</span>
     </a>
-    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
-      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
-    </a>
     <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
       <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
     </a>
-    <a class="nav-item " href="../../index.html#/category/machine-learning">
-      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon">☁️</span><span class="label">Cloud/Infra</span>
     </a>
     <a class="nav-item " href="../../index.html#/category/computer-vision">
       <span class="icon">👁️</span><span class="label">Computer Vision</span>
@@ -230,8 +235,11 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
       <span class="icon">⚙️</span><span class="label">AI Engineering</span>
     </a>
     <div class="nav-section">Personal</div>
-    <a class="nav-item " href="../../index.html#/category/diary">
-      <span class="icon">✍️</span><span class="label">Diary</span>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon">🔐</span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon">🔐</span><span class="label">Property</span>
     </a></nav>
   <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
 </aside>
@@ -303,11 +311,15 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 <p><strong>Cost-per-stream 계산</strong>:</p>
 <pre><code>cost_per_stream_hour = (gpu_hour_price × gpu_count) / concurrent_streams
 </code></pre>
-<p>H100 spot $2/hr, 4 GPU node $8/hr, 동시 20 stream → $0.4/stream-hour. SLA p99 30ms에서 동시 30 stream으로 올리면 $0.27. 그러나 30 stream이면 p99이 50ms로 튀어 SLA 위반. <em>Cost-SLA frontier</em> 위에서 운영 점을 product와 협상.</p>
+<p>H100 spot <span class="math-inline">\(2/hr, 4 GPU node\)</span>8/hr, 동시 20 stream → <span class="math-inline">\(0.4/stream-hour. SLA p99 30ms에서 동시 30 stream으로 올리면\)</span>0.27. 그러나 30 stream이면 p99이 50ms로 튀어 SLA 위반. <em>Cost-SLA frontier</em> 위에서 운영 점을 product와 협상.</p>
 <p><strong>Autoscaling 정책</strong>. 두 signal로 결정.</p>
 <ul>
-<li><strong>GPU utilization 기반</strong>: 80% 이상 5분 sustained → scale up, 30% 이하 10분 sustained → scale down.</li>
-<li><strong>Queue depth 기반</strong>: 모든 stage의 queue depth가 60% 이상 → scale up. Leading indicator로 utilization보다 빠르게 반응.</li>
+<li>
+<p><strong>GPU utilization 기반</strong>: 80% 이상 5분 sustained → scale up, 30% 이하 10분 sustained → scale down.</p>
+</li>
+<li>
+<p><strong>Queue depth 기반</strong>: 모든 stage의 queue depth가 60% 이상 → scale up. Leading indicator로 utilization보다 빠르게 반응.</p>
+</li>
 </ul>
 <p>Real-time은 <em>scale-up latency</em>가 critical. K8s에서 새 GPU node를 띄우는 데 cold start 3-5분 걸린다. 그동안 overload가 지속되면 graceful degradation으로 보호. 'autoscaling이 도착하기 전에 degradation으로 살아남는다'가 시니어 운영 직관.</p>
 <p><strong>Warm pool 패턴</strong>. 미리 N개 node를 'warm standby'로 띄워두면 cold start 없이 즉시 traffic 분배. Cost는 + 10-20%지만 SLA 안정. Gemini Live 같은 high-SLA 서비스에서 표준.</p>
@@ -446,4 +458,7 @@ def record_drop(reason: str):
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
 </body></html>

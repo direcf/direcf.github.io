@@ -6,6 +6,7 @@
   <title>Ch6: Agentic Search for Long-Form Grounding — Temporal Grounding for Video VLMs (2026) — direcf</title>
   <meta name="description" content="한 시간짜리 영상에서 30초 moment를 찾는 일은 더 이상 grounding 문제가 아니라 **search 문제**다. ExtremeWhenBench(arXiv:2606.12300)는 monolithic Video-LLM이 mIoU 0.110, CLIP retrieval만 써도 0.269, retrieve-then-ground hybrid가 0.354로 6.7× 격차가 난다는 것을 보였고, 실패의 **85%가 search, 11%만 localization**임을 정량화했다. 이 챕터는 hour-scale에서 single-pass VLM이 왜 무너지는지, VideoMind(ICLR 2026)의 Chain-of-LoRA, AVI(arXiv:2511.14446)의 agentic loop, Deep Video Discovery(arXiv:2505.18079)의 retrieve-zoom-verify 패턴이 각각 어떻게 이 문제를 풀어내는지를 다룬다.">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
   <style>
 :root {
   --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
@@ -191,6 +192,9 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
   .ie-grid{grid-template-columns:1fr}
   .chapter-nav{flex-direction:column}
 }
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
 </style>
 </head>
 <body>
@@ -215,14 +219,11 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
     <a class="nav-item " href="../../index.html#/category/computer-science">
       <span class="icon">💻</span><span class="label">Computer Science</span>
     </a>
-    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
-      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
-    </a>
     <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
       <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
     </a>
-    <a class="nav-item " href="../../index.html#/category/machine-learning">
-      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon">☁️</span><span class="label">Cloud/Infra</span>
     </a>
     <a class="nav-item " href="../../index.html#/category/computer-vision">
       <span class="icon">👁️</span><span class="label">Computer Vision</span>
@@ -234,8 +235,11 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
       <span class="icon">⚙️</span><span class="label">AI Engineering</span>
     </a>
     <div class="nav-section">Personal</div>
-    <a class="nav-item " href="../../index.html#/category/diary">
-      <span class="icon">✍️</span><span class="label">Diary</span>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon">🔐</span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon">🔐</span><span class="label">Property</span>
     </a></nav>
   <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
 </aside>
@@ -349,15 +353,19 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 <li><code>get_frames(window, n)</code></li>
 <li><code>ask_follow_up(question)</code></li>
 </ul>
-<p><strong>3-stage pipeline</strong>:
-1. <strong>Retrieve</strong>: CLIP-based coarse search
-2. <strong>Zoom</strong>: dense sampling 적용
-3. <strong>Verify</strong>: VLM이 dense window를 보고 IoU 추정</p>
-<p><strong>왜 이 분리가 중요한가</strong>: tool API가 외부화돼 있어 — LLM agent를 GPT-4·Claude로 교체 가능, CLIP encoder만 따로 업그레이드 가능, verify VLM도 따로 교체 가능. <strong>Modularity가 production friendly</strong>.</p></div><div class="sb-block"><h2>6.5 ExtremeWhenBench의 정량 증거</h2><p><strong>Benchmark 설계 (arXiv:2606.12300, June 2026)</strong>:
-- 2,273 query / 194 video
-- 평균 75.7분, 최대 9시간
-- Multi-domain
-- Moment 길이 분포: median 30s, 75th percentile 75s</p>
+<p><strong>3-stage pipeline</strong>:</p>
+<ol>
+<li><strong>Retrieve</strong>: CLIP-based coarse search</li>
+<li><strong>Zoom</strong>: dense sampling 적용</li>
+<li><strong>Verify</strong>: VLM이 dense window를 보고 IoU 추정</li>
+</ol>
+<p><strong>왜 이 분리가 중요한가</strong>: tool API가 외부화돼 있어 — LLM agent를 GPT-4·Claude로 교체 가능, CLIP encoder만 따로 업그레이드 가능, verify VLM도 따로 교체 가능. <strong>Modularity가 production friendly</strong>.</p></div><div class="sb-block"><h2>6.5 ExtremeWhenBench의 정량 증거</h2><p><strong>Benchmark 설계 (arXiv:2606.12300, June 2026)</strong>:</p>
+<ul>
+<li>2,273 query / 194 video</li>
+<li>평균 75.7분, 최대 9시간</li>
+<li>Multi-domain</li>
+<li>Moment 길이 분포: median 30s, 75th percentile 75s</li>
+</ul>
 <p><strong>세 baseline 비교</strong>:</p>
 <table>
 <thead>
@@ -381,10 +389,12 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 </tr>
 </tbody>
 </table>
-<p><strong>Failure mode 분해</strong>:
-- <strong>85% search failure</strong>
-- <strong>11% localization failure</strong>
-- <strong>4% 기타</strong></p></div><div class="sb-block"><h2>6.6 Tool-use 디자인</h2><p><strong>최소 tool set</strong> (3개): coarse_retrieve, zoom_in, verify.</p>
+<p><strong>Failure mode 분해</strong>:</p>
+<ul>
+<li><strong>85% search failure</strong></li>
+<li><strong>11% localization failure</strong></li>
+<li><strong>4% 기타</strong></li>
+</ul></div><div class="sb-block"><h2>6.6 Tool-use 디자인</h2><p><strong>최소 tool set</strong> (3개): coarse_retrieve, zoom_in, verify.</p>
 <table>
 <thead>
 <tr>
@@ -411,10 +421,18 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 </tr>
 </tbody>
 </table>
-<p><strong>Production 의사결정</strong>:
-- <strong>5분 미만</strong>: monolithic VLM 우세. agentic 불필요.
-- <strong>5분~30분</strong>: agentic이 정확도 +5~10%p, latency 5~10× 증가.
-- <strong>30분 이상</strong>: agentic 거의 강제. monolithic은 6.7× 격차로 무너진다.</p></div>
+<p><strong>Production 의사결정</strong>:</p>
+<ul>
+<li>
+<p><strong>5분 미만</strong>: monolithic VLM 우세. agentic 불필요.</p>
+</li>
+<li>
+<p><strong>5분~30분</strong>: agentic이 정확도 +5~10%p, latency 5~10× 증가.</p>
+</li>
+<li>
+<p><strong>30분 이상</strong>: agentic 거의 강제. monolithic은 6.7× 격차로 무너진다.</p>
+</li>
+</ul></div>
       <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
     <div class="analogy-card">
       <div class="a-head">Analogy</div>
@@ -518,4 +536,7 @@ def agent_loop(llm, video, query: str, max_steps: int = 8) -&gt; Window:
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
 </body></html>

@@ -6,6 +6,7 @@
   <title>Ch1: What is Temporal Grounding — Temporal Grounding for Video VLMs (2026) — direcf</title>
   <meta name="description" content="Temporal Grounding은 비디오 V와 자연어 query q가 주어졌을 때, q가 묘사하는 사건의 시간 구간 [t_start, t_end]를 찾는 task다. 2024년까지 proposal/DETR 기반의 boundary regression 문제였다면, 2025–2026년에는 VLM이 timestamp를 token으로 직접 emit하는 verbal generation 문제로 재정의되었다. Time-R1(arXiv:2503.13377)이 zero-shot으로 Charades-STA [email protected]=78.1을 찍어 SFT baseline인 VideoChat-Flash 74.5를 넘은 사건이 이 패러다임 전환의 상징이다.">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
   <style>
 :root {
   --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
@@ -191,6 +192,9 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
   .ie-grid{grid-template-columns:1fr}
   .chapter-nav{flex-direction:column}
 }
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
 </style>
 </head>
 <body>
@@ -215,14 +219,11 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
     <a class="nav-item " href="../../index.html#/category/computer-science">
       <span class="icon">💻</span><span class="label">Computer Science</span>
     </a>
-    <a class="nav-item " href="../../index.html#/category/mathematics-for-ai">
-      <span class="icon">➗</span><span class="label">Mathematics for AI</span>
-    </a>
     <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
       <span class="icon">🧠</span><span class="label">Engineering Philosophy</span>
     </a>
-    <a class="nav-item " href="../../index.html#/category/machine-learning">
-      <span class="icon">📈</span><span class="label">Machine Learning</span>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon">☁️</span><span class="label">Cloud/Infra</span>
     </a>
     <a class="nav-item " href="../../index.html#/category/computer-vision">
       <span class="icon">👁️</span><span class="label">Computer Vision</span>
@@ -234,8 +235,11 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
       <span class="icon">⚙️</span><span class="label">AI Engineering</span>
     </a>
     <div class="nav-section">Personal</div>
-    <a class="nav-item " href="../../index.html#/category/diary">
-      <span class="icon">✍️</span><span class="label">Diary</span>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon">🔐</span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon">🔐</span><span class="label">Property</span>
     </a></nav>
   <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
 </aside>
@@ -275,16 +279,30 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
       <div class="sb-block"><p>Chapter 1은 강의 전체의 좌표축을 깐다. 먼저 Temporal Grounding을 형식적으로 정의하고 — input은 비디오 V와 자연어 query q, output은 시간 구간 [t_s, t_e] — 이 한 정의 안에 사실은 세 개의 다른 task family가 들어있음을 본다. Temporal Sentence Grounding(TSG)은 free-form sentence를 쓰고, Moment Retrieval(MR)은 짧은 query + saliency를 함께 보고, Temporal Action Localization(TAL)은 closed-set class label을 본다. 그 다음 R@N@IoU와 mIoU, mAP, HIT@1이 같은 prediction을 어떻게 다르게 채점하는지 짚는다. 마지막으로 2025–2026년에 무엇이 바뀌었는지 — Time-R1(NeurIPS 2025), MeCo(ICLR 2026), UniTime(NeurIPS 2025), VideoMind(ICLR 2026), VideoITG(CVPR 2026), TimeLens(CVPR 2026)의 6개 main paper들이 모두 '시간을 숫자로 regression하지 말고 token으로 generate하라'는 같은 방향을 가리키는 이유를 본다. 이 chapter가 끝나면 나머지 9개 chapter가 왜 그 순서로 배열되었는지 이해할 수 있다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>1.1 Task definition — V × q → [t_s, t_e]</h2><p>가장 단순한 형식으로 쓰면 task는 다음과 같다. 길이 T초의 비디오 V = {f_1, f_2, ..., f_N} (N개 frame, 보통 1–2 FPS sub-sample)와 자연어 query q가 주어진다. 모델 f_θ는 시간 구간 (t_s, t_e), 0 ≤ t_s &lt; t_e ≤ T 를 출력한다. ground truth는 인간 annotator가 표시한 (t_s<em>, t_e</em>) 한 쌍 또는 여러 쌍(disjoint moment 허용 시). 평가는 prediction과 GT의 temporal IoU = max(0, min(t_e, t_e<em>) − max(t_s, t_s</em>)) / (max(t_e, t_e<em>) − min(t_s, t_s</em>)) 로 시작한다.</p>
 <p>2024년 이전 모델들 — 2D-TAN, M-DETR, QD-DETR, UniVTG — 은 이 출력을 두 개의 scalar regression head로 뽑았다. (center, length) 또는 (start_offset, end_offset). 2025–2026년 VLM-as-grounder는 같은 출력을 텍스트 토큰으로 emit한다. 예: 'The witness recants between 47.2 and 55.0 seconds.' Time-R1은 여기에 GRPO + verifiable tIoU reward를 붙여 zero-shot으로 Charades-STA [email protected]=78.1을 달성했다. 같은 모델이 같은 비디오와 query를 보지만, output을 숫자 vector로 만들지 token sequence로 만들지가 결정적 차이다.</p></div><div class="sb-block"><h2>1.2 TSG vs MR vs TAL — 무엇이 같고 무엇이 다른가</h2><p>세 task는 입출력 signature가 같아 보여서 자주 혼용된다. 형식적 차이는 query의 형태와 보조 supervision에 있다.</p>
 <ul>
-<li><strong>Temporal Sentence Grounding(TSG)</strong>: query q가 free-form 자연어 sentence. 예: 'a man wearing a red shirt opens the refrigerator and takes out a bottle'. 대표 benchmark — Charades-STA(arXiv:1705.02101), ActivityNet-Captions(arXiv:1705.00754), TACoS, DiDeMo. Output은 single (t_s, t_e). 평균 query 길이 8–14 단어.</li>
-<li><strong>Moment Retrieval(MR)</strong>: query는 짧은 phrase 또는 sentence이지만 추가로 frame-level saliency score(0–4 Likert)를 함께 예측해야 한다. 한 query에 disjoint moment가 여러 개 있을 수 있다. 대표 — QVHighlights(arXiv:2107.09609), 평균 1.8 disjoint moments/query. Output은 multiple (t_s, t_e, saliency) tuple. Lighthouse(arXiv:2408.02901)가 표준 toolkit.</li>
-<li><strong>Temporal Action Localization(TAL)</strong>: query는 closed-set의 action class label('high jump', 'cricket bowling'). 대표 — Ego4D MQ(110개 class), THUMOS14, ActivityNet-1.3. Output은 class별로 여러 (t_s, t_e, score) — 사실상 1D object detection.</li>
+<li>
+<p><strong>Temporal Sentence Grounding(TSG)</strong>: query q가 free-form 자연어 sentence. 예: 'a man wearing a red shirt opens the refrigerator and takes out a bottle'. 대표 benchmark — Charades-STA(arXiv:1705.02101), ActivityNet-Captions(arXiv:1705.00754), TACoS, DiDeMo. Output은 single (t_s, t_e). 평균 query 길이 8–14 단어.</p>
+</li>
+<li>
+<p><strong>Moment Retrieval(MR)</strong>: query는 짧은 phrase 또는 sentence이지만 추가로 frame-level saliency score(0–4 Likert)를 함께 예측해야 한다. 한 query에 disjoint moment가 여러 개 있을 수 있다. 대표 — QVHighlights(arXiv:2107.09609), 평균 1.8 disjoint moments/query. Output은 multiple (t_s, t_e, saliency) tuple. Lighthouse(arXiv:2408.02901)가 표준 toolkit.</p>
+</li>
+<li>
+<p><strong>Temporal Action Localization(TAL)</strong>: query는 closed-set의 action class label('high jump', 'cricket bowling'). 대표 — Ego4D MQ(110개 class), THUMOS14, ActivityNet-1.3. Output은 class별로 여러 (t_s, t_e, score) — 사실상 1D object detection.</p>
+</li>
 </ul>
 <p>실무에서 헷갈리는 지점: ActivityNet은 같은 비디오 풀로 -Captions(TSG)와 -1.3(TAL) 두 task가 나와있다. Charades-STA는 TSG지만 backbone 비디오는 같은 Charades(action classification)다. 면접에서 'ActivityNet에서 했어요'라고 하면 어느 split을 썼는지 반드시 묻는다.</p></div><div class="sb-block"><h2>1.3 Eval metrics — R@N@IoU, mIoU, mAP, HIT@1</h2><p>같은 prediction set을 어떻게 채점하느냐가 metric별로 달라진다.</p>
 <ul>
-<li><strong>R@N@IoU=θ (Recall at N with IoU threshold θ)</strong>: 모델이 top-N prediction을 내놨을 때, 그 중 적어도 하나가 GT와 IoU ≥ θ면 1, 아니면 0. 모든 query에 대해 평균. TSG의 사실상 표준. 보통 N ∈ {1, 5}, θ ∈ {0.3, 0.5, 0.7}. [email protected]은 매우 엄격(8.2초 평균 moment에서 0.7 IoU면 boundary 오차 1초 미만).</li>
-<li><strong>mIoU (mean IoU)</strong>: top-1 prediction과 GT의 IoU를 모든 query에 대해 산술 평균. R@N@IoU가 threshold-binarized인 반면 mIoU는 continuous. TAR-TVG(arXiv:2508.07683)이 Charades-STA mIoU=61.1로 2026 SOTA.</li>
-<li><strong>mAP@avg(0.5:0.05:0.95)</strong>: COCO-style. IoU threshold를 0.5부터 0.95까지 0.05 간격으로 10개 잡고 각각 mAP 계산 후 평균. MR(QVHighlights)·TAL의 표준. MeCo가 QVHighlights mAP=45.3, HIT@1=75.1로 ICLR 2026 SOTA(arXiv:2503.09027).</li>
-<li><strong>HIT@1</strong>: QVHighlights 전용. Top-1 prediction window 안에 인간이 매긴 saliency score≥4 frame이 있으면 1. Saliency와 boundary를 동시에 평가.</li>
+<li>
+<p><strong>R@N@IoU=θ (Recall at N with IoU threshold θ)</strong>: 모델이 top-N prediction을 내놨을 때, 그 중 적어도 하나가 GT와 IoU ≥ θ면 1, 아니면 0. 모든 query에 대해 평균. TSG의 사실상 표준. 보통 N ∈ {1, 5}, θ ∈ {0.3, 0.5, 0.7}. [email protected]은 매우 엄격(8.2초 평균 moment에서 0.7 IoU면 boundary 오차 1초 미만).</p>
+</li>
+<li>
+<p><strong>mIoU (mean IoU)</strong>: top-1 prediction과 GT의 IoU를 모든 query에 대해 산술 평균. R@N@IoU가 threshold-binarized인 반면 mIoU는 continuous. TAR-TVG(arXiv:2508.07683)이 Charades-STA mIoU=61.1로 2026 SOTA.</p>
+</li>
+<li>
+<p><strong>mAP@avg(0.5:0.05:0.95)</strong>: COCO-style. IoU threshold를 0.5부터 0.95까지 0.05 간격으로 10개 잡고 각각 mAP 계산 후 평균. MR(QVHighlights)·TAL의 표준. MeCo가 QVHighlights mAP=45.3, HIT@1=75.1로 ICLR 2026 SOTA(arXiv:2503.09027).</p>
+</li>
+<li>
+<p><strong>HIT@1</strong>: QVHighlights 전용. Top-1 prediction window 안에 인간이 매긴 saliency score≥4 frame이 있으면 1. Saliency와 boundary를 동시에 평가.</p>
+</li>
 </ul>
 <p>주의 — Charades-STA에서 [email protected]는 빨리 saturate한다(2026년 70+가 흔함). 진짜 비교는 [email protected]나 mIoU에서 일어난다. ActivityNet의 평균 moment가 36초로 Charades-STA의 8.2초보다 훨씬 길어, 같은 IoU=0.5도 절대 boundary 오차가 4배 크다. metric 숫자만 보고 cross-benchmark 비교는 위험하다.</p></div><div class="sb-block"><h2>1.4 왜 2025–2026년에 VLM 시대가 열렸나</h2><p>세 가지 force가 동시에 작동했다.</p>
 <p><strong>(1) Regression head의 정체.</strong> 2D-TAN(2020)부터 UniVTG(2023)까지 boundary regression head를 다듬는 4–5년 동안 Charades-STA [email protected]는 50%대 후반에서 60%대 초반에 정체했다. proposal-and-rank 또는 DETR query를 늘려도 비디오 길이가 길어지면 (TACoS, ActivityNet) 빠르게 무너졌다.</p>
@@ -292,15 +310,33 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 <p><strong>(3) RL post-training이 verifiable reward와 결합했다.</strong> Temporal grounding은 보상 함수 R(pred, gt) = tIoU(pred, gt)가 미분 없이도 정확히 계산된다. 이 verifiable nature가 GRPO(DeepSeek R1 스타일)와 완벽히 맞아떨어졌다. Time-R1(arXiv:2503.13377)은 Qwen2.5-VL-7B에 GRPO + tIoU reward + format reward만 붙여 — 단 2.5K example의 TimeRFT 데이터로 — zero-shot Charades-STA [email protected]=78.1, [email protected]=60.8, [email protected]=35.3을 찍었다. 비교 baseline: VideoChat-Flash 74.5, VideoMind 73.5, TimeSuite 69.9 ([email protected]). Fine-tune 시 Time-R1*은 Charades-STA [email protected]=72.2, [email protected]=50.1로 모든 supervised baseline 위에 섰다.</p>
 <p>다만 한 가지 caveat — Time-R1 zero-shot이 ActivityNet [email protected]에서는 21.4로 TRACE의 24.0을 넘지 못했다. '전부 이긴다'가 아니라 '대부분 이기고, 특히 짧은 영상에서 압도적으로 이긴다'가 정확한 서술이다.</p></div><div class="sb-block"><h2>1.5 강의 forward map — 10개 chapter는 어떻게 연결되는가</h2><p>이 chapter에서 깐 좌표축 위에 나머지 9개 chapter가 다음과 같이 놓인다.</p>
 <ul>
-<li><strong>Ch.2 Benchmark Landscape &amp; 7 Biases</strong> — Charades-STA의 'query-only baseline이 강하다'(Otani et al., arXiv:2009.00325), DiDeMo의 5초 discrete quantization, MAD의 0.06% needle-in-haystack 같은 dataset 함정을 다룬다.</li>
-<li><strong>Ch.3 Pre-VLM Foundations — DETR Era</strong> — 2D-TAN, MS-2D-TAN, M-DETR, QD-DETR, CG-DETR, UniVTG. 왜 이 길이 막혔는지, 그러나 어떤 inductive bias가 VLM 시대에도 살아남았는지.</li>
-<li><strong>Ch.4 VLM-as-Grounder</strong> — UniTime, MeCo, Universal VTG. timestamp token generation의 메커닉.</li>
-<li><strong>Ch.5 RL Fine-tuning Era</strong> — Time-R1, TempSamp-R1(arXiv:2509.18056), VideoTemp-o3(arXiv:2602.07801), TimeLens. GRPO + verifiable reward, penalty-aware IoU, reward hacking.</li>
-<li><strong>Ch.6 Agentic Search for Long-Form</strong> — VideoMind의 Chain-of-LoRA 4-role agent, AVI(arXiv:2511.14446)의 Charades-STA [email protected]=88.6, ExtremeWhenBench(arXiv:2606.12300)의 '85% failure는 search, 11%만 localization' 발견.</li>
-<li><strong>Ch.7 Streaming + Online Grounding</strong> — StreamingHarness(arXiv:2606.08615), CacheFlow(arXiv:2511.13644), LiveVLM(arXiv:2505.15269).</li>
-<li><strong>Ch.8 Plug-and-Play — VideoITG</strong> — VideoITG(CVPR 2026 Highlight, arXiv:2507.13353)가 왜 2026년에 유일한 plug-and-play module인가.</li>
-<li><strong>Ch.9 Trust — Hallucination, Faithfulness, Abstention</strong> — CounterVid(arXiv:2601.04778), DIQ-H(arXiv:2512.03992), Step-Level Faithfulness(arXiv:2603.06828), TempCore(arXiv:2509.01167).</li>
-<li><strong>Ch.10 Novel Research Directions</strong> — 12개 paper idea, dataset 가용성, compute 추정, 어디에 새 paper를 쓸 수 있는가.</li>
+<li>
+<p><strong>Ch.2 Benchmark Landscape &amp; 7 Biases</strong> — Charades-STA의 'query-only baseline이 강하다'(Otani et al., arXiv:2009.00325), DiDeMo의 5초 discrete quantization, MAD의 0.06% needle-in-haystack 같은 dataset 함정을 다룬다.</p>
+</li>
+<li>
+<p><strong>Ch.3 Pre-VLM Foundations — DETR Era</strong> — 2D-TAN, MS-2D-TAN, M-DETR, QD-DETR, CG-DETR, UniVTG. 왜 이 길이 막혔는지, 그러나 어떤 inductive bias가 VLM 시대에도 살아남았는지.</p>
+</li>
+<li>
+<p><strong>Ch.4 VLM-as-Grounder</strong> — UniTime, MeCo, Universal VTG. timestamp token generation의 메커닉.</p>
+</li>
+<li>
+<p><strong>Ch.5 RL Fine-tuning Era</strong> — Time-R1, TempSamp-R1(arXiv:2509.18056), VideoTemp-o3(arXiv:2602.07801), TimeLens. GRPO + verifiable reward, penalty-aware IoU, reward hacking.</p>
+</li>
+<li>
+<p><strong>Ch.6 Agentic Search for Long-Form</strong> — VideoMind의 Chain-of-LoRA 4-role agent, AVI(arXiv:2511.14446)의 Charades-STA [email protected]=88.6, ExtremeWhenBench(arXiv:2606.12300)의 '85% failure는 search, 11%만 localization' 발견.</p>
+</li>
+<li>
+<p><strong>Ch.7 Streaming + Online Grounding</strong> — StreamingHarness(arXiv:2606.08615), CacheFlow(arXiv:2511.13644), LiveVLM(arXiv:2505.15269).</p>
+</li>
+<li>
+<p><strong>Ch.8 Plug-and-Play — VideoITG</strong> — VideoITG(CVPR 2026 Highlight, arXiv:2507.13353)가 왜 2026년에 유일한 plug-and-play module인가.</p>
+</li>
+<li>
+<p><strong>Ch.9 Trust — Hallucination, Faithfulness, Abstention</strong> — CounterVid(arXiv:2601.04778), DIQ-H(arXiv:2512.03992), Step-Level Faithfulness(arXiv:2603.06828), TempCore(arXiv:2509.01167).</p>
+</li>
+<li>
+<p><strong>Ch.10 Novel Research Directions</strong> — 12개 paper idea, dataset 가용성, compute 추정, 어디에 새 paper를 쓸 수 있는가.</p>
+</li>
 </ul>
 <p>핵심 진행 방향은 단순하다 — task 정의(1) → data 함정(2) → 옛 길의 종착점(3) → 새 길의 입구(4) → 새 길의 가속기(5) → 새 길이 못 가는 곳(6,7) → 부수 도구(8) → 새 길의 위험(9) → 새 paper(10).</p></div>
       <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
@@ -397,4 +433,7 @@ if __name__ == &quot;__main__&quot;:
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
 </body></html>
