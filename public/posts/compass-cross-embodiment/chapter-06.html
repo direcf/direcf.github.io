@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch6: COMPASS Architecture — Putting It All Together — COMPASS &amp; Cross-Embodiment Mobility — direcf</title>
+  <meta name="description" content="IL → Residual RL → Distillation 3단계가 Isaac Sim/Lab 위에서 어떻게 하나의 파이프라인으로 결합되는지, 그리고 벤치마크 결과(SR 5~40x↑)를 정확히 해석한다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;height:22px;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><linearGradient id="direcf-nav-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs></svg>
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg></span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg></span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.25 15a4.5 4.5 0 0 0 4.5 4.5H18a3.75 3.75 0 0 0 1.332-7.257 3 3 0 0 0-3.758-3.848 5.25 5.25 0 0 0-10.233 2.33A4.502 4.502 0 0 0 2.25 15Z"/></svg></span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"/></svg></span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg></span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/physical-ai">COMPASS &amp; Cross-Embodiment Mobility</a><span class="sep">›</span>
+        <strong>Ch06 COMPASS Architecture — Putting It All Together</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 06 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🏗️</div>
+      <h1 class="chapter-title">COMPASS Architecture — Putting It All Together</h1>
+      <div class="chapter-title-kr">COMPASS 아키텍처 — 전체를 하나로</div>
+      <div class="chapter-tldr">IL → Residual RL → Distillation 3단계가 Isaac Sim/Lab 위에서 어떻게 하나의 파이프라인으로 결합되는지, 그리고 벤치마크 결과(SR 5~40x↑)를 정확히 해석한다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-06.png" alt="Chapter 6 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 6 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>COMPASS 3단계의 데이터 흐름과 각 단계의 입출력을 그릴 수 있다</li><li>embodiment별 joint controller(locomotion policy)의 역할을 이해한다</li><li>SR·WTT metric으로 specialist vs generalist를 비교 해석할 수 있다</li><li>generalist가 specialist를 능가하기도 하는 현상(G1)을 설명할 수 있다</li><li>COMPASS가 &#x27;알고리즘 논문&#x27;이 아니라 &#x27;시스템 논문&#x27;인 이유를 안다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>지금까지 세 개의 조각을 따로 봤다. Chapter 2의 X-Mobility world model(frozen backbone), Chapter 4의 embodiment별 residual RL specialist, Chapter 5의 KL distillation generalist. 이 챕터는 이 셋이 어떻게 하나의 파이프라인으로 맞물리는지 — 데이터가 어디서 어디로 흐르고, 각 단계의 입출력이 무엇이며, 무엇이 고정되고 무엇이 학습되는지 — 를 전체 지도로 조립한다.</p>
+<p><a href="https://arxiv.org/abs/2502.16372">COMPASS</a>(NVIDIA, 2025.02)의 핵심 주장은 세 단계가 순차적으로 책임을 분담한다는 것이다. IL은 mobility의 일반 prior를, residual RL은 embodiment별 물리 적응을, distillation은 이 모두를 하나의 배포 가능한 정책으로 통합한다. 그리고 이 전체가 Isaac Sim(시뮬레이션)과 Isaac Lab(RL 학습) 생태계 위에서 돌아가며, humanoid·quadruped는 별도의 joint-level locomotion controller와 결합된다.</p>
+<p>마지막으로 이 챕터는 COMPASS의 벤치마크(Table I)를 정확히 읽는 법을 훈련한다. SR·WTT라는 두 metric으로 4개 embodiment × 4개 환경을 어떻게 비교하는지, 왜 specialist가 X-Mobility zero-shot 대비 SR을 5~40배 끌어올리는지, 그리고 놀랍게도 왜 generalist가 때때로 specialist를 능가하는지(G1)를 해석한다. 이 모든 것을 통해 우리는 COMPASS가 새 알고리즘을 발명한 논문이 아니라, 검증된 부품을 시스템으로 통합한 '<strong>시스템 논문</strong>'이라는 결론에 도달한다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>3-Stage 파이프라인 — 데이터 흐름과 책임 분담</h2><p>COMPASS의 전체 파이프라인은 세 단계로 명확히 나뉘며, 각 단계는 서로 다른 문제를 푼다.</p>
+<p><strong>Stage 1 — Imitation Learning (X-Mobility, frozen).</strong> classical mobility stack을 teacher로 하여 X-Mobility world model + policy head를 IL로 학습한다. 산출물은 환경 dynamics를 압축하는 latent state와, 그로부터 base action을 뽑는 IL policy다. 이 backbone은 이후 단계에서 <strong>고정(frozen)</strong>된다 — 강한 mobility prior를 제공하되 embodiment 적응은 하지 않는 역할이다. 입력: sensor observation(image 등) + goal. 출력: policy state <span class="math-inline">\(p\)</span>와 base action <span class="math-inline">\(a_{base}\)</span>.</p>
+<p><strong>Stage 2 — Residual RL specialists.</strong> embodiment마다 하나씩, IL의 base action 위에 residual <span class="math-inline">\(\Delta\)</span>를 얹는 정책을 PPO로 학습한다. 실행 action은 <span class="math-inline">\(a = a_{base} + \Delta\)</span>이며, residual만 RL로 탐색하므로 학습이 IL prior 근처에서 시작된다. 이 점이 결정적인데, COMPASS는 <strong>IL base action 없이 RL-from-scratch로 학습하면 1000 episode에도 수렴하지 못한다</strong>는 것을 확인했다. residual 구조가 탐색 공간을 극적으로 줄이는 것이다. 입력: policy state <span class="math-inline">\(p\)</span>. 출력: embodiment별 Gaussian action 분포 <span class="math-inline">\(\mathcal{N}(\mu^{(i)}(p), \sigma^2)\)</span>.</p>
+<p><strong>Stage 3 — Policy distillation (generalist).</strong> 각 specialist를 rollout하며 <span class="math-inline">\((p, e^{(i)}, \mu^{(i)}, \sigma^2)\)</span>를 기록하고(embodiment당 320 traj × 128 step ≈ 40k frame), 이를 target으로 embodiment embedding 조건부 generalist를 KL distillation으로 학습한다(Chapter 5). 입력: <span class="math-inline">\((p, e)\)</span>. 출력: <span class="math-inline">\(\mu_\theta(p, e)\)</span> + global variance.</p>
+<p>전체를 관통하는 설계 원리는 <strong>책임의 분리</strong>다. 일반 mobility 지식(IL) / embodiment 물리 적응(residual RL) / 통합·배포(distillation)가 각각 독립된 단계에 캡슐화되어, 한 단계의 실패가 다른 단계를 오염시키지 않는다. 이 모듈성이 새 embodiment 추가나 backbone 교체를 국소적 변경으로 만든다.</p></div><div class="sb-block"><h2>Isaac Sim / Isaac Lab과 Joint Controller — 시뮬레이션 스택</h2><p>COMPASS 파이프라인은 NVIDIA의 <strong>Isaac Sim</strong>(고충실도 물리 시뮬레이터)과 <strong>Isaac Lab</strong>(GPU 병렬 RL 학습 프레임워크) 위에서 돈다. residual RL specialist는 Isaac Lab에서 수천 개의 환경을 병렬로 굴려 학습되며, distillation의 40k frame/embodiment 데이터도 이 시뮬레이션에서 수집된다. 학습 인프라는 4x H100이다.</p>
+<p>여기서 반드시 이해해야 할 계층 분리가 있다. COMPASS가 학습하는 정책은 <strong>velocity command 수준</strong>의 mobility 정책이지, 관절 토크를 직접 내는 정책이 아니다. 그 아래에 embodiment별 <strong>joint controller</strong>가 velocity command를 실제 관절 제어로 변환한다.</p>
+<p>humanoid(H1·G1)와 quadruped(Spot)의 경우, joint controller는 Isaac Lab에서 별도로 학습한 <strong>RL locomotion policy</strong>다. 이 policy가 mobility 정책이 내린 velocity command(예: '앞으로 0.8 m/s, 좌회전')를 받아 다리 관절을 조율해 실제로 걷거나 뛰게 만든다. 즉 COMPASS의 mobility 정책은 '어디로 얼마나 빨리 갈지'를 결정하고, locomotion policy는 '그 속도를 내려면 다리를 어떻게 움직일지'를 담당하는 2층 구조다.</p>
+<p>Carter(wheeled)는 사정이 다르다. Isaac Lab의 wheel physics 제약 때문에 바퀴 로봇에는 별도 locomotion RL policy 대신, velocity로 root state를 직접 조정하는 <strong>custom controller</strong>를 쓴다. 이 비대칭성은 사소해 보이지만 중요한 시스템 디테일이다 — cross-embodiment 파이프라인이 실제로는 embodiment마다 다른 하위 제어 스택을 우아하게 흡수해야 함을 보여준다. mobility 정책이 velocity 추상화 층에서 동작하기에, 이질적인 하위 controller(learned locomotion vs custom wheel)를 하나의 상위 정책으로 통합할 수 있는 것이다.</p>
+<p>이 velocity-command 추상화가 COMPASS의 cross-embodiment를 가능케 하는 숨은 접착제다. 서로 다른 morphology를 공통의 명령 인터페이스(velocity)로 만나게 하고, 그 아래 물리적 실현은 embodiment별 controller에 위임한다.</p></div><div class="sb-block"><h2>벤치마크 읽기 — SR·WTT와 4개 환경</h2><p>COMPASS의 정량 평가(Table I)는 두 metric으로 이뤄진다.</p>
+<p><strong>SR(Success Rate)</strong> = 충돌이나 timeout 없이 goal에 도달한 trial의 비율. 높을수록 좋다. <strong>WTT(Weighted Travel Time)</strong> = 성공 조건에서의 총 이동시간을 SR로 나눈 값. 즉 성공률로 정규화한 이동 효율이며, 낮을수록 좋다. WTT가 SR로 나뉘는 설계 덕에, 빠르지만 자주 실패하는 정책이 불이익을 받는다 — 속도와 신뢰성을 동시에 포착하는 metric이다.</p>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>정의</th>
+<th>좋은 방향</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SR</td>
+<td>충돌·timeout 없이 goal 도달한 trial 비율</td>
+<td>높을수록</td>
+</tr>
+<tr>
+<td>WTT</td>
+<td>성공 총 이동시간 / SR</td>
+<td>낮을수록</td>
+</tr>
+</tbody>
+</table>
+<p>평가 환경은 4개다. warehouse single rack(24×38m), warehouse multi rack(24×38m), office(10×10m), combined(30×38m). 각 환경마다 640 trial, timeout 25.6초로 측정한다. warehouse는 넓고 장애물(rack)이 규칙적인 대공간, office는 좁고 조밀한 소공간, combined는 둘을 합친 long-horizon 시나리오로, 서로 다른 mobility 특성을 시험한다.</p>
+<p>핵심 결과를 embodiment별로 정리하면 다음과 같다. 여기서 specialist/generalist는 X-Mobility zero-shot 대비 극적으로 개선된다.</p>
+<table>
+<thead>
+<tr>
+<th>Embodiment</th>
+<th>Type</th>
+<th>X-Mobility SR (zero-shot)</th>
+<th>Specialist/Generalist SR</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Carter</td>
+<td>wheeled</td>
+<td>~42-50%</td>
+<td>~85-92%</td>
+</tr>
+<tr>
+<td>H1</td>
+<td>humanoid</td>
+<td>~9-26%</td>
+<td>~66-94%</td>
+</tr>
+<tr>
+<td>Spot</td>
+<td>quadruped</td>
+<td>~5-12%</td>
+<td>~75-93%</td>
+</tr>
+<tr>
+<td>G1</td>
+<td>humanoid</td>
+<td>~2-10%</td>
+<td>~77-96%</td>
+</tr>
+</tbody>
+</table>
+<p>이 표에서 반드시 읽어야 할 두 가지. 첫째, X-Mobility(IL only)는 자신이 학습된 Carter에서는 준수하지만(~42-50%) 다른 embodiment로 zero-shot 전이하면 한 자릿수까지 무너진다. 이것이 Chapter 3~4에서 말한 <strong>embodiment-specific 적응의 필요성</strong>을 정면으로 입증한다 — mobility prior만으로는 morphology gap을 못 넘는다. 둘째, 그 격차를 residual RL + distillation이 메워 종합적으로 <strong>SR 5x~40x 개선, WTT 약 3x 개선</strong>을 달성한다. RL-from-scratch가 수렴조차 못한다는 사실과 함께 보면, IL prior와 residual 구조의 결합이 이 숫자의 진짜 엔진임이 드러난다.</p></div><div class="sb-block"><h2>Generalist가 Specialist를 능가하는 역설 — G1 케이스</h2><p>직관적으로 generalist(여러 몸을 하나로 합친 정책)는 specialist(한 몸 전용)보다 나쁠 것 같다. 하나로 뭉치면서 성능을 조금 잃는 게 distillation의 자연스러운 대가처럼 보이기 때문이다. 그러나 COMPASS 벤치마크는 <strong>generalist가 specialist에 필적하거나 때때로 능가한다</strong> — 특히 G1에서 — 는 반직관적 결과를 보인다.</p>
+<p>원인은 distillation 단계에서 <strong>시나리오와 embodiment 다양성이 증가</strong>한다는 데 있다. specialist는 자기 embodiment의 데이터만 보지만, generalist는 모든 embodiment의 rollout을 함께 학습한다. 서로 다른 몸이 서로 다른 환경에서 겪은 경험이 공유 표현을 통해 서로를 보강하는 것이다 — 이것이 Open-X/RT-X에서 관찰된 positive transfer의 축소판이다. 데이터가 적거나 학습이 불안정했던 embodiment(G1 같은)일수록 이 교차 보강의 이득이 커, generalist가 자기 specialist를 앞지른다.</p>
+<p>이는 Chapter 5에서 심은 averaging problem과 미묘한 긴장 관계에 있다. 조건화가 부실하면 averaging(성능 저하)이 일어나지만, 조건화가 충분히 강하면(one-hot) 같은 다양성이 오히려 <strong>positive transfer(성능 향상)</strong>로 뒤집힌다. 즉 embodiment 조건이 얼마나 잘 분리되어 있는가에 따라, 다양성은 독이 되기도 약이 되기도 한다. COMPASS의 one-hot + KL 설계가 이 저울을 positive transfer 쪽으로 기울인 셈이다.</p>
+<p>정성적 case study가 이 morphology 반영을 생생히 보여준다. multi-rack warehouse의 long-horizon 시나리오에서, <strong>G1은 몸을 살짝 기울여 선반 밑을 통과</strong>하는 반면 <strong>H1은 clearance가 부족해 선반을 우회</strong>한다. 하나의 generalist 정책이 embodiment embedding에 따라 각 몸의 물리적 제약(키·폭)을 반영해 서로 다른 경로를 선택하는 것이다. 이것이 generalist가 단순 평균이 아니라 진짜로 embodiment를 인지한 정책임을 보여주는 결정적 증거다 — averaging을 이겨낸 조건화의 승리다.</p></div><div class="sb-block"><h2>&#x27;알고리즘 논문&#x27;이 아니라 &#x27;시스템 논문&#x27; — 배포와 한계</h2><p>COMPASS를 정확히 자리매김하려면 그것이 <strong>새 알고리즘을 발명하지 않았다</strong>는 점을 인정해야 한다. world-model IL(X-Mobility), residual RL, policy distillation은 모두 이미 검증된 기법이다. COMPASS의 기여는 이 부품들을 하나의 작동하는 cross-embodiment mobility 시스템으로 <strong>통합</strong>하고, 그 통합이 실제로 작동함을 4개 embodiment × 4개 환경에서 정량적으로 입증한 것이다. 이것이 COMPASS가 '알고리즘 논문'이 아니라 '<strong>시스템 논문</strong>'인 이유다 — 기여의 단위가 새 수식이 아니라 검증된 파이프라인이다.</p>
+<p>시스템 논문의 진가는 배포에서 드러난다. COMPASS는 학습된 X-Mobility backbone은 그대로 유지하고 <strong>IL policy만 distilled generalist로 교체</strong>하는 방식으로 배포된다. 실제 하드웨어 성능은 다음과 같다.</p>
+<table>
+<thead>
+<tr>
+<th>항목</th>
+<th>값</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Runtime</td>
+<td>TensorRT on AGX Jetson Orin</td>
+</tr>
+<tr>
+<td>P50 latency</td>
+<td>29.3 ms</td>
+</tr>
+<tr>
+<td>P95 latency</td>
+<td>29.4 ms</td>
+</tr>
+<tr>
+<td>Model size</td>
+<td>422 MB</td>
+</tr>
+</tbody>
+</table>
+<p>P50과 P95가 거의 같다(29.3 vs 29.4ms)는 점에 주목하라 — latency 분산이 극히 작아 실시간 제어에 적합하다는 뜻이다. 엣지 디바이스(Jetson Orin)에서 30ms 이내로 도는 것은 이 정책이 실험실 데모가 아니라 실배포를 겨냥했음을 보여준다.</p>
+<p>한계도 논문이 스스로 명시한다. 첫째, embodiment 표현이 one-hot이라 <strong>unseen embodiment로의 zero-shot이 불가</strong>하며, 이를 위해 learned embedding으로의 전환이 필요하다(Chapter 5·7). 둘째, COMPASS는 point-goal navigation을 풀 뿐, 전역 경로 계획을 담당하는 <strong>graph route planner 같은 hierarchical mobility stack</strong>과 결합되어야 완전한 자율 주행이 된다. 즉 COMPASS는 mobility stack의 중간 층(local policy)을 cross-embodiment로 만든 것이지, 전체 스택을 대체한 것이 아니다.</p>
+<p>마지막으로 COMPASS가 Isaac Sim/Lab 생태계에 탑재되고 <a href="https://github.com/NVlabs/COMPASS">GitHub NVlabs/COMPASS</a>로 공개되었다는 점은 시스템 논문으로서의 정체성을 완성한다. 재현 가능하고, 확장 가능하며, 실제 로봇에 배포 가능한 파이프라인 — 이것이 이 강의 전반부(Ch1~6)가 도달한 종착점이자, 후반부(generative policy·sim-to-real·foundation model)로 나아가는 출발점이다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">3단계 조립 라인과 velocity라는 공통 규격</div>
+      <div class="a-body"><p>COMPASS 파이프라인은 자동차 공장의 조립 라인과 닮았다. Stage 1(IL)은 모든 차종이 공유하는 '섀시(chassis)'를 찍어내는 공정이다 — 한 번 잘 만들어 놓으면 고정(frozen)하고 재사용한다. Stage 2(residual RL)는 그 섀시 위에 세단·SUV·트럭 각각의 특성을 얹는 차종별 커스터마이징 라인이다. Stage 3(distillation)은 이 모든 차종의 조립 노하우를 한 명의 마스터 기술자에게 전수해, 명찰(embodiment id)만 보고 어떤 차종이든 조립할 수 있게 만드는 통합 교육이다.</p>
+<p>이 조립 라인이 돌아가는 비결은 '<strong>velocity command라는 공통 규격</strong>'이다. 상위 mobility 정책은 '시속 얼마로 어느 방향' 같은 표준 명령만 내리고, 그 명령을 실제 바퀴 회전이나 다리 관절로 바꾸는 일은 차종별 하위 부품(Carter의 custom wheel controller, H1·G1·Spot의 learned locomotion policy)에 맡긴다. 볼트 규격이 표준화되어 있으면 같은 조립 지침으로 다른 부품을 조립할 수 있는 것처럼, velocity라는 표준 인터페이스가 이질적인 몸들을 하나의 정책 아래 모은다.</p>
+<p>그리고 이 공장이 진짜 공장인 이유 — 데모가 아니라 — 는 완성차가 실제 도로(Jetson Orin, 30ms)에서 달린다는 데 있다. 새 부품(알고리즘)을 발명한 게 아니라, 이미 있는 검증된 부품들을 하나의 작동하는 생산 라인으로 엮어낸 것. 그래서 COMPASS는 '발명 논문'이 아니라 '생산 라인 논문(시스템 논문)'이다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>COMPASS 3단계를 하나의 오케스트레이션으로 옮긴 개념적 pseudo-pipeline이다. 무엇이 frozen이고 무엇이 embodiment마다 반복되며, distillation 데이터가 어디서 수집되는지 — 그리고 배포 시 backbone은 유지하고 policy만 교체하는 구조를 드러낸다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">def build_compass(embodiments, envs):
+    # ---- Stage 1: X-Mobility world-model IL backbone (한 번만, 이후 frozen) ----
+    world_model = train_x_mobility_il(expert_dataset)   # RSSM + IL policy head
+    world_model.freeze()                                # 강한 mobility prior, 고정
+
+    specialists, distill_data = {}, []
+
+    # ---- Stage 2: embodiment마다 residual RL specialist ----
+    for emb in embodiments:
+        residual = ResidualPolicy(act_dim)              # PPO로 학습되는 delta
+        joint_ctrl = load_joint_controller(emb)
+        # humanoid/quadruped: Isaac Lab RL locomotion policy
+        # wheeled(Carter): velocity로 root state 직접 조정하는 custom controller
+        for _ in range(N_ITERS):
+            rollouts = rollout_isaac_lab(
+                world_model, residual, joint_ctrl, envs[emb])
+            # 실행 action a = a_base(IL) + delta(residual) — from-scratch면 발산
+            ppo_update(residual, rollouts)
+        specialists[emb] = residual
+
+        # rollout하며 (p, e, mu, sigma) 기록 → distillation dataset
+        # embodiment당 320 traj x 128 step ~= 40k frame, 실패 케이스도 포함
+        distill_data += record_distribution(
+            world_model, residual, emb, n_traj=320, horizon=128)
+
+    # ---- Stage 3: 하나의 generalist로 KL distillation ----
+    generalist = DistilledPolicy(state_dim, len(embodiments), act_dim)
+    for _ in range(N_EPOCHS):
+        for batch in loader(distill_data):
+            distill_step(generalist, batch, opt)        # min KL (Ch5)
+
+    # ---- 배포: backbone 유지 + IL policy만 generalist로 교체 ----
+    #        TensorRT on Jetson Orin, P50 29.3ms / 422MB
+    return deploy(backbone=world_model, policy=generalist)</code></pre>
+      <div class="c-walk"><p><code>world_model.freeze()</code>가 파이프라인의 첫 설계 결정을 드러낸다. IL backbone은 딱 한 번 학습되고 이후 모든 단계에서 고정된다 — mobility prior는 공유 자산이지 embodiment마다 다시 배우는 것이 아니다.</p>
+<p>Stage 2의 for-loop이 cross-embodiment의 실체다. embodiment마다 <code>residual</code>을 새로 만들되, <code>joint_ctrl</code>은 embodiment 타입에 따라 다르게 로드된다 — humanoid/quadruped는 Isaac Lab locomotion RL policy, Carter는 custom wheel controller. 이 비대칭을 mobility 정책은 velocity command 추상화로 흡수한다. 주석 <code>a = a_base + delta</code>가 residual RL의 핵심으로, IL base action이 없으면(from-scratch) 1000 episode에도 수렴하지 못한다.</p>
+<p><code>record_distribution</code>이 Stage 2와 3을 잇는 다리다. specialist를 rollout하며 (p, e, mu, sigma)를 320 traj × 128 step 규모로 기록하고, 성공만 거르지 않고 실패 케이스도 포함해 corner case를 학습에 노출한다.</p>
+<p>Stage 3은 Chapter 5의 <code>distill_step</code>을 그대로 호출한다 — 3단계가 실제로 앞 챕터의 코드와 물리적으로 연결됨을 보여준다. 마지막 <code>deploy</code>가 시스템 논문의 정수다. backbone은 그대로, policy만 distilled generalist로 갈아끼워 TensorRT로 컴파일하면 Jetson Orin에서 P50 29.3ms, 422MB로 실시간 구동된다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">COMPASS 같은 다단계 로봇 정책 파이프라인은 빅테크 robotics/embodied AI 팀의 실제 시스템 설계 문제를 압축한다. 면접에서는 개별 기법의 지식보다, 여러 검증된 컴포넌트를 하나의 배포 가능한 시스템으로 엮고 그 성능을 올바른 metric으로 해석하는 시스템 사고를 평가한다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>3단계 각각의 입출력·무엇이 frozen/trained인지를 데이터 흐름으로 정확히 그리는 능력</li><li>SR·WTT 같은 정규화된 metric을 정의하고, WTT가 SR로 나뉘는 설계 의도를 설명하는 통찰</li><li>velocity-command 추상화가 이질적 하위 controller(learned locomotion vs custom wheel)를 어떻게 통합하는지 이해하는 시스템 관점</li><li>generalist가 specialist를 능가하는 positive transfer를 데이터 다양성·조건화 강도와 연결해 설명하는 사고</li><li>&#x27;알고리즘 novelty&#x27;와 &#x27;시스템 통합 기여&#x27;를 구분하고 후자의 가치를 인정하는 성숙도</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>3단계를 뭉뚱그려 &#x27;그냥 RL로 학습한다&#x27;고 말하고 IL prior·frozen backbone의 역할을 놓침</li><li>SR만 보고 WTT(효율)를 무시하거나, WTT가 SR로 정규화된 이유를 모름</li><li>generalist는 무조건 specialist보다 나쁘다고 단정(positive transfer 현상을 모름)</li><li>joint controller 계층을 인지하지 못하고 mobility 정책이 관절 토크를 직접 낸다고 오해</li><li>시스템 논문이라는 이유로 기여를 폄하하거나, 반대로 새 알고리즘이라 잘못 소개</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>COMPASS 3단계의 데이터 흐름을 그리고, 각 단계에서 무엇이 고정되고 무엇이 학습되는지, 왜 그렇게 나눴는지 설명하라.</li><li>X-Mobility zero-shot SR이 Carter에선 ~45%지만 G1에선 한 자릿수인 결과를 어떻게 해석하며, 이것이 residual RL의 필요성을 어떻게 뒷받침하는가?</li><li>generalist가 specialist를 능가할 수 있는 조건은 무엇이며(G1 사례), 이 현상이 언제는 averaging(성능 저하)로 뒤집히는가?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 친숙한 수준은 &#x27;COMPASS는 IL+RL+distillation 3단계&#x27;라고 나열하고 SR이 올랐다고 말하는 정도다. 통달한 수준은 각 단계의 입출력과 frozen/trained 경계를 정확히 그리고, velocity-command 추상화가 embodiment별 joint controller를 통합하는 메커니즘을 설명하며, SR·WTT로 X-Mobility zero-shot·specialist·generalist를 비교 해석하고, G1의 positive transfer와 morphology-aware 경로 선택(선반 밑 통과 vs 우회)을 조건화 강도로 설명하며, 왜 이것이 새 알고리즘이 아니라 배포까지 검증한 시스템 기여인지를 논증한다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>3단계는 책임을 분담한다</h3><p>IL은 일반 mobility prior(frozen), residual RL은 embodiment별 물리 적응, distillation은 하나의 배포 가능한 generalist로의 통합을 각각 담당한다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>IL prior 없는 RL은 수렴하지 못한다</h3><p>residual RL은 IL base action 위에 delta만 탐색하므로 안정적이지만, RL-from-scratch는 1000 episode에도 발산한다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>velocity-command가 cross-embodiment의 접착제</h3><p>mobility 정책은 velocity만 명령하고, humanoid/quadruped는 Isaac Lab locomotion policy가, Carter는 custom wheel controller가 그것을 실제 제어로 변환한다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>SR·WTT로 신뢰성과 효율을 함께 본다</h3><p>SR은 충돌·timeout 없는 goal 도달 비율, WTT는 성공 이동시간을 SR로 나눈 값 — 빠르지만 자주 실패하는 정책을 벌한다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>X-Mobility zero-shot은 embodiment 적응의 필요성을 입증한다</h3><p>Carter에선 ~42-50%지만 다른 몸으로 zero-shot 시 한 자릿수로 붕괴 — specialist/generalist가 SR을 5~40x, WTT를 3x 개선한다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>Generalist가 specialist를 능가하기도 한다</h3><p>distillation의 시나리오·embodiment 다양성이 positive transfer를 만들어, 데이터가 부족했던 G1 등에서 generalist가 자기 specialist를 앞선다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>조건화된 generalist는 morphology를 인지한다</h3><p>multi-rack에서 G1은 기울여 선반 밑을 통과하고 H1은 clearance 부족으로 우회 — 하나의 정책이 embodiment 제약을 반영한 증거다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>COMPASS는 시스템 논문이다</h3><p>새 알고리즘이 아니라 검증된 부품(world-model IL + residual RL + distillation)을 Jetson Orin 30ms 배포까지 통합·검증한 파이프라인이다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-05.html">← Policy Distillation &amp; Generalist Policies</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-07.html">Embodiment Conditioning &amp; Morphology →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

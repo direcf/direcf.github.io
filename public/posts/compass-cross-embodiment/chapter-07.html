@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch7: Embodiment Conditioning &amp; Morphology — COMPASS &amp; Cross-Embodiment Mobility — direcf</title>
+  <meta name="description" content="one-hot을 넘어 — learned embedding, measurable collision-envelope(AgniNav), morphology-aware transformer까지. unseen embodiment로의 zero-shot이라는 최전선 문제를 다룬다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;height:22px;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><linearGradient id="direcf-nav-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs></svg>
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg></span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg></span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.25 15a4.5 4.5 0 0 0 4.5 4.5H18a3.75 3.75 0 0 0 1.332-7.257 3 3 0 0 0-3.758-3.848 5.25 5.25 0 0 0-10.233 2.33A4.502 4.502 0 0 0 2.25 15Z"/></svg></span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"/></svg></span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg></span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/physical-ai">COMPASS &amp; Cross-Embodiment Mobility</a><span class="sep">›</span>
+        <strong>Ch07 Embodiment Conditioning &amp; Morphology</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 07 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🦿</div>
+      <h1 class="chapter-title">Embodiment Conditioning &amp; Morphology</h1>
+      <div class="chapter-title-kr">임바디먼트 조건화와 모폴로지</div>
+      <div class="chapter-tldr">one-hot을 넘어 — learned embedding, measurable collision-envelope(AgniNav), morphology-aware transformer까지. unseen embodiment로의 zero-shot이라는 최전선 문제를 다룬다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-07.png" alt="Chapter 7 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 7 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>embodiment를 &#x27;학습된 벡터&#x27;로 볼 때와 &#x27;측정 가능한 물리량&#x27;으로 볼 때의 trade-off를 안다</li><li>AgniNav의 collision-envelope conditioning이 zero-shot 배치에 유리한 이유를 설명한다</li><li>humanoid의 balance 제약이 perception·policy에 미치는 영향을 이해한다</li><li>learnable embedding이 embedding space 보간으로 일반화하는 아이디어를 설명한다</li><li>unseen embodiment zero-shot이 왜 아직 미해결인지 진단할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>Chapter 5·6에서 우리는 COMPASS가 embodiment를 one-hot 벡터로 표현하고, 그 조건 아래에서 하나의 generalist가 서로 다른 몸을 구분한다는 것을 봤다. 그런데 one-hot은 근본적으로 '이름표'다. 길이 N one-hot은 N개의 미리 정해진 embodiment에 각각 하나의 축을 배정할 뿐, 그 몸이 얼마나 큰지·얼마나 넓은지·어떤 morphology 제약을 갖는지에 대한 어떤 물리 정보도 담지 않는다. 이 챕터는 바로 그 표현(representation) 자체를 해부한다 — embodiment를 무엇으로 인코딩할 것인가라는, cross-embodiment의 가장 근본적인 설계 질문이다.</p>
+<p>표현의 스펙트럼은 세 단계로 놓인다. <strong>one-hot</strong>(이름표) → <strong>learned embedding</strong>(학습된 좌표) → <strong>measurable physical quantity</strong>(측정 가능한 물리량). one-hot은 소수의 이질적 플랫폼에 간결하고 효율적이지만 unseen embodiment로 확장이 불가능하다. learned embedding은 embedding space의 보간을 통해 새로운 몸으로 일반화할 가능성을 열지만 — <a href="https://arxiv.org/abs/2502.16372">COMPASS</a>조차 이 zero-shot을 future work로 남겼다. 그리고 2026년의 최전선은 세 번째 축, 즉 embodiment를 collision-relevant height·footprint 같은 '측정 가능한 물리량'으로 표준화하는 <a href="https://arxiv.org/abs/2606.10903">AgniNav</a> 계열이다 — 학습된 벡터가 아니라 자로 잰 숫자로 몸을 표현하면 해석 가능하고 retraining 없이 새 로봇에 즉시 배치된다.</p>
+<p>이 챕터의 관통 질문은 하나다. <strong>embodiment를 '학습된 벡터'로 볼 것인가, '측정 가능한 물리량'으로 볼 것인가.</strong> 전자는 표현력이 크지만 unseen으로의 일반화가 취약하고 해석이 어렵다. 후자는 표현력을 물리 파라미터로 제한하는 대신 zero-shot 배치와 해석가능성에서 앞선다. 여기에 humanoid의 balance 제약처럼 morphology가 perception과 정책에 직접 개입하는 사례(<a href="https://arxiv.org/abs/2601.12790">FocusNav</a>)를 더해, '몸을 어떻게 인코딩하는가'가 왜 cross-embodiment 일반화의 병목인지를 규명한다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>표현의 스펙트럼 — one-hot / learned / measurable</h2><p>embodiment conditioning의 핵심은 '몸을 어떤 벡터 <span class="math-inline">\(e\)</span>로 만들어 정책에 주입하느냐'다. 세 가지 대표 방식이 명확히 구분된다.</p>
+<p><strong>One-hot(이름표).</strong> 길이 <span class="math-inline">\(N\)</span>(<span class="math-inline">\(N\)</span>=embodiment 수) 벡터로, <span class="math-inline">\(i\)</span>번째 몸은 <span class="math-inline">\(e_i = [0,\dots,1,\dots,0]\)</span>이다. COMPASS의 기본 선택으로, robot이 적고(<span class="math-inline">\(N\)</span>이 작고) 서로 크게 다를 때 가장 효율적이다. 학습이 안정적이고 embodiment 간 간섭이 없다(모든 one-hot은 서로 직교). 그러나 치명적 한계는 <span class="math-inline">\(N\)</span>이 고정이라는 점 — 새 몸 <span class="math-inline">\(N{+}1\)</span>은 새 축이 없어 <strong>표현조차 불가능</strong>하다. one-hot 공간에는 '사이(between)'가 없어 보간도 무의미하다.</p>
+<p><strong>Learned embedding(학습된 좌표).</strong> embodiment id를 <code>nn.Embedding</code>으로 연속 벡터 <span class="math-inline">\(e \in \mathbb{R}^d\)</span>에 매핑하고, 이 벡터를 정책과 함께 end-to-end 학습한다. 학습이 끝나면 비슷하게 움직이는 몸끼리 embedding space에서 가까워진다 — 여기서 결정적 가능성이 열린다. <strong>두 known embodiment의 embedding을 보간(<span class="math-inline">\(\alpha e_A + (1-\alpha) e_B\)</span>)하면 그 '사이'의 몸에 해당하는 정책을 얻을 수 있다는 아이디어</strong>다. 이것이 learned embedding이 unseen embodiment 일반화의 후보인 이유다. 다만 COMPASS는 이 zero-shot을 실증하지 않고 future work로 남겼다 — 보간이 실제로 유효한 정책을 낳는지는 embedding space가 얼마나 매끄러운지(smooth)에 달려 있고, 이는 보장되지 않는다.</p>
+<p><strong>Measurable physical quantity(측정 가능한 물리량).</strong> embedding을 학습하는 대신, 몸을 자로 잰 물리 파라미터로 직접 인코딩한다. AgniNav의 4-parameter collision envelope(height·front length·rear length·half width)이 대표다. 이 표현의 미덕은 <strong>새 로봇이 와도 학습이 필요 없다</strong> — 그냥 치수를 재서 넣으면 된다. embedding처럼 데이터에서 배우는 게 아니라 물리에서 읽어오므로 unseen에 즉시 대응하고, 각 축의 의미가 명확해 해석 가능하다.</p>
+<table>
+<thead>
+<tr>
+<th>표현</th>
+<th>무엇을 담나</th>
+<th>unseen 대응</th>
+<th>해석성</th>
+<th>적합 상황</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>one-hot</td>
+<td>이름표(id)</td>
+<td>불가(<span class="math-inline">\(N\)</span> 고정)</td>
+<td>중(축=id)</td>
+<td>소수·이질 플랫폼</td>
+</tr>
+<tr>
+<td>learned embedding</td>
+<td>학습된 좌표</td>
+<td>보간으로 가능성(미실증)</td>
+<td>낮음(불투명)</td>
+<td>다수·연속 spectrum</td>
+</tr>
+<tr>
+<td>measurable</td>
+<td>물리 치수</td>
+<td>즉시(측정만)</td>
+<td>높음(물리 의미)</td>
+<td>zero-shot 배치</td>
+</tr>
+</tbody>
+</table>
+<p>요지는 이 스펙트럼이 <strong>표현력과 일반화의 trade-off</strong>라는 것이다. one-hot은 표현력을 최소화해 안정성을 얻고, learned는 표현력을 최대화하되 일반화를 데이터에 걸며, measurable은 표현력을 물리 파라미터로 제약하는 대가로 zero-shot과 해석성을 산다.</p></div><div class="sb-block"><h2>Learned Embedding과 Embedding-Space 보간 — unseen으로의 다리</h2><p>learned embedding이 왜 unseen embodiment의 유력 후보인지 정확히 이해하려면, embedding space가 무엇을 학습하는지를 봐야 한다.</p>
+<p>정책 <span class="math-inline">\(\pi_\theta(a \mid p, e)\)</span>에서 <span class="math-inline">\(e\)</span>를 <code>nn.Embedding</code> lookup으로 학습하면, gradient는 '이 몸에서 좋은 행동을 내게 하는 방향'으로 <span class="math-inline">\(e\)</span>를 민다. 그 결과 <strong>kinematically·dynamically 비슷한 몸끼리 embedding이 서로 가까워지는 경향</strong>이 생긴다 — 예컨대 두 사족보행 로봇의 embedding은 사족과 이족 사이보다 가까워진다. 이 구조가 생기면 embedding space는 단순한 id 저장소가 아니라 morphology의 연속적 지도(map)가 된다.</p>
+<p>여기서 보간 아이디어가 나온다. known embodiment <span class="math-inline">\(A, B\)</span>의 embedding <span class="math-inline">\(e_A, e_B\)</span> 사이를 <span class="math-inline">\(e_{new} = \alpha e_A + (1-\alpha) e_B\)</span>로 채우면, 그 좌표에서 정책 <span class="math-inline">\(\pi_\theta(\cdot \mid p, e_{new})\)</span>은 '<span class="math-inline">\(A\)</span>와 <span class="math-inline">\(B\)</span> 사이 어딘가의 몸'을 위한 행동을 낼 것으로 기대된다. one-hot에는 없던 '사이'가 learned space에는 존재하기 때문이다. 이것이 <strong>learnable embedding은 embedding space 보간으로 새로운 unseen embodiment에 일반화할 가능성이 있다</strong>는 COMPASS의 서술의 정확한 의미다.</p>
+<p>그러나 이 다리에는 세 가지 균열이 있다. 첫째, 보간이 유효하려면 embedding space가 <strong>매끄러워야(smooth)</strong> 한다 — 즉 <span class="math-inline">\(e\)</span>의 작은 변화가 정책의 작은 변화로 이어져야 한다. 학습은 이를 강제하지 않으며, 보통 embedding들이 이산적 군집(cluster)으로 흩어져 '사이'가 정책적으로 무의미한 골짜기일 수 있다. 둘째, 새 몸의 embedding을 <strong>어디에 놓을지</strong> 자체가 미해결이다 — 새 로봇을 위한 <span class="math-inline">\(e_{new}\)</span>를 어떻게 정할 것인가? 몇 개 샘플로 추정하려면 이미 few-shot이고, 순수 zero-shot이 아니다. 셋째, embedding은 <strong>불투명</strong>해 어떤 축이 height를 어떤 축이 gait를 담는지 알 수 없어, 실패 시 진단이 어렵다.</p>
+<p>이 균열들 때문에 COMPASS는 learned embedding으로의 전환과 그 zero-shot을 <strong>명시적으로 future work로 남겼다</strong>. 즉 learned embedding은 unseen 일반화의 '원리적 가능성'을 제공하지만, 그것을 '작동하는 zero-shot'으로 바꾸는 것은 2026년 현재에도 열린 문제다. 이 미해결성이 다음 절의 measurable 표현이 등장하는 배경이다 — 학습된 space의 보간에 기대는 대신, 아예 물리 치수를 직접 조건으로 쓰자는 우회로다.</p></div><div class="sb-block"><h2>Measurable Collision Envelope — AgniNav의 물리량 표준화</h2><p><a href="https://arxiv.org/abs/2606.10903">AgniNav</a>(2026.06)는 embodiment 표현의 축을 근본적으로 바꾼다. 학습된 벡터가 아니라 <strong>측정 가능한 4-parameter collision envelope</strong>로 cross-embodiment을 표준화한다.</p>
+<p><strong>Collision envelope(충돌 외피)</strong> = 로봇의 충돌 관련 형상을 4개 물리 파라미터로 근사한 표현. collision-relevant height(충돌 관련 높이), front length(전방 길이), rear length(후방 길이), half width(반폭)이다. 이 네 숫자면 '이 몸이 어디에 부딪히는가'를 근사적으로 규정할 수 있다 — 바퀴 로봇이든 사족이든 humanoid든, 자로 재서 채우면 끝이다.</p>
+<p>AgniNav의 영리함은 이 파라미터를 정책에 어떻게 <strong>역할별로 분배</strong>하느냐에 있다. <strong>height</strong>는 image-to-scan network를 conditioning한다 — monocular RGB 한 장에서 로봇의 충돌 높이에 해당하는 수평면을 골라, 그 높이에서의 <strong>1D collision-relevant pseudo-laserscan</strong>을 예측한다. 즉 '키가 큰 로봇은 높은 장애물을, 낮은 로봇은 낮은 장애물을 본다'가 height 파라미터 하나로 자동 반영된다. 나머지 footprint 파라미터(front·rear length·half width)는 <strong>dimension-aware local planner의 collision check 설정</strong>을 결정한다 — planner가 로봇의 실제 발자국 크기로 통과 가능 여부를 판정한다.</p>
+<p>이 설계의 실전 결과가 강력하다. AgniNav는 <strong>retraining 없이</strong> wheeled(Turtlebot2)·quadruped(Go2)·humanoid(K1)에 배치되며, Jetson Orin에서 FP16 30Hz+로 돈다. 새 로봇을 붙이는 절차가 '데이터 수집→재학습'이 아니라 '치수 측정→파라미터 입력'으로 축소된 것이다. 이것이 measurable 표현의 정체다 — embodiment 일반화를 학습 문제에서 <strong>측정 문제</strong>로 옮긴다.</p>
+<p>왜 이것이 zero-shot 배치에 유리한가. learned embedding의 zero-shot은 '새 몸의 embedding을 어디에 놓을지 모른다'는 벽에 막혔다. measurable은 이 벽을 우회한다 — 새 몸의 collision envelope은 학습으로 추정할 필요 없이 <strong>물리적으로 관측 가능</strong>하기 때문이다. height 1.2m·half width 0.3m는 데이터가 아니라 줄자로 얻는다. 게다가 각 파라미터가 명확한 물리 의미를 가져 <strong>해석 가능</strong>하고(왜 이 경로를 택했는가를 footprint로 설명), 실패 시 어떤 치수가 잘못됐는지 진단할 수 있다. 물론 대가도 있다 — collision envelope은 형상만 담고 dynamics(질량·관성·gait)는 담지 않으므로, 표현력은 learned embedding보다 낮다. 그러나 navigation의 collision avoidance라는 문제에 한정하면, '충돌 형상'이야말로 정확히 필요한 정보이고 나머지는 하위 controller에 위임된다(Chapter 6의 velocity 추상화와 같은 논리).</p></div><div class="sb-block"><h2>Morphology가 Perception을 침범한다 — Humanoid Balance 제약</h2><p>embodiment 표현이 정책의 '조건'으로만 들어가는 것은 아니다. 특정 morphology, 특히 humanoid의 balance 제약은 <strong>perception 자체의 구조</strong>를 바꿔야 할 만큼 깊이 개입한다.</p>
+<p>wheeled·quadruped와 달리 humanoid는 이족 보행의 본질적 불안정성을 갖는다. 지지면(support polygon)이 좁고, CoM(center of mass)이 높아, 잘못된 발놓기(foothold) 하나로 넘어진다. 이 제약은 '어디로 갈지'뿐 아니라 '무엇을 봐야 하는지'를 규정한다 — 균형이 위태로울 때 먼 목표를 바라보는 것은 사치이고, 당장 안전한 발판을 확보하는 것이 우선이다.</p>
+<p><a href="https://arxiv.org/abs/2601.12790">FocusNav</a>(2026.01, Unitree G1)가 이 통찰을 perception 아키텍처로 구현한다. 두 메커니즘이 핵심이다. <strong>Waypoint-Guided Spatial Cross-Attention(WGSCA)</strong>은 collision-free waypoint에 perception을 anchoring한다 — 즉 정책이 봐야 할 공간적 초점을 '충돌 없는 다음 경유점' 주변으로 유도해, 산만한 전역 정보 대신 실행 가능한 지역 정보에 집중시킨다. <strong>Stability-Aware Selective Gating(SASG)</strong>은 더 직접적이다 — <strong>stability가 하락하면 원거리 정보를 truncate</strong>해, 먼 곳의 정보를 일부러 끊고 foothold 안전을 우선한다. 균형이 무너지려 할 때 시야를 '발밑'으로 좁히는 것이다.</p>
+<p>이것이 morphology-aware conditioning의 가장 깊은 형태다. AgniNav의 height가 '무엇을 볼지(어느 높이의 scan)'를 morphology로 조절했다면, FocusNav의 SASG는 '언제 무엇을 무시할지'를 morphology 상태(stability)로 동적 조절한다. embodiment 정보가 정적 조건 벡터를 넘어, perception의 attention과 정보 truncation에까지 흐르는 것이다.</p>
+<p>일반화하면, cross-embodiment의 어려움은 몸마다 <strong>관련 있는 정보의 범위 자체가 다르다</strong>는 데 있다. 바퀴 로봇에게 발밑 texture는 무의미하지만 humanoid에게는 생사가 걸린다. 좋은 embodiment conditioning은 이 '관련성의 구조'를 반영해야 하며, 그래서 morphology는 조건 벡터로 정책에 들어가는 데 그치지 않고 perception 파이프라인의 형태(attention 범위, 정보 truncation 정책)를 결정한다. 이 관점에서 보면 embodiment 표현 문제는 '벡터 하나를 어떻게 만드느냐'가 아니라 '몸에 따라 인지-행동 회로 전체를 어떻게 재배선하느냐'로 확장된다.</p></div><div class="sb-block"><h2>학습된 벡터 vs 측정 가능한 물리량 — 최전선의 분기</h2><p>이 챕터의 모든 실마리는 하나의 분기점으로 수렴한다. <strong>embodiment를 '학습된 벡터'로 볼 것인가, '측정 가능한 물리량'으로 볼 것인가.</strong> 이것은 단순한 구현 선택이 아니라 cross-embodiment 일반화 철학의 갈림길이다.</p>
+<p><strong>학습된 벡터 진영</strong>(one-hot → learned embedding → morphology-aware transformer)은 표현을 데이터에서 배운다. 극단에는 <a href="https://arxiv.org/abs/2603.00182">Embedding Morphology into Transformers</a>처럼 로봇의 관절 구조(kinematic tree) 자체를 transformer의 attention 구조로 인코딩하거나, <a href="https://arxiv.org/abs/2602.13764">MOTIF</a>처럼 few-shot으로 새 몸에 적응하는 접근이 있다. 강점은 표현력 — dynamics·gait·관절 토폴로지까지 담을 수 있다. 약점은 unseen zero-shot의 취약성과 불투명성 — 새 몸의 벡터를 어디에 놓을지 모르고, 왜 그렇게 행동하는지 설명하기 어렵다.</p>
+<p><strong>측정 가능한 물리량 진영</strong>(AgniNav, <a href="https://arxiv.org/abs/2603.19602">CeRLP</a>)은 표현을 물리에서 읽는다. AgniNav는 collision envelope 4-parameter로, CeRLP는 시각 정보를 unified geometric formulation으로 추상화해 대규모 multi-robot data·fine-tuning·retraining 없이 cross-embodiment을 달성한다. 강점은 <strong>zero-shot 배치와 해석가능성</strong> — 치수만 재면 새 몸에 즉시 붙고, 각 파라미터가 물리 의미를 가진다. 약점은 표현력의 상한 — 물리 파라미터에 담기지 않는 dynamics 차이는 놓친다.</p>
+<table>
+<thead>
+<tr>
+<th>관점</th>
+<th>학습된 벡터</th>
+<th>측정 가능한 물리량</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>표현 획득</td>
+<td>데이터에서 학습</td>
+<td>물리에서 측정</td>
+</tr>
+<tr>
+<td>표현력</td>
+<td>높음(dynamics·gait 포함)</td>
+<td>형상 위주로 제한</td>
+</tr>
+<tr>
+<td>unseen zero-shot</td>
+<td>취약(벡터 배치 미해결)</td>
+<td>유리(측정만 하면 됨)</td>
+</tr>
+<tr>
+<td>해석가능성</td>
+<td>낮음(불투명)</td>
+<td>높음(물리 의미)</td>
+</tr>
+<tr>
+<td>대표</td>
+<td>COMPASS, MOTIF</td>
+<td>AgniNav, CeRLP</td>
+</tr>
+</tbody>
+</table>
+<p>2026년의 무게중심은 후자로 기울고 있다. 이유는 실용이다 — 산업 배포에서 '새 로봇마다 데이터 수집·재학습'은 견딜 수 없는 비용이고, '치수 재서 즉시 배치'는 결정적 이점이다. 게다가 해석가능성은 안전 인증과 디버깅에 필수다. 그렇다고 학습된 벡터가 폐기되는 것은 아니다 — 두 진영은 오히려 <strong>결합</strong>으로 간다. measurable 파라미터로 collision 형상을 명시적으로 다루면서, learned 표현으로 그 위의 dynamics·gait 미묘함을 흡수하는 하이브리드가 자연스러운 종착점이다.</p>
+<p>마지막으로 unseen embodiment zero-shot이 왜 아직 미해결인지 진단하며 이 챕터를 닫자. 근본 이유는 <strong>'몸의 무엇이 정책에 관련되는가'가 아직 완전히 규명되지 않았기 때문</strong>이다. collision 형상은 measurable하지만, 그 형상이 dynamics·balance·gait와 얽히는 방식은 여전히 학습에 의존한다. learned embedding은 이 얽힘을 배우지만 새 몸으로 확장이 안 되고, measurable은 확장되지만 얽힘을 놓친다. 이 간극을 메우는 것 — 물리적으로 관측 가능하면서도 dynamics까지 포착하는 embodiment 표현 — 이 cross-embodiment 일반화의 다음 관문이며, Chapter 8(생성형 정책)과 Chapter 10(foundation model)로 이어지는 미완의 질문이다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">옷 사이즈 — 이름표, 브랜드 좌표, 그리고 줄자</div>
+      <div class="a-body"><p>embodiment를 표현하는 세 방식은 옷 사이즈를 다루는 세 방식과 닮았다. one-hot은 'S/M/L' 이름표다 — 미리 정해진 몇 개 칸에 사람을 배정할 뿐이다. 딱 그 칸에 맞는 사람에겐 충분하지만, 'M과 L 사이'인 사람은 표현할 칸이 없고, 새로운 체형(예: XXXL)이 등장하면 아예 이름표가 없어 대응 불가다. COMPASS의 one-hot이 소수의 이질적 로봇엔 충분하나 unseen 로봇엔 무력한 것과 같다.</p>
+<p>learned embedding은 각 브랜드가 자기 데이터로 만든 '숨은 사이즈 좌표'다. 많은 고객 데이터를 학습해 비슷한 체형을 좌표상 가까이 놓으므로, 'A와 B 사이 체형'을 좌표 보간으로 추정할 여지가 생긴다. 문제는 이 좌표가 불투명하고(왜 이 좌표인지 설명 못 함), 한 번도 본 적 없는 체형의 좌표를 어디에 찍을지는 여전히 모른다는 것 — 결국 새 고객 몇 명을 재봐야(few-shot) 하니 순수 zero-shot이 아니다.</p>
+<p>측정 가능한 물리량은 그냥 '줄자로 잰 가슴둘레·허리둘레·기장'이다. 새 고객이 와도 학습이 필요 없다 — 재면 된다. 각 숫자의 의미가 명확해(가슴 100cm) 재단사가 바로 해석하고, 안 맞으면 어느 치수가 틀렸는지 즉시 안다. AgniNav의 collision envelope이 바로 이 줄자다 — 로봇을 자로 재서 height·footprint를 넣으면 retraining 없이 옷(정책)이 맞는다. 다만 줄자는 체형(형상)만 재지 '움직임 습관'(dynamics)은 못 재므로, 정교한 맞춤엔 브랜드 좌표(learned)와 줄자(measurable)를 함께 쓰는 하이브리드가 답이다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>embodiment를 정책에 주입하는 세 방식 — one-hot, learned nn.Embedding, measurable collision-envelope feature — 을 하나의 인터페이스로 구현해 비교한다. 세 encoder가 모두 조건 벡터 <span class="math-inline">\(e\)</span>를 만들어 동일한 policy trunk에 concat되지만, unseen 로봇을 만났을 때의 행동이 근본적으로 갈린다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import torch, torch.nn as nn
+
+class OneHotEmbodiment(nn.Module):        # 이름표: N개 고정
+    def __init__(self, n): super().__init__(); self.n = n
+    def forward(self, idx):               # idx: (B,) long
+        return nn.functional.one_hot(idx, self.n).float()
+    def new_robot(self, *_):
+        raise RuntimeError(&#x27;one-hot: unseen 표현 불가 (N 고정)&#x27;)
+
+class LearnedEmbodiment(nn.Module):        # 학습된 좌표: 보간 가능성
+    def __init__(self, n, d=16):
+        super().__init__(); self.emb = nn.Embedding(n, d)
+    def forward(self, idx): return self.emb(idx)
+    def interpolate(self, a, b, alpha):    # unseen &#x27;사이&#x27; 몸 추정
+        return alpha * self.emb.weight[a] + (1 - alpha) * self.emb.weight[b]
+
+class MeasurableEmbodiment(nn.Module):     # 물리 치수: zero-shot 배치
+    # collision envelope 4-param: [height, front_len, rear_len, half_width]
+    def __init__(self, d=16):
+        super().__init__(); self.proj = nn.Linear(4, d)
+    def forward(self, envelope):           # envelope: (B, 4), 자로 잰 값
+        return self.proj(envelope)         # 새 로봇도 치수만 재면 즉시 조건화
+
+class Policy(nn.Module):
+    def __init__(self, state_dim, cond_dim, act_dim):
+        super().__init__()
+        self.trunk = nn.Sequential(
+            nn.Linear(state_dim + cond_dim, 256), nn.ReLU(),
+            nn.Linear(256, act_dim))       # -&gt; velocity command mean
+    def forward(self, p, e):
+        return self.trunk(torch.cat([p, e], dim=-1))
+
+# unseen 로봇 배치 시나리오
+meas = MeasurableEmbodiment()
+new_envelope = torch.tensor([[1.20, 0.30, 0.25, 0.28]])  # K1 humanoid 실측
+e_new = meas(new_envelope)               # retraining 없이 조건 벡터 확보</code></pre>
+      <div class="c-walk"><p>세 encoder는 같은 목적(조건 벡터 <span class="math-inline">\(e\)</span> 생성)을 갖지만 unseen 대응에서 갈라진다. <code>OneHotEmbodiment.new_robot</code>이 명시적으로 예외를 던지는 것이 핵심이다 — one-hot은 <span class="math-inline">\(N\)</span>이 고정이라 <span class="math-inline">\(N{+}1\)</span>번째 몸을 표현할 축 자체가 없다. 이름표 공간에는 '새 이름'을 넣을 자리가 없다.</p>
+<p><code>LearnedEmbodiment.interpolate</code>가 learned embedding의 유일한 unseen 희망을 보여준다. 두 known 몸의 embedding을 <span class="math-inline">\(\alpha\)</span>로 섞어 '사이' 몸을 추정하지만, 이 보간이 유효한 정책을 낳으려면 embedding space가 매끄러워야 하고 — 그 보장은 없다. 게다가 새 몸을 위한 <span class="math-inline">\(a, b, \alpha\)</span>를 어떻게 고를지 자체가 미해결이라, 실무에선 few-shot 튜닝으로 흐르기 쉽다.</p>
+<p><code>MeasurableEmbodiment</code>가 2026 최전선의 우아함이다. embodiment를 학습된 index가 아니라 collision envelope 4-param으로 받아 <code>nn.Linear</code>로 조건 벡터에 사영한다. 결정적 장면은 마지막 세 줄 — K1 humanoid의 실측 치수 <code>[1.20, 0.30, 0.25, 0.28]</code>을 넣기만 하면, <strong>학습 데이터에 K1이 한 번도 없어도</strong> <code>e_new</code>가 즉시 나온다. embodiment 일반화가 학습 문제에서 측정 문제로 옮겨진 것이다. 대신 envelope은 형상만 담아 dynamics를 놓치므로, 정교함이 필요하면 measurable(형상)과 learned(dynamics)를 concat하는 하이브리드가 실전의 답이 된다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">cross-embodiment 정책의 embodiment 표현 설계는 빅테크 robotics/embodied AI 팀이 실제로 씨름하는 핵심 설계 결정이다. 면접에서는 &#x27;one-hot vs embedding&#x27;을 아는지보다, 표현 선택이 표현력·unseen 일반화·해석가능성·배포 비용의 trade-off임을 시스템 관점에서 논증하는지를 본다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>one-hot·learned·measurable을 표현력 대 일반화의 trade-off 축 위에서 배치하고 각 상황의 적합성을 판단하는 능력</li><li>learned embedding의 보간 아이디어와 그것이 zero-shot으로 이어지지 못하는 구체적 이유(smoothness·벡터 배치)를 짚는 통찰</li><li>AgniNav처럼 embodiment 일반화를 학습 문제에서 &#x27;측정 문제&#x27;로 재정의하는 관점의 실용적 가치를 이해</li><li>morphology(humanoid balance)가 조건 벡터를 넘어 perception attention·정보 truncation까지 규정함을 아는 깊이</li><li>해석가능성·배포 비용을 순수 성능만큼 중시하는 프로덕션 감각</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>one-hot과 learned embedding의 차이를 &#x27;그냥 벡터 표현 방식&#x27;으로만 말하고 unseen 대응 차이를 놓침</li><li>learned embedding이면 당연히 zero-shot이 된다고 단정(smoothness·벡터 배치 문제를 모름)</li><li>measurable 표현을 &#x27;단순한 feature engineering&#x27;으로 폄하하고 zero-shot·해석성 이점을 못 봄</li><li>morphology를 조건 벡터로만 취급하고 perception 구조(FocusNav SASG)에 미치는 영향을 인지 못 함</li><li>표현력이 큰 방식(learned)이 항상 낫다고 보고 배포 비용·해석성 trade-off를 무시</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>one-hot·learned embedding·measurable collision-envelope 세 표현을 표현력과 unseen 일반화 축에서 비교하고, 각각 언제 선택하겠는가?</li><li>learned embedding은 &#x27;보간으로 unseen에 일반화할 가능성&#x27;이 있다는데, 왜 COMPASS는 이를 future work로 남겼는가 — 무엇이 막고 있는가?</li><li>AgniNav는 embodiment를 4-parameter collision envelope로 표현한다. 이 measurable 표현이 zero-shot 배치와 해석가능성에서 앞서는 이유를 설명하고, 그 한계도 말하라.</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 친숙한 수준은 &#x27;embodiment는 one-hot이나 embedding으로 조건화한다&#x27;고 말하는 정도다. 통달한 수준은 one-hot(이름표)→learned(좌표)→measurable(물리량) 스펙트럼을 표현력 대 일반화 trade-off로 정확히 배치하고, learned embedding 보간이 zero-shot으로 이어지지 못하는 구체적 병목(space smoothness·새 벡터 배치·불투명성)을 진단하며, AgniNav가 embodiment 일반화를 학습 문제에서 측정 문제로 옮긴 의의와 그 형상-한정 한계를 논하고, FocusNav의 SASG처럼 morphology가 perception attention·정보 truncation까지 재배선함을 설명하며, 왜 2026 최전선이 measurable로 기울되 결국 하이브리드로 가는지를 논증한다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>embodiment 표현은 표현력 대 일반화의 trade-off</h3><p>one-hot(이름표)→learned(좌표)→measurable(물리량) 스펙트럼에서 표현력이 커질수록 학습 의존이 커지고, 물리량으로 제약할수록 zero-shot·해석성이 산다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>one-hot은 N이 고정이라 unseen을 표현조차 못 한다</h3><p>길이 N one-hot은 소수의 이질적 플랫폼에 효율적이지만, 새 몸을 위한 축이 없고 &#x27;사이&#x27;가 없어 보간도 무의미하다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>learned embedding은 보간으로 unseen에 일반화할 &#x27;가능성&#x27;만 준다</h3><p>비슷한 몸이 가까워진 embedding space를 보간하면 사이 몸을 추정할 수 있으나, space smoothness·새 벡터 배치 문제로 COMPASS도 zero-shot을 future work로 남겼다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>AgniNav는 embodiment를 측정 가능한 물리량으로 표준화한다</h3><p>4-parameter collision envelope(height·front·rear·half width)로, height는 pseudo-laserscan 예측을 conditioning하고 footprint는 planner의 collision check를 설정한다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>measurable 표현은 일반화를 &#x27;학습 문제&#x27;에서 &#x27;측정 문제&#x27;로 옮긴다</h3><p>새 로봇도 치수만 재면 retraining 없이 wheeled·quadruped·humanoid에 배치되고(Jetson Orin 30Hz+), 각 파라미터가 물리 의미를 가져 해석 가능하다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>morphology는 조건 벡터를 넘어 perception을 재배선한다</h3><p>FocusNav의 SASG는 stability 하락 시 원거리 정보를 truncate해 humanoid balance 제약을 perception attention에 직접 반영한다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>unseen zero-shot은 dynamics 얽힘 때문에 아직 미해결</h3><p>collision 형상은 측정 가능하나 그것이 balance·gait와 얽히는 방식은 여전히 학습에 의존해, 물리적으로 관측 가능하면서 dynamics까지 담는 표현이 다음 관문이다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>종착점은 measurable과 learned의 하이브리드</h3><p>물리 치수로 collision 형상을 명시하고 learned 표현으로 dynamics·gait를 흡수하는 결합이 표현력과 zero-shot·해석성을 동시에 취하는 자연스러운 방향이다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-06.html">← COMPASS Architecture — Putting It All Together</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-08.html">Generative Policies &amp; the Averaging Problem →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

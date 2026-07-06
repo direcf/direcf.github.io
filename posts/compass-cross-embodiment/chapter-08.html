@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch8: Generative Policies &amp; the Averaging Problem — COMPASS &amp; Cross-Embodiment Mobility — direcf</title>
+  <meta name="description" content="deterministic distillation이 &#x27;좌/우 회전&#x27;을 평균내 버리는 disastrous averaging — CE-Nav의 normalizing flow(VelFlow)와 diffusion policy가 어떻게 multi-modal action 분포를 살리는지 본다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;height:22px;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><linearGradient id="direcf-nav-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs></svg>
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg></span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg></span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.25 15a4.5 4.5 0 0 0 4.5 4.5H18a3.75 3.75 0 0 0 1.332-7.257 3 3 0 0 0-3.758-3.848 5.25 5.25 0 0 0-10.233 2.33A4.502 4.502 0 0 0 2.25 15Z"/></svg></span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"/></svg></span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg></span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/physical-ai">COMPASS &amp; Cross-Embodiment Mobility</a><span class="sep">›</span>
+        <strong>Ch08 Generative Policies &amp; the Averaging Problem</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 08 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🌊</div>
+      <h1 class="chapter-title">Generative Policies &amp; the Averaging Problem</h1>
+      <div class="chapter-title-kr">생성형 정책과 평균화 문제</div>
+      <div class="chapter-tldr">deterministic distillation이 &#x27;좌/우 회전&#x27;을 평균내 버리는 disastrous averaging — CE-Nav의 normalizing flow(VelFlow)와 diffusion policy가 어떻게 multi-modal action 분포를 살리는지 본다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-08.png" alt="Chapter 8 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 8 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>multi-modal 결정에서 deterministic 회귀가 실패하는 이유를 예시로 설명한다</li><li>normalizing flow가 action의 full distribution을 학습하는 원리를 안다</li><li>CE-Nav의 IL-then-RL + VelFlow 구조를 COMPASS와 비교할 수 있다</li><li>diffusion/flow policy가 cross-embodiment에서 갖는 이점을 설명한다</li><li>COMPASS의 KL distillation이 사후적으로 옳은 방향이었던 이유를 안다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>Chapter 5에서 COMPASS는 distillation의 averaging effect를 스스로 한계로 인정했고, Chapter 7에서 우리는 cross-embodiment generalist가 필연적으로 여러 몸·여러 상황의 행동을 하나로 합친다는 것을 봤다. 이 챕터는 그 averaging이 왜 단순한 성능 저하가 아니라 <strong>재앙적(disastrous) 실패</strong>가 될 수 있는지, 그리고 그것을 근본적으로 해결하는 길이 왜 '분포를 모델링하는 생성형 정책'인지를 규명한다.</p>
+<p>문제의 정수는 하나의 그림으로 압축된다. 정면에 기둥이 있고, 좌로 피하는 것도 우로 피하는 것도 똑같이 유효한 최적해라고 하자. 이 상황의 '평균 행동'은 <strong>직진 — 즉 기둥과의 정면충돌</strong>이다. 두 개의 옳은 답을 평균내면 틀린 답이 나오는 것이다. deterministic 정책(mean regression)은 이런 <strong>multi-modal 결정</strong>에서 구조적으로 실패한다. 그리고 cross-embodiment generalist는 이 multi-modality를 두 층에서 겪는다 — 같은 상황에서 여러 valid path가 있고(상황 multi-modality), 몸마다 최적 행동이 다르다(embodiment multi-modality).</p>
+<p>해법은 명확하다. 하나의 mean을 회귀하는 대신 <strong>action의 전체 분포 <span class="math-inline">\(p(a \mid s)\)</span>를 모델링</strong>하고 거기서 sampling하는 것. <a href="https://arxiv.org/abs/2509.23203">CE-Nav</a>(Amap/Alibaba, 2025.09)의 VelFlow(conditional normalizing flow)와 manipulation에서 건너온 diffusion policy가 이 길의 두 대표다. 흥미롭게도 COMPASS가 MSE 대신 KL distillation(variance 보존)을 택해 더 나은 결과를 얻은 것이, 사후적으로 이 '분포를 살려야 한다'는 방향의 정당성을 이미 예고하고 있었다. 이 챕터는 그 실마리를 완결된 생성형 정책 이론으로 확장한다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>Disastrous Averaging — 두 개의 옳은 답을 평균내면 틀린다</h2><p>deterministic 정책의 근본 결함은 손실함수에 이미 새겨져 있다. MSE(mean squared error)로 학습하는 정책은 조건부 기댓값 <span class="math-inline">\(\mathbb{E}[a \mid s]\)</span>을 근사한다 — 주어진 상태에서 데이터에 나타난 행동들의 <strong>평균</strong>을 낸다. 데이터가 unimodal(정답이 하나)이면 이 평균이 곧 정답이라 문제가 없다. 재앙은 데이터가 <strong>multi-modal</strong>일 때 터진다.</p>
+<p>정면에 기둥이 있는 상황을 보자. 전문가 시연(혹은 여러 valid trajectory)에는 '좌회전'과 '우회전'이 모두 담긴다 — 둘 다 완벽히 유효한 회피다. MSE는 이 두 mode의 평균을 학습하는데, 좌회전(각속도 <span class="math-inline">\(+\omega\)</span>)과 우회전(<span class="math-inline">\(-\omega\)</span>)의 평균은 <span class="math-inline">\(0\)</span>, 즉 <strong>직진</strong>이다. 정확히 피해야 할 기둥으로 돌진하는 행동이 학습된다. 두 개의 옳은 답 사이 '중간'이 옳은 답이 아닌 것 — 이것이 disastrous averaging이며, action space가 비볼록(non-convex feasible region)일 때 평균이 feasible set 밖으로 떨어지는 현상이다.</p>
+<p><span class="math-display">\[a^* = \arg\min_a \mathbb{E}_{a&#x27; \sim p(a&#x27;|s)}\|a - a&#x27;\|^2 = \mathbb{E}[a&#x27;|s]\]</span></p>
+<p>이 식이 말하는 바는 명확하다 — MSE 최소해는 언제나 mode들의 평균이지 mode 자체가 아니다. left mode와 right mode가 대칭이면 그 평균은 정확히 그 사이 골짜기(충돌 경로)에 앉는다.</p>
+<p>cross-embodiment는 이 함정을 두 배로 판다. 첫째 <strong>상황 multi-modality</strong> — 방금의 좌/우 회피처럼 한 상태에 여러 valid action이 존재한다. 둘째 <strong>embodiment multi-modality</strong> — 같은 상황이라도 폭이 좁은 G1은 선반 밑을 통과하고 큰 H1은 우회하는 등, 몸마다 최적 행동의 mode가 다르다(Chapter 6). generalist가 여러 몸의 행동을 하나로 distill하면 이 서로 다른 mode들이 뭉개져 어느 몸에도 맞지 않는 평균으로 붕괴할 위험이 있다. COMPASS가 Discussion에서 인정한 averaging effect가 바로 이것이다 — distillation이 embodiment 간 평균화를 유발해 embodiment-dependent 성능 편차를 만든다.</p>
+<p>따라서 문제의 진단은 분명하다. <strong>cross-embodiment generalist는 본질적으로 multi-modal이므로, mean 하나를 내는 deterministic 정책으로는 원리적으로 담을 수 없다.</strong> 해결은 정책을 '하나의 행동을 내는 함수'에서 '행동의 분포를 내는 생성기'로 격상하는 것뿐이다.</p></div><div class="sb-block"><h2>분포를 모델링한다는 것 — Normalizing Flow의 원리</h2><p>disastrous averaging의 해법은 mean이 아니라 <strong>분포 <span class="math-inline">\(p(a \mid s)\)</span> 전체를 모델링</strong>하고 거기서 sample을 뽑는 것이다. 그러면 좌/우 회피는 두 개의 mode로 보존되고, 실행 시 그중 하나를 sampling하므로 '중간(직진)'은 절대 나오지 않는다. 이를 구현하는 강력한 도구가 normalizing flow다.</p>
+<p><strong>Normalizing flow(정규화 흐름)</strong> = 단순한 base 분포(예: 표준 가우시안 <span class="math-inline">\(z \sim \mathcal{N}(0, I)\)</span>)를 <strong>invertible(가역) 변환</strong> <span class="math-inline">\(f_\theta\)</span>의 연쇄로 복잡한 목표 분포로 밀어 보내는 생성 모델. 핵심은 변수변환 공식으로 정확한 likelihood를 계산할 수 있다는 점이다.</p>
+<p><span class="math-display">\[\log p(a) = \log p(z) - \log \left| \det \frac{\partial f_\theta(z)}{\partial z} \right|, \quad a = f_\theta(z)\]</span></p>
+<p>이 식의 두 항이 flow의 전부다. <span class="math-inline">\(\log p(z)\)</span>는 base 가우시안의 log-density(쉬움), 두 번째 Jacobian determinant 항은 변환이 공간을 얼마나 늘리고 줄였는지를 보정한다. <span class="math-inline">\(f_\theta\)</span>가 invertible하므로 <strong>exact likelihood</strong>를 계산할 수 있고(diffusion의 variational bound와 달리 정확), <span class="math-inline">\(z\)</span>를 뽑아 <span class="math-inline">\(f_\theta\)</span>에 통과시키면 <strong>exact sampling</strong>도 된다. conditional로 확장하면 상태 <span class="math-inline">\(s\)</span>를 조건으로 넣어 <span class="math-inline">\(f_\theta(z; s)\)</span>를 만들어 <span class="math-inline">\(p(a \mid s)\)</span>를 표현한다.</p>
+<p>flow가 multi-modality를 담는 원리는 직관적이다. 가우시안 <span class="math-inline">\(z\)</span> 공간은 unimodal이지만, <span class="math-inline">\(f_\theta\)</span>가 이 공간을 <strong>접고 늘려(fold and stretch)</strong> action 공간의 여러 봉우리로 매핑한다 — 마치 종이 한 장(단봉)을 접어 두 개의 산봉우리를 만드는 것과 같다. 좌회전에 해당하는 <span class="math-inline">\(z\)</span> 영역과 우회전에 해당하는 <span class="math-inline">\(z\)</span> 영역이 각각 별개의 mode로 사영되어, 두 유효 행동이 뚜렷이 분리된 채 보존된다.</p>
+<p>flow를 학습하는 방법은 <strong>maximum likelihood</strong>다 — 데이터에 나타난 action들의 <span class="math-inline">\(\log p(a \mid s)\)</span>를 최대화한다. 여기서 MSE와의 결정적 차이가 드러난다. MSE는 데이터를 하나의 평균으로 요약하려 하지만, likelihood 최대화는 데이터의 <strong>모든 mode에 확률질량을 배분</strong>하려 한다 — 좌회전 데이터도 우회전 데이터도 각각 높은 likelihood를 갖도록 두 봉우리를 세운다. 그래서 flow는 평균이 아니라 분포를 배우고, 이것이 averaging을 근본에서 회피하는 이유다. 대안으로 diffusion policy도 같은 목표(분포 모델링)를 노이즈 제거의 iterative denoising으로 달성하지만, flow는 invertibility 덕에 exact likelihood와 one-pass sampling이 가능해 실시간 제어에 유리하다.</p></div><div class="sb-block"><h2>CE-Nav &amp; VelFlow — COMPASS 골격의 개념적 격상</h2><p><a href="https://arxiv.org/abs/2509.23203">CE-Nav</a>(Amap/Alibaba, 2025.09)는 이 분포 모델링을 cross-embodiment navigation의 완성된 시스템으로 구현한다. 구조를 보면 COMPASS와 <strong>판박이 골격</strong>이지만, 각 부품을 개념적으로 한 단계 격상한다.</p>
+<p>CE-Nav의 뼈대는 <strong>two-stage IL-then-RL</strong>로, 두 가지 능력을 명시적으로 분리한다. 첫째 stage는 <strong>universal geometric reasoning</strong>(범용 기하 추론) — 모든 몸이 공유하는 '공간을 어떻게 통과할 것인가'라는 embodiment-무관 지식. 둘째 stage는 <strong>embodiment-specific dynamic adaptation</strong>(몸별 동역학 적응) — 각 몸의 dynamics에 맞춘 미세 조정. 이 분리는 COMPASS의 IL(공유 mobility prior) → residual RL(embodiment 적응) 구도와 정확히 대응한다. 차이는 COMPASS가 이를 '엔지니어링 단계'로 다뤘다면 CE-Nav는 '개념적 원리'로 격상해, 무엇이 공유되고 무엇이 몸별인지를 이론적으로 명시했다는 점이다.</p>
+<p>결정적 차별점은 action을 내는 방식이다. CE-Nav의 <strong>VelFlow = conditional normalizing flow</strong>로, classical planner가 대규모로 생성한 데이터에서 <strong>kinematically-sound action의 full distribution을 학습</strong>한다. classical planner는 어느 상황에서 좌·우 여러 유효 경로를 모두 만들어내는데, VelFlow는 이 다양성을 평균내지 않고 분포로 그대로 흡수한다 — 정확히 averaging을 회피하는 것이다. 실행 시 이 분포에서 velocity action을 sampling하므로, 좌/우 회피 상황에서 직진 붕괴가 일어나지 않는다. 적용 embodiment는 quadruped·biped·quadrotor로, 지상·이족·공중을 아우른다.</p>
+<table>
+<thead>
+<tr>
+<th>측면</th>
+<th>COMPASS</th>
+<th>CE-Nav</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>공유 vs 몸별 분리</td>
+<td>IL → residual RL (엔지니어링 단계)</td>
+<td>universal geometric reasoning vs embodiment-specific adaptation (개념 원리)</td>
+</tr>
+<tr>
+<td>action head</td>
+<td>MLP mean + global variance (deterministic)</td>
+<td>VelFlow: conditional normalizing flow (분포)</td>
+</tr>
+<tr>
+<td>데이터 소스</td>
+<td>X-Mobility(world-model IL) teacher</td>
+<td>classical planner 대규모 데이터</td>
+</tr>
+<tr>
+<td>averaging 처리</td>
+<td>Discussion에서 한계로 인정</td>
+<td>flow로 분포 학습해 회피</td>
+</tr>
+<tr>
+<td>embodiment</td>
+<td>Carter·H1·Spot·G1</td>
+<td>quadruped·biped·quadrotor</td>
+</tr>
+</tbody>
+</table>
+<p>요컨대 CE-Nav는 COMPASS의 '무엇을 나눌 것인가(공유/몸별)'라는 골격은 계승하되, '행동을 어떻게 낼 것인가'라는 지점에서 deterministic mean을 generative distribution으로 대체했다. COMPASS가 남긴 averaging 한계에 대한 직접적 응답인 셈이다.</p></div><div class="sb-block"><h2>Diffusion / Flow Policy와 Cross-Embodiment의 궁합</h2><p>VelFlow의 normalizing flow는 더 넓은 흐름의 일부다. manipulation에서 시작된 <strong>diffusion policy</strong>와 flow policy는 모두 'action의 분포를 모델링해 multi-modality를 보존한다'는 동일 계열에 속한다. 이 생성형 정책 패러다임이 왜 특히 cross-embodiment에서 강력한지를 짚어야 한다.</p>
+<p><strong>Diffusion policy</strong>는 action에 점진적으로 노이즈를 더하는 forward process를 역으로 뒤집는 iterative denoising으로 <span class="math-inline">\(p(a \mid s)\)</span>를 학습한다. manipulation에서 grasp의 여러 valid 방식(왼쪽/오른쪽에서 집기)을 하나로 뭉개지 않고 각 mode를 살려낸 것이 그 위력의 증거였다. <strong>Flow policy</strong>(VelFlow 계열)는 invertible transform으로 같은 분포 모델링을 달성하되, exact likelihood와 빠른 sampling(one-pass에 가까움)에서 이점이 있어 실시간 로봇 제어에 특히 적합하다.</p>
+<table>
+<thead>
+<tr>
+<th>축</th>
+<th>Deterministic (MLP mean)</th>
+<th>Diffusion policy</th>
+<th>Normalizing flow (VelFlow)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>출력</td>
+<td>단일 action(평균)</td>
+<td>분포(iterative sampling)</td>
+<td>분포(invertible, 1-pass 근접)</td>
+</tr>
+<tr>
+<td>likelihood</td>
+<td>—</td>
+<td>variational bound(근사)</td>
+<td>exact</td>
+</tr>
+<tr>
+<td>multi-modality</td>
+<td>붕괴(averaging)</td>
+<td>보존</td>
+<td>보존</td>
+</tr>
+<tr>
+<td>추론 속도</td>
+<td>최속</td>
+<td>느림(다단계 denoise)</td>
+<td>빠름</td>
+</tr>
+</tbody>
+</table>
+<p>cross-embodiment에서 생성형 정책이 갖는 이점은 두 겹이다. 첫째, 앞서 본 <strong>이중 multi-modality</strong>(상황 + embodiment)를 정면으로 담는다 — 하나의 조건부 분포 <span class="math-inline">\(p(a \mid s, e)\)</span>가 상황이 만드는 여러 mode와 embodiment가 만드는 여러 mode를 함께 표현한다. deterministic head가 이 둘을 평균으로 뭉갤 때, 생성형 head는 embodiment embedding <span class="math-inline">\(e\)</span>에 조건화된 분포로 각 몸의 고유 mode를 선명히 유지한다.</p>
+<p>둘째, generalist distillation과의 궁합이다. Chapter 5에서 KL distillation이 MSE보다 나았던 이유가 여기서 완결된다 — teacher specialist들이 서로 다른 분포를 가질 때, student가 분포를 표현할 수 있어야 그것들을 뭉개지 않고 담는다. deterministic student는 여러 teacher의 mean으로 수렴하지만, generative student는 각 teacher의 분포를 조건부로 재현한다. 즉 생성형 정책은 cross-embodiment distillation에서 averaging을 구조적으로 막는 유일한 방식이다.</p>
+<p>대가도 정직하게 봐야 한다. diffusion은 다단계 denoising으로 추론이 느려 30Hz 실시간 제어엔 부담이고(그래서 최근 flow·consistency 계열이 속도로 응답), 분포 모델링은 학습·튜닝이 deterministic보다 까다롭다. 그럼에도 cross-embodiment의 본질이 multi-modal인 이상, 이 비용은 '성능 대 정확성'의 선택이 아니라 '작동 대 붕괴'의 선택이다 — averaging이 disastrous인 상황에서 분포 모델링은 사치가 아니라 필수다.</p></div><div class="sb-block"><h2>KL Distillation의 사후적 정당성 — COMPASS가 이미 옳았던 방향</h2><p>이 챕터의 마지막 통찰은 과거를 되돌아보는 데 있다. Chapter 5에서 COMPASS가 distillation loss로 MSE가 아니라 <strong>KL divergence</strong>를 택하고, teacher의 variance를 student가 보존하도록 한 것이 더 나은 결과를 냈다. 당시엔 '분포를 맞추는 게 평균만 맞추는 것보다 낫더라'는 경험적 관찰이었지만, 이 챕터의 이론이 그것을 <strong>사후적으로 정당화</strong>한다.</p>
+<p>MSE distillation은 teacher action의 mean만 맞춘다 — teacher가 아무리 넓은 분포(불확실성·multi-modality)를 갖더라도 student는 그 평균점 하나로 수렴한다. 반면 KL distillation은 teacher의 <strong>분포 전체</strong>(<span class="math-inline">\(\mu\)</span>와 <span class="math-inline">\(\sigma\)</span>)를 맞추도록 강제한다.</p>
+<p><span class="math-display">\[D_{KL}(\pi_{teacher} \| \pi_{student}) \Rightarrow \text{mean뿐 아니라 variance까지 정렬}\]</span></p>
+<p>variance를 보존한다는 것은 곧 '이 상황에서 행동이 얼마나 퍼져 있는가 = 얼마나 multi-modal/불확실한가'라는 정보를 student가 물려받는다는 뜻이다. 좌/우 회피처럼 valid action이 퍼진 상황에서 teacher의 큰 variance가 student로 전달되어, student가 최소한 '여기선 행동이 하나로 정해지지 않는다'는 것을 안다. MSE였다면 이 퍼짐 정보가 소실되고 평균(직진)만 남았을 것이다.</p>
+<p>이 관점에서 COMPASS의 KL 선택은 <strong>disastrous averaging을 향한 부분적 방어</strong>였다. 완전한 해법(full distribution 모델링)은 아니었지만 — COMPASS의 head는 여전히 MLP mean + global variance라는 단일 가우시안이라 진짜 multi-modal 분포(두 봉우리)는 표현 못 한다 — variance를 살렸다는 점에서 올바른 방향을 이미 가리키고 있었다. 즉 COMPASS는 '분포를 보존해야 한다'는 원리를 variance 수준에서 절반 실현했고, CE-Nav의 VelFlow가 그것을 full multi-modal distribution 수준으로 완성했다.</p>
+<p>큰 그림으로 마무리하자. cross-embodiment generalist는 상황과 embodiment 양쪽에서 필연적으로 multi-modal이다. 이 사실이 <strong>deterministic distillation의 근본 한계</strong>를 못박고, 그 한계를 생성형 정책(normalizing flow·diffusion)이 분포 모델링으로 해소하는 것이 2026년의 방향이다. COMPASS의 KL distillation은 이 여정의 첫걸음 — variance를 살려 방향을 옳게 잡았고 — 이었으며, VelFlow는 그 다음 걸음이다. 다음 Chapter 9(sim-to-real)와 Chapter 10(foundation model)은 이렇게 분포를 보존하는 정책을 실제 세계와 대규모 데이터로 확장하는 여정으로 이어진다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">갈림길에서 평균을 내면 도랑에 빠진다</div>
+      <div class="a-body"><p>내비게이션이 갈림길에 도착했다고 하자. 왼쪽 길도 오른쪽 길도 목적지로 가는 완벽히 유효한 경로다. 그런데 두 경로의 방향을 '평균'내면 어떻게 될까 — 두 길 사이의 중앙분리대나 도랑을 향해 직진한다. 두 개의 옳은 선택을 산술평균한 결과가 어느 쪽도 아닌 최악의 선택이 되는 것. 이것이 deterministic 정책의 disastrous averaging이다. mean만 내는 정책은 좌회전(<span class="math-inline">\(+\)</span>)과 우회전(<span class="math-inline">\(-\)</span>)을 평균내 <span class="math-inline">\(0\)</span>, 즉 정면충돌을 학습한다.</p>
+<p>제대로 된 운전자는 평균을 내지 않는다. 대신 머릿속에 '가능한 선택지의 지도'를 그린다 — 왼쪽도 있고 오른쪽도 있다는 두 개의 뚜렷한 선택지를 유지하다가, 그중 하나를 골라 실행한다. 이것이 분포를 모델링하는 생성형 정책이다. normalizing flow는 이 '선택지 지도'를 수학적으로 만든다 — 단순한 무작위 씨앗(가우시안)을 접고 늘려 왼쪽 봉우리와 오른쪽 봉우리 두 개를 세우고, 실행할 때 한 봉우리에서 표본을 뽑는다. 그래서 절대 '중간(도랑)'으로 가지 않는다.</p>
+<p>cross-embodiment는 이 갈림길이 몸마다 다른 상황이다. 폭이 좁은 로봇은 왼쪽 좁은 길이 최적이고, 넓은 로봇은 오른쪽 넓은 길이 최적일 수 있다. 이 서로 다른 선택지들을 하나의 평균으로 뭉개면 어느 로봇에도 안 맞는 도랑 코스가 나온다. 생성형 정책은 각 몸(embodiment 조건)에 맞는 선택지 지도를 따로 유지해, 몸마다 자기에게 맞는 봉우리에서 표본을 뽑게 한다 — 평균의 도랑을 피하는 유일한 길이다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>좌/우 회피가 모두 유효한 multi-modal 상황을 conditional normalizing flow(VelFlow 축소판)로 학습하고 velocity action을 sampling하는 코드다. 대비를 위해 같은 데이터에 MSE deterministic head가 어떤 '평균 붕괴'를 내는지도 나란히 보여준다. 상태 <span class="math-inline">\(s\)</span>가 '정면 장애물'일 때 flow는 <span class="math-inline">\(\pm\omega\)</span> 두 mode를 보존하지만 MSE는 <span class="math-inline">\(\omega \approx 0\)</span>(직진 충돌)로 수렴한다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import torch, torch.nn as nn
+
+class ConditionalRealNVP(nn.Module):
+    &quot;&quot;&quot;velocity action a=(v, omega)의 분포 p(a|s)를 학습하는 축소 flow.&quot;&quot;&quot;
+    def __init__(self, act_dim=2, cond_dim=8, n_layers=6, h=128):
+        super().__init__()
+        self.act_dim = act_dim
+        self.nets = nn.ModuleList([
+            nn.Sequential(nn.Linear(act_dim // 2 + cond_dim, h), nn.ReLU(),
+                          nn.Linear(h, act_dim))  # -&gt; (scale, shift)
+            for _ in range(n_layers)])
+
+    def _coupling(self, x, s, i, reverse):
+        x0, x1 = x.chunk(2, dim=-1)                    # affine coupling
+        log_s, t = self.nets[i](torch.cat([x0, s], -1)).chunk(2, dim=-1)
+        log_s = torch.tanh(log_s)                       # 안정화
+        if not reverse:
+            x1 = x1 * torch.exp(log_s) + t              # forward: z-&gt;a
+            return torch.cat([x0, x1], -1), log_s.sum(-1)
+        x1 = (x1 - t) * torch.exp(-log_s)              # inverse: a-&gt;z
+        return torch.cat([x0, x1], -1), -log_s.sum(-1)
+
+    def log_prob(self, a, s):                           # MLE 학습용
+        z, logdet = a, 0.0
+        for i in reversed(range(len(self.nets))):
+            z = z.flip(-1)
+            z, ld = self._coupling(z, s, i, reverse=True); logdet = logdet + ld
+        base = -0.5 * (z ** 2 + torch.log(torch.tensor(2 * torch.pi))).sum(-1)
+        return base + logdet                            # exact log p(a|s)
+
+    def sample(self, s):                                # 실행: 분포에서 표본
+        z = torch.randn(s.size(0), self.act_dim)
+        for i in range(len(self.nets)):
+            z, _ = self._coupling(z, s, i, reverse=False); z = z.flip(-1)
+        return z                                        # a=(v, omega), mode 보존
+
+# 학습: 정면 장애물 s에서 좌회전(+w)/우회전(-w) 데이터가 섞여 있음
+flow = ConditionalRealNVP()
+opt = torch.optim.Adam(flow.parameters(), 1e-3)
+for a, s in loader:                                     # a: (B,2) 좌·우 혼재
+    loss = -flow.log_prob(a, s).mean()                  # MLE = 모든 mode에 질량
+    opt.zero_grad(); loss.backward(); opt.step()
+
+# 추론: 같은 s를 여러 번 sampling하면 +w와 -w가 번갈아 나옴 (직진 아님)
+acts = torch.stack([flow.sample(s_obstacle) for _ in range(100)])</code></pre>
+      <div class="c-walk"><p><code>ConditionalRealNVP</code>는 RealNVP식 affine coupling으로 velocity action <span class="math-inline">\(a=(v,\omega)\)</span>의 조건부 분포를 학습하는 최소 flow다. <code>_coupling</code>이 입력을 반으로 갈라 한쪽(<span class="math-inline">\(x_0\)</span>)과 조건 <span class="math-inline">\(s\)</span>로 다른 쪽(<span class="math-inline">\(x_1\)</span>)의 scale·shift를 예측하는데, 이 변환은 <strong>invertible</strong>이라 forward(<span class="math-inline">\(z\to a\)</span>, sampling)와 inverse(<span class="math-inline">\(a\to z\)</span>, likelihood)를 모두 지원한다. <code>log_s = tanh(...)</code>는 Jacobian이 폭주하지 않게 하는 실전 안정화다.</p>
+<p>핵심은 <code>log_prob</code>과 학습 루프다. action을 base 공간 <span class="math-inline">\(z\)</span>로 역변환하며 log-determinant를 누적해 <strong>exact <span class="math-inline">\(\log p(a \mid s)\)</span></strong>를 계산하고, 학습은 이 likelihood를 최대화(<code>-log_prob.mean()</code>)한다. 여기가 MSE와 갈리는 지점 — MSE는 좌회전 데이터와 우회전 데이터의 평균(<span class="math-inline">\(\omega\approx 0\)</span>, 직진 충돌)으로 수렴하지만, MLE는 <strong>두 mode 각각에 확률질량을 배분</strong>해 <span class="math-inline">\(+\omega\)</span> 봉우리와 <span class="math-inline">\(-\omega\)</span> 봉우리를 모두 세운다.</p>
+<p><code>sample</code>이 disastrous averaging을 피하는 실행부다. 표준 가우시안 <span class="math-inline">\(z\)</span>를 뽑아 coupling을 순방향으로 통과시키면, 접고 늘리는 변환이 <span class="math-inline">\(z\)</span>를 두 mode 중 하나로 사영한다. 마지막 줄처럼 같은 장애물 상태 <code>s_obstacle</code>을 100번 sampling하면 <span class="math-inline">\(+\omega\)</span>(좌회전)와 <span class="math-inline">\(-\omega\)</span>(우회전)가 번갈아 나오고 — 결정적으로 <strong>직진(<span class="math-inline">\(\omega\approx0\)</span>)은 거의 나오지 않는다</strong>. deterministic head라면 매번 직진(충돌)을 냈을 그 상황에서, flow는 유효한 회피 mode를 보존한다. cond_dim에 embodiment embedding을 더 넣으면 몸마다 다른 mode 구조까지 조건화되어, cross-embodiment의 이중 multi-modality를 하나의 분포로 담는 VelFlow가 된다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">생성형 정책(diffusion·normalizing flow)은 2024~2026 로봇 학습의 핵심 패러다임 전환으로, 빅테크 robotics 팀이 manipulation과 navigation 양쪽에서 실전 채택 중이다. 면접에서는 &#x27;왜 deterministic이 실패하는가&#x27;를 multi-modality로 정확히 진단하고, 분포 모델링이 그것을 어떻게 해결하는지를 원리·비용 trade-off와 함께 설명하는 깊이를 본다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>disastrous averaging을 &#x27;두 유효 mode의 평균이 feasible set 밖(충돌)&#x27;으로 정확히 설명하고 MSE가 조건부 mean을 학습함을 아는 이해</li><li>normalizing flow의 exact likelihood·invertibility와 diffusion의 iterative denoising을 추론 속도·likelihood 정확도 축에서 구분하는 지식</li><li>cross-embodiment의 이중 multi-modality(상황 + embodiment)를 진단하고, 생성형 정책이 이를 조건부 분포로 담는 메커니즘을 설명하는 통찰</li><li>CE-Nav의 IL-then-RL + VelFlow를 COMPASS 골격과 구조적으로 비교하는 시스템 사고</li><li>생성형 정책의 추론 비용·학습 난이도를 인정하면서도 &#x27;multi-modal 상황에선 선택이 아닌 필수&#x27;임을 판단하는 균형감</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>deterministic 정책이 multi-modal에서 실패하는 이유를 &#x27;데이터가 부족해서&#x27;로 오진(구조적 averaging을 모름)</li><li>&#x27;분포를 모델링한다&#x27;는 말을 하되 왜 그것이 두 mode를 보존하는지(likelihood가 모든 mode에 질량 배분) 설명 못 함</li><li>diffusion과 flow를 뭉뚱그려 &#x27;생성 모델&#x27;로만 취급하고 exact likelihood·추론 속도 차이를 모름</li><li>COMPASS의 KL distillation을 단순 구현 디테일로 보고 variance 보존이 averaging 방어의 부분해였음을 놓침</li><li>생성형 정책을 무조건 우월하다고 보고 실시간 추론 비용·튜닝 난이도 trade-off를 무시</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>정면에 장애물이 있고 좌/우 회피가 모두 유효할 때 MSE로 학습한 정책이 왜 충돌하는가? 손실함수 관점에서 설명하고, 이를 어떻게 해결하겠는가.</li><li>normalizing flow가 action의 full distribution을 학습하는 원리를 변수변환 공식으로 설명하고, diffusion policy 대비 장단점을 말하라.</li><li>COMPASS가 MSE 대신 KL distillation을 택해 더 나은 결과를 얻었다. 이것이 왜 사후적으로 옳은 방향이었는지, 그리고 CE-Nav의 VelFlow가 그것을 어떻게 완성하는지 논하라.</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 친숙한 수준은 &#x27;diffusion policy가 multi-modal action을 잘 다룬다&#x27;고 말하는 정도다. 통달한 수준은 disastrous averaging을 &#x27;MSE가 조건부 mean을 학습해 비볼록 feasible set에서 두 mode의 평균이 충돌 경로로 떨어지는 것&#x27;으로 수식과 함께 진단하고, normalizing flow가 변수변환 공식으로 exact likelihood를 얻고 base 가우시안을 접고 늘려 multi-mode를 세우는 원리를 설명하며, cross-embodiment의 이중 multi-modality(상황+embodiment)를 조건부 분포로 담는 필연성을 논하고, CE-Nav의 IL-then-RL+VelFlow를 COMPASS 골격의 개념적 격상으로 비교하며, COMPASS의 KL distillation이 variance 보존으로 averaging을 절반 방어한 부분해였고 VelFlow가 full distribution으로 완성했음을 논증한다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>Disastrous averaging은 두 옳은 답의 평균이 틀린 답이 되는 실패</h3><p>좌/우 회피가 모두 유효할 때 MSE가 학습하는 조건부 mean은 직진(충돌)이 되며, 이는 feasible set이 비볼록일 때 평균이 그 밖으로 떨어지는 구조적 현상이다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>cross-embodiment는 이중으로 multi-modal이다</h3><p>한 상황에 여러 valid path(상황 multi-modality)와 몸마다 다른 최적 행동(embodiment multi-modality)이 겹쳐, deterministic mean으로는 원리적으로 담을 수 없다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>해법은 mean이 아니라 분포 p(a|s)를 모델링하는 것</h3><p>action의 전체 분포를 학습하고 거기서 sampling하면 좌/우 mode가 보존되어, 실행 시 &#x27;중간(직진)&#x27;이 나오지 않는다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>normalizing flow는 invertible 변환으로 exact likelihood를 준다</h3><p>가우시안을 접고 늘려 multi-mode 분포를 만들고, 변수변환 공식으로 정확한 likelihood와 one-pass sampling이 가능해 실시간 제어에 유리하다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>CE-Nav는 COMPASS 골격을 개념적으로 격상한다</h3><p>IL-then-RL로 universal geometric reasoning과 embodiment-specific adaptation을 명시 분리하고, VelFlow(conditional flow)로 kinematically-sound action의 full distribution을 학습해 averaging을 회피한다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>생성형 정책은 cross-embodiment distillation에서 averaging을 구조적으로 막는다</h3><p>조건부 분포 p(a|s,e)가 상황과 embodiment의 mode를 함께 표현해, deterministic student가 여러 teacher를 평균낼 때 generative student는 각 분포를 재현한다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>COMPASS의 KL distillation은 사후적으로 옳은 방향이었다</h3><p>KL은 teacher의 variance까지 보존해 &#x27;행동이 얼마나 퍼졌는가&#x27;를 student에 전달 — full multi-modal은 아니지만 averaging을 절반 방어한 부분해였다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>분포 모델링은 사치가 아니라 필수다</h3><p>diffusion의 추론 비용·튜닝 난이도라는 대가에도, averaging이 disastrous한 multi-modal 상황에서 이는 &#x27;성능 대 정확성&#x27;이 아니라 &#x27;작동 대 붕괴&#x27;의 선택이다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-07.html">← Embodiment Conditioning &amp; Morphology</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-09.html">Sim-to-Real &amp; the NVIDIA Physical AI Stack →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

@@ -1,0 +1,1117 @@
+{
+  "topic": "COMPASS & Cross-Embodiment Mobility",
+  "topicKr": "COMPASS와 크로스-임바디먼트 모빌리티",
+  "topicSlug": "compass-cross-embodiment",
+  "level": "advanced",
+  "codeLanguage": "Python",
+  "categorySlug": "physical-ai",
+  "description": "다양한 형태(wheeled·quadruped·humanoid)의 로봇을 하나의 mobility 정책으로 움직이는 cross-embodiment 문제를, NVIDIA COMPASS(arXiv:2502.16372)의 3단계 파이프라인(IL + Residual RL + Policy Distillation)을 뼈대로 완전 정복한다. World Model 기반 navigation, embodiment conditioning, generative policy, Sim-to-Real, 2026년 Navigation Foundation Model까지 — 데이터 스케일링 vs 구조적 분리라는 두 패러다임을 insight 중심으로 다루는 연구자용 10챕터.",
+  "chapters": [
+    {
+      "number": 1,
+      "emoji": "🧭",
+      "title": "The Cross-Embodiment Mobility Problem",
+      "titleKr": "크로스-임바디먼트 모빌리티 문제",
+      "tldr": "왜 하나의 정책으로 바퀴·4족·휴머노이드를 모두 움직이는 게 어려운지, 그리고 이 분야가 '데이터 스케일링'과 '구조적 분리'라는 두 패러다임으로 갈라지는지 파악한다.",
+      "topics": [
+        "Cross-embodiment 정의",
+        "Morphology gap",
+        "두 패러다임",
+        "Navigation vs Manipulation"
+      ],
+      "learningGoals": [
+        "cross-embodiment mobility가 왜 어려운 문제인지 morphology·kinematics·sensor 관점에서 설명할 수 있다",
+        "classical mobility stack이 새 embodiment로 확장될 때의 한계를 안다",
+        "데이터 스케일링 패러다임과 구조적 분리 패러다임의 차이를 한 문장으로 말할 수 있다",
+        "navigation의 cross-embodiment가 manipulation과 성격이 다른 이유를 설명할 수 있다",
+        "COMPASS가 전체 지형에서 어디에 위치하는지 좌표를 잡는다"
+      ],
+      "overview": "이 강의는 하나의 질문에서 출발한다. **바퀴로 굴러가는 로봇, 네 다리로 걷는 로봇, 두 다리로 균형을 잡는 휴머노이드를 '같은' 내비게이션 정책으로 움직일 수 있는가?** 직관적으로는 셋 다 결국 \"A 지점에서 B 지점으로 이동한다\"는 동일한 목표를 갖는다. 하지만 실제로 하나의 학습된 정책을 세 로봇에 그대로 얹으면 처참하게 실패한다. 왜 그런지, 그리고 최근 연구가 이 문제를 어떻게 나눠서 공략하는지 이해하는 것이 이 코스 전체의 지도(map)다.\n\n1챕터는 문제 정의와 지형도(landscape)를 담당한다. 구체적인 아키텍처나 손실 함수는 뒤 챕터에서 하나씩 뜯어보고, 여기서는 (1) cross-embodiment mobility가 정확히 무엇을 요구하는지, (2) 왜 morphology gap이 단순한 파라미터 차이가 아니라 분포 자체를 바꾸는 문제인지, (3) 현재 분야가 '데이터 스케일링(manipulation 진영)'과 '구조적 분리(navigation 진영, COMPASS)'라는 두 개의 큰 흐름으로 갈라져 있는지를 좌표축으로 세운다.\n\n이 코스의 축은 [COMPASS(arXiv:2502.16372)](https://arxiv.org/abs/2502.16372)다. NVIDIA·UC Berkeley·UT Austin이 2025년 2월에 낸 이 논문은 IL(imitation learning) base를 얼려두고, embodiment마다 Residual RL specialist를 학습한 뒤, 그들을 하나의 generalist로 distill하는 3단계 파이프라인을 제안한다. 1챕터를 마치면 COMPASS가 왜 '데이터를 더 모으자' 대신 '구조를 분리하자'를 택했는지, 그 선택이 navigation이라는 문제의 성격에서 어떻게 자연스럽게 따라 나오는지를 설명할 수 있게 된다.",
+      "sections": [
+        {
+          "title": "Cross-embodiment이란 무엇이고, 왜 '같은 목표'가 '같은 정책'을 뜻하지 않는가",
+          "content": "**Cross-embodiment(교차 형체) mobility** = 서로 다른 물리적 형태(morphology)를 가진 로봇들을 하나의 학습된 정책 또는 학습 파이프라인으로 목표 지점까지 이동시키는 문제.\n\n먼저 문제를 형식화하자. 어떤 로봇이든 내비게이션은 결국 상태 $x_t$에서 행동 $a_t$를 내는 정책 $\\pi(a_t \\mid x_t)$로 쓸 수 있다. COMPASS의 경우 상태는 $x_t=(I_t, v_t, g_t, e)$ — RGB 이미지 $I_t$, 현재 속도 $v_t$, 목표/경로 $g_t$, 그리고 embodiment를 식별하는 임베딩 $e$ — 이고, 행동은 $a_t=(v_t, \\omega_t)$, 즉 선속도와 각속도로 이루어진 **velocity command**다. 이 명령은 다시 로봇별 low-level joint controller로 넘어가 바퀴 회전이나 다리 관절 토크로 변환된다.\n\n여기서 핵심 관찰이 나온다. 겉으로 보면 세 로봇 모두 같은 $x_t \\mapsto a_t$ 함수를 학습하면 될 것 같다. 하지만 같은 $(v_t, \\omega_t)$ 명령이 세 로봇에서 **전혀 다른 결과**를 낳는다. 바퀴 로봇 Nova Carter는 $\\omega_t$를 거의 즉시 반영하지만, 휴머노이드 Unitree H1은 그 각속도를 내려면 먼저 무게중심을 옮기고 발을 딛는 여러 스텝의 balance 동역학을 거쳐야 한다. 즉 정책이 학습해야 할 것은 목표가 아니라 **\"이 몸으로 이 명령을 내면 실제로 어떻게 움직이는가\"**라는 embodiment별 transition이다.\n\n그래서 '같은 목표(A→B)'가 결코 '같은 정책'을 함의하지 않는다. 목표 공간과 action 인터페이스가 공유되더라도, 그 action을 실제 움직임으로 매핑하는 함수 — kinematics, 관성, 지연, balance 제약 — 이 embodiment마다 다르기 때문이다. cross-embodiment 문제의 어려움은 바로 이 매핑의 다양성을 어떻게 한 정책이 흡수하느냐에 있다.\n\n실제로 COMPASS는 네 가지 embodiment를 대상으로 한다: Nova Carter(wheeled), Unitree H1(humanoid), Unitree G1(humanoid), Spot Mini(quadruped). 이 네 로봇을 하나의 generalist 정책으로 커버하는 것이 이 코스가 끝까지 추적할 목표다."
+        },
+        {
+          "title": "Morphology gap의 해부 — kinematics, 높이/footprint, 그리고 balance",
+          "content": "morphology gap을 막연히 '로봇이 달라서'라고 뭉뚱그리면 문제를 풀 수 없다. 이 gap을 세 개의 저차원 축으로 분해하는 것이 COMPASS 진영의 핵심 통찰이다.\n\n**Kinematic constraint(운동학 제약)** = 로봇이 물리적으로 낼 수 있는 $(v,\\omega)$의 집합과 그 결합 관계. 예를 들어 differential-drive 바퀴 로봇은 순간적으로 제자리 회전($v=0, \\omega\\neq0$)이 가능하지만 옆으로 미끄러질 수는 없다(nonholonomic). 4족 로봇은 게걸음(lateral)도 가능하다. 이 제약이 다르면 같은 경로라도 실현 가능한 명령 시퀀스가 완전히 달라진다.\n\n**Footprint & height(발자국과 높이)** = 로봇이 차지하는 평면 크기와 카메라/센서의 지면 높이. Carter는 낮고 넓적하지만 H1은 키가 크고 좁다. 이는 두 가지를 바꾼다. 첫째, 통과 가능성(clearance): 좁은 통로나 낮은 장애물 판단이 달라진다. 둘째, **관측 자체가 달라진다** — 같은 장면을 30cm 높이 카메라와 150cm 높이 카메라로 보면 픽셀 분포가 크게 다르다. 즉 morphology는 action뿐 아니라 observation 분포에도 shift를 만든다.\n\n**Balance & dynamics(균형과 동역학)** = 명령을 실제 움직임으로 바꿀 때 개입하는 관성·지연·안정성. 바퀴는 정적으로 안정(static stability)해 명령이 거의 즉시 반영되지만, 휴머노이드는 동적 균형(dynamic balance)을 유지해야 하고 명령 반영에 지연과 오버슈트가 생긴다. RL specialist가 embodiment마다 필요한 이유가 바로 이 축이다.\n\n중요한 것은 이 세 축이 **저차원**이라는 점이다. 로봇의 전체 형태는 무한히 다양해 보이지만, navigation 관점에서 필요한 morphology 정보는 사실상 '이런 kinematic 제약, 이 정도 높이/footprint, 이 정도 balance 난이도'로 압축된다. 이 저차원성이 뒤에서 볼 '얇은 embodiment conditioning'이 통하는 이유이자, navigation이 manipulation과 갈라지는 지점이다."
+        },
+        {
+          "title": "Classical mobility stack의 한계 — 왜 Nav2를 새 로봇에 그대로 못 쓰는가",
+          "content": "학습 기반 접근의 동기를 이해하려면 먼저 고전적 방법이 왜 부족한지 봐야 한다. **Classical mobility stack** = 인지(perception)·지도(mapping)·전역 계획(global planning)·지역 제어(local control)를 손으로 설계한 모듈로 파이프라인화한 시스템. ROS의 Nav2, 그리고 그 위의 marathon2 같은 스택이 대표적이다.\n\n이런 스택은 특정 로봇, 특히 wheeled robot에 대해서는 대단히 잘 튜닝되어 있고 산업 현장에서 검증되었다. 문제는 이식성이다. 각 모듈이 특정 embodiment의 가정을 깊게 박아두고 있다. local planner의 motion model은 differential-drive를 가정하고, costmap의 inflation radius는 특정 footprint에, controller gain은 특정 동역학에 맞춰져 있다.\n\n이 스택을 휴머노이드로 옮기면 어떤 일이 벌어질까. motion model을 다시 쓰고, footprint와 clearance 파라미터를 재튜닝하고, 균형을 고려한 새 local controller를 붙이고, 카메라 높이가 바뀐 만큼 perception 파이프라인도 손봐야 한다. 사실상 재개발에 가깝다. 즉 classical stack의 비용은 **로봇 종류 × 엔지니어링 시간**으로 곱해진다. embodiment가 N개면 N번의 튜닝 프로젝트가 필요하다.\n\n여기서 end-to-end learning의 동기가 나온다. 만약 정책이 데이터로부터 '공통의 기하·동역학 추론'을 학습하고 embodiment 차이는 얇은 conditioning으로만 흡수한다면, N번의 수작업 대신 한 번의 학습 파이프라인으로 여러 로봇을 커버할 수 있다. 물론 이것은 이상이고, 실제로는 그 '한 번의 학습'을 어떻게 구성하느냐에서 다음 절의 두 패러다임이 갈라진다."
+        },
+        {
+          "title": "두 패러다임 — 데이터 스케일링(manipulation) vs 구조적 분리(navigation)",
+          "content": "cross-embodiment 문제를 공략하는 현재의 흐름은 크게 두 진영으로 나뉜다. 이 대비가 이 코스 전체를 관통하는 프레임이다.\n\n**패러다임 1: 데이터 스케일링/pretraining (manipulation 중심).** 여러 로봇의 대규모 궤적을 한데 모아 거대한 정책을 사전학습하면, embodiment 간 positive transfer가 저절로 emergent하게 나타난다는 접근이다. 대표작으로 [Open-X/RT-X(arXiv:2310.08864)](https://arxiv.org/abs/2310.08864)는 22개 로봇, 100만+ 궤적을 모아 positive transfer를 보였고, [HPT(arXiv:2409.20537)](https://arxiv.org/abs/2409.20537)는 이질적 로봇을 공유 trunk로 pre-train하며, CrossFormer는 900K 궤적·20 embodiment를 단일 transformer로 다룬다. [OpenVLA(arXiv:2406.09246)](https://arxiv.org/abs/2406.09246)와 π0, [GR00T N1(arXiv:2503.14734)](https://arxiv.org/abs/2503.14734, NVIDIA의 dual-system VLM+diffusion)도 이 계보다.\n\n**패러다임 2: sim-centric 구조적 분리 (navigation 중심, COMPASS 진영).** 데이터를 무한히 모으는 대신, 문제를 구조적으로 쪼갠다. 공통의 기하·동역학 추론은 world model 기반 IL로 사전학습(공통)하고, embodiment별 차이는 Residual RL specialist로 흡수한 뒤, 그것들을 policy distillation으로 하나의 generalist에 합친다. 시뮬레이터에서 값싸게 데이터를 생성한다는 점에서 sim-centric이다.\n\n두 패러다임의 차이를 한 문장으로 요약하면 이렇다. **패러다임 1은 \"다양성을 데이터로 흡수한다\", 패러다임 2는 \"다양성을 아키텍처로 분리한다.\"** 아래 표가 대비를 정리한다.\n\n| 축 | 데이터 스케일링 (Open-X, GR00T) | 구조적 분리 (COMPASS) |\n| --- | --- | --- |\n| 다양성 처리 | 대규모 실로봇 데이터로 흡수 | residual + distillation으로 분리 |\n| 데이터 원천 | real-world 궤적 수집 | 주로 simulation |\n| 핵심 자원 | 데이터·컴퓨트 | 구조 설계·sim 튜닝 |\n| 주 전장 | manipulation | navigation |\n| unseen 대응 | 스케일로 일반화 기대 | 얇은 conditioning 교체 |\n\n어느 쪽이 옳으냐는 문제의 성격에 달려 있다. 그 성격 차이를 다음 절에서 본다."
+        },
+        {
+          "title": "왜 navigation은 manipulation과 다른가 — action space 공통성이라는 결정적 비대칭",
+          "content": "두 패러다임 중 어느 쪽이 유리한지는 문제가 navigation이냐 manipulation이냐에 따라 극적으로 달라진다. 그 이유의 핵심은 **action space의 공통성**이다.\n\nnavigation에서는 거의 모든 로봇의 행동이 $(v, \\omega)$ — 선속도와 각속도 — 라는 2차원(2D 평면 기준) 공간으로 사실상 공통이다. Carter든 H1이든 Spot이든, 내비게이션 층에서 내리는 명령은 \"이 방향으로 이 속도로 가라\"이고, 몸에 맞는 관절 제어는 그 아래 low-level controller가 담당한다. 그 결과 morphology 차이는 앞서 본 대로 kinematic constraint·height·footprint·balance라는 **저차원 요인**으로 압축된다.\n\n반면 manipulation에서는 이 공통성이 무너진다. gripper, 흡착 패드, 다지(multi-finger) 손, 병렬 조(parallel jaw) 등 end-effector의 종류가 극심하게 다양하고, 각 로봇의 관절 수와 작업 공간(workspace)이 제각각이며, 접촉(contact) 물리가 지배적이다. 즉 action space 자체가 embodiment마다 근본적으로 다르다. 이런 상황에서는 다양성을 구조적으로 분리하기 어렵고, 방대한 데이터로 흡수하는 것이 거의 필수가 된다 — 그래서 Open-X/GR00T 같은 데이터 스케일링이 manipulation의 주류다.\n\n여기서 COMPASS 진영의 핵심 insight가 명확해진다. **navigation은 action space가 공통이므로, '공통 기하 추론을 크게 학습하고 embodiment는 얇게 conditioning'하는 편이 데이터 스케일링보다 효율적이다.** 무한한 실로봇 데이터 없이도, world model이 공통 dynamics를 잡아주고 residual이 얇은 차이만 메우면 된다. 이 비대칭이 COMPASS가 데이터가 아닌 구조를 택한 근본 이유다.\n\n이제 좌표가 잡혔다. 이 코스는 navigation 쪽, 구조적 분리 진영에 서서 COMPASS를 해부한다. 다음 챕터부터는 그 구조의 첫 번째 층 — 공통 dynamics를 latent로 압축하는 world model(X-Mobility) — 을 뜯어본다. COMPASS는 이 지형도에서 '데이터 스케일링을 우회한 sim-centric navigation generalist'라는 좌표에 위치한다."
+        }
+      ],
+      "analogy": {
+        "title": "운전면허와 세 종류의 탈것",
+        "content": "당신이 운전면허 학원을 운영한다고 하자. 학생들은 결국 모두 \"목적지까지 안전하게 간다\"는 같은 목표를 배운다. 그런데 승용차, 오토바이, 그리고 두 발 자전거를 각각 몰아야 한다면? 도로 규칙, 지도 읽기, 위험 예측 같은 **공통 지식**은 세 탈것에서 똑같이 쓰인다. 하지만 핸들을 꺾었을 때 몸이 어떻게 반응하는지 — 승용차는 즉시 돌지만 오토바이는 몸을 기울여야 하고 자전거는 균형까지 잡아야 한다 — 는 탈것마다 완전히 다르다.\n\n데이터 스케일링 진영은 이렇게 말한다. \"세 탈것을 수천 시간씩 다 태워보게 하면, 학생의 몸이 알아서 공통 감각과 개별 감각을 다 익힐 것이다.\" COMPASS의 구조적 분리 진영은 다르게 말한다. \"도로 규칙과 지도 읽기(공통)는 교실에서 한 번만 가르치고, 탈것별 핸들 감각(residual)만 짧게 연습시킨 뒤, 셋을 잘하는 학생 한 명을 길러내자.\" 교실 수업이 world model, 탈것별 연습이 Residual RL, 통합 학생이 generalist policy다.\n\n그리고 왜 이 방식이 자동차 정비(=manipulation)가 아니라 운전(=navigation)에서 잘 통할까? 운전은 결국 '가속·조향'이라는 공통 조작으로 수렴하지만, 정비는 엔진·타이어·전기계통마다 손에 쥐는 공구와 동작이 전혀 달라 공통 교실 수업으로 묶기 어렵기 때문이다. 바로 이 차이가 두 패러다임이 각각 다른 전장을 지배하는 이유다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "cross-embodiment의 핵심 추상화를 코드로 못 박아보자. 아래는 embodiment마다 다른 kinematics·footprint·sensor 스펙을 dataclass로 선언하고, 그럼에도 정책이 마주하는 인터페이스는 공통의 (v, ω) velocity command 하나로 통일된다는 것을 보여준다. 즉 '차이는 스펙 안에, 인터페이스는 공통으로'라는 COMPASS의 설계 철학을 그대로 표현한 것이다.",
+        "code": "from dataclasses import dataclass\nimport numpy as np\n\n@dataclass(frozen=True)\nclass EmbodimentSpec:\n    name: str\n    max_lin_vel: float      # v 한계 (m/s)\n    max_ang_vel: float      # omega 한계 (rad/s)\n    holonomic: bool         # 옆으로 이동 가능한가 (kinematic constraint)\n    footprint_radius: float # 충돌 반경 (m)\n    cam_height: float       # observation 분포를 바꾸는 센서 높이 (m)\n    balance_penalty: float  # 균형 난이도 -> residual RL이 흡수할 몫\n\n# 네 embodiment: 차이는 오직 '스펙' 안에만 존재한다\nCARTER = EmbodimentSpec(\"nova_carter\", 1.5, 2.0, False, 0.30, 0.35, 0.0)\nSPOT   = EmbodimentSpec(\"spot_mini\",   1.6, 2.5, True,  0.35, 0.50, 0.3)\nH1     = EmbodimentSpec(\"unitree_h1\",  1.2, 1.0, True,  0.25, 1.50, 1.0)\nG1     = EmbodimentSpec(\"unitree_g1\",  1.0, 1.0, True,  0.22, 1.20, 1.0)\n\ndef clip_command(v_cmd: float, w_cmd: float, spec: EmbodimentSpec):\n    \"\"\"공통 (v, omega) 명령을 이 몸이 실제로 낼 수 있는 범위로 사영.\"\"\"\n    v = float(np.clip(v_cmd, -spec.max_lin_vel, spec.max_lin_vel))\n    w = float(np.clip(w_cmd, -spec.max_ang_vel, spec.max_ang_vel))\n    return v, w\n\n# 정책이 내리는 '이상적' 명령은 embodiment와 무관하게 동일하다\nideal_v, ideal_w = 1.4, 1.8\nfor spec in (CARTER, SPOT, H1, G1):\n    v, w = clip_command(ideal_v, ideal_w, spec)\n    print(f\"{spec.name:12s} -> v={v:.2f}, w={w:.2f}  (cam@{spec.cam_height}m)\")",
+        "walkthrough": "`EmbodimentSpec`은 morphology gap의 세 축을 그대로 필드로 옮겼다 — `holonomic`(kinematic constraint), `footprint_radius`/`cam_height`(footprint·height), `balance_penalty`(balance/dynamics). 이것이 1챕터에서 말한 '저차원으로 압축된 morphology 정보'의 구체적 형태다.\n\n네 로봇을 정의하면서도 정책이 부르는 함수 `clip_command`의 시그니처는 완전히 동일하다. 정책은 embodiment-agnostic한 이상적 명령 `(1.4, 1.8)`을 내고, 각 몸의 한계로 사영(projection)만 될 뿐이다. 실행하면 Carter는 그대로 통과하지만 H1은 `w=1.0`으로 잘린다 — 같은 명령이 몸마다 다르게 실현된다는 것을 수치로 확인할 수 있다.\n\n주목할 점은 `cam_height`가 출력에 함께 찍힌다는 것이다. 이는 morphology가 action만이 아니라 observation 분포까지 바꾼다는 사실을 상기시킨다. COMPASS는 이 스펙 중 대부분을 명시적으로 코딩하는 대신, embodiment embedding $e$로 압축해 정책이 데이터로부터 흡수하게 한다. 이 코드는 그 압축 이전의 '날것 그대로의 차이'를 눈으로 보게 해주는 교보재다."
+      },
+      "industryEvaluation": {
+        "overview": "빅테크 로보틱스/Physical AI 팀 면접에서 cross-embodiment는 'trendy한 키워드'로 소비되기 쉬운 주제다. 면접관은 지원자가 이 문제를 '멋진 데모'가 아니라 '왜 어려운가'의 층위에서 이해하는지, 그리고 접근법의 trade-off를 문제의 성격에서 도출할 수 있는지를 본다.",
+        "whatEngineersLookFor": [
+          "morphology gap을 '로봇이 다르다'로 뭉개지 않고 kinematics·footprint/height·balance라는 구체적 축으로 분해해 설명하는가",
+          "navigation의 action space 공통성(v, ω)이 왜 manipulation과 근본적으로 다른 판을 만드는지 자기 언어로 설명하는가",
+          "데이터 스케일링과 구조적 분리를 우열이 아니라 '문제 성격에 따른 선택'으로 프레이밍하는가",
+          "classical stack(Nav2)의 한계를 '비용이 embodiment 수만큼 곱해진다'는 스케일링 관점으로 짚는가",
+          "observation shift(카메라 높이 변화)까지 morphology의 결과로 인지하는가"
+        ],
+        "redFlags": [
+          "\"데이터만 많으면 다 된다\"고 단정하며 navigation/manipulation 구분 없이 스케일링을 만능으로 취급",
+          "cross-embodiment를 단순 도메인 랜덤화나 파라미터 스윕 문제로 축소",
+          "morphology 차이가 action에만 영향을 준다고 보고 observation 분포 변화를 놓침",
+          "COMPASS의 3단계를 '왜 그렇게 나눴는가' 없이 순서만 암기해서 나열",
+          "classical stack을 무조건 구식으로 폄하하며 실전 검증된 강점(안정성·튜닝 성숙도)을 인정하지 않음"
+        ],
+        "interviewQuestions": [
+          "바퀴 로봇에 잘 동작하는 학습된 내비게이션 정책을 휴머노이드로 옮겼더니 실패했다. 어떤 요인들이 무너졌는지, 관측·행동·동역학 층위로 나눠 진단해보라.",
+          "manipulation 진영은 대규모 데이터(Open-X), navigation 진영(COMPASS)은 구조적 분리를 택했다. 이 갈림의 근본 원인을 action space 관점에서 설명하라.",
+          "새로운 embodiment(예: 외발 호핑 로봇)를 이 프레임에 추가한다면, morphology gap의 어느 축이 가장 문제이며 어떤 구성요소로 흡수하겠는가?"
+        ],
+        "masteryVsFamiliar": "**Familiar(익숙한 수준)**: \"cross-embodiment는 여러 로봇을 하나의 정책으로 움직이는 것이고 COMPASS가 그걸 3단계로 푼다\"고 설명한다. **Mastery(통달한 수준)**: navigation의 (v, ω) action 공통성 → morphology의 저차원화 → 얇은 conditioning의 충분성이라는 인과 사슬로 '왜 COMPASS가 데이터가 아닌 구조를 택했는가'를 유도하고, 같은 논리로 manipulation에서는 왜 그 선택이 뒤집히는지까지 대칭적으로 설명한다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "같은 목표 ≠ 같은 정책",
+          "content": "모든 로봇이 A→B라는 목표는 공유하지만, 명령을 실제 움직임으로 바꾸는 transition이 embodiment마다 달라 하나의 정책을 그대로 이식하면 실패한다."
+        },
+        {
+          "title": "morphology gap은 세 축으로 분해된다",
+          "content": "kinematic constraint, footprint/height, balance/dynamics — 이 저차원 세 축이 cross-embodiment 난이도의 실체다."
+        },
+        {
+          "title": "morphology는 observation도 바꾼다",
+          "content": "카메라 높이 차이처럼 morphology gap은 action space뿐 아니라 관측 분포에도 shift를 일으킨다."
+        },
+        {
+          "title": "classical stack의 비용은 곱셈이다",
+          "content": "Nav2 같은 스택은 embodiment마다 재튜닝/재개발이 필요해 비용이 '로봇 수 × 엔지니어링'으로 곱해진다 — end-to-end learning의 동기다."
+        },
+        {
+          "title": "두 패러다임: 흡수 vs 분리",
+          "content": "데이터 스케일링은 다양성을 데이터로 흡수하고, 구조적 분리는 다양성을 아키텍처로 나눈다."
+        },
+        {
+          "title": "action 공통성이 판을 가른다",
+          "content": "navigation은 (v, ω)로 action이 공통이라 구조적 분리가 유리하고, manipulation은 end-effector가 극심히 다양해 데이터 스케일링이 필수다."
+        },
+        {
+          "title": "COMPASS의 좌표",
+          "content": "COMPASS는 sim-centric·navigation·구조적 분리 진영에 위치한 cross-embodiment mobility generalist다."
+        },
+        {
+          "title": "얇은 conditioning의 근거",
+          "content": "navigation에서 morphology가 저차원으로 압축되기 때문에, 큰 공통 추론 + 얇은 embodiment conditioning이 무한한 실데이터보다 효율적일 수 있다."
+        }
+      ]
+    },
+    {
+      "number": 2,
+      "emoji": "🌍",
+      "title": "World Models for Navigation — The X-Mobility Backbone",
+      "titleKr": "내비게이션을 위한 월드 모델 — X-Mobility 백본",
+      "tldr": "COMPASS의 뼈대인 X-Mobility의 autoregressive world model(RSSM·DINOv2·GRU)이 어떻게 환경 dynamics를 latent state로 압축해 강한 prior를 제공하는지 해부한다.",
+      "topics": [
+        "World Model",
+        "Latent State / RSSM",
+        "DINOv2 encoder",
+        "X-Mobility 아키텍처"
+      ],
+      "learningGoals": [
+        "world model이 navigation에서 covariate shift를 완화하는 원리를 설명할 수 있다",
+        "latent state transition (s_t = f(s_{t-1}, a_{t-1}))의 역할을 이해한다",
+        "X-Mobility의 observation encoding → state estimation → policy fusion 흐름을 그릴 수 있다",
+        "Dreamer/RSSM 계보와의 연결을 설명할 수 있다",
+        "왜 frozen world model이 COMPASS 성능의 진짜 열쇠인지 안다"
+      ],
+      "overview": "1챕터에서 우리는 COMPASS가 '데이터 스케일링' 대신 '구조적 분리'를 택했고, 그 구조의 첫 번째 층이 공통 dynamics를 학습하는 world model이라는 좌표를 잡았다. 이번 챕터는 바로 그 첫 번째 층 — [X-Mobility(arXiv:2410.17491)](https://arxiv.org/abs/2410.17491) — 를 해부한다. COMPASS는 X-Mobility를 IL base로 삼아 **얼려두고(frozen)** 사용한다. 따라서 X-Mobility가 무엇을 어떻게 학습했는지를 이해하지 못하면 COMPASS 전체가 왜 작동하는지 알 수 없다.\n\nX-Mobility는 2024년 10월에 나온, COMPASS와 대부분 저자가 겹치는 선행 연구다. 한 문장으로 요약하면 **autoregressive world model + velocity-prediction policy**다. 즉 (1) RGB 이미지·로봇 상태·경로를 받아 환경의 dynamics를 latent state로 압축하는 world model과, (2) 그 latent를 읽어 velocity command를 내는 policy가 결합된 구조다. 이 설계의 계보는 Dreamer/DreamerV3로 거슬러 올라가며, 핵심 부품인 RSSM(Recurrent State-Space Model)을 그대로 계승한다.\n\n이번 챕터의 목표는 세 가지다. 첫째, world model이 navigation에서 어떻게 covariate shift를 완화하는지 — 즉 왜 단순 IL보다 강한 prior를 주는지 — 를 원리적으로 이해한다. 둘째, latent transition $s_t=f_\\phi(s_{t-1},a_{t-1})$과 observation encoding→state estimation→policy fusion의 데이터 흐름을 그릴 수 있게 된다. 셋째, 그리고 가장 중요하게, **왜 이 world model을 얼려두는 것이 COMPASS 성능의 진짜 열쇠인지** — RL-from-scratch가 왜 실패하는지를 통해 — 를 못 박는다.",
+      "sections": [
+        {
+          "title": "World model이란 무엇이며, navigation에서 왜 필요한가",
+          "content": "**World model(월드 모델)** = 에이전트가 자신의 관측과 행동으로부터 '환경이 어떻게 변하는가'를 예측하는 내부 모델. 즉 현재 상태와 행동이 주어지면 다음 상태(그리고 그에 상응하는 관측)를 예측하는 $s_{t}\\!\\approx\\! f(s_{t-1}, a_{t-1})$를 학습한 것이다.\n\n왜 navigation에 이것이 필요한가? 핵심은 **부분 관측성(partial observability)**과 **시간적 일관성**이다. 로봇의 한 프레임 RGB 이미지는 그 순간의 단면일 뿐, 벽 뒤의 통로나 방금 지나친 장애물, 자신의 진행 관성 같은 것을 담지 못한다. 정책이 단일 프레임만 보고 행동하면 매 순간 근시안적으로 반응할 수밖에 없다. world model은 과거를 압축한 latent state를 유지함으로써 '지금 안 보이지만 존재하는' 환경 구조를 기억하고, 행동이 미래에 미칠 결과를 내다보게 한다.\n\nX-Mobility의 latent state $s_t$는 정확히 이 역할을 한다. 논문의 표현으로, $s_t$는 **environment dynamics를 압축한** 표현이다. 여기에는 정적 기하(벽·통로·장애물의 배치)뿐 아니라 로봇 자신의 운동 상태와 그것이 어떻게 전개되는지가 함께 담긴다. 이 latent가 있기에 정책은 '한 장의 그림'이 아니라 '흘러가는 세계의 요약'을 입력으로 받는다.\n\n결정적으로, world model은 관측을 재구성(reconstruction)하도록 학습된다. $s_t$로부터 원래 관측을 되살리는 $\\hat{o}_t=g_\\psi(s_t)$를 잘하려면, latent가 관측의 핵심 정보를 손실 없이 담아야 한다. 이 self-supervised 목표 덕분에 world model은 보상이나 전문가 라벨 없이도, 방대한 주행 데이터만으로 '세계를 이해하는' 표현을 학습한다. 이것이 바로 COMPASS가 활용할 강한 prior의 원천이다."
+        },
+        {
+          "title": "RSSM과 latent transition — deterministic GRU + stochastic latent의 이중 구조",
+          "content": "X-Mobility의 심장은 Dreamer 계보에서 물려받은 **RSSM(Recurrent State-Space Model)**이다. RSSM의 핵심 아이디어는 latent state를 하나의 벡터가 아니라 **deterministic 부분과 stochastic 부분의 결합**으로 나누는 것이다.\n\n**Deterministic state(결정적 상태) $h_t$** = 과거 전체를 요약하는 순환(recurrent) 경로로, 보통 GRU로 구현된다. $h_t = \\text{GRU}(h_{t-1}, [z_{t-1}, a_{t-1}])$처럼, 이전 요약과 이전 stochastic latent, 이전 행동을 받아 갱신된다. 이 결정적 경로가 시간적 기억의 '뼈대'로, 예측을 안정적이고 gradient가 멀리 흐르게 한다.\n\n**Stochastic state(확률적 상태) $z_t$** = 그 시점의 불확실성과 다양한 가능성을 담는 확률 변수다. 결정적 $h_t$를 조건으로 한 prior $p(z_t\\mid h_t)$와, 실제 관측을 반영한 posterior $q(z_t\\mid h_t, o_t)$ 두 갈래로 추론된다. 이 stochasticity가 있기에 world model은 '다음에 무엇이 나타날지 확실하지 않다'는 것을 표현할 수 있다.\n\n전체 transition을 논문 표기로 쓰면 $s_t=f_\\phi(s_{t-1}, a_{t-1})$이고, 여기서 $s_t$는 $(h_t, z_t)$의 결합이다. 학습은 두 항의 균형으로 이루어진다 — 관측을 잘 재구성하는 reconstruction 항과, prior와 posterior를 가깝게 만드는 KL 항(representation/dynamics learning). KL 항이 핵심인 이유는, 관측 없이 prior만으로도 posterior에 가깝게 예측할 수 있어야 world model이 '상상(imagination)' 즉 관측 없는 미래 rollout을 할 수 있기 때문이다.\n\n이 이중 구조의 실익은 무엇인가? deterministic 경로는 긴 시야의 일관성과 안정적 gradient를, stochastic 경로는 부분 관측 하의 불확실성 표현을 각각 담당한다. navigation처럼 '보이지 않는 것을 기억하고 불확실한 미래를 다뤄야 하는' 문제에서 이 분업이 정확히 필요한 두 능력이다."
+        },
+        {
+          "title": "X-Mobility 아키텍처 — encoding → state estimation → policy fusion의 전체 흐름",
+          "content": "이제 부품들을 실제 파이프라인으로 조립하자. X-Mobility는 이질적 입력을 각각 인코딩해 하나의 latent로 융합하고, 그 latent에서 행동을 낸다. 흐름은 세 단계다.\n\n**(1) Observation encoding(관측 인코딩).** 서로 다른 modality를 각자의 인코더로 처리한다. RGB 이미지 $I_t$는 [DINOv2](https://arxiv.org/abs/2304.07193) image encoder로 강력한 self-supervised visual feature로 변환된다 — DINOv2를 쓴 것은 처음부터 CNN을 학습하는 대신 이미 풍부한 기하·의미 표현을 가진 pretrained backbone을 빌려 데이터 효율과 sim-to-real 일반화를 높이려는 선택이다. 로봇 상태(속도 등)는 MLP로, 경로/목표 $g_t$는 궤적을 폴리라인으로 다루는 **VectorNet** 스타일 인코더로 처리된다. 이렇게 세 갈래 feature가 만들어진다.\n\n**(2) State estimation(상태 추정).** 인코딩된 feature들을 self-attention으로 융합해 관측 임베딩을 만들고, 이를 RSSM의 posterior 경로에 넣어 latent state $s_t$를 추정한다. 앞 절의 GRU 기반 transition이 여기서 돌며, 이전 $s_{t-1}$과 행동 $a_{t-1}$, 그리고 현재 관측을 결합해 $s_t=(h_t, z_t)$를 낸다. 이 $s_t$가 '지금까지의 세계를 요약한' 표현이다.\n\n**(3) Policy fusion & action(정책 융합과 행동).** 정책은 latent state와 경로 정보를 다시 결합한다. 논문 표기로, 경로 인코딩 $r_t=f_\\theta(g_t)$, 융합 $p_t=\\Phi(s_t, r_t)$, 그리고 행동 $a_t=\\pi^{IL}_\\theta(p_t)$다. 즉 world model이 준 세계 요약 $s_t$ 위에, 지금 따라야 할 경로 $r_t$를 다시 얹어(fusion), 그로부터 velocity command를 예측한다. 이 정책은 전문가 시연을 모방하도록(IL) 학습된다.\n\n전체를 한 줄로 그리면: **$(I_t, v_t, g_t)$ → [DINOv2 · MLP · VectorNet] → self-attention → RSSM($s_t$) → $\\Phi(s_t, r_t)$ → $a_t=(v,\\omega)$**. 이 파이프라인 전체가 Carter 데이터셋으로 pretrain되고, edge(Jetson)에서 zero-shot sim-to-real로 돈다는 점이 X-Mobility의 실용적 강점이다. 그리고 COMPASS는 이 잘 학습된 파이프라인을 **통째로 얼려** base로 삼는다."
+        },
+        {
+          "title": "Covariate shift 완화 — world model이 IL의 근본 병을 어떻게 누그러뜨리는가",
+          "content": "**Covariate shift(공변량 이동)** = 정책을 시연 데이터의 분포에서 학습했지만, 실행 시에는 정책 자신이 만든 궤적을 따라가며 학습 때 못 본 상태로 점점 벗어나 오차가 누적되는 현상. 순수 IL(behavior cloning)의 고질적 실패 모드다(3챕터에서 본격적으로 다룬다). 여기서는 world model이 이 병을 어떻게 완화하는지에 초점을 둔다.\n\n첫째, **표현의 강건성**이다. 정책이 매 프레임의 raw 픽셀에 직접 반응하면 조금만 낯선 장면이 들어와도 출력이 크게 흔들린다. 하지만 world model의 latent $s_t$는 reconstruction과 dynamics 목표로 학습되어 '환경의 구조'를 담는 매끄러운 표현이다. 낯선 관측도 이 latent 공간에서는 익숙한 이웃으로 사영되기 쉬워, 분포에서 살짝 벗어나도 정책이 급격히 무너지지 않는다.\n\n둘째, **시간적 예측이 표류를 억제한다**. world model은 과거를 요약한 $h_t$를 유지하므로, 한 프레임이 흐릿하거나 이상해도 latent가 순간적 노이즈로 튀지 않고 축적된 문맥으로 보정한다. 즉 단일 관측에 대한 과민 반응이 줄어 오차 누적의 시작점이 억눌린다. X-Mobility가 covariate shift를 '미래 예측으로 완화한다'고 말하는 것이 이 지점이다 — 세계가 어떻게 전개될지 아는 모델은 낯선 상태에 처했을 때도 그럴듯한 다음을 추론해낸다.\n\n다만 분명히 하자. world model이 covariate shift를 **완전히 없애지는 못한다**. IL로 학습된 정책은 여전히 시연 분포에 묶여 있고, world model은 그 위에서 표현을 강건하게 만들어 완화할 뿐이다. 바로 이 '완화하지만 해결은 못 함'이라는 잔여 gap이, COMPASS가 다음 층에서 Residual RL을 얹는 이유다. world model은 강한 출발점을 주지만, 각 embodiment의 실제 실행 분포에서 남는 오차는 환경과 상호작용하는 RL로만 메울 수 있다."
+        },
+        {
+          "title": "왜 frozen world model이 COMPASS의 진짜 열쇠인가 — RL-from-scratch의 실패가 주는 증거",
+          "content": "이 챕터의 결론이자 COMPASS를 이해하는 급소가 여기 있다. COMPASS는 X-Mobility의 world model+IL base를 **학습 중 얼려둔다(frozen)**. 왜 학습하지 않고 고정할까? 그리고 왜 이것이 성능의 진짜 열쇠일까?\n\n가장 강력한 증거는 실패 실험이다. COMPASS 논문에 따르면, IL base가 주는 action 없이 **latent만으로 RL을 from scratch로 돌리면 1000 episode를 돌려도 수렴에 실패한다.** navigation의 보상은 희소하고(목표 도달까지 멀다) 탐색 공간은 방대해서, 아무 prior 없이 latent에서 곧바로 좋은 정책을 찾는 것은 사실상 불가능하다. 즉 world model이 준 latent는 '좋은 표현'이지만, 그 표현에서 행동으로 가는 좋은 매핑까지 공짜로 주지는 않는다.\n\n그런데 X-Mobility의 IL base가 주는 velocity command를 **출발 행동**으로 삼으면 상황이 뒤집힌다. RL은 0에서 시작하는 대신 이미 그럴듯한 base action 근처에서 시작해, 각 embodiment에 맞는 얇은 보정(residual)만 탐색하면 된다. 이것이 4챕터의 Residual RL($a_t=a_t^{base}+a_t^{res}$)이며, frozen base가 이 residual 학습이 성립하기 위한 전제 조건이다. base가 흔들리면 residual이 조준할 기준점이 사라진다.\n\n숫자가 이 구조의 위력을 증언한다. COMPASS의 specialist는 IL baseline(X-Mobility) 대비 **success rate를 5배~40배 끌어올리고, weighted travel time(WTT)을 약 3배 개선**한다. 이 거대한 이득은 '더 큰 모델'이나 '더 많은 데이터'가 아니라, 얼린 world model이라는 강한 prior 위에 residual을 얹는 **구조**에서 나온다. 만약 world model을 함께 fine-tune했다면 어땠을까? 각 embodiment의 RL 신호가 base 표현을 자기 쪽으로 끌어당겨, 나중에 여러 specialist를 하나의 generalist로 distill할 때 공유할 공통 기반이 부서졌을 것이다.\n\n그래서 frozen이 열쇠다. **얼린 world model은 (1) RL이 수렴하도록 강한 action prior를 제공하고, (2) 모든 embodiment가 공유하는 안정된 공통 표현을 보존해 이후 distillation을 가능케 한다.** 1챕터에서 말한 '큰 공통 추론 + 얇은 conditioning'이라는 철학이 여기서 구체적 메커니즘으로 실현되는 것이다. 다음 챕터부터 우리는 이 frozen base 위에서 IL의 한계(covariate shift)와 그 처방(Residual RL)을 차례로 파고든다."
+        }
+      ],
+      "analogy": {
+        "title": "GPS 없이 도시를 외운 택시 기사",
+        "content": "한 도시를 수십 년 몬 베테랑 택시 기사를 상상해보자. 그는 창밖 한 장면만 봐도 '여기가 어디쯤이고, 이 골목을 꺾으면 무엇이 나오며, 지금 막히는 시간대인지'를 안다. 눈앞에 보이지 않는 도로 구조와 흐름이 그의 머릿속 '도시 모델'에 압축되어 있기 때문이다. 이 머릿속 모델이 바로 world model의 latent state $s_t$다 — 한 장의 사진이 아니라, 흘러가는 세계의 요약.\n\n초보 기사(순수 IL 정책)는 다르다. 그는 오직 지금 보이는 것에만 반응하고, 낯선 골목에 들어서면 당황해 점점 엉뚱한 길로 빠진다 — 이것이 covariate shift다. 베테랑은 낯선 골목에서도 '이 도시라면 이쯤에 큰길이 있을 것'이라고 세계 모델로 추론해 회복한다. world model이 covariate shift를 완화한다는 말의 감각이 이것이다.\n\n그리고 COMPASS의 'frozen'은 이렇게 비유된다. 이 베테랑 기사의 도시 지식은 **건드리지 않고**, 대신 그를 트럭·오토바이·자전거에 태워 각 탈것의 핸들 감각만 짧게 익히게 한다. 도시 지식(world model)을 매번 다시 배우게 하면 탈것마다 기억이 서로 오염되어, 나중에 '세 탈것 다 잘 모는 한 명'을 길러낼 공통 기반이 무너진다. 지식은 얼려 공유하고 감각만 얇게 얹는 것 — 그것이 frozen world model이 열쇠인 이유다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "RSSM의 한 스텝 forward를 PyTorch로 구현해보자. 핵심은 latent가 deterministic $h_t$(GRU)와 stochastic $z_t$(reparameterized Gaussian)로 나뉘고, 관측이 없을 때의 prior와 관측을 반영한 posterior 두 경로가 있다는 점이다. 이 한 셀이 X-Mobility state estimation의 심장이다.",
+        "code": "import torch\nimport torch.nn as nn\nimport torch.distributions as D\n\nclass RSSMCell(nn.Module):\n    def __init__(self, deter=256, stoch=32, act_dim=2, embed=384):\n        super().__init__()\n        self.stoch = stoch\n        # (z_{t-1}, a_{t-1}) -> GRU 입력\n        self.pre = nn.Sequential(nn.Linear(stoch + act_dim, deter), nn.ELU())\n        self.gru = nn.GRUCell(deter, deter)\n        # prior: h_t -> z_t 분포 (관측 없이 예측)\n        self.prior = nn.Linear(deter, 2 * stoch)\n        # posterior: (h_t, o_t) -> z_t 분포 (관측 반영, embed는 DINOv2 등 융합 feature)\n        self.post = nn.Linear(deter + embed, 2 * stoch)\n\n    def _dist(self, params):\n        mean, std = params.chunk(2, dim=-1)\n        return D.Independent(D.Normal(mean, torch.softplus(std) + 0.1), 1)\n\n    def forward(self, h_prev, z_prev, a_prev, obs_embed=None):\n        x = self.pre(torch.cat([z_prev, a_prev], dim=-1))\n        h = self.gru(x, h_prev)                      # deterministic transition\n        prior = self._dist(self.prior(h))            # p(z_t | h_t)\n        if obs_embed is not None:                    # posterior (학습/추정 시)\n            post = self._dist(self.post(torch.cat([h, obs_embed], dim=-1)))\n            z = post.rsample()\n            kl = D.kl_divergence(post, prior).mean() # dynamics/representation loss\n            return h, z, kl\n        z = prior.rsample()                          # imagination (관측 없이 rollout)\n        return h, z, None",
+        "walkthrough": "`forward`의 첫 두 줄이 **deterministic transition** $h_t=\\text{GRU}(h_{t-1}, [z_{t-1}, a_{t-1}])$이다. 이전 stochastic latent와 행동을 GRU에 넣어 시간적 기억의 뼈대 $h$를 갱신한다 — 이 경로가 '보이지 않는 것을 기억하는' 능력의 원천이다.\n\n그 다음이 RSSM의 이중성이다. `prior`는 관측 없이 $h_t$만으로 $z_t$ 분포를 예측하고, `post`는 여기에 융합된 관측 feature `obs_embed`(DINOv2·MLP·VectorNet을 self-attention으로 합친 것)를 더해 더 정확한 posterior를 낸다. `obs_embed=None`이면 posterior 없이 prior로만 샘플링하는데, 이것이 바로 관측 없이 미래를 굴리는 **imagination** 경로다.\n\n`kl = KL(post || prior)`가 학습의 급소다. 이 항을 줄이면 관측 없는 prior가 관측 있는 posterior에 가까워져, world model이 실제 관측 없이도 그럴듯한 미래를 예측하게 된다 — 4챕터에서 RL이 이 상상 rollout 위에서 값싸게 탐색할 수 있는 근거다. `rsample()`(reparameterization)을 쓴 것은 이 stochastic 경로로 gradient가 흐르게 하기 위함이다. COMPASS에서는 이 셀 전체가 **frozen**되어, 학습되는 것은 오직 위에 얹힌 residual policy뿐이다."
+      },
+      "industryEvaluation": {
+        "overview": "world model은 2024~2026년 로보틱스·RL 채용에서 가장 신호가 강한 주제 중 하나다. 면접관은 지원자가 world model을 'Dreamer 논문 요약'이 아니라, 왜 이 구조가 특정 문제(부분 관측·covariate shift·sample efficiency)를 푸는지 메커니즘 층위에서 이해하는지, 그리고 frozen/fine-tune 같은 실전 설계 판단을 근거와 함께 내리는지를 본다.",
+        "whatEngineersLookFor": [
+          "RSSM의 deterministic(GRU)과 stochastic(latent) 분업이 각각 어떤 능력(장기 일관성 vs 불확실성 표현)을 담당하는지 설명하는가",
+          "world model이 covariate shift를 '완화'할 뿐 '해결'하지 못한다는 경계를 정확히 긋고, 그래서 residual이 필요하다고 연결하는가",
+          "왜 base world model을 frozen하는지를 '공통 표현 보존 + RL 수렴 prior'라는 두 축으로 설명하는가",
+          "DINOv2 같은 pretrained encoder를 쓰는 이유를 데이터 효율·sim2real 일반화로 정당화하는가",
+          "reconstruction/KL 목표가 latent 품질과 imagination 능력에 어떻게 연결되는지 아는가"
+        ],
+        "redFlags": [
+          "world model을 '그냥 미래 프레임 예측하는 것'으로만 이해하고 정책·표현학습과의 연결을 놓침",
+          "RSSM에서 deterministic과 stochastic을 왜 나누는지 설명 못 하고 '그냥 그렇게 한다'고 함",
+          "frozen을 단순 '연산 절약'으로 오해하고 공통 표현 보존/distillation 가능성과 연결하지 못함",
+          "RL-from-scratch가 실패한다는 반례를 모른 채 'latent만 있으면 RL로 다 된다'고 단정",
+          "KL 항의 역할(prior≈posterior → imagination)을 모르고 reconstruction만 언급"
+        ],
+        "interviewQuestions": [
+          "순수 behavior cloning 대비 world model 기반 정책이 covariate shift에 더 강한 이유를 표현·시간예측 두 관점으로 설명하라. 그럼에도 남는 한계는 무엇인가?",
+          "COMPASS는 world model을 학습 중 얼려둔다. 만약 각 embodiment의 RL 신호로 world model을 함께 fine-tune하면 무엇이 깨지는지, 특히 이후 distillation 관점에서 논하라.",
+          "RSSM에서 latent를 deterministic h와 stochastic z로 분리하는 설계의 이득을 navigation의 부분 관측성과 연결해 설명하라."
+        ],
+        "masteryVsFamiliar": "**Familiar**: \"X-Mobility는 DINOv2와 RSSM으로 이미지를 latent로 압축하고 velocity를 예측하는 world model이다\"라고 부품을 나열한다. **Mastery**: RL-from-scratch 실패(1000 episode 미수렴)라는 증거에서 출발해 → 얼린 world model이 action prior와 공통 표현을 동시에 제공한다는 두 기능으로 frozen 설계를 유도하고 → 그 위에서 residual과 distillation이 성립함을 5x~40x SR 향상과 연결해 인과적으로 설명한다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "latent state = 흘러가는 세계의 요약",
+          "content": "world model의 sₜ는 단일 프레임이 아니라 환경 dynamics를 압축한 표현으로, 보이지 않는 구조를 기억하고 미래를 내다보게 한다."
+        },
+        {
+          "title": "RSSM의 이중 구조",
+          "content": "deterministic GRU 경로(hₜ)는 장기 일관성과 안정적 gradient를, stochastic latent(zₜ)는 부분 관측 하의 불확실성을 담당한다."
+        },
+        {
+          "title": "prior≈posterior가 imagination을 연다",
+          "content": "KL 항으로 관측 없는 prior를 관측 있는 posterior에 맞추면, world model이 관측 없이 미래를 rollout하는 상상 능력을 얻는다."
+        },
+        {
+          "title": "X-Mobility의 3단 흐름",
+          "content": "관측 인코딩(DINOv2·MLP·VectorNet) → self-attention 융합·RSSM state 추정 → 경로와 fusion 후 velocity 예측으로 이어진다."
+        },
+        {
+          "title": "world model은 covariate shift를 완화한다",
+          "content": "강건한 latent 표현과 시간적 예측이 낯선 상태에서의 급격한 붕괴와 오차 누적을 억제하지만, 완전히 없애지는 못한다."
+        },
+        {
+          "title": "frozen이 열쇠다",
+          "content": "얼린 world model은 RL 수렴을 위한 action prior를 주는 동시에 모든 embodiment가 공유할 공통 표현을 보존해 이후 distillation을 가능케 한다."
+        },
+        {
+          "title": "RL-from-scratch는 실패한다",
+          "content": "IL base action 없이 latent만으로 RL을 돌리면 1000 episode에도 수렴하지 못해, 강한 prior의 필요성을 반증적으로 증명한다."
+        },
+        {
+          "title": "구조가 데이터를 이긴다",
+          "content": "specialist의 5x~40x SR·3x WTT 향상은 더 큰 모델이 아니라 frozen prior 위에 residual을 얹는 구조에서 나온다."
+        }
+      ]
+    },
+    {
+      "number": 3,
+      "emoji": "🎓",
+      "title": "Imitation Learning & Covariate Shift",
+      "titleKr": "모방 학습과 코버리엇 시프트",
+      "tldr": "teacher policy로 mobility prior를 학습하는 IL 단계와, IL만으로는 못 푸는 covariate shift 문제 — 그리고 왜 residual RL이 필요해지는지를 다룬다.",
+      "topics": [
+        "Imitation Learning",
+        "Teacher / expert policy",
+        "Covariate shift",
+        "DAgger",
+        "Latent-space policy"
+      ],
+      "learningGoals": [
+        "behavior cloning과 covariate shift의 관계를 수식 수준에서 이해한다",
+        "classical mobility stack을 teacher로 쓰는 이유와 장단점을 안다",
+        "DAgger 등 covariate shift 완화 기법의 원리를 설명할 수 있다",
+        "latent space에서 policy를 학습할 때의 이점을 이해한다",
+        "IL의 한계가 residual RL 도입을 정당화하는 논리를 재구성할 수 있다"
+      ],
+      "overview": "이전 챕터에서 우리는 X-Mobility가 raw observation을 압축된 latent state로 요약하고 미래를 예측하는 world model이라는 것을 보았다. 이 챕터는 그 world model 위에 **첫 번째 policy를 어떻게 얹는가**를 다룬다. COMPASS([arXiv:2502.16372](https://arxiv.org/abs/2502.16372))의 3단계 파이프라인 IL→Residual RL→Distillation 중 첫 단계, 즉 imitation learning(IL)이 오늘의 주제다. 핵심 질문은 단순하다 — 강화학습은 sparse-reward navigation에서 수백만 스텝을 태워도 잘 수렴하지 않는데, 그렇다면 policy를 어디서 시작할 것인가?\n\nCOMPASS의 대답은 '이미 존재하는 좋은 컨트롤러를 모방하라'다. 로봇 커뮤니티에는 수십 년간 다듬어진 classical mobility stack(예: ROS의 Nav2)이 있다. 이들은 학습 기반이 아니지만 대부분의 평범한 상황에서 안정적으로 목표까지 로봇을 몰고 간다. COMPASS는 이 teacher policy로 대량의 시연을 값싸게 뽑아, world model latent 위에서 behavior cloning으로 **mobility prior**를 학습한다. 이것이 이후 residual RL과 distillation이 딛고 설 발판이 된다.\n\n그러나 behavior cloning에는 이론적으로 불가피한 함정, **covariate shift**가 있다. 학습된 policy는 언젠가 teacher가 한 번도 보여주지 않은 state로 표류하고, 거기서 내린 나쁜 결정이 다음 state를 더 낯설게 만들어 에러가 복리로 쌓인다. 이 챕터는 covariate shift를 수식 수준에서 해부하고, DAgger 같은 고전적 완화책과 world model latent가 주는 암묵적 방어를 살펴본 뒤, '그래도 IL만으로는 부족하다'는 결론이 다음 챕터의 residual RL을 어떻게 필연적으로 불러오는지를 재구성한다.",
+      "sections": [
+        {
+          "title": "Behavior Cloning: 지도학습으로 위장한 순차 결정 문제",
+          "content": "**Behavior cloning(행동 복제)** = expert의 상태-행동 쌍 $(o_t, a^*_t)$을 지도학습 데이터로 보고, 관측을 행동으로 매핑하는 함수를 회귀/분류로 맞추는 것.\n\nCOMPASS의 IL 단계에서 데이터는 teacher policy가 만든 시연 집합 $D=\\{(o_0,a^*_0,\\dots,o_T,a^*_T)\\}$이다. 여기서 $a^*$는 teacher(classical stack)의 행동이고, raw observation은 $o_t=(I_t, v_t)$ — 이미지 $I_t$와 로봇 자기속도 $v_t$의 쌍이다. Policy는 이 데이터에서 다음 목적함수를 최소화한다.\n\n$$\\min_\\theta \\; \\sum_t \\ell\\big(\\pi^{IL}_\\theta(p_t),\\, a^*_t\\big)$$\n\n여기서 $\\ell$은 회귀 손실(연속 행동이므로 보통 MSE)이고 $p_t$는 뒤에서 설명할 fused latent다. 겉보기엔 평범한 지도학습이지만, 결정적 차이가 하나 있다 — **이 데이터는 i.i.d.가 아니다.** 표준 지도학습은 test 분포가 train 분포와 같다고 가정하지만, policy를 로봇에 올리는 순간 policy 자신의 행동이 다음 관측을 결정한다. 즉 test-time state 분포는 policy에 의존한다.\n\n이 의존성이 IL을 단순 회귀가 아니라 순차 결정 문제로 만든다. 학습할 때 policy는 항상 teacher가 방문한 '좋은' state에서 정답을 배우지만, 배포되면 자기 실수로 teacher가 결코 방문하지 않은 state에 도달한다. 거기서는 학습 신호가 전혀 없어 행동이 사실상 무작위에 가까워지고, 그 나쁜 행동이 다음 state를 더 낯설게 만든다. 이것이 다음 절에서 다룰 covariate shift의 씨앗이다."
+        },
+        {
+          "title": "Covariate Shift와 O(T²) 후회: 왜 에러가 복리로 쌓이는가",
+          "content": "**Covariate shift** = 학습된 policy가 유도하는 state 방문 분포 $d_{\\pi}$가 expert의 분포 $d_{\\pi^*}$와 달라지는 현상. IL이 실패하는 근본 원인이다.\n\n직관은 이렇다. 매 스텝 policy가 expert와 다르게 행동할 확률을 $\\epsilon$이라 하자. 지도학습이라면 총 기대 실수는 $O(\\epsilon T)$로 선형이다. 그러나 순차 문제에서는 한 번의 실수가 다음 state를 train 분포 밖으로 밀어내고, 그 밖에서는 실수 확률이 더 커진다. Ross et al.의 고전 결과([DAgger, 2011](https://arxiv.org/abs/1011.0686))는 이 누적 효과가 최악의 경우 **$O(\\epsilon T^2)$의 후회(regret)**를 낳음을 보인다.\n\n$$J(\\pi) - J(\\pi^*) \\;\\leq\\; O(\\epsilon\\, T^2)$$\n\n$T$가 커질수록(긴 horizon의 navigation) 이 이차항이 치명적이 된다. 실전 번역: teacher를 90% 정확도로 복제해도, 256스텝 에피소드에서 한 번 코너를 잘못 돌아 낯선 복도로 들어서면 그 다음부터는 배운 적 없는 상황의 연속이라 회복하지 못하고 벽에 처박힌다. 이것이 pure BC의 navigation policy가 '조용한 실패'를 겪는 메커니즘이다.\n\nCOMPASS 저자들이 특히 강조하는 점은, humanoid처럼 복잡한 modality에서는 애초에 고품질 teacher 시연을 만드는 것 자체가 어렵다는 것이다. Wheeled 로봇은 성숙한 classical stack이 있어 데이터가 값싸지만, 다리 달린 로봇에는 그런 범용 teacher가 없다. 그래서 IL로 얻는 prior의 품질이 embodiment마다 들쭉날쭉하고, 이 불균형이 '모든 embodiment를 IL만으로 완성한다'는 선택지를 처음부터 배제한다. 결국 IL은 완성품이 아니라 **좋은 초기화**를 제공하는 역할로 자리매김된다."
+        },
+        {
+          "title": "DAgger: 분포를 policy 쪽으로 끌어오는 online 완화책",
+          "content": "Covariate shift의 근본 처방은 '학습 분포를 policy가 실제로 방문하는 분포와 일치시키는 것'이다. **DAgger(Dataset Aggregation)** = policy를 굴려 policy가 방문한 state를 수집하고, 그 state에 대해 expert에게 정답 라벨을 물어 데이터셋에 계속 합치는 반복 절차([Ross et al. 2011](https://arxiv.org/abs/1011.0686)).\n\n알고리즘의 뼈대는 다음과 같다. (1) 현재 policy $\\pi_i$로 궤적을 굴린다. (2) 그 궤적의 각 state $o_t$에 대해 expert $\\pi^*$가 무엇을 했을지 라벨 $a^*_t$를 얻는다. (3) 이 새 쌍들을 누적 데이터셋 $D \\leftarrow D \\cup \\{(o_t, a^*_t)\\}$에 합쳐 policy를 다시 학습한다. 반복하면 학습 분포가 점점 $d_{\\pi}$로 수렴하고, no-regret online learning 관점에서 후회가 $O(\\epsilon T^2)$에서 $O(\\epsilon T)$의 선형 영역으로 내려온다.\n\nDAgger의 결정적 전제는 **query 가능한 expert**다. 즉 policy가 만든 임의의 낯선 state에 대해서도 expert가 즉석에서 정답을 줄 수 있어야 한다. 바로 여기서 classical mobility stack을 teacher로 쓰는 선택이 빛난다 — Nav2 같은 stack은 학습된 정적 데이터셋이 아니라 실행 가능한 알고리즘이므로, 어떤 state를 던져도 즉시 행동을 계산해 준다. 사람 시연이 teacher라면 불가능한 online labeling이 classical teacher에서는 공짜다.\n\n그러나 DAgger에도 한계가 있다. teacher 자신이 도달할 수 없거나 애초에 어떻게 행동해야 할지 모르는 state(예: 넘어지기 직전의 humanoid)에서는 teacher의 라벨이 무의미해진다. teacher의 성능이 곧 policy 성능의 상한이 되는 것이다. 즉 DAgger는 covariate shift를 완화하지만 **teacher를 능가하게 만들지는 못한다.** 이 상한을 뚫으려면 라벨을 모방하는 대신 환경의 reward로부터 직접 개선하는 신호가 필요하고, 그것이 다음 챕터 residual RL의 존재 이유다."
+        },
+        {
+          "title": "Latent-space Policy: world model이 주는 암묵적 covariate shift 방어",
+          "content": "COMPASS는 policy를 raw pixel 위에서 학습하지 않는다. 대신 world model이 만든 latent state 위에서 학습한다. 이 설계가 covariate shift에 대한 세 번째 방어선이 된다.\n\n구조를 따라가 보자. World model은 latent transition $s_t=f_\\phi(s_{t-1}, a_{t-1})$로 상태를 굴리고 reconstruction $\\hat{o}_t=g_\\psi(s_t)$로 관측을 복원하도록 학습된다. 목표(goal)는 route로 주어지며 route encoding $r_t=f_\\theta(g_t)$로 인코딩되고, latent state와 route가 fusion되어 $p_t=\\Phi(s_t, r_t)$가 만들어진다. 최종 행동은 이 fused representation에서 나온다 — $a_t=\\pi^{IL}_\\theta(p_t)$. 즉 policy가 보는 것은 픽셀이 아니라 '미래를 예측하도록 훈련된 압축 표현'이다.\n\n왜 이것이 covariate shift를 완화하는가? world model은 미래 관측과 latent를 예측하도록 학습되므로, 표현 공간이 로봇 dynamics의 매끄러운 manifold를 따라 구조화된다. 낯선 관측이 들어와도 그것이 latent manifold 위의 가까운 점으로 투영되는 경향이 있어, policy가 '완전히 처음 보는 입력'을 만날 확률이 raw pixel보다 낮다. 다시 말해 world model이 OOD state를 in-distribution latent로 흡수해 주는 정규화 효과를 낸다.\n\n또 하나의 실질적 이점은 데이터 효율이다. 고차원 픽셀에서 직접 행동을 회귀하려면 방대한 시연이 필요하지만, 이미 사전학습된 latent 위에서는 훨씬 적은 시연으로 mobility prior가 잡힌다. 정리하면, latent-space policy는 (a) 표현 정규화로 covariate shift를 줄이고 (b) sample efficiency를 높인다. 그럼에도 이것은 완화이지 해결이 아니다 — 예측 표현이 아무리 좋아도, teacher를 모방하는 신호 자체에는 '나쁜 state에서 회복하는 법'이 들어 있지 않기 때문이다."
+        },
+        {
+          "title": "IL의 한계가 residual RL을 부르는 논리",
+          "content": "이 챕터의 모든 실이 여기서 하나로 묶인다. IL 단계는 세 가지를 준다 — (1) classical teacher의 값싼 대량 시연, (2) world model latent 위의 강한 mobility prior, (3) DAgger·latent 정규화로 완화된(그러나 제거되지 않은) covariate shift. 그리고 세 가지를 주지 못한다 — teacher를 능가하는 능력, teacher가 없는 embodiment에서의 견고함, 진짜 OOD 회복.\n\n이 결핍을 메우는 신호는 본질적으로 다르다. IL은 '전문가가 무엇을 했는가'라는 라벨을 모방하지만, 필요한 것은 '이 행동이 목표 달성에 좋았는가'라는 결과 신호, 곧 reward다. Reward는 teacher가 방문하지 못한 state에서도 정의되므로, policy가 스스로 표류한 낯선 곳에서 회복하는 법을 배울 수 있다. 이것이 IL과 RL의 근본적 상보성이다.\n\n그렇다면 왜 처음부터 RL만 하지 않는가? 다음 챕터에서 정량적으로 보겠지만, sparse-reward navigation에서 RL-from-scratch는 IL base 없이는 1000 에피소드에도 수렴하지 못한다. 목표에 우연히 도달해야만 첫 보상이 생기는데, 무작위 초기 policy가 2~5m 떨어진 목표에 우연히 닿을 확률이 사실상 0이기 때문이다. 즉 RL은 '무엇이 좋은지' 알려주지만 '어디서 시작할지'는 알려주지 못한다.\n\n여기서 COMPASS의 설계 철학이 드러난다 — IL이 강한 초기화(where to start)를 주고, RL이 결과 기반 개선(what is good)을 준다. 이 둘을 **덧셈으로** 결합하는 것, 즉 frozen IL base 위에 작은 residual을 학습하는 것이 다음 챕터의 residual RL이다. IL을 버리지 않고 그 위에 얹는 이유, base를 freeze하는 이유가 모두 이 논리에서 나온다. IL은 실패한 접근이 아니라, RL이 딛고 설 유일하게 견고한 발판이다."
+        }
+      ],
+      "analogy": {
+        "title": "운전 강사 옆자리와 도로 위 실전",
+        "content": "Behavior cloning은 조수석에서 베테랑 강사의 운전을 며칠 지켜보고 그대로 흉내 내는 것과 같다. 강사는 항상 차선 한가운데, 적절한 속도의 '좋은 상태'만 보여준다. 그래서 당신은 좋은 상태에서 무엇을 해야 하는지는 완벽히 배우지만, 차가 차선 밖으로 반쯤 벗어난 상황은 한 번도 본 적이 없다. 강사는 그런 실수를 하지 않으니까.\n\n혼자 운전대를 잡는 순간 문제가 터진다. 작은 실수로 차가 살짝 갓길로 쏠리면, 그 상황은 '강사가 보여준 적 없는 낯선 장면'이고 당신은 어떻게 되돌려야 할지 모른다. 잘못된 조작이 차를 더 밖으로 밀어내고, 그 다음은 더 낯설어지고 — 이것이 covariate shift가 에러를 복리로 키우는 방식이다.\n\nDAgger는 강사를 조수석에 계속 태우고, 당신이 실수로 갓길에 갔을 때 '이럴 땐 이렇게 핸들을 돌려'라고 그 자리에서 정답을 알려주는 것이다. 하지만 강사조차 겪어본 적 없는 상황(빙판 위 스핀)에서는 강사도 답이 없다. 결국 진짜 실력은 도로에서 직접 미끄러져 보고 '이렇게 하니 회복되더라'는 결과를 몸으로 익힐 때 생긴다 — 그 결과 기반 학습이 바로 다음 챕터의 RL이다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "IL 단계의 두 축을 스케치한다. (1) latent 위의 behavior cloning loss, (2) classical teacher를 online으로 query하는 DAgger aggregation loop. teacher는 query 가능한 알고리즘(Nav2류)이라는 점이 DAgger를 성립시키는 핵심이다.",
+        "code": "import torch, torch.nn.functional as F\n\ndef bc_loss(policy, world_model, obs, expert_action, route):\n    # obs -> latent state (world model은 frozen된 encoder로 사용)\n    with torch.no_grad():\n        s_t = world_model.encode(obs)          # s_t = f_phi(...)\n    r_t = policy.route_encoder(route)          # r_t = f_theta(g_t)\n    p_t = policy.fuse(s_t, r_t)                # p_t = Phi(s_t, r_t)\n    a_pred = policy.actor(p_t)                 # a_t = pi_theta(p_t)\n    return F.mse_loss(a_pred, expert_action)  # regression to teacher\n\ndef dagger_epoch(policy, world_model, teacher, env, dataset, opt, beta):\n    # beta: teacher를 직접 실행할 확률 (초기 1.0 -> 점차 0)\n    obs = env.reset()\n    for t in range(env.max_steps):\n        a_star = teacher.query(obs)           # classical stack: 어떤 state든 라벨 제공\n        with torch.no_grad():\n            s_t = world_model.encode(obs)\n            a_pi = policy.actor(policy.fuse(s_t, policy.route_encoder(obs['route'])))\n        # policy가 방문한 state를 teacher 라벨과 함께 누적 (분포를 d_pi로 이동)\n        dataset.add(obs, a_star)\n        # rollout은 mixture로: beta*teacher + (1-beta)*policy\n        act = a_star if torch.rand(1) < beta else a_pi\n        obs = env.step(act)\n\n    # aggregated dataset으로 policy 재학습\n    for obs_b, a_star_b in dataset.batches():\n        loss = bc_loss(policy, world_model, obs_b, a_star_b, obs_b['route'])\n        opt.zero_grad(); loss.backward(); opt.step()\n    return loss.item()",
+        "walkthrough": "**`bc_loss`** — policy가 raw pixel이 아니라 world model latent $s_t$ 위에서 행동을 회귀한다는 점이 핵심이다. `world_model.encode`를 `no_grad`로 감싸 IL 단계에서 표현을 얼린 채 policy head만 학습하는 전형적 구성을 보여준다. route는 별도로 인코딩되어 fusion $\\Phi(s_t,r_t)$로 합쳐지고, 손실은 teacher action에 대한 MSE — 즉 $\\min_\\theta \\sum_t \\ell(\\pi^{IL}_\\theta(p_t), a^*_t)$의 코드 형태다.\n\n**`dagger_epoch`** — covariate shift 완화의 실체다. 매 스텝 `teacher.query(obs)`로 policy가 방문한 낯선 state에 대해서도 정답을 즉석에서 얻는다. 이것이 가능한 이유는 teacher가 정적 데이터셋이 아니라 실행 가능한 classical stack이기 때문이다(사람 시연이면 불가능). 수집된 $(obs, a^*)$는 `dataset.add`로 누적되어 학습 분포를 $d_\\pi$ 쪽으로 이동시킨다.\n\n**`beta` mixture** — 초기에는 teacher를 직접 굴려($\\beta\\approx1$) 안전하게 좋은 궤적을 모으고, 점차 policy에 제어를 넘겨($\\beta\\to0$) policy가 실제로 표류하는 state를 노출시킨다. 이 스케줄이 DAgger가 $O(T^2)$ 후회를 $O(T)$로 낮추는 실질적 장치다. 단, `teacher.query`가 무의미한 state(회복 불가능한 넘어짐)에서는 이 라벨의 품질이 무너진다는 것이 IL의 구조적 한계이며, residual RL이 필요한 지점이다."
+      },
+      "industryEvaluation": {
+        "overview": "IL과 covariate shift는 로봇 학습 면접의 단골 주제이자, 실무에서 '왜 우리 BC 정책이 데모에선 되는데 배포하면 무너지는가'를 진단하는 렌즈다. 면접관은 후보가 이것을 데이터 문제가 아니라 분포 문제로 프레이밍할 수 있는지를 본다.",
+        "whatEngineersLookFor": [
+          "covariate shift를 i.i.d. 가정 위반으로 정확히 설명하고 O(T²) vs O(T) 후회 스케일을 언급하는가",
+          "DAgger의 전제가 'query 가능한 expert'임을 알고, 그래서 classical stack teacher가 사람 시연보다 유리한 이유를 연결하는가",
+          "IL을 완성품이 아니라 초기화로 프레이밍하고, RL과의 상보성(where to start vs what is good)을 설명하는가",
+          "latent-space policy가 covariate shift와 sample efficiency 양쪽에 주는 이점을 world model 예측 목표와 연결하는가"
+        ],
+        "redFlags": [
+          "covariate shift를 단순히 '데이터가 부족하다'로 뭉뚱그리고 분포 이동을 언급하지 못함",
+          "DAgger를 '데이터를 더 모으는 것'으로만 이해하고 online expert query라는 핵심 전제를 놓침",
+          "'IL이 안 되면 RL을 더 하면 된다'며 sparse-reward에서 from-scratch RL이 수렴 못 함을 모름",
+          "teacher 성능이 BC/DAgger policy의 상한이라는 점을 인지하지 못함"
+        ],
+        "interviewQuestions": [
+          "Behavior cloning이 지도학습처럼 보이는데 왜 test error가 O(εT)가 아니라 O(εT²)로 커질 수 있는지 유도해 보라.",
+          "DAgger가 covariate shift를 줄이는 원리를 설명하고, 사람 시연 대신 classical planner를 teacher로 쓸 때 무엇이 달라지는지 말하라.",
+          "world model latent 위에서 policy를 학습하는 것이 raw pixel BC보다 OOD에 강한 이유를 표현 학습 관점에서 논하라."
+        ],
+        "masteryVsFamiliar": "익숙한 수준은 'BC는 covariate shift 때문에 실패하고 DAgger로 고친다'까지 말한다. 통달한 수준은 후회의 이차 스케일을 유도하고, DAgger의 query-expert 전제가 classical teacher 선택과 어떻게 맞물리는지, latent 표현이 왜 암묵적 정규화가 되는지, 그리고 이 모든 완화에도 남는 '결과 신호의 부재'가 residual RL을 필연적으로 부른다는 논리 사슬 전체를 스스로 재구성한다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "BC는 위장한 순차 문제",
+          "content": "behavior cloning은 지도학습처럼 보이지만 policy가 자기 관측 분포를 결정하므로 i.i.d. 가정이 깨진다."
+        },
+        {
+          "title": "Covariate shift = 분포 이동",
+          "content": "policy가 방문하는 state 분포 d_π가 expert 분포에서 벗어나며 에러가 복리로 누적된다."
+        },
+        {
+          "title": "O(T²) 후회",
+          "content": "한 번의 실수가 낯선 state를 낳아 긴 horizon에서 후회가 스텝 수의 제곱으로 커진다."
+        },
+        {
+          "title": "DAgger는 online 완화책",
+          "content": "policy가 방문한 state를 expert에게 라벨링받아 학습 분포를 d_π로 끌어와 후회를 선형으로 낮춘다."
+        },
+        {
+          "title": "Classical teacher는 query 가능",
+          "content": "Nav2류 stack은 실행 가능한 알고리즘이라 어떤 state든 즉석 라벨을 주므로 DAgger의 전제를 공짜로 만족한다."
+        },
+        {
+          "title": "Latent가 암묵적 방어",
+          "content": "world model latent는 예측 목표로 정규화된 표현이라 OOD 관측을 흡수하고 sample efficiency도 높인다."
+        },
+        {
+          "title": "teacher가 성능 상한",
+          "content": "IL·DAgger는 teacher를 능가하지 못하고, teacher가 없는 embodiment에서는 prior 품질이 무너진다."
+        },
+        {
+          "title": "IL은 발판, RL이 다음",
+          "content": "결과(reward) 신호의 부재가 IL의 마지막 한계이며, 이를 메우는 residual RL이 필연적으로 등장한다."
+        }
+      ]
+    },
+    {
+      "number": 4,
+      "emoji": "➕",
+      "title": "Residual RL — Fine-Tuning Without Forgetting",
+      "titleKr": "레지듀얼 RL — 잊지 않고 미세조정하기",
+      "tldr": "a = a_base + a_res 구조로 frozen base policy를 embodiment별로 보정하는 residual RL — 왜 이게 sparse-reward navigation에서 from-scratch RL보다 압도적으로 빠른지 파헤친다.",
+      "topics": [
+        "Residual policy",
+        "Frozen base + PPO",
+        "Reward design",
+        "Sample efficiency",
+        "Sparse reward"
+      ],
+      "learningGoals": [
+        "residual RL의 a = a_base + a_res 정식화와 학습 안정성의 관계를 설명할 수 있다",
+        "왜 base policy를 freeze하고 마지막 layer만 재초기화하는지 안다",
+        "PPO critic이 policy state를 공유할 때의 trade-off를 이해한다",
+        "COMPASS의 reward 구성(progress·collision·goal)을 설계할 수 있다",
+        "RL-from-scratch가 1000 episode에도 수렴 못 하는 이유를 IL prior로 설명한다"
+      ],
+      "overview": "앞 챕터에서 우리는 IL이 강한 mobility prior를 주지만 covariate shift와 teacher 상한이라는 벽에 부딪히고, 이를 넘으려면 라벨이 아니라 reward 기반 개선이 필요하다는 결론에 도달했다. 이 챕터는 그 개선을 어떻게 '기존 능력을 잊지 않고' 수행하는가를 다룬다. COMPASS([arXiv:2502.16372](https://arxiv.org/abs/2502.16372))의 두 번째 단계, **residual RL**이다.\n\n핵심 아이디어는 놀랄 만큼 단순하다. IL policy가 내놓는 base action을 그대로 두고, 그 위에 작은 교정항(residual)을 RL로 학습해 더하는 것 — $a_t = a^{base}_t + a^{res}_t$. base는 얼려 두고 residual만 PPO로 훈련한다. 이 덧셈 구조가 왜 sparse-reward navigation에서 from-scratch RL을 5x~40x 성공률로 압도하는지, 그리고 왜 학습이 안정적인지가 이 챕터의 중심 질문이다.\n\n우리는 residual 정식화를 exploration과 optimization 관점에서 해부하고, base를 freeze하고 마지막 output layer만 재초기화하는 미묘한 설계 결정을 뜯어본다. 이어 COMPASS의 3-항 reward(progress·collision·goal)를 설계 관점에서 재구성하고, critic이 policy state를 공유할 때의 trade-off, Isaac Lab 위 병렬 학습 세팅, 그리고 curriculum·depth-critic ablation의 반직관적 결과까지 짚는다. 마지막으로 residual RL의 계보(Johannink 2019, Ankile 2024)를 통해 이 기법이 COMPASS만의 트릭이 아니라 IL→RL 전환의 일반 원리임을 확인한다.",
+      "sections": [
+        {
+          "title": "a = a_base + a_res: exploration을 prior 근방으로 국소화하기",
+          "content": "**Residual policy(잔차 정책)** = 이미 쓸 만한 base controller의 출력에 학습 가능한 보정항을 더해 최종 행동을 만드는 정책. COMPASS에서 base action은 frozen IL policy $a^{base}_t=\\pi^{base}_\\theta(p_t)$이고, residual policy $\\pi^{res}_\\phi$가 $a^{res}_t$를 내며, 최종 행동은 다음과 같다.\n\n$$a_t = \\pi^{base}_\\theta(p_t) + \\pi^{res}_\\phi(p_t), \\qquad \\pi^{base}\\text{ frozen}$$\n\n이 구조의 위력은 exploration을 재정의하는 데 있다. from-scratch RL의 초기 policy는 사실상 무작위라, 행동 공간 전체를 헤매며 목표에 우연히 닿기를 기다린다. 반면 residual RL은 IL prior가 이미 대략 옳은 방향으로 로봇을 몰고 있고, RL은 그 궤적 **근방의 작은 교정**만 탐색한다. 즉 탐색 분포가 $a^{base}$를 중심으로 좁게 형성되어, 유의미한 궤적(목표에 가까워지는 궤적)을 훨씬 자주 만난다.\n\n학습 안정성도 여기서 나온다. residual head를 0에 가깝게 초기화하면 학습 시작 시점의 policy는 사실상 IL policy 그 자체다. 즉 이미 '잘 작동하는 정책'에서 출발해 조금씩 벗어나며 개선하므로, RL 특유의 초기 붕괴(무작위 policy가 catastrophic한 행동을 반복하는 구간)가 없다. 이것이 '잊지 않고 미세조정한다(fine-tuning without forgetting)'의 정확한 의미다 — base의 능력은 구조적으로 보존되고, residual은 오직 그 위의 delta만 담당한다.\n\n정식화 관점에서 residual RL은 행동 공간의 재파라미터화다. 최적화 대상이 '절대 행동 $a$'가 아니라 'prior로부터의 편차 $a^{res}$'로 바뀌면서, 좋은 해가 원점($a^{res}=0$) 근처에 있다는 강한 사전 정보가 optimization landscape에 주입된다. sparse reward에서 이 사전 정보가 곧 sample efficiency의 원천이다."
+        },
+        {
+          "title": "Freeze + 마지막 layer만 재초기화: 표현은 잇고 출력은 끊는다",
+          "content": "COMPASS의 residual network는 백지에서 만들어지지 않는다. IL과 **같은 world model**을 공유하고, IL의 action policy 가중치를 그대로 **복사**한 뒤 **마지막 output layer만 재초기화(reinit)**한다. 이 세 가지 결정에는 각각 이유가 있다.\n\n같은 world model을 쓰는 이유는 표현을 다시 배우지 않기 위해서다. latent state $s_t$는 이미 mobility에 유용한 정보를 압축하고 있으므로, residual policy가 픽셀부터 다시 학습할 이유가 없다. IL 가중치를 복사하는 이유는 residual head의 하위 feature 추출부가 이미 mobility-relevant한 표현으로 초기화되어, 무작위 초기화보다 훨씬 좋은 출발점을 주기 때문이다.\n\n그런데 왜 하필 마지막 layer만 재초기화하는가? 만약 마지막 layer까지 복사하면 residual policy의 초기 출력이 base와 동일해져 $a^{res}$가 base action을 그대로 복제하는 값으로 시작한다 — 이는 $a=2a^{base}$를 의미해 궤적을 망가뜨린다. 반대로 전체를 재초기화하면 앞서 말한 좋은 feature 초기화를 잃는다. 마지막 layer만 reinit하면 **하위 표현은 물려받되 출력은 0 근방의 작은 residual로 시작**하는, 정확히 원하는 상태가 된다.\n\n여기서 미묘하지만 중요한 점은 IL policy가 **끝까지 frozen으로 유지**된다는 것이다. residual head가 아무리 학습되어도 base branch의 가중치는 gradient를 받지 않는다. 이 덕분에 base의 mobility prior는 학습 내내 훼손되지 않고, residual은 순수하게 embodiment별·환경별 교정만 담당한다. 만약 base까지 함께 학습하면 sparse reward의 노이즈가 애써 얻은 prior를 지워버릴 위험이 있다 — catastrophic forgetting을 구조적으로 차단하는 것이 freeze의 목적이다."
+        },
+        {
+          "title": "PPO와 shared-state critic: 무엇을 함께 두고 무엇을 나눌까",
+          "content": "residual policy는 **PPO**([Schulman et al. 2017](https://arxiv.org/abs/1707.06347))로 학습된다. PPO는 clipped surrogate objective로 policy 업데이트 크기를 제한해 on-policy 학습을 안정화하는 알고리즘으로, residual처럼 '작은 교정'을 점진적으로 쌓는 세팅에 잘 맞는다. 매 업데이트가 현재 policy에서 너무 멀리 벗어나지 않으므로, 어렵게 얻은 prior 근방의 좋은 궤적을 급격히 이탈할 위험이 작다.\n\ncritic 설계가 흥미롭다. COMPASS의 critic은 **policy state $p_t$를 입력받는 표준 MLP**다. 즉 actor(residual)와 critic이 같은 fused representation을 공유한다. 이 공유의 장점은 명확하다 — 이미 mobility-relevant하게 정제된 표현 위에서 value를 추정하므로 critic이 표현을 처음부터 학습할 필요가 없고, sample efficiency가 좋아진다.\n\ntrade-off도 있다. actor와 critic이 표현을 공유하면 두 목표(policy gradient와 value regression)의 gradient가 같은 표현에 섞여 들어가 서로 간섭할 수 있다. 게다가 policy state $p_t$는 world model과 fusion을 거친 압축 표현이라, value 추정에 필요하지만 policy state에는 빠져 있는 정보(예: 특정 장애물 기하)가 있으면 critic이 그것을 볼 수 없다. 이 한계가 아래 depth-critic ablation의 동기가 된다.\n\n실제로 COMPASS는 critic에 추가 정보를 주는 실험을 한다. **depth-critic**(ResNet18로 depth image를 인코딩해 critic 입력에 추가)은 office처럼 키 큰 장애물이 많은 환경에서는 도움이 되지만, warehouse처럼 낮은 장애물 환경에서는 오히려 손해였다. 교훈은 critic augmentation이 만능이 아니라 환경의 관측 병목에 의존한다는 것 — depth가 policy state에 이미 충분히 반영된 환경에서는 중복 신호가 노이즈로 작용한다."
+        },
+        {
+          "title": "Reward 설계와 병렬 학습: progress · collision · goal의 삼각 균형",
+          "content": "navigation은 대표적 sparse-reward 문제다. 목표 도달이라는 최종 사건만으로 보상을 주면 학습 초기에 신호가 거의 없다. COMPASS는 이를 **3-항 reward**로 shaping한다.\n\n- **Progress** = 목표까지 거리가 줄어든 만큼 비례해 주는 양의 보상. 매 스텝 dense 신호를 제공해 '올바른 방향으로 가고 있다'를 알려준다.\n- **Collision avoidance** = 충돌·넘어짐에 대한 penalty. 목표만 좇다 벽에 박는 행동을 억제한다.\n- **Goal completion** = 목표 도달 시의 큰 양의 보상. 최종 성공을 명시적으로 강화한다.\n\n이 세 항의 균형이 정책의 성격을 결정한다. progress 가중치가 너무 크면 장애물을 무시하고 직진하는 저돌적 정책이, collision penalty가 너무 크면 움직이길 두려워하는 소극적 정책이 나온다. 특히 progress가 매 스텝 dense하게 들어오기 때문에, residual RL은 첫 성공 이전에도 '거리를 줄이는 법'을 배울 수 있다 — 이것이 순수 sparse goal-only reward보다 학습을 크게 가속한다.\n\n학습 인프라는 대규모 병렬화다. **Isaac Lab**에서 64개 환경을 병렬로 굴리고 2x L40 GPU를 사용하며, specialist 하나당 약 1000 episode를 학습한다(단 Carter 로봇은 X-Mobility가 이미 Carter로 사전학습되어 overfit을 피하려 300 episode만). 목표 거리는 2~5m uniform, 에피소드는 최대 256 timestep, 직선 경로가 simplified route로 주어진다. 결정적 디테일 하나 — 환경 reset(도달·충돌·timeout) 시 **world model의 history state까지 clear**한다. 그렇지 않으면 이전 에피소드의 latent 기억이 새 에피소드로 새어 들어가 credit assignment를 오염시킨다.\n\nablation은 반직관적 교훈을 준다. **goal-distance curriculum**(쉬운 가까운 목표부터 점진적으로)은 도움이 되지 않았다 — IL prior가 이미 강한 초기화를 주므로, curriculum이 어려운 시나리오 노출을 줄여 오히려 손해였다. from-scratch RL이라면 curriculum이 필수였겠지만, 좋은 prior가 있으면 처음부터 어려운 분포에 노출시키는 편이 낫다는 것이다. 이는 'prior의 존재가 학습 레시피 전체를 바꾼다'는 이 챕터의 큰 그림을 압축한다."
+        },
+        {
+          "title": "왜 5x~40x인가: IL prior가 뚫는 sample-efficiency 병목",
+          "content": "이제 정량 결과를 논리로 꿰맞출 차례다. residual RL specialist는 X-Mobility(IL base) 대비 **성공률(SR) 5x~40x**, **WTT(weighted travel time류 지표) 3x** 개선을 보인다. 더 결정적인 대조군은 **RL-from-scratch** — 같은 latent를 쓰되 IL base action 없이 처음부터 RL만 한 경우로, 1000 episode에도 수렴하지 못했다.\n\n이 대비가 이 챕터 전체의 핵심 증거다. 두 경우의 차이는 오직 하나 — base action의 유무다. 같은 표현, 같은 reward, 같은 PPO인데 IL base가 있으면 수렴하고 없으면 실패한다. 왜인가? sparse-reward navigation에서 무작위 policy가 2~5m 떨어진 목표에 우연히 도달할 확률은 극히 낮고, 도달하지 못하면 goal reward 신호가 아예 발생하지 않는다. progress reward가 있어도, 무작위 policy는 장애물에 막히거나 제자리를 맴돌아 유의미한 progress 궤적조차 드물게 만든다.\n\nresidual RL은 이 병목을 정확히 우회한다. IL base가 로봇을 대략 목표 방향으로 몰아주므로, 학습 첫 스텝부터 progress reward가 꾸준히 발생하고 goal 도달도 종종 일어난다. 즉 IL prior는 '탐색을 유의미한 궤적에 집중'시켜 sparse reward를 사실상 dense reward처럼 만든다. RL의 근본 병목이 exploration이라면, IL은 바로 그 exploration 문제를 해결해 주는 부품이다.\n\n이것이 residual RL의 계보와 연결된다. Johannink et al.([2019 ICRA](https://arxiv.org/abs/1812.03201))은 residual RL을 로봇 제어에 도입했고, Ankile et al.([2024](https://arxiv.org/abs/2407.16677))은 imitation에서 refinement로 넘어가는 정밀 조립에 residual RL을 적용했다. COMPASS는 이 일반 원리를 cross-embodiment navigation에 옮긴 것이다. 결론 — residual RL은 트릭이 아니라 'IL이 준 prior를 RL이 결과 신호로 다듬는' IL→RL 전환의 표준 문법이며, 다음 챕터에서 각 embodiment specialist들을 하나의 policy로 합치는 distillation의 재료가 된다."
+        }
+      ],
+      "analogy": {
+        "title": "베테랑 조수와 신입의 미세 교정",
+        "content": "residual RL은 이미 실력 있는 베테랑 운전자를 운전석에 앉혀 두고, 신입이 그 옆에서 핸들에 손을 살짝 얹어 미세하게 각도만 보정하는 것과 같다. 베테랑(IL base)은 대체로 옳은 방향으로 차를 몰고, 신입(residual)은 '이 코너에선 조금 더 안쪽으로'처럼 작은 delta만 더한다. 차가 절대 크게 흔들리지 않는 이유는, 베이스가 항상 안정적으로 유지되기 때문이다.\n\n만약 신입 혼자 백지에서 운전을 배운다면(from-scratch RL), 도로에 나서자마자 무작위로 핸들을 꺾다가 목적지 근처엔 가보지도 못하고 사고를 반복한다 — '목적지에 도착하면 칭찬'이라는 보상은 도착 자체를 못 하니 영영 주어지지 않는다. 베테랑이 대략 목적지 방향으로 몰아주기에, 비로소 신입은 '방금 그 보정이 도착을 앞당겼다'는 피드백을 받아 배울 수 있다.\n\n베테랑을 '얼려 둔다(freeze)'는 것은, 신입이 실수해도 베테랑의 운전 습관 자체는 절대 나빠지지 않게 한다는 뜻이다. 신입의 서툰 시도가 베테랑의 실력을 갉아먹지 않으므로, 최악의 경우에도 성능은 베테랑 수준 아래로 떨어지지 않는다. 그리고 신입의 손에서 힘을 빼 시작하면(마지막 layer만 0 근처로 reinit), 처음엔 베테랑 그대로 달리다가 점점 자기만의 교정을 얹어 간다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "ResidualPolicy를 nn.Module로 스케치한다. frozen IL base + trainable residual, 마지막 layer만 reinit, 그리고 PPO update 한 스텝. 핵심은 base가 gradient를 받지 않으면서 최종 행동이 두 branch의 합이 되는 구조다.",
+        "code": "import torch, torch.nn as nn\n\nclass ResidualPolicy(nn.Module):\n    def __init__(self, il_policy):\n        super().__init__()\n        # 1) frozen IL base: gradient 차단\n        self.base = il_policy\n        for p in self.base.parameters():\n            p.requires_grad_(False)\n        # 2) residual: IL action head 가중치를 복사...\n        self.res = copy.deepcopy(il_policy.actor)\n        for p in self.res.parameters():\n            p.requires_grad_(True)\n        # 3) ...단 마지막 layer만 reinit -> 초기 a_res ~ 0\n        nn.init.zeros_(self.res.out.weight)\n        nn.init.zeros_(self.res.out.bias)\n\n    def forward(self, p_t):\n        with torch.no_grad():\n            a_base = self.base.actor(p_t)   # frozen, no grad\n        a_res = self.res(p_t)              # trainable delta\n        return a_base + a_res             # a = a_base + a_res\n\ndef ppo_step(policy, critic, batch, opt, clip=0.2):\n    p_t = batch['policy_state']           # world model + route fusion\n    a = policy(p_t)\n    logp = policy.res_dist(p_t).log_prob(batch['action']).sum(-1)\n    ratio = torch.exp(logp - batch['logp_old'])\n    adv = batch['advantage']\n    # clipped surrogate: prior 근방에서 급격한 이탈 방지\n    l_clip = -torch.min(ratio * adv,\n                        torch.clamp(ratio, 1-clip, 1+clip) * adv).mean()\n    v = critic(p_t)                        # shared policy_state 위 MLP critic\n    l_v = (v - batch['return']).pow(2).mean()\n    loss = l_clip + 0.5 * l_v\n    opt.zero_grad(); loss.backward(); opt.step()\n    return loss.item()",
+        "walkthrough": "**frozen base** — 생성자에서 `self.base`의 모든 파라미터에 `requires_grad_(False)`를 걸고, `forward`에서 `a_base` 계산을 `no_grad`로 감싼다. 이 두 겹의 차단으로 base branch는 학습 내내 gradient를 받지 않아 mobility prior가 훼손되지 않는다 — catastrophic forgetting의 구조적 방지다.\n\n**copy then reinit last layer** — residual은 IL actor를 `deepcopy`해 하위 표현을 물려받되, 마지막 `out` layer의 weight·bias를 0으로 재초기화한다. 그 결과 학습 시작 시 $a_{res}\\approx0$이므로 최종 행동은 사실상 IL policy와 같다. 만약 마지막 layer까지 복사했다면 초기 출력이 base를 복제해 $a=2a^{base}$가 되어 궤적이 망가진다 — reinit이 바로 이 문제를 막는다.\n\n**forward = a_base + a_res** — 두 branch의 합이 곧 재파라미터화의 핵심이다. RL은 절대 행동이 아니라 prior로부터의 편차 $a_{res}$만 최적화하므로, 좋은 해가 원점 근처에 있다는 강한 사전 정보가 optimization에 주입된다.\n\n**ppo_step** — clipped surrogate objective가 policy 업데이트를 현재에서 $[1-\\text{clip}, 1+\\text{clip}]$ 비율 안으로 묶어, 어렵게 찾은 prior 근방의 궤적에서 급격히 이탈하는 것을 막는다. critic은 actor와 같은 `policy_state`를 입력받는 MLP로, 표현을 공유해 sample efficiency를 얻지만 value에 필요한 정보가 policy state에 빠져 있으면 볼 수 없다는 trade-off를 안는다 — 이것이 depth-critic ablation의 동기다."
+      },
+      "industryEvaluation": {
+        "overview": "residual RL은 'IL로 초기화하고 RL로 다듬는' 현대 로봇 학습 레시피의 핵심이라, big-tech 로보틱스·embodied AI 면접에서 sample efficiency와 학습 안정성을 동시에 묻는 렌즈로 쓰인다. 면접관은 후보가 이 구조를 단순 트릭이 아니라 exploration·optimization 관점에서 설명하는지를 본다.",
+        "whatEngineersLookFor": [
+          "a = a_base + a_res를 행동 공간 재파라미터화로 이해하고, 그것이 exploration을 prior 근방으로 국소화함을 설명하는가",
+          "base를 freeze하고 마지막 layer만 reinit하는 이유(표현 계승 + 초기 a_res~0 + forgetting 방지)를 정확히 구분하는가",
+          "sparse-reward에서 RL-from-scratch가 실패하고 residual이 수렴하는 차이를 exploration 병목으로 설명하는가",
+          "reward shaping의 progress·collision·goal 균형과 그 가중치가 정책 성격에 미치는 영향을 논하는가",
+          "shared-state critic의 sample efficiency 이득과 정보 병목 trade-off(depth-critic ablation)를 아는가"
+        ],
+        "redFlags": [
+          "residual을 그냥 'RL fine-tuning'으로 뭉뚱그리고 덧셈 구조가 exploration을 바꾸는 원리를 설명 못 함",
+          "base를 freeze하는 이유를 catastrophic forgetting 방지와 연결하지 못하거나, 전체 재학습이 왜 나쁜지 모름",
+          "sparse reward를 dense progress로 shaping하는 이유와 curriculum이 prior 존재 시 오히려 손해인 점을 모름",
+          "critic에 정보를 더 주면 항상 좋다고 단정(depth-critic이 환경 의존적임을 모름)",
+          "world model history state를 reset 시 clear해야 하는 이유(credit assignment 오염)를 놓침"
+        ],
+        "interviewQuestions": [
+          "같은 latent·reward·PPO를 쓰는데 IL base action 유무만으로 하나는 수렴하고 하나는 1000 episode에도 실패한다. 이 차이를 sparse-reward exploration 관점에서 설명하라.",
+          "residual policy를 만들 때 base 전체를 재초기화하는 것, 전혀 재초기화하지 않는 것, 마지막 layer만 재초기화하는 것의 초기 행동을 각각 비교하고 왜 세 번째가 옳은지 논하라.",
+          "actor와 critic이 같은 policy state를 공유하는 설계의 장단점을 설명하고, depth-critic이 office엔 도움 되고 warehouse엔 해로운 이유를 관측 병목으로 해석하라."
+        ],
+        "masteryVsFamiliar": "익숙한 수준은 'residual RL은 base에 delta를 더해 안정적으로 fine-tune한다'까지 말한다. 통달한 수준은 덧셈이 행동 공간 재파라미터화로서 exploration을 prior 근방에 국소화해 sparse reward를 dense처럼 만든다는 것, freeze와 마지막-layer reinit의 세 가지 이유를 분리해 설명하는 것, shared-state critic의 trade-off가 depth-critic ablation의 환경 의존성으로 드러나는 것, 그리고 prior의 존재가 curriculum 무용론까지 학습 레시피 전체를 바꾼다는 큰 그림을 스스로 재구성한다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "a = a_base + a_res",
+          "content": "frozen IL base 위에 학습 가능한 residual을 더해, RL은 절대 행동이 아니라 prior로부터의 편차만 최적화한다."
+        },
+        {
+          "title": "Exploration 국소화",
+          "content": "덧셈 구조가 탐색을 base 궤적 근방으로 좁혀 sparse reward를 사실상 dense reward처럼 만든다."
+        },
+        {
+          "title": "Freeze로 forgetting 차단",
+          "content": "base를 얼려 두면 residual이 아무리 학습돼도 mobility prior가 훼손되지 않아 성능이 base 아래로 떨어지지 않는다."
+        },
+        {
+          "title": "마지막 layer만 reinit",
+          "content": "하위 표현은 IL에서 계승하되 출력만 0 근방으로 시작해, 초기 정책이 IL 그대로에서 부드럽게 개선된다."
+        },
+        {
+          "title": "PPO + shared-state critic",
+          "content": "clipped surrogate로 prior 근방 이탈을 막고, policy state를 공유한 MLP critic으로 sample efficiency를 얻지만 정보 병목을 감수한다."
+        },
+        {
+          "title": "3-항 reward 균형",
+          "content": "progress(dense)·collision(penalty)·goal(sparse)의 가중치 균형이 저돌적·소극적 정책 사이에서 성격을 결정한다."
+        },
+        {
+          "title": "RL-from-scratch는 수렴 실패",
+          "content": "IL base 없이는 무작위 policy가 목표에 닿지 못해 보상이 발생하지 않아 1000 episode에도 수렴하지 못한다."
+        },
+        {
+          "title": "Prior가 레시피를 바꾼다",
+          "content": "강한 IL prior 덕에 goal-distance curriculum이 오히려 손해가 되는 등, prior의 존재가 학습 레시피 전체를 재정의한다."
+        }
+      ]
+    },
+    {
+      "number": 5,
+      "emoji": "🔀",
+      "title": "Policy Distillation & Generalist Policies",
+      "titleKr": "정책 증류와 제너럴리스트 정책",
+      "tldr": "여러 embodiment specialist를 embodiment embedding으로 조건화해 하나의 generalist로 합치는 KL-distillation — 그리고 여기서 발생하는 'averaging' 문제의 씨앗을 본다.",
+      "topics": [
+        "Policy distillation",
+        "KL divergence",
+        "Embodiment embedding",
+        "Generalist policy",
+        "Open-X / RT-X"
+      ],
+      "learningGoals": [
+        "specialist → generalist KL distillation의 목적함수를 쓸 수 있다",
+        "one-hot embodiment embedding의 장점과 한계를 안다",
+        "KL(분포 보존) vs MSE(평균만)의 차이가 왜 중요한지 이해한다",
+        "Open-X/RT-X 등 대규모 generalist 계보와의 연결을 설명할 수 있다",
+        "distillation의 averaging effect가 어디서 오는지 진단할 수 있다"
+      ],
+      "overview": "Chapter 4까지 우리는 embodiment마다 별도의 residual RL specialist를 얻었다. Carter(wheeled), H1·G1(humanoid), Spot(quadruped) 각각에 대해 X-Mobility가 뽑는 base action 위에 residual을 얹어 morphology에 맞춘 정책을 학습한 것이다. 문제는 배포다. 로봇 fleet마다 서로 다른 네트워크 가중치를 관리하고, 새 embodiment가 추가될 때마다 독립 파이프라인을 유지하는 것은 시스템적으로 지속 불가능하다. 우리가 진짜 원하는 것은 **하나의 정책**이 embodiment id만 바꿔주면 여러 몸을 모두 몰 수 있는 generalist다.\n\nCOMPASS의 3단계 중 마지막인 **policy distillation(정책 증류)**은 바로 이 통합을 supervised learning 문제로 바꾼다. 각 specialist를 teacher로 두고, 그들이 남긴 입출력 분포 — (world model policy state $p$, one-hot embodiment id $e$, PPO Gaussian action의 mean·variance) — 를 데이터셋으로 기록한다. 그리고 단 하나의 conditional policy $\\pi^{dist}_\\theta$가 $(p, e)$를 받아 teacher의 action 분포를 재현하도록 KL divergence를 최소화한다. RL의 불안정성과 exploration은 이미 specialist 단계에서 끝났으므로, distillation은 안정적인 회귀 문제로 축소된다.\n\n하지만 이 단계는 동시에 이 강의 후반부(Chapter 8)를 관통하는 **averaging problem**의 씨앗을 심는다. 서로 다른 몸을 위한 여러 정책을 하나의 조건부 네트워크로 압축할 때, 조건화가 충분히 강하지 않으면 정책은 embodiment 간 행동을 평균 내버린다. 왜 COMPASS가 MSE가 아니라 KL을 쓰는지, 왜 one-hot이 가장 단순하면서도 안전한 출발점인지 — 이 모든 설계 결정이 averaging을 억제하기 위한 방어선이라는 관점에서 이 챕터를 읽어야 한다.",
+      "sections": [
+        {
+          "title": "Specialist에서 Generalist로 — Distillation의 데이터 셋업",
+          "content": "**Policy distillation(정책 증류)** = teacher policy(들)의 행동을 하나의 student policy가 supervised로 모방하도록 학습하는 절차. 원래 Hinton의 knowledge distillation을 정책 학습으로 옮긴 것으로, RL의 online 탐색을 offline 회귀로 바꾸는 것이 핵심 이득이다.\n\nCOMPASS에서 teacher는 Chapter 4에서 얻은 embodiment별 specialist $\\pi^{(i)}_\\phi$다. 각 specialist는 world model이 뽑은 policy state $p$를 입력받아 Gaussian action $\\mathcal{N}(\\mu^{(i)}(p), \\sigma^2)$를 출력한다. 여기서 $\\sigma$는 PPO가 학습 과정에서 유지하는 exploration variance다. Distillation을 위해 우리는 각 specialist를 환경에서 굴리면서(rollout) 매 스텝의 튜플 $(p, e^{(i)}, \\mu^{(i)}(p), \\sigma^2)$를 기록한다. 즉 teacher의 '무엇을 봤고, 어떤 몸이었고, 어떤 분포로 행동했는가'를 통째로 저장하는 것이다.\n\n데이터 규모는 embodiment당 320 trajectory × 128 step ≈ 40k frame이다. 이 정도 규모는 4x H100에서 다룰 수 있는 실용적 크기이며, 각 embodiment가 균등하게 대표되도록 설계된다. 중요한 미묘함은 **어떤 rollout을 기록하는가**인데, COMPASS는 성공한 궤적만 남기는 good-only 필터링이 오히려 marginal한 개선만 준다는 것을 발견했다. 실패 케이스가 담고 있는 corner case — 충돌 직전의 회피, 좁은 통로에서의 재조정 — 가 오히려 학습에 유용하기 때문이다(이 점은 Chapter 4의 covariate shift 논의와 정확히 맞닿는다).\n\nstudent $\\pi^{dist}_\\theta$의 구조는 teacher와 latent pipeline을 공유하되, 결정적 차이는 입력에 **embodiment embedding**을 조건으로 받는다는 점이다. 같은 latent pipeline 뒤에 embodiment embedding conditioning을 붙이고, 그 위에 MLP가 mean $\\mu_\\theta(p, e)$를 내고 별도의 global variance $\\sigma_\\theta^2$를 학습한다. 여러 teacher의 지식이 이 하나의 조건부 헤드로 흘러 들어가는 것이 distillation의 물리적 실체다."
+        },
+        {
+          "title": "KL Distillation 목적함수 — 분포를 통째로 옮긴다",
+          "content": "COMPASS의 distillation 목적함수는 모든 embodiment $E$와 각 embodiment의 데이터셋 $D^i$에 대해 teacher 분포와 student 분포 사이의 KL을 최소화하는 것이다.\n\n$$\\min_\\theta \\sum_{i\\in E}\\sum_{d^i\\in D^i} \\text{KL}\\big(\\mathcal{N}(\\mu^{(i)}(p),\\sigma^2)\\,\\big\\|\\,\\mathcal{N}(\\mu_\\theta(p,e^{(i)}),\\sigma_\\theta^2)\\big)$$\n\n여기서 teacher 분포 $\\mathcal{N}(\\mu^{(i)}(p),\\sigma^2)$는 고정된 target이고, student는 자신의 mean $\\mu_\\theta(p, e^{(i)})$와 variance $\\sigma_\\theta^2$를 조정해 이 target에 맞춘다. 조건 $e^{(i)}$가 결정적이다 — 같은 policy state $p$라도 embodiment id가 다르면 다른 target 분포를 맞춰야 하므로, 네트워크는 embodiment마다 행동을 분기시키도록 강제된다.\n\n두 Gaussian 사이의 KL은 닫힌 형태(closed form)로 계산된다. 1차원 성분에 대해:\n\n$$\\text{KL}\\big(\\mathcal{N}(\\mu_1,\\sigma_1^2)\\,\\|\\,\\mathcal{N}(\\mu_2,\\sigma_2^2)\\big) = \\log\\frac{\\sigma_2}{\\sigma_1} + \\frac{\\sigma_1^2 + (\\mu_1-\\mu_2)^2}{2\\sigma_2^2} - \\frac{1}{2}$$\n\n이 식을 뜯어보면 distillation이 무엇을 하는지가 드러난다. 우변의 $(\\mu_1-\\mu_2)^2$ 항은 student mean이 teacher mean에서 벗어난 만큼 벌점을 주는데, 그 벌점의 크기는 $2\\sigma_2^2$로 나뉜다. 즉 **student가 확신하는(variance가 작은) action 차원일수록 mean 오차에 더 민감**하고, uncertain한 차원은 관대해진다. 여기에 $\\log(\\sigma_2/\\sigma_1)$와 $\\sigma_1^2/2\\sigma_2^2$ 항이 더해져 student의 variance가 teacher의 variance를 따라가도록 만든다.\n\n실무적으로 이 KL 항의 gradient는 안정적이다. teacher가 고정되어 있으므로 target이 움직이지 않고, exploration이나 reward 노이즈가 개입하지 않는다. 이것이 distillation을 'RL의 껍데기를 쓴 회귀'로 만드는 이유이며, 4x H100에서 40k frame/embodiment를 무리 없이 수렴시킬 수 있는 배경이다."
+        },
+        {
+          "title": "Embodiment Embedding — one-hot의 단순함과 한계",
+          "content": "student가 어떤 몸을 몰고 있는지 아는 유일한 통로가 **embodiment embedding**이다. COMPASS의 가장 단순한 버전은 길이 $N$의 one-hot 벡터($N$ = embodiment 수)로 각 몸을 표현한다. Carter=[1,0,0,0], H1=[0,1,0,0]처럼 완전히 직교하는 표현이다.\n\none-hot의 장점은 **간섭이 없다는 것**이다. 각 embodiment가 임베딩 공간에서 서로 최대로 떨어져 있으므로, 한 몸의 gradient가 다른 몸의 표현을 오염시키지 않는다. 이는 averaging problem에 대한 가장 보수적이고 강력한 방어다. 조건 신호가 명확할수록 네트워크가 embodiment 간 행동을 뭉갤 여지가 줄어든다. distillation처럼 여러 teacher를 하나로 합치는 상황에서, one-hot은 '평균 내지 마라'는 신호를 가장 선명하게 전달한다.\n\n한계는 명백하다. one-hot은 **unseen embodiment에 대해 무력**하다. 벡터 공간에 여유 축이 없으므로, 학습 시 본 적 없는 새 로봇은 표현할 자리 자체가 없다. 새 embodiment를 추가하려면 임베딩 차원을 늘리고 재학습해야 한다. 이는 Chapter 1에서 언급한 '구조적 분리' 패러다임의 대가로, 확장성을 유연성과 맞바꾼 셈이다.\n\nCOMPASS 논문은 대안으로 **learnable embedding**을 future work으로 지목한다. 각 embodiment를 연속적인 $d$차원 벡터로 학습하면, embedding space에서의 보간(interpolation)을 통해 unseen embodiment로 일반화할 가능성이 열린다. 예컨대 Spot과 H1 사이 어딘가에 위치하는 새 4족-2족 하이브리드를 두 임베딩의 보간으로 근사하는 식이다. 하지만 이 유연성은 averaging risk를 다시 불러온다 — 임베딩이 가까운 embodiment들의 행동이 서로 새어 나갈(leak) 수 있기 때문이다. one-hot에서 learned로 가는 것은 단순한 구현 디테일이 아니라, 확장성과 averaging 억제 사이의 근본적 trade-off를 다시 협상하는 일이다.\n\n| 기준 | one-hot embedding | learnable embedding |\n|---|---|---|\n| 차원 | $N$ (embodiment 수) | 임의 $d$ |\n| embodiment 간 간섭 | 없음(직교) | 존재(보간 가능성의 대가) |\n| unseen 일반화 | 불가 | 보간으로 가능성 (future work) |\n| averaging risk | 최소 | 상승 |\n| COMPASS 채택 | 기본 버전 | 향후 방향 |"
+        },
+        {
+          "title": "KL vs MSE — variance를 왜 보존해야 하는가",
+          "content": "가장 자연스러운 질문. mean만 맞추면 되지 않나? student mean $\\mu_\\theta$가 teacher mean $\\mu^{(i)}$를 재현하도록 단순 MSE로 회귀하면 훨씬 간단하다. COMPASS는 KL/All(분포 전체)과 MSE/All(mean만)을 ablation으로 비교했고, **MSE가 약간 열등하다 — 특히 H1(humanoid)에서** 는 결과를 얻었다.\n\n이유는 variance에 담긴 정보에 있다. teacher specialist의 $\\sigma^2$는 PPO가 학습하며 남긴 exploration의 흔적이자, 각 action 차원의 **민감도 지도**다. variance가 큰 차원은 정확한 값이 덜 중요한(로봇이 좀 틀려도 괜찮은) 차원이고, variance가 작은 차원은 정밀해야 하는 차원이다. MSE는 모든 차원을 동등하게 취급해 이 지도를 통째로 버린다. 반면 KL은 앞서 본 $(\\mu_1-\\mu_2)^2 / 2\\sigma_2^2$ 항을 통해 민감한 차원에 자동으로 더 큰 가중치를 준다.\n\nvariance 보존이 결정적인 두 번째 이유는 **training noise와 architectural 차이의 관리**다. distillation은 여러 teacher(구조·학습 노이즈가 제각각인)를 하나의 student 구조로 압축한다. teacher마다 다른 variance를 student가 그대로 흡수하면, 네트워크는 '이 embodiment의 이 차원은 원래 불확실하다'는 사실을 인지한 채 학습한다. 이것이 서로 다른 teacher를 무리하게 하나의 sharp한 점 추정으로 뭉개는 것을 막아준다 — 다시 말해 KL은 averaging의 자연스러운 완충재다.\n\nH1에서 격차가 특히 큰 것은 humanoid의 action 분포가 wheeled보다 훨씬 복잡하고 multimodal에 가깝기 때문으로 해석할 수 있다. 복잡한 분포일수록 mean만으로는 재현이 어렵고, variance 정보가 있어야 그 분포의 '폭'을 올바로 복원한다. 이 관찰은 Chapter 8의 generative policy(diffusion·flow) 논의로 직결된다 — Gaussian variance조차 이렇게 중요하다면, 진짜 multimodal 분포를 다루려면 단일 Gaussian을 넘어서야 한다는 복선이다.\n\n| 기준 | KL/All (분포 전체) | MSE/All (mean만) |\n|---|---|---|\n| 모방 대상 | mean + variance | mean만 |\n| variance 정보 | 보존 | 소실 |\n| 차원별 가중 | 자동(1/σ²) | 균등 |\n| 관측 성능 | 우수 | 약간 열등 (특히 H1) |\n| averaging 억제 | 강함 | 약함 |"
+        },
+        {
+          "title": "대규모 Generalist 계보 — Open-X/RT-X와의 연결, 그리고 averaging의 씨앗",
+          "content": "COMPASS의 generalist 정책은 진공에서 나온 것이 아니다. '하나의 정책으로 여러 로봇을' 이라는 문법에는 대규모 선례가 있다. [Open X-Embodiment / RT-X](https://arxiv.org/abs/2310.08864)는 22개 로봇, 100만+ trajectory, 60+ dataset, 527개 skill을 하나의 데이터셋으로 통합해 **positive transfer** — 여러 embodiment를 함께 학습하면 개별 학습보다 나아지는 현상 — 를 대규모로 입증했다. [CrossFormer](https://arxiv.org/abs/2408.11812)는 900K trajectory·20 embodiment를 단일 transformer로, [HPT](https://arxiv.org/abs/2409.20537)는 이질적 데이터를 공유 표현으로 묶는 접근을 보였다.\n\n이들과 COMPASS의 근본적 차이는 **데이터 스케일링 vs 구조적 분리**라는 Chapter 1의 두 패러다임 축에 있다. Open-X/RT-X는 방대한 실제 데이터를 하나의 transformer에 부어 embodiment 구분을 데이터가 알아서 배우게 한다. COMPASS는 반대로 embodiment마다 명시적으로 specialist를 분리해 학습한 뒤 distillation으로 신중하게 합친다. 전자는 스케일에, 후자는 구조에 베팅한다.\n\n이 대비가 중요한 이유는 두 접근이 **averaging problem을 서로 다른 방식으로 만난다**는 데 있다. 대규모 generalist는 embodiment 조건이 약하거나 데이터 불균형이 있으면 흔한 embodiment의 행동으로 평균이 쏠린다. COMPASS의 distillation은 specialist를 먼저 완성한 뒤 합치므로 각 몸의 '정답'이 이미 확보돼 있지만, 그 정답들을 하나의 조건부 네트워크로 압축하는 순간 — 조건화(one-hot의 강도)와 손실 함수(KL의 variance 보존)가 부실하면 — 여전히 평균으로 무너질 수 있다.\n\n따라서 이 챕터의 모든 설계 결정(KL, one-hot, 실패 케이스 포함)은 하나의 목표를 공유한다. **여러 teacher를 하나로 합치되 각자의 정체성을 지키는 것**이다. distillation은 통합의 수단이지만 동시에 averaging의 발원지다. Chapter 8에서 우리는 이 씨앗이 어떻게 자라나며, generative policy가 왜 단일 Gaussian distillation의 한계를 넘는 대안으로 등장하는지를 보게 될 것이다. 지금 기억할 것은 하나다 — generalist를 만드는 순간, 당신은 averaging과의 싸움을 시작한 것이다."
+        }
+      ],
+      "analogy": {
+        "title": "여러 통역사를 한 명의 다국어 통역사로 합치기",
+        "content": "회사에 영어·일본어·독일어 전문 통역사 세 명(specialist)이 있다고 하자. 각자 자기 언어는 완벽하지만, 세 명을 늘 데리고 다니는 건 비효율적이다. 우리는 세 언어를 모두 하는 통역사 한 명(generalist)을 새로 키우고 싶다. 방법은? 세 전문가를 실제 통역 현장에 투입해 '어떤 상황에서 어떤 문장을 어떤 뉘앙스로 옮겼는지'를 통째로 녹음한다. 그리고 신입에게 '지금은 일본어 모드'라는 명찰(embodiment embedding)을 달아주고 그 녹음을 따라 하게 한다.\n\n여기서 핵심은 명찰이 얼마나 선명한가다. 명찰이 흐릿하면(약한 조건화) 신입은 일본어 상황에서 독일어 어순이 새어 나오는 뒤죽박죽 통역을 하게 된다 — 이것이 averaging이다. one-hot 명찰은 '이건 100% 일본어, 다른 언어와 절대 안 섞임'이라고 못 박아 이 오염을 막는다. 반대로 명찰에 언어들의 유사도를 담으면(learnable embedding) 배운 적 없는 방언도 근처 언어의 보간으로 흉내 낼 수 있지만, 대신 비슷한 언어끼리 새어 나올 위험이 생긴다.\n\n그리고 왜 '문장'만이 아니라 '뉘앙스(variance)'까지 녹음할까? 전문가가 어떤 단어는 딱 하나로 못 박고(작은 variance) 어떤 표현은 여러 갈래로 자유롭게 옮겼는지(큰 variance)를 알면, 신입은 어디서 정밀해야 하고 어디서 유연해도 되는지를 배운다. 문장만 베끼는(MSE) 신입은 이 지도를 잃어버려, 특히 문장 구조가 복잡한 언어(H1 같은 humanoid)에서 어설퍼진다. KL은 문장과 뉘앙스를 함께 옮기는 녹음이다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "COMPASS distillation의 핵심을 PyTorch로 옮긴 것이다. teacher(specialist)가 남긴 Gaussian action 분포 (μ, σ)를 target으로, embodiment embedding으로 조건화된 student가 KL을 최소화한다. two-Gaussian KL의 closed form을 직접 구현해 variance가 어떻게 손실에 들어오는지를 드러낸다.",
+        "code": "import torch\nimport torch.nn as nn\n\n\nclass DistilledPolicy(nn.Module):\n    \"\"\"(world-model policy state p, embodiment id e) -> Gaussian action.\"\"\"\n\n    def __init__(self, state_dim, num_embodiments, act_dim, emb_dim=16):\n        super().__init__()\n        # 가장 단순한 버전은 one-hot. 여기선 learnable embedding으로 확장 가능.\n        self.embodiment = nn.Embedding(num_embodiments, emb_dim)\n        self.trunk = nn.Sequential(\n            nn.Linear(state_dim + emb_dim, 256), nn.ELU(),\n            nn.Linear(256, 256), nn.ELU(),\n        )\n        self.mu_head = nn.Linear(256, act_dim)\n        # global(state-independent) log-std — COMPASS distilled head와 동일\n        self.log_std = nn.Parameter(torch.zeros(act_dim))\n\n    def forward(self, p, e_idx):\n        e = self.embodiment(e_idx)                     # 조건 신호\n        h = self.trunk(torch.cat([p, e], dim=-1))\n        mu = self.mu_head(h)\n        return mu, self.log_std.expand_as(mu)\n\n\ndef gaussian_kl(mu_t, log_std_t, mu_s, log_std_s):\n    \"\"\"KL( N(mu_t, s_t^2) || N(mu_s, s_s^2) ), teacher=specialist / student=distilled.\"\"\"\n    var_t = (2 * log_std_t).exp()\n    var_s = (2 * log_std_s).exp()\n    kl = (log_std_s - log_std_t\n          + (var_t + (mu_t - mu_s).pow(2)) / (2 * var_s) - 0.5)\n    return kl.sum(-1)                                  # action 차원 합\n\n\ndef distill_step(student, batch, opt):\n    # batch: specialist가 rollout하며 기록한 (p, e_idx, mu_spec, log_std_spec)\n    p, e_idx, mu_spec, log_std_spec = batch\n    mu_s, log_std_s = student(p, e_idx)\n    # good-only 필터링 없이 실패 케이스도 포함 → corner case 학습에 유용\n    loss = gaussian_kl(mu_spec, log_std_spec, mu_s, log_std_s).mean()\n    opt.zero_grad()\n    loss.backward()\n    opt.step()\n    return loss.item()",
+        "walkthrough": "`DistilledPolicy`는 하나의 네트워크로 모든 embodiment를 처리한다. `nn.Embedding(num_embodiments, ...)`가 embodiment id를 벡터로 바꿔 trunk 입력에 concat되는데, 이 조건 신호가 강할수록(one-hot에 가까울수록) averaging이 억제된다. `emb_dim`을 크게 두고 이 embedding을 학습 가능하게 두면 learnable embedding 버전이 된다.\n\n`log_std`가 `nn.Parameter`로 state와 무관한 global variance인 점에 주목하라 — COMPASS distilled head가 mean은 MLP로, variance는 global로 두는 설계와 일치한다.\n\n`gaussian_kl`은 본문의 closed-form KL을 그대로 옮긴 것이다. `(mu_t - mu_s)**2 / (2*var_s)` 항 때문에 student가 확신하는(var_s가 작은) 차원일수록 mean 오차 벌점이 커진다. 만약 이 함수를 `(mu_t - mu_s).pow(2).mean()`로 바꾸면 그것이 바로 MSE 버전이고, variance 정보가 사라져 특히 humanoid에서 성능이 떨어진다.\n\n`distill_step`은 teacher가 고정 target이므로 순수한 supervised 회귀다. RL의 reward·advantage·exploration이 전혀 없어 gradient가 안정적이고, 이것이 40k frame/embodiment를 4x H100에서 무리 없이 수렴시키는 이유다. batch에 실패 rollout을 섞어 corner case를 학습에 노출시키는 것이 good-only 필터링보다 낫다는 것이 COMPASS의 발견이다."
+      },
+      "industryEvaluation": {
+        "overview": "Policy distillation은 빅테크 robotics·RL 팀에서 'multi-task/multi-embodiment 정책을 어떻게 하나로 합치는가'라는 시스템 질문의 표준 도구다. 면접에서는 distillation을 안다는 것 이상으로, KL을 쓰는 이유·조건화 설계·averaging failure mode를 진단할 수 있는지를 본다.",
+        "whatEngineersLookFor": [
+          "two-Gaussian KL의 closed form을 유도하고 각 항이 mean/variance 학습에 어떻게 기여하는지 설명하는 능력",
+          "distillation을 online RL이 아닌 offline 회귀로 바라보고, 그로 인한 학습 안정성·데이터 효율 이점을 정량적으로 논하는 태도",
+          "embodiment(또는 task) 조건화의 강도와 averaging 사이의 인과를 명시적으로 연결하는 사고",
+          "MSE로 충분한 경우와 분포 보존(KL)이 필요한 경우를 문제 특성(multimodality, action 민감도)으로 구분하는 판단력",
+          "Open-X/RT-X·CrossFormer 등 대규모 generalist 계보와 COMPASS의 구조적 분리 접근을 두 패러다임으로 대비하는 큰 그림"
+        ],
+        "redFlags": [
+          "distillation을 그냥 'teacher output을 MSE로 따라 하기'로만 이해하고 variance/분포의 역할을 모름",
+          "embodiment embedding을 단순 입력 feature로만 보고 averaging risk와의 관계를 인지하지 못함",
+          "one-hot의 한계(unseen 일반화 불가)를 모른 채 항상 최선이라고 단언",
+          "실패 rollout을 무조건 걸러야 한다고 생각(good-only가 더 낫다는 잘못된 직관)",
+          "KL의 비대칭성(forward vs reverse)이 mode-covering/mode-seeking에 주는 영향을 전혀 고려하지 않음"
+        ],
+        "interviewQuestions": [
+          "specialist N개를 하나의 generalist로 합칠 때 KL distillation 목적함수를 쓰고, MSE 대신 KL을 쓰면 무엇이 달라지는지 humanoid 예로 설명하라.",
+          "one-hot embodiment embedding과 learnable embedding의 trade-off를 unseen embodiment 일반화와 averaging risk 관점에서 비교하라.",
+          "distillation dataset을 만들 때 성공 궤적만 쓰는 것이 왜 최선이 아닐 수 있는가? covariate shift와 연결해 답하라."
+        ],
+        "masteryVsFamiliar": "친숙한 수준은 'distillation은 teacher를 student가 모방하는 것'이라고 말하고 KL loss를 부를 줄 아는 정도다. 통달한 수준은 two-Gaussian KL의 각 항을 손으로 유도해 variance가 차원별 가중을 만드는 메커니즘을 보이고, one-hot·KL·실패 케이스 포함이라는 세 설계 결정이 모두 averaging 억제라는 하나의 목표로 수렴함을 설명하며, 이 접근이 Open-X 식 데이터 스케일링과 어떤 패러다임적 대비를 이루는지까지 좌표를 잡는다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "Distillation = RL을 회귀로 바꾸기",
+          "content": "specialist가 남긴 (p, e, μ, σ)를 target으로 하나의 conditional policy를 supervised 학습해, RL의 불안정성 없이 여러 몸을 하나로 합친다."
+        },
+        {
+          "title": "목적함수는 embodiment별 KL 합",
+          "content": "min_θ Σᵢ KL( N(μ⁽ⁱ⁾,σ²) ‖ N(μ_θ(p,e⁽ⁱ⁾),σ_θ²) ) — 조건 e⁽ⁱ⁾가 embodiment마다 행동을 분기시킨다."
+        },
+        {
+          "title": "KL은 variance를 보존한다",
+          "content": "closed-form KL의 (μ₁−μ₂)²/2σ₂² 항이 확신하는 차원에 더 큰 벌점을 줘, mean만 맞추는 MSE보다 특히 H1(humanoid)에서 우수하다."
+        },
+        {
+          "title": "one-hot은 averaging의 최전선 방어",
+          "content": "직교하는 one-hot은 embodiment 간 간섭을 원천 차단하지만 unseen embodiment로 일반화할 수 없다."
+        },
+        {
+          "title": "learnable embedding은 유연성과 risk의 맞교환",
+          "content": "연속 임베딩은 보간으로 unseen 일반화 가능성을 열지만(future work), 가까운 embodiment 간 행동이 새어 averaging risk를 높인다."
+        },
+        {
+          "title": "실패 케이스가 유용하다",
+          "content": "good-only 필터링은 marginal 개선뿐 — 실패 rollout의 corner case가 covariate shift 완화에 기여한다."
+        },
+        {
+          "title": "대규모 generalist 계보와의 대비",
+          "content": "Open-X/RT-X·CrossFormer가 데이터 스케일링으로 generalist를 만든다면, COMPASS는 specialist를 분리 학습 후 distillation으로 합치는 구조적 분리 접근이다."
+        },
+        {
+          "title": "generalist를 만드는 순간 averaging과 싸움이 시작된다",
+          "content": "distillation은 통합의 수단이자 averaging의 발원지이며, KL·one-hot·실패 포함은 모두 정체성 보존을 위한 방어선이다(→ Ch8)."
+        }
+      ]
+    },
+    {
+      "number": 6,
+      "emoji": "🏗️",
+      "title": "COMPASS Architecture — Putting It All Together",
+      "titleKr": "COMPASS 아키텍처 — 전체를 하나로",
+      "tldr": "IL → Residual RL → Distillation 3단계가 Isaac Sim/Lab 위에서 어떻게 하나의 파이프라인으로 결합되는지, 그리고 벤치마크 결과(SR 5~40x↑)를 정확히 해석한다.",
+      "topics": [
+        "3-stage 파이프라인",
+        "Isaac Sim / Isaac Lab",
+        "Joint controller",
+        "벤치마크 해석",
+        "SR / WTT"
+      ],
+      "learningGoals": [
+        "COMPASS 3단계의 데이터 흐름과 각 단계의 입출력을 그릴 수 있다",
+        "embodiment별 joint controller(locomotion policy)의 역할을 이해한다",
+        "SR·WTT metric으로 specialist vs generalist를 비교 해석할 수 있다",
+        "generalist가 specialist를 능가하기도 하는 현상(G1)을 설명할 수 있다",
+        "COMPASS가 '알고리즘 논문'이 아니라 '시스템 논문'인 이유를 안다"
+      ],
+      "overview": "지금까지 세 개의 조각을 따로 봤다. Chapter 2의 X-Mobility world model(frozen backbone), Chapter 4의 embodiment별 residual RL specialist, Chapter 5의 KL distillation generalist. 이 챕터는 이 셋이 어떻게 하나의 파이프라인으로 맞물리는지 — 데이터가 어디서 어디로 흐르고, 각 단계의 입출력이 무엇이며, 무엇이 고정되고 무엇이 학습되는지 — 를 전체 지도로 조립한다.\n\n[COMPASS](https://arxiv.org/abs/2502.16372)(NVIDIA, 2025.02)의 핵심 주장은 세 단계가 순차적으로 책임을 분담한다는 것이다. IL은 mobility의 일반 prior를, residual RL은 embodiment별 물리 적응을, distillation은 이 모두를 하나의 배포 가능한 정책으로 통합한다. 그리고 이 전체가 Isaac Sim(시뮬레이션)과 Isaac Lab(RL 학습) 생태계 위에서 돌아가며, humanoid·quadruped는 별도의 joint-level locomotion controller와 결합된다.\n\n마지막으로 이 챕터는 COMPASS의 벤치마크(Table I)를 정확히 읽는 법을 훈련한다. SR·WTT라는 두 metric으로 4개 embodiment × 4개 환경을 어떻게 비교하는지, 왜 specialist가 X-Mobility zero-shot 대비 SR을 5~40배 끌어올리는지, 그리고 놀랍게도 왜 generalist가 때때로 specialist를 능가하는지(G1)를 해석한다. 이 모든 것을 통해 우리는 COMPASS가 새 알고리즘을 발명한 논문이 아니라, 검증된 부품을 시스템으로 통합한 '**시스템 논문**'이라는 결론에 도달한다.",
+      "sections": [
+        {
+          "title": "3-Stage 파이프라인 — 데이터 흐름과 책임 분담",
+          "content": "COMPASS의 전체 파이프라인은 세 단계로 명확히 나뉘며, 각 단계는 서로 다른 문제를 푼다.\n\n**Stage 1 — Imitation Learning (X-Mobility, frozen).** classical mobility stack을 teacher로 하여 X-Mobility world model + policy head를 IL로 학습한다. 산출물은 환경 dynamics를 압축하는 latent state와, 그로부터 base action을 뽑는 IL policy다. 이 backbone은 이후 단계에서 **고정(frozen)**된다 — 강한 mobility prior를 제공하되 embodiment 적응은 하지 않는 역할이다. 입력: sensor observation(image 등) + goal. 출력: policy state $p$와 base action $a_{base}$.\n\n**Stage 2 — Residual RL specialists.** embodiment마다 하나씩, IL의 base action 위에 residual $\\Delta$를 얹는 정책을 PPO로 학습한다. 실행 action은 $a = a_{base} + \\Delta$이며, residual만 RL로 탐색하므로 학습이 IL prior 근처에서 시작된다. 이 점이 결정적인데, COMPASS는 **IL base action 없이 RL-from-scratch로 학습하면 1000 episode에도 수렴하지 못한다**는 것을 확인했다. residual 구조가 탐색 공간을 극적으로 줄이는 것이다. 입력: policy state $p$. 출력: embodiment별 Gaussian action 분포 $\\mathcal{N}(\\mu^{(i)}(p), \\sigma^2)$.\n\n**Stage 3 — Policy distillation (generalist).** 각 specialist를 rollout하며 $(p, e^{(i)}, \\mu^{(i)}, \\sigma^2)$를 기록하고(embodiment당 320 traj × 128 step ≈ 40k frame), 이를 target으로 embodiment embedding 조건부 generalist를 KL distillation으로 학습한다(Chapter 5). 입력: $(p, e)$. 출력: $\\mu_\\theta(p, e)$ + global variance.\n\n전체를 관통하는 설계 원리는 **책임의 분리**다. 일반 mobility 지식(IL) / embodiment 물리 적응(residual RL) / 통합·배포(distillation)가 각각 독립된 단계에 캡슐화되어, 한 단계의 실패가 다른 단계를 오염시키지 않는다. 이 모듈성이 새 embodiment 추가나 backbone 교체를 국소적 변경으로 만든다."
+        },
+        {
+          "title": "Isaac Sim / Isaac Lab과 Joint Controller — 시뮬레이션 스택",
+          "content": "COMPASS 파이프라인은 NVIDIA의 **Isaac Sim**(고충실도 물리 시뮬레이터)과 **Isaac Lab**(GPU 병렬 RL 학습 프레임워크) 위에서 돈다. residual RL specialist는 Isaac Lab에서 수천 개의 환경을 병렬로 굴려 학습되며, distillation의 40k frame/embodiment 데이터도 이 시뮬레이션에서 수집된다. 학습 인프라는 4x H100이다.\n\n여기서 반드시 이해해야 할 계층 분리가 있다. COMPASS가 학습하는 정책은 **velocity command 수준**의 mobility 정책이지, 관절 토크를 직접 내는 정책이 아니다. 그 아래에 embodiment별 **joint controller**가 velocity command를 실제 관절 제어로 변환한다.\n\nhumanoid(H1·G1)와 quadruped(Spot)의 경우, joint controller는 Isaac Lab에서 별도로 학습한 **RL locomotion policy**다. 이 policy가 mobility 정책이 내린 velocity command(예: '앞으로 0.8 m/s, 좌회전')를 받아 다리 관절을 조율해 실제로 걷거나 뛰게 만든다. 즉 COMPASS의 mobility 정책은 '어디로 얼마나 빨리 갈지'를 결정하고, locomotion policy는 '그 속도를 내려면 다리를 어떻게 움직일지'를 담당하는 2층 구조다.\n\nCarter(wheeled)는 사정이 다르다. Isaac Lab의 wheel physics 제약 때문에 바퀴 로봇에는 별도 locomotion RL policy 대신, velocity로 root state를 직접 조정하는 **custom controller**를 쓴다. 이 비대칭성은 사소해 보이지만 중요한 시스템 디테일이다 — cross-embodiment 파이프라인이 실제로는 embodiment마다 다른 하위 제어 스택을 우아하게 흡수해야 함을 보여준다. mobility 정책이 velocity 추상화 층에서 동작하기에, 이질적인 하위 controller(learned locomotion vs custom wheel)를 하나의 상위 정책으로 통합할 수 있는 것이다.\n\n이 velocity-command 추상화가 COMPASS의 cross-embodiment를 가능케 하는 숨은 접착제다. 서로 다른 morphology를 공통의 명령 인터페이스(velocity)로 만나게 하고, 그 아래 물리적 실현은 embodiment별 controller에 위임한다."
+        },
+        {
+          "title": "벤치마크 읽기 — SR·WTT와 4개 환경",
+          "content": "COMPASS의 정량 평가(Table I)는 두 metric으로 이뤄진다.\n\n**SR(Success Rate)** = 충돌이나 timeout 없이 goal에 도달한 trial의 비율. 높을수록 좋다. **WTT(Weighted Travel Time)** = 성공 조건에서의 총 이동시간을 SR로 나눈 값. 즉 성공률로 정규화한 이동 효율이며, 낮을수록 좋다. WTT가 SR로 나뉘는 설계 덕에, 빠르지만 자주 실패하는 정책이 불이익을 받는다 — 속도와 신뢰성을 동시에 포착하는 metric이다.\n\n| Metric | 정의 | 좋은 방향 |\n|---|---|---|\n| SR | 충돌·timeout 없이 goal 도달한 trial 비율 | 높을수록 |\n| WTT | 성공 총 이동시간 / SR | 낮을수록 |\n\n평가 환경은 4개다. warehouse single rack(24×38m), warehouse multi rack(24×38m), office(10×10m), combined(30×38m). 각 환경마다 640 trial, timeout 25.6초로 측정한다. warehouse는 넓고 장애물(rack)이 규칙적인 대공간, office는 좁고 조밀한 소공간, combined는 둘을 합친 long-horizon 시나리오로, 서로 다른 mobility 특성을 시험한다.\n\n핵심 결과를 embodiment별로 정리하면 다음과 같다. 여기서 specialist/generalist는 X-Mobility zero-shot 대비 극적으로 개선된다.\n\n| Embodiment | Type | X-Mobility SR (zero-shot) | Specialist/Generalist SR |\n|---|---|---|---|\n| Carter | wheeled | ~42-50% | ~85-92% |\n| H1 | humanoid | ~9-26% | ~66-94% |\n| Spot | quadruped | ~5-12% | ~75-93% |\n| G1 | humanoid | ~2-10% | ~77-96% |\n\n이 표에서 반드시 읽어야 할 두 가지. 첫째, X-Mobility(IL only)는 자신이 학습된 Carter에서는 준수하지만(~42-50%) 다른 embodiment로 zero-shot 전이하면 한 자릿수까지 무너진다. 이것이 Chapter 3~4에서 말한 **embodiment-specific 적응의 필요성**을 정면으로 입증한다 — mobility prior만으로는 morphology gap을 못 넘는다. 둘째, 그 격차를 residual RL + distillation이 메워 종합적으로 **SR 5x~40x 개선, WTT 약 3x 개선**을 달성한다. RL-from-scratch가 수렴조차 못한다는 사실과 함께 보면, IL prior와 residual 구조의 결합이 이 숫자의 진짜 엔진임이 드러난다."
+        },
+        {
+          "title": "Generalist가 Specialist를 능가하는 역설 — G1 케이스",
+          "content": "직관적으로 generalist(여러 몸을 하나로 합친 정책)는 specialist(한 몸 전용)보다 나쁠 것 같다. 하나로 뭉치면서 성능을 조금 잃는 게 distillation의 자연스러운 대가처럼 보이기 때문이다. 그러나 COMPASS 벤치마크는 **generalist가 specialist에 필적하거나 때때로 능가한다** — 특히 G1에서 — 는 반직관적 결과를 보인다.\n\n원인은 distillation 단계에서 **시나리오와 embodiment 다양성이 증가**한다는 데 있다. specialist는 자기 embodiment의 데이터만 보지만, generalist는 모든 embodiment의 rollout을 함께 학습한다. 서로 다른 몸이 서로 다른 환경에서 겪은 경험이 공유 표현을 통해 서로를 보강하는 것이다 — 이것이 Open-X/RT-X에서 관찰된 positive transfer의 축소판이다. 데이터가 적거나 학습이 불안정했던 embodiment(G1 같은)일수록 이 교차 보강의 이득이 커, generalist가 자기 specialist를 앞지른다.\n\n이는 Chapter 5에서 심은 averaging problem과 미묘한 긴장 관계에 있다. 조건화가 부실하면 averaging(성능 저하)이 일어나지만, 조건화가 충분히 강하면(one-hot) 같은 다양성이 오히려 **positive transfer(성능 향상)**로 뒤집힌다. 즉 embodiment 조건이 얼마나 잘 분리되어 있는가에 따라, 다양성은 독이 되기도 약이 되기도 한다. COMPASS의 one-hot + KL 설계가 이 저울을 positive transfer 쪽으로 기울인 셈이다.\n\n정성적 case study가 이 morphology 반영을 생생히 보여준다. multi-rack warehouse의 long-horizon 시나리오에서, **G1은 몸을 살짝 기울여 선반 밑을 통과**하는 반면 **H1은 clearance가 부족해 선반을 우회**한다. 하나의 generalist 정책이 embodiment embedding에 따라 각 몸의 물리적 제약(키·폭)을 반영해 서로 다른 경로를 선택하는 것이다. 이것이 generalist가 단순 평균이 아니라 진짜로 embodiment를 인지한 정책임을 보여주는 결정적 증거다 — averaging을 이겨낸 조건화의 승리다."
+        },
+        {
+          "title": "'알고리즘 논문'이 아니라 '시스템 논문' — 배포와 한계",
+          "content": "COMPASS를 정확히 자리매김하려면 그것이 **새 알고리즘을 발명하지 않았다**는 점을 인정해야 한다. world-model IL(X-Mobility), residual RL, policy distillation은 모두 이미 검증된 기법이다. COMPASS의 기여는 이 부품들을 하나의 작동하는 cross-embodiment mobility 시스템으로 **통합**하고, 그 통합이 실제로 작동함을 4개 embodiment × 4개 환경에서 정량적으로 입증한 것이다. 이것이 COMPASS가 '알고리즘 논문'이 아니라 '**시스템 논문**'인 이유다 — 기여의 단위가 새 수식이 아니라 검증된 파이프라인이다.\n\n시스템 논문의 진가는 배포에서 드러난다. COMPASS는 학습된 X-Mobility backbone은 그대로 유지하고 **IL policy만 distilled generalist로 교체**하는 방식으로 배포된다. 실제 하드웨어 성능은 다음과 같다.\n\n| 항목 | 값 |\n|---|---|\n| Runtime | TensorRT on AGX Jetson Orin |\n| P50 latency | 29.3 ms |\n| P95 latency | 29.4 ms |\n| Model size | 422 MB |\n\nP50과 P95가 거의 같다(29.3 vs 29.4ms)는 점에 주목하라 — latency 분산이 극히 작아 실시간 제어에 적합하다는 뜻이다. 엣지 디바이스(Jetson Orin)에서 30ms 이내로 도는 것은 이 정책이 실험실 데모가 아니라 실배포를 겨냥했음을 보여준다.\n\n한계도 논문이 스스로 명시한다. 첫째, embodiment 표현이 one-hot이라 **unseen embodiment로의 zero-shot이 불가**하며, 이를 위해 learned embedding으로의 전환이 필요하다(Chapter 5·7). 둘째, COMPASS는 point-goal navigation을 풀 뿐, 전역 경로 계획을 담당하는 **graph route planner 같은 hierarchical mobility stack**과 결합되어야 완전한 자율 주행이 된다. 즉 COMPASS는 mobility stack의 중간 층(local policy)을 cross-embodiment로 만든 것이지, 전체 스택을 대체한 것이 아니다.\n\n마지막으로 COMPASS가 Isaac Sim/Lab 생태계에 탑재되고 [GitHub NVlabs/COMPASS](https://github.com/NVlabs/COMPASS)로 공개되었다는 점은 시스템 논문으로서의 정체성을 완성한다. 재현 가능하고, 확장 가능하며, 실제 로봇에 배포 가능한 파이프라인 — 이것이 이 강의 전반부(Ch1~6)가 도달한 종착점이자, 후반부(generative policy·sim-to-real·foundation model)로 나아가는 출발점이다."
+        }
+      ],
+      "analogy": {
+        "title": "3단계 조립 라인과 velocity라는 공통 규격",
+        "content": "COMPASS 파이프라인은 자동차 공장의 조립 라인과 닮았다. Stage 1(IL)은 모든 차종이 공유하는 '섀시(chassis)'를 찍어내는 공정이다 — 한 번 잘 만들어 놓으면 고정(frozen)하고 재사용한다. Stage 2(residual RL)는 그 섀시 위에 세단·SUV·트럭 각각의 특성을 얹는 차종별 커스터마이징 라인이다. Stage 3(distillation)은 이 모든 차종의 조립 노하우를 한 명의 마스터 기술자에게 전수해, 명찰(embodiment id)만 보고 어떤 차종이든 조립할 수 있게 만드는 통합 교육이다.\n\n이 조립 라인이 돌아가는 비결은 '**velocity command라는 공통 규격**'이다. 상위 mobility 정책은 '시속 얼마로 어느 방향' 같은 표준 명령만 내리고, 그 명령을 실제 바퀴 회전이나 다리 관절로 바꾸는 일은 차종별 하위 부품(Carter의 custom wheel controller, H1·G1·Spot의 learned locomotion policy)에 맡긴다. 볼트 규격이 표준화되어 있으면 같은 조립 지침으로 다른 부품을 조립할 수 있는 것처럼, velocity라는 표준 인터페이스가 이질적인 몸들을 하나의 정책 아래 모은다.\n\n그리고 이 공장이 진짜 공장인 이유 — 데모가 아니라 — 는 완성차가 실제 도로(Jetson Orin, 30ms)에서 달린다는 데 있다. 새 부품(알고리즘)을 발명한 게 아니라, 이미 있는 검증된 부품들을 하나의 작동하는 생산 라인으로 엮어낸 것. 그래서 COMPASS는 '발명 논문'이 아니라 '생산 라인 논문(시스템 논문)'이다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "COMPASS 3단계를 하나의 오케스트레이션으로 옮긴 개념적 pseudo-pipeline이다. 무엇이 frozen이고 무엇이 embodiment마다 반복되며, distillation 데이터가 어디서 수집되는지 — 그리고 배포 시 backbone은 유지하고 policy만 교체하는 구조를 드러낸다.",
+        "code": "def build_compass(embodiments, envs):\n    # ---- Stage 1: X-Mobility world-model IL backbone (한 번만, 이후 frozen) ----\n    world_model = train_x_mobility_il(expert_dataset)   # RSSM + IL policy head\n    world_model.freeze()                                # 강한 mobility prior, 고정\n\n    specialists, distill_data = {}, []\n\n    # ---- Stage 2: embodiment마다 residual RL specialist ----\n    for emb in embodiments:\n        residual = ResidualPolicy(act_dim)              # PPO로 학습되는 delta\n        joint_ctrl = load_joint_controller(emb)\n        # humanoid/quadruped: Isaac Lab RL locomotion policy\n        # wheeled(Carter): velocity로 root state 직접 조정하는 custom controller\n        for _ in range(N_ITERS):\n            rollouts = rollout_isaac_lab(\n                world_model, residual, joint_ctrl, envs[emb])\n            # 실행 action a = a_base(IL) + delta(residual) — from-scratch면 발산\n            ppo_update(residual, rollouts)\n        specialists[emb] = residual\n\n        # rollout하며 (p, e, mu, sigma) 기록 → distillation dataset\n        # embodiment당 320 traj x 128 step ~= 40k frame, 실패 케이스도 포함\n        distill_data += record_distribution(\n            world_model, residual, emb, n_traj=320, horizon=128)\n\n    # ---- Stage 3: 하나의 generalist로 KL distillation ----\n    generalist = DistilledPolicy(state_dim, len(embodiments), act_dim)\n    for _ in range(N_EPOCHS):\n        for batch in loader(distill_data):\n            distill_step(generalist, batch, opt)        # min KL (Ch5)\n\n    # ---- 배포: backbone 유지 + IL policy만 generalist로 교체 ----\n    #        TensorRT on Jetson Orin, P50 29.3ms / 422MB\n    return deploy(backbone=world_model, policy=generalist)",
+        "walkthrough": "`world_model.freeze()`가 파이프라인의 첫 설계 결정을 드러낸다. IL backbone은 딱 한 번 학습되고 이후 모든 단계에서 고정된다 — mobility prior는 공유 자산이지 embodiment마다 다시 배우는 것이 아니다.\n\nStage 2의 for-loop이 cross-embodiment의 실체다. embodiment마다 `residual`을 새로 만들되, `joint_ctrl`은 embodiment 타입에 따라 다르게 로드된다 — humanoid/quadruped는 Isaac Lab locomotion RL policy, Carter는 custom wheel controller. 이 비대칭을 mobility 정책은 velocity command 추상화로 흡수한다. 주석 `a = a_base + delta`가 residual RL의 핵심으로, IL base action이 없으면(from-scratch) 1000 episode에도 수렴하지 못한다.\n\n`record_distribution`이 Stage 2와 3을 잇는 다리다. specialist를 rollout하며 (p, e, mu, sigma)를 320 traj × 128 step 규모로 기록하고, 성공만 거르지 않고 실패 케이스도 포함해 corner case를 학습에 노출한다.\n\nStage 3은 Chapter 5의 `distill_step`을 그대로 호출한다 — 3단계가 실제로 앞 챕터의 코드와 물리적으로 연결됨을 보여준다. 마지막 `deploy`가 시스템 논문의 정수다. backbone은 그대로, policy만 distilled generalist로 갈아끼워 TensorRT로 컴파일하면 Jetson Orin에서 P50 29.3ms, 422MB로 실시간 구동된다."
+      },
+      "industryEvaluation": {
+        "overview": "COMPASS 같은 다단계 로봇 정책 파이프라인은 빅테크 robotics/embodied AI 팀의 실제 시스템 설계 문제를 압축한다. 면접에서는 개별 기법의 지식보다, 여러 검증된 컴포넌트를 하나의 배포 가능한 시스템으로 엮고 그 성능을 올바른 metric으로 해석하는 시스템 사고를 평가한다.",
+        "whatEngineersLookFor": [
+          "3단계 각각의 입출력·무엇이 frozen/trained인지를 데이터 흐름으로 정확히 그리는 능력",
+          "SR·WTT 같은 정규화된 metric을 정의하고, WTT가 SR로 나뉘는 설계 의도를 설명하는 통찰",
+          "velocity-command 추상화가 이질적 하위 controller(learned locomotion vs custom wheel)를 어떻게 통합하는지 이해하는 시스템 관점",
+          "generalist가 specialist를 능가하는 positive transfer를 데이터 다양성·조건화 강도와 연결해 설명하는 사고",
+          "'알고리즘 novelty'와 '시스템 통합 기여'를 구분하고 후자의 가치를 인정하는 성숙도"
+        ],
+        "redFlags": [
+          "3단계를 뭉뚱그려 '그냥 RL로 학습한다'고 말하고 IL prior·frozen backbone의 역할을 놓침",
+          "SR만 보고 WTT(효율)를 무시하거나, WTT가 SR로 정규화된 이유를 모름",
+          "generalist는 무조건 specialist보다 나쁘다고 단정(positive transfer 현상을 모름)",
+          "joint controller 계층을 인지하지 못하고 mobility 정책이 관절 토크를 직접 낸다고 오해",
+          "시스템 논문이라는 이유로 기여를 폄하하거나, 반대로 새 알고리즘이라 잘못 소개"
+        ],
+        "interviewQuestions": [
+          "COMPASS 3단계의 데이터 흐름을 그리고, 각 단계에서 무엇이 고정되고 무엇이 학습되는지, 왜 그렇게 나눴는지 설명하라.",
+          "X-Mobility zero-shot SR이 Carter에선 ~45%지만 G1에선 한 자릿수인 결과를 어떻게 해석하며, 이것이 residual RL의 필요성을 어떻게 뒷받침하는가?",
+          "generalist가 specialist를 능가할 수 있는 조건은 무엇이며(G1 사례), 이 현상이 언제는 averaging(성능 저하)로 뒤집히는가?"
+        ],
+        "masteryVsFamiliar": "친숙한 수준은 'COMPASS는 IL+RL+distillation 3단계'라고 나열하고 SR이 올랐다고 말하는 정도다. 통달한 수준은 각 단계의 입출력과 frozen/trained 경계를 정확히 그리고, velocity-command 추상화가 embodiment별 joint controller를 통합하는 메커니즘을 설명하며, SR·WTT로 X-Mobility zero-shot·specialist·generalist를 비교 해석하고, G1의 positive transfer와 morphology-aware 경로 선택(선반 밑 통과 vs 우회)을 조건화 강도로 설명하며, 왜 이것이 새 알고리즘이 아니라 배포까지 검증한 시스템 기여인지를 논증한다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "3단계는 책임을 분담한다",
+          "content": "IL은 일반 mobility prior(frozen), residual RL은 embodiment별 물리 적응, distillation은 하나의 배포 가능한 generalist로의 통합을 각각 담당한다."
+        },
+        {
+          "title": "IL prior 없는 RL은 수렴하지 못한다",
+          "content": "residual RL은 IL base action 위에 delta만 탐색하므로 안정적이지만, RL-from-scratch는 1000 episode에도 발산한다."
+        },
+        {
+          "title": "velocity-command가 cross-embodiment의 접착제",
+          "content": "mobility 정책은 velocity만 명령하고, humanoid/quadruped는 Isaac Lab locomotion policy가, Carter는 custom wheel controller가 그것을 실제 제어로 변환한다."
+        },
+        {
+          "title": "SR·WTT로 신뢰성과 효율을 함께 본다",
+          "content": "SR은 충돌·timeout 없는 goal 도달 비율, WTT는 성공 이동시간을 SR로 나눈 값 — 빠르지만 자주 실패하는 정책을 벌한다."
+        },
+        {
+          "title": "X-Mobility zero-shot은 embodiment 적응의 필요성을 입증한다",
+          "content": "Carter에선 ~42-50%지만 다른 몸으로 zero-shot 시 한 자릿수로 붕괴 — specialist/generalist가 SR을 5~40x, WTT를 3x 개선한다."
+        },
+        {
+          "title": "Generalist가 specialist를 능가하기도 한다",
+          "content": "distillation의 시나리오·embodiment 다양성이 positive transfer를 만들어, 데이터가 부족했던 G1 등에서 generalist가 자기 specialist를 앞선다."
+        },
+        {
+          "title": "조건화된 generalist는 morphology를 인지한다",
+          "content": "multi-rack에서 G1은 기울여 선반 밑을 통과하고 H1은 clearance 부족으로 우회 — 하나의 정책이 embodiment 제약을 반영한 증거다."
+        },
+        {
+          "title": "COMPASS는 시스템 논문이다",
+          "content": "새 알고리즘이 아니라 검증된 부품(world-model IL + residual RL + distillation)을 Jetson Orin 30ms 배포까지 통합·검증한 파이프라인이다."
+        }
+      ]
+    },
+    {
+      "number": 7,
+      "emoji": "🦿",
+      "title": "Embodiment Conditioning & Morphology",
+      "titleKr": "임바디먼트 조건화와 모폴로지",
+      "tldr": "one-hot을 넘어 — learned embedding, measurable collision-envelope(AgniNav), morphology-aware transformer까지. unseen embodiment로의 zero-shot이라는 최전선 문제를 다룬다.",
+      "topics": [
+        "Embodiment embedding",
+        "One-hot vs learned vs measurable",
+        "Collision envelope",
+        "Zero-shot to unseen",
+        "Humanoid balance"
+      ],
+      "learningGoals": [
+        "embodiment를 '학습된 벡터'로 볼 때와 '측정 가능한 물리량'으로 볼 때의 trade-off를 안다",
+        "AgniNav의 collision-envelope conditioning이 zero-shot 배치에 유리한 이유를 설명한다",
+        "humanoid의 balance 제약이 perception·policy에 미치는 영향을 이해한다",
+        "learnable embedding이 embedding space 보간으로 일반화하는 아이디어를 설명한다",
+        "unseen embodiment zero-shot이 왜 아직 미해결인지 진단할 수 있다"
+      ],
+      "overview": "Chapter 5·6에서 우리는 COMPASS가 embodiment를 one-hot 벡터로 표현하고, 그 조건 아래에서 하나의 generalist가 서로 다른 몸을 구분한다는 것을 봤다. 그런데 one-hot은 근본적으로 '이름표'다. 길이 N one-hot은 N개의 미리 정해진 embodiment에 각각 하나의 축을 배정할 뿐, 그 몸이 얼마나 큰지·얼마나 넓은지·어떤 morphology 제약을 갖는지에 대한 어떤 물리 정보도 담지 않는다. 이 챕터는 바로 그 표현(representation) 자체를 해부한다 — embodiment를 무엇으로 인코딩할 것인가라는, cross-embodiment의 가장 근본적인 설계 질문이다.\n\n표현의 스펙트럼은 세 단계로 놓인다. **one-hot**(이름표) → **learned embedding**(학습된 좌표) → **measurable physical quantity**(측정 가능한 물리량). one-hot은 소수의 이질적 플랫폼에 간결하고 효율적이지만 unseen embodiment로 확장이 불가능하다. learned embedding은 embedding space의 보간을 통해 새로운 몸으로 일반화할 가능성을 열지만 — [COMPASS](https://arxiv.org/abs/2502.16372)조차 이 zero-shot을 future work로 남겼다. 그리고 2026년의 최전선은 세 번째 축, 즉 embodiment를 collision-relevant height·footprint 같은 '측정 가능한 물리량'으로 표준화하는 [AgniNav](https://arxiv.org/abs/2606.10903) 계열이다 — 학습된 벡터가 아니라 자로 잰 숫자로 몸을 표현하면 해석 가능하고 retraining 없이 새 로봇에 즉시 배치된다.\n\n이 챕터의 관통 질문은 하나다. **embodiment를 '학습된 벡터'로 볼 것인가, '측정 가능한 물리량'으로 볼 것인가.** 전자는 표현력이 크지만 unseen으로의 일반화가 취약하고 해석이 어렵다. 후자는 표현력을 물리 파라미터로 제한하는 대신 zero-shot 배치와 해석가능성에서 앞선다. 여기에 humanoid의 balance 제약처럼 morphology가 perception과 정책에 직접 개입하는 사례([FocusNav](https://arxiv.org/abs/2601.12790))를 더해, '몸을 어떻게 인코딩하는가'가 왜 cross-embodiment 일반화의 병목인지를 규명한다.",
+      "sections": [
+        {
+          "title": "표현의 스펙트럼 — one-hot / learned / measurable",
+          "content": "embodiment conditioning의 핵심은 '몸을 어떤 벡터 $e$로 만들어 정책에 주입하느냐'다. 세 가지 대표 방식이 명확히 구분된다.\n\n**One-hot(이름표).** 길이 $N$($N$=embodiment 수) 벡터로, $i$번째 몸은 $e_i = [0,\\dots,1,\\dots,0]$이다. COMPASS의 기본 선택으로, robot이 적고($N$이 작고) 서로 크게 다를 때 가장 효율적이다. 학습이 안정적이고 embodiment 간 간섭이 없다(모든 one-hot은 서로 직교). 그러나 치명적 한계는 $N$이 고정이라는 점 — 새 몸 $N{+}1$은 새 축이 없어 **표현조차 불가능**하다. one-hot 공간에는 '사이(between)'가 없어 보간도 무의미하다.\n\n**Learned embedding(학습된 좌표).** embodiment id를 `nn.Embedding`으로 연속 벡터 $e \\in \\mathbb{R}^d$에 매핑하고, 이 벡터를 정책과 함께 end-to-end 학습한다. 학습이 끝나면 비슷하게 움직이는 몸끼리 embedding space에서 가까워진다 — 여기서 결정적 가능성이 열린다. **두 known embodiment의 embedding을 보간($\\alpha e_A + (1-\\alpha) e_B$)하면 그 '사이'의 몸에 해당하는 정책을 얻을 수 있다는 아이디어**다. 이것이 learned embedding이 unseen embodiment 일반화의 후보인 이유다. 다만 COMPASS는 이 zero-shot을 실증하지 않고 future work로 남겼다 — 보간이 실제로 유효한 정책을 낳는지는 embedding space가 얼마나 매끄러운지(smooth)에 달려 있고, 이는 보장되지 않는다.\n\n**Measurable physical quantity(측정 가능한 물리량).** embedding을 학습하는 대신, 몸을 자로 잰 물리 파라미터로 직접 인코딩한다. AgniNav의 4-parameter collision envelope(height·front length·rear length·half width)이 대표다. 이 표현의 미덕은 **새 로봇이 와도 학습이 필요 없다** — 그냥 치수를 재서 넣으면 된다. embedding처럼 데이터에서 배우는 게 아니라 물리에서 읽어오므로 unseen에 즉시 대응하고, 각 축의 의미가 명확해 해석 가능하다.\n\n| 표현 | 무엇을 담나 | unseen 대응 | 해석성 | 적합 상황 |\n|---|---|---|---|---|\n| one-hot | 이름표(id) | 불가($N$ 고정) | 중(축=id) | 소수·이질 플랫폼 |\n| learned embedding | 학습된 좌표 | 보간으로 가능성(미실증) | 낮음(불투명) | 다수·연속 spectrum |\n| measurable | 물리 치수 | 즉시(측정만) | 높음(물리 의미) | zero-shot 배치 |\n\n요지는 이 스펙트럼이 **표현력과 일반화의 trade-off**라는 것이다. one-hot은 표현력을 최소화해 안정성을 얻고, learned는 표현력을 최대화하되 일반화를 데이터에 걸며, measurable은 표현력을 물리 파라미터로 제약하는 대가로 zero-shot과 해석성을 산다."
+        },
+        {
+          "title": "Learned Embedding과 Embedding-Space 보간 — unseen으로의 다리",
+          "content": "learned embedding이 왜 unseen embodiment의 유력 후보인지 정확히 이해하려면, embedding space가 무엇을 학습하는지를 봐야 한다.\n\n정책 $\\pi_\\theta(a \\mid p, e)$에서 $e$를 `nn.Embedding` lookup으로 학습하면, gradient는 '이 몸에서 좋은 행동을 내게 하는 방향'으로 $e$를 민다. 그 결과 **kinematically·dynamically 비슷한 몸끼리 embedding이 서로 가까워지는 경향**이 생긴다 — 예컨대 두 사족보행 로봇의 embedding은 사족과 이족 사이보다 가까워진다. 이 구조가 생기면 embedding space는 단순한 id 저장소가 아니라 morphology의 연속적 지도(map)가 된다.\n\n여기서 보간 아이디어가 나온다. known embodiment $A, B$의 embedding $e_A, e_B$ 사이를 $e_{new} = \\alpha e_A + (1-\\alpha) e_B$로 채우면, 그 좌표에서 정책 $\\pi_\\theta(\\cdot \\mid p, e_{new})$은 '$A$와 $B$ 사이 어딘가의 몸'을 위한 행동을 낼 것으로 기대된다. one-hot에는 없던 '사이'가 learned space에는 존재하기 때문이다. 이것이 **learnable embedding은 embedding space 보간으로 새로운 unseen embodiment에 일반화할 가능성이 있다**는 COMPASS의 서술의 정확한 의미다.\n\n그러나 이 다리에는 세 가지 균열이 있다. 첫째, 보간이 유효하려면 embedding space가 **매끄러워야(smooth)** 한다 — 즉 $e$의 작은 변화가 정책의 작은 변화로 이어져야 한다. 학습은 이를 강제하지 않으며, 보통 embedding들이 이산적 군집(cluster)으로 흩어져 '사이'가 정책적으로 무의미한 골짜기일 수 있다. 둘째, 새 몸의 embedding을 **어디에 놓을지** 자체가 미해결이다 — 새 로봇을 위한 $e_{new}$를 어떻게 정할 것인가? 몇 개 샘플로 추정하려면 이미 few-shot이고, 순수 zero-shot이 아니다. 셋째, embedding은 **불투명**해 어떤 축이 height를 어떤 축이 gait를 담는지 알 수 없어, 실패 시 진단이 어렵다.\n\n이 균열들 때문에 COMPASS는 learned embedding으로의 전환과 그 zero-shot을 **명시적으로 future work로 남겼다**. 즉 learned embedding은 unseen 일반화의 '원리적 가능성'을 제공하지만, 그것을 '작동하는 zero-shot'으로 바꾸는 것은 2026년 현재에도 열린 문제다. 이 미해결성이 다음 절의 measurable 표현이 등장하는 배경이다 — 학습된 space의 보간에 기대는 대신, 아예 물리 치수를 직접 조건으로 쓰자는 우회로다."
+        },
+        {
+          "title": "Measurable Collision Envelope — AgniNav의 물리량 표준화",
+          "content": "[AgniNav](https://arxiv.org/abs/2606.10903)(2026.06)는 embodiment 표현의 축을 근본적으로 바꾼다. 학습된 벡터가 아니라 **측정 가능한 4-parameter collision envelope**로 cross-embodiment을 표준화한다.\n\n**Collision envelope(충돌 외피)** = 로봇의 충돌 관련 형상을 4개 물리 파라미터로 근사한 표현. collision-relevant height(충돌 관련 높이), front length(전방 길이), rear length(후방 길이), half width(반폭)이다. 이 네 숫자면 '이 몸이 어디에 부딪히는가'를 근사적으로 규정할 수 있다 — 바퀴 로봇이든 사족이든 humanoid든, 자로 재서 채우면 끝이다.\n\nAgniNav의 영리함은 이 파라미터를 정책에 어떻게 **역할별로 분배**하느냐에 있다. **height**는 image-to-scan network를 conditioning한다 — monocular RGB 한 장에서 로봇의 충돌 높이에 해당하는 수평면을 골라, 그 높이에서의 **1D collision-relevant pseudo-laserscan**을 예측한다. 즉 '키가 큰 로봇은 높은 장애물을, 낮은 로봇은 낮은 장애물을 본다'가 height 파라미터 하나로 자동 반영된다. 나머지 footprint 파라미터(front·rear length·half width)는 **dimension-aware local planner의 collision check 설정**을 결정한다 — planner가 로봇의 실제 발자국 크기로 통과 가능 여부를 판정한다.\n\n이 설계의 실전 결과가 강력하다. AgniNav는 **retraining 없이** wheeled(Turtlebot2)·quadruped(Go2)·humanoid(K1)에 배치되며, Jetson Orin에서 FP16 30Hz+로 돈다. 새 로봇을 붙이는 절차가 '데이터 수집→재학습'이 아니라 '치수 측정→파라미터 입력'으로 축소된 것이다. 이것이 measurable 표현의 정체다 — embodiment 일반화를 학습 문제에서 **측정 문제**로 옮긴다.\n\n왜 이것이 zero-shot 배치에 유리한가. learned embedding의 zero-shot은 '새 몸의 embedding을 어디에 놓을지 모른다'는 벽에 막혔다. measurable은 이 벽을 우회한다 — 새 몸의 collision envelope은 학습으로 추정할 필요 없이 **물리적으로 관측 가능**하기 때문이다. height 1.2m·half width 0.3m는 데이터가 아니라 줄자로 얻는다. 게다가 각 파라미터가 명확한 물리 의미를 가져 **해석 가능**하고(왜 이 경로를 택했는가를 footprint로 설명), 실패 시 어떤 치수가 잘못됐는지 진단할 수 있다. 물론 대가도 있다 — collision envelope은 형상만 담고 dynamics(질량·관성·gait)는 담지 않으므로, 표현력은 learned embedding보다 낮다. 그러나 navigation의 collision avoidance라는 문제에 한정하면, '충돌 형상'이야말로 정확히 필요한 정보이고 나머지는 하위 controller에 위임된다(Chapter 6의 velocity 추상화와 같은 논리)."
+        },
+        {
+          "title": "Morphology가 Perception을 침범한다 — Humanoid Balance 제약",
+          "content": "embodiment 표현이 정책의 '조건'으로만 들어가는 것은 아니다. 특정 morphology, 특히 humanoid의 balance 제약은 **perception 자체의 구조**를 바꿔야 할 만큼 깊이 개입한다.\n\nwheeled·quadruped와 달리 humanoid는 이족 보행의 본질적 불안정성을 갖는다. 지지면(support polygon)이 좁고, CoM(center of mass)이 높아, 잘못된 발놓기(foothold) 하나로 넘어진다. 이 제약은 '어디로 갈지'뿐 아니라 '무엇을 봐야 하는지'를 규정한다 — 균형이 위태로울 때 먼 목표를 바라보는 것은 사치이고, 당장 안전한 발판을 확보하는 것이 우선이다.\n\n[FocusNav](https://arxiv.org/abs/2601.12790)(2026.01, Unitree G1)가 이 통찰을 perception 아키텍처로 구현한다. 두 메커니즘이 핵심이다. **Waypoint-Guided Spatial Cross-Attention(WGSCA)**은 collision-free waypoint에 perception을 anchoring한다 — 즉 정책이 봐야 할 공간적 초점을 '충돌 없는 다음 경유점' 주변으로 유도해, 산만한 전역 정보 대신 실행 가능한 지역 정보에 집중시킨다. **Stability-Aware Selective Gating(SASG)**은 더 직접적이다 — **stability가 하락하면 원거리 정보를 truncate**해, 먼 곳의 정보를 일부러 끊고 foothold 안전을 우선한다. 균형이 무너지려 할 때 시야를 '발밑'으로 좁히는 것이다.\n\n이것이 morphology-aware conditioning의 가장 깊은 형태다. AgniNav의 height가 '무엇을 볼지(어느 높이의 scan)'를 morphology로 조절했다면, FocusNav의 SASG는 '언제 무엇을 무시할지'를 morphology 상태(stability)로 동적 조절한다. embodiment 정보가 정적 조건 벡터를 넘어, perception의 attention과 정보 truncation에까지 흐르는 것이다.\n\n일반화하면, cross-embodiment의 어려움은 몸마다 **관련 있는 정보의 범위 자체가 다르다**는 데 있다. 바퀴 로봇에게 발밑 texture는 무의미하지만 humanoid에게는 생사가 걸린다. 좋은 embodiment conditioning은 이 '관련성의 구조'를 반영해야 하며, 그래서 morphology는 조건 벡터로 정책에 들어가는 데 그치지 않고 perception 파이프라인의 형태(attention 범위, 정보 truncation 정책)를 결정한다. 이 관점에서 보면 embodiment 표현 문제는 '벡터 하나를 어떻게 만드느냐'가 아니라 '몸에 따라 인지-행동 회로 전체를 어떻게 재배선하느냐'로 확장된다."
+        },
+        {
+          "title": "학습된 벡터 vs 측정 가능한 물리량 — 최전선의 분기",
+          "content": "이 챕터의 모든 실마리는 하나의 분기점으로 수렴한다. **embodiment를 '학습된 벡터'로 볼 것인가, '측정 가능한 물리량'으로 볼 것인가.** 이것은 단순한 구현 선택이 아니라 cross-embodiment 일반화 철학의 갈림길이다.\n\n**학습된 벡터 진영**(one-hot → learned embedding → morphology-aware transformer)은 표현을 데이터에서 배운다. 극단에는 [Embedding Morphology into Transformers](https://arxiv.org/abs/2603.00182)처럼 로봇의 관절 구조(kinematic tree) 자체를 transformer의 attention 구조로 인코딩하거나, [MOTIF](https://arxiv.org/abs/2602.13764)처럼 few-shot으로 새 몸에 적응하는 접근이 있다. 강점은 표현력 — dynamics·gait·관절 토폴로지까지 담을 수 있다. 약점은 unseen zero-shot의 취약성과 불투명성 — 새 몸의 벡터를 어디에 놓을지 모르고, 왜 그렇게 행동하는지 설명하기 어렵다.\n\n**측정 가능한 물리량 진영**(AgniNav, [CeRLP](https://arxiv.org/abs/2603.19602))은 표현을 물리에서 읽는다. AgniNav는 collision envelope 4-parameter로, CeRLP는 시각 정보를 unified geometric formulation으로 추상화해 대규모 multi-robot data·fine-tuning·retraining 없이 cross-embodiment을 달성한다. 강점은 **zero-shot 배치와 해석가능성** — 치수만 재면 새 몸에 즉시 붙고, 각 파라미터가 물리 의미를 가진다. 약점은 표현력의 상한 — 물리 파라미터에 담기지 않는 dynamics 차이는 놓친다.\n\n| 관점 | 학습된 벡터 | 측정 가능한 물리량 |\n|---|---|---|\n| 표현 획득 | 데이터에서 학습 | 물리에서 측정 |\n| 표현력 | 높음(dynamics·gait 포함) | 형상 위주로 제한 |\n| unseen zero-shot | 취약(벡터 배치 미해결) | 유리(측정만 하면 됨) |\n| 해석가능성 | 낮음(불투명) | 높음(물리 의미) |\n| 대표 | COMPASS, MOTIF | AgniNav, CeRLP |\n\n2026년의 무게중심은 후자로 기울고 있다. 이유는 실용이다 — 산업 배포에서 '새 로봇마다 데이터 수집·재학습'은 견딜 수 없는 비용이고, '치수 재서 즉시 배치'는 결정적 이점이다. 게다가 해석가능성은 안전 인증과 디버깅에 필수다. 그렇다고 학습된 벡터가 폐기되는 것은 아니다 — 두 진영은 오히려 **결합**으로 간다. measurable 파라미터로 collision 형상을 명시적으로 다루면서, learned 표현으로 그 위의 dynamics·gait 미묘함을 흡수하는 하이브리드가 자연스러운 종착점이다.\n\n마지막으로 unseen embodiment zero-shot이 왜 아직 미해결인지 진단하며 이 챕터를 닫자. 근본 이유는 **'몸의 무엇이 정책에 관련되는가'가 아직 완전히 규명되지 않았기 때문**이다. collision 형상은 measurable하지만, 그 형상이 dynamics·balance·gait와 얽히는 방식은 여전히 학습에 의존한다. learned embedding은 이 얽힘을 배우지만 새 몸으로 확장이 안 되고, measurable은 확장되지만 얽힘을 놓친다. 이 간극을 메우는 것 — 물리적으로 관측 가능하면서도 dynamics까지 포착하는 embodiment 표현 — 이 cross-embodiment 일반화의 다음 관문이며, Chapter 8(생성형 정책)과 Chapter 10(foundation model)로 이어지는 미완의 질문이다."
+        }
+      ],
+      "analogy": {
+        "title": "옷 사이즈 — 이름표, 브랜드 좌표, 그리고 줄자",
+        "content": "embodiment를 표현하는 세 방식은 옷 사이즈를 다루는 세 방식과 닮았다. one-hot은 'S/M/L' 이름표다 — 미리 정해진 몇 개 칸에 사람을 배정할 뿐이다. 딱 그 칸에 맞는 사람에겐 충분하지만, 'M과 L 사이'인 사람은 표현할 칸이 없고, 새로운 체형(예: XXXL)이 등장하면 아예 이름표가 없어 대응 불가다. COMPASS의 one-hot이 소수의 이질적 로봇엔 충분하나 unseen 로봇엔 무력한 것과 같다.\n\nlearned embedding은 각 브랜드가 자기 데이터로 만든 '숨은 사이즈 좌표'다. 많은 고객 데이터를 학습해 비슷한 체형을 좌표상 가까이 놓으므로, 'A와 B 사이 체형'을 좌표 보간으로 추정할 여지가 생긴다. 문제는 이 좌표가 불투명하고(왜 이 좌표인지 설명 못 함), 한 번도 본 적 없는 체형의 좌표를 어디에 찍을지는 여전히 모른다는 것 — 결국 새 고객 몇 명을 재봐야(few-shot) 하니 순수 zero-shot이 아니다.\n\n측정 가능한 물리량은 그냥 '줄자로 잰 가슴둘레·허리둘레·기장'이다. 새 고객이 와도 학습이 필요 없다 — 재면 된다. 각 숫자의 의미가 명확해(가슴 100cm) 재단사가 바로 해석하고, 안 맞으면 어느 치수가 틀렸는지 즉시 안다. AgniNav의 collision envelope이 바로 이 줄자다 — 로봇을 자로 재서 height·footprint를 넣으면 retraining 없이 옷(정책)이 맞는다. 다만 줄자는 체형(형상)만 재지 '움직임 습관'(dynamics)은 못 재므로, 정교한 맞춤엔 브랜드 좌표(learned)와 줄자(measurable)를 함께 쓰는 하이브리드가 답이다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "embodiment를 정책에 주입하는 세 방식 — one-hot, learned nn.Embedding, measurable collision-envelope feature — 을 하나의 인터페이스로 구현해 비교한다. 세 encoder가 모두 조건 벡터 $e$를 만들어 동일한 policy trunk에 concat되지만, unseen 로봇을 만났을 때의 행동이 근본적으로 갈린다.",
+        "code": "import torch, torch.nn as nn\n\nclass OneHotEmbodiment(nn.Module):        # 이름표: N개 고정\n    def __init__(self, n): super().__init__(); self.n = n\n    def forward(self, idx):               # idx: (B,) long\n        return nn.functional.one_hot(idx, self.n).float()\n    def new_robot(self, *_):\n        raise RuntimeError('one-hot: unseen 표현 불가 (N 고정)')\n\nclass LearnedEmbodiment(nn.Module):        # 학습된 좌표: 보간 가능성\n    def __init__(self, n, d=16):\n        super().__init__(); self.emb = nn.Embedding(n, d)\n    def forward(self, idx): return self.emb(idx)\n    def interpolate(self, a, b, alpha):    # unseen '사이' 몸 추정\n        return alpha * self.emb.weight[a] + (1 - alpha) * self.emb.weight[b]\n\nclass MeasurableEmbodiment(nn.Module):     # 물리 치수: zero-shot 배치\n    # collision envelope 4-param: [height, front_len, rear_len, half_width]\n    def __init__(self, d=16):\n        super().__init__(); self.proj = nn.Linear(4, d)\n    def forward(self, envelope):           # envelope: (B, 4), 자로 잰 값\n        return self.proj(envelope)         # 새 로봇도 치수만 재면 즉시 조건화\n\nclass Policy(nn.Module):\n    def __init__(self, state_dim, cond_dim, act_dim):\n        super().__init__()\n        self.trunk = nn.Sequential(\n            nn.Linear(state_dim + cond_dim, 256), nn.ReLU(),\n            nn.Linear(256, act_dim))       # -> velocity command mean\n    def forward(self, p, e):\n        return self.trunk(torch.cat([p, e], dim=-1))\n\n# unseen 로봇 배치 시나리오\nmeas = MeasurableEmbodiment()\nnew_envelope = torch.tensor([[1.20, 0.30, 0.25, 0.28]])  # K1 humanoid 실측\ne_new = meas(new_envelope)               # retraining 없이 조건 벡터 확보",
+        "walkthrough": "세 encoder는 같은 목적(조건 벡터 $e$ 생성)을 갖지만 unseen 대응에서 갈라진다. `OneHotEmbodiment.new_robot`이 명시적으로 예외를 던지는 것이 핵심이다 — one-hot은 $N$이 고정이라 $N{+}1$번째 몸을 표현할 축 자체가 없다. 이름표 공간에는 '새 이름'을 넣을 자리가 없다.\n\n`LearnedEmbodiment.interpolate`가 learned embedding의 유일한 unseen 희망을 보여준다. 두 known 몸의 embedding을 $\\alpha$로 섞어 '사이' 몸을 추정하지만, 이 보간이 유효한 정책을 낳으려면 embedding space가 매끄러워야 하고 — 그 보장은 없다. 게다가 새 몸을 위한 $a, b, \\alpha$를 어떻게 고를지 자체가 미해결이라, 실무에선 few-shot 튜닝으로 흐르기 쉽다.\n\n`MeasurableEmbodiment`가 2026 최전선의 우아함이다. embodiment를 학습된 index가 아니라 collision envelope 4-param으로 받아 `nn.Linear`로 조건 벡터에 사영한다. 결정적 장면은 마지막 세 줄 — K1 humanoid의 실측 치수 `[1.20, 0.30, 0.25, 0.28]`을 넣기만 하면, **학습 데이터에 K1이 한 번도 없어도** `e_new`가 즉시 나온다. embodiment 일반화가 학습 문제에서 측정 문제로 옮겨진 것이다. 대신 envelope은 형상만 담아 dynamics를 놓치므로, 정교함이 필요하면 measurable(형상)과 learned(dynamics)를 concat하는 하이브리드가 실전의 답이 된다."
+      },
+      "industryEvaluation": {
+        "overview": "cross-embodiment 정책의 embodiment 표현 설계는 빅테크 robotics/embodied AI 팀이 실제로 씨름하는 핵심 설계 결정이다. 면접에서는 'one-hot vs embedding'을 아는지보다, 표현 선택이 표현력·unseen 일반화·해석가능성·배포 비용의 trade-off임을 시스템 관점에서 논증하는지를 본다.",
+        "whatEngineersLookFor": [
+          "one-hot·learned·measurable을 표현력 대 일반화의 trade-off 축 위에서 배치하고 각 상황의 적합성을 판단하는 능력",
+          "learned embedding의 보간 아이디어와 그것이 zero-shot으로 이어지지 못하는 구체적 이유(smoothness·벡터 배치)를 짚는 통찰",
+          "AgniNav처럼 embodiment 일반화를 학습 문제에서 '측정 문제'로 재정의하는 관점의 실용적 가치를 이해",
+          "morphology(humanoid balance)가 조건 벡터를 넘어 perception attention·정보 truncation까지 규정함을 아는 깊이",
+          "해석가능성·배포 비용을 순수 성능만큼 중시하는 프로덕션 감각"
+        ],
+        "redFlags": [
+          "one-hot과 learned embedding의 차이를 '그냥 벡터 표현 방식'으로만 말하고 unseen 대응 차이를 놓침",
+          "learned embedding이면 당연히 zero-shot이 된다고 단정(smoothness·벡터 배치 문제를 모름)",
+          "measurable 표현을 '단순한 feature engineering'으로 폄하하고 zero-shot·해석성 이점을 못 봄",
+          "morphology를 조건 벡터로만 취급하고 perception 구조(FocusNav SASG)에 미치는 영향을 인지 못 함",
+          "표현력이 큰 방식(learned)이 항상 낫다고 보고 배포 비용·해석성 trade-off를 무시"
+        ],
+        "interviewQuestions": [
+          "one-hot·learned embedding·measurable collision-envelope 세 표현을 표현력과 unseen 일반화 축에서 비교하고, 각각 언제 선택하겠는가?",
+          "learned embedding은 '보간으로 unseen에 일반화할 가능성'이 있다는데, 왜 COMPASS는 이를 future work로 남겼는가 — 무엇이 막고 있는가?",
+          "AgniNav는 embodiment를 4-parameter collision envelope로 표현한다. 이 measurable 표현이 zero-shot 배치와 해석가능성에서 앞서는 이유를 설명하고, 그 한계도 말하라."
+        ],
+        "masteryVsFamiliar": "친숙한 수준은 'embodiment는 one-hot이나 embedding으로 조건화한다'고 말하는 정도다. 통달한 수준은 one-hot(이름표)→learned(좌표)→measurable(물리량) 스펙트럼을 표현력 대 일반화 trade-off로 정확히 배치하고, learned embedding 보간이 zero-shot으로 이어지지 못하는 구체적 병목(space smoothness·새 벡터 배치·불투명성)을 진단하며, AgniNav가 embodiment 일반화를 학습 문제에서 측정 문제로 옮긴 의의와 그 형상-한정 한계를 논하고, FocusNav의 SASG처럼 morphology가 perception attention·정보 truncation까지 재배선함을 설명하며, 왜 2026 최전선이 measurable로 기울되 결국 하이브리드로 가는지를 논증한다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "embodiment 표현은 표현력 대 일반화의 trade-off",
+          "content": "one-hot(이름표)→learned(좌표)→measurable(물리량) 스펙트럼에서 표현력이 커질수록 학습 의존이 커지고, 물리량으로 제약할수록 zero-shot·해석성이 산다."
+        },
+        {
+          "title": "one-hot은 N이 고정이라 unseen을 표현조차 못 한다",
+          "content": "길이 N one-hot은 소수의 이질적 플랫폼에 효율적이지만, 새 몸을 위한 축이 없고 '사이'가 없어 보간도 무의미하다."
+        },
+        {
+          "title": "learned embedding은 보간으로 unseen에 일반화할 '가능성'만 준다",
+          "content": "비슷한 몸이 가까워진 embedding space를 보간하면 사이 몸을 추정할 수 있으나, space smoothness·새 벡터 배치 문제로 COMPASS도 zero-shot을 future work로 남겼다."
+        },
+        {
+          "title": "AgniNav는 embodiment를 측정 가능한 물리량으로 표준화한다",
+          "content": "4-parameter collision envelope(height·front·rear·half width)로, height는 pseudo-laserscan 예측을 conditioning하고 footprint는 planner의 collision check를 설정한다."
+        },
+        {
+          "title": "measurable 표현은 일반화를 '학습 문제'에서 '측정 문제'로 옮긴다",
+          "content": "새 로봇도 치수만 재면 retraining 없이 wheeled·quadruped·humanoid에 배치되고(Jetson Orin 30Hz+), 각 파라미터가 물리 의미를 가져 해석 가능하다."
+        },
+        {
+          "title": "morphology는 조건 벡터를 넘어 perception을 재배선한다",
+          "content": "FocusNav의 SASG는 stability 하락 시 원거리 정보를 truncate해 humanoid balance 제약을 perception attention에 직접 반영한다."
+        },
+        {
+          "title": "unseen zero-shot은 dynamics 얽힘 때문에 아직 미해결",
+          "content": "collision 형상은 측정 가능하나 그것이 balance·gait와 얽히는 방식은 여전히 학습에 의존해, 물리적으로 관측 가능하면서 dynamics까지 담는 표현이 다음 관문이다."
+        },
+        {
+          "title": "종착점은 measurable과 learned의 하이브리드",
+          "content": "물리 치수로 collision 형상을 명시하고 learned 표현으로 dynamics·gait를 흡수하는 결합이 표현력과 zero-shot·해석성을 동시에 취하는 자연스러운 방향이다."
+        }
+      ]
+    },
+    {
+      "number": 8,
+      "emoji": "🌊",
+      "title": "Generative Policies & the Averaging Problem",
+      "titleKr": "생성형 정책과 평균화 문제",
+      "tldr": "deterministic distillation이 '좌/우 회전'을 평균내 버리는 disastrous averaging — CE-Nav의 normalizing flow(VelFlow)와 diffusion policy가 어떻게 multi-modal action 분포를 살리는지 본다.",
+      "topics": [
+        "Disastrous averaging",
+        "Multi-modal action",
+        "Normalizing flow / VelFlow",
+        "Diffusion policy",
+        "분포 모델링"
+      ],
+      "learningGoals": [
+        "multi-modal 결정에서 deterministic 회귀가 실패하는 이유를 예시로 설명한다",
+        "normalizing flow가 action의 full distribution을 학습하는 원리를 안다",
+        "CE-Nav의 IL-then-RL + VelFlow 구조를 COMPASS와 비교할 수 있다",
+        "diffusion/flow policy가 cross-embodiment에서 갖는 이점을 설명한다",
+        "COMPASS의 KL distillation이 사후적으로 옳은 방향이었던 이유를 안다"
+      ],
+      "overview": "Chapter 5에서 COMPASS는 distillation의 averaging effect를 스스로 한계로 인정했고, Chapter 7에서 우리는 cross-embodiment generalist가 필연적으로 여러 몸·여러 상황의 행동을 하나로 합친다는 것을 봤다. 이 챕터는 그 averaging이 왜 단순한 성능 저하가 아니라 **재앙적(disastrous) 실패**가 될 수 있는지, 그리고 그것을 근본적으로 해결하는 길이 왜 '분포를 모델링하는 생성형 정책'인지를 규명한다.\n\n문제의 정수는 하나의 그림으로 압축된다. 정면에 기둥이 있고, 좌로 피하는 것도 우로 피하는 것도 똑같이 유효한 최적해라고 하자. 이 상황의 '평균 행동'은 **직진 — 즉 기둥과의 정면충돌**이다. 두 개의 옳은 답을 평균내면 틀린 답이 나오는 것이다. deterministic 정책(mean regression)은 이런 **multi-modal 결정**에서 구조적으로 실패한다. 그리고 cross-embodiment generalist는 이 multi-modality를 두 층에서 겪는다 — 같은 상황에서 여러 valid path가 있고(상황 multi-modality), 몸마다 최적 행동이 다르다(embodiment multi-modality).\n\n해법은 명확하다. 하나의 mean을 회귀하는 대신 **action의 전체 분포 $p(a \\mid s)$를 모델링**하고 거기서 sampling하는 것. [CE-Nav](https://arxiv.org/abs/2509.23203)(Amap/Alibaba, 2025.09)의 VelFlow(conditional normalizing flow)와 manipulation에서 건너온 diffusion policy가 이 길의 두 대표다. 흥미롭게도 COMPASS가 MSE 대신 KL distillation(variance 보존)을 택해 더 나은 결과를 얻은 것이, 사후적으로 이 '분포를 살려야 한다'는 방향의 정당성을 이미 예고하고 있었다. 이 챕터는 그 실마리를 완결된 생성형 정책 이론으로 확장한다.",
+      "sections": [
+        {
+          "title": "Disastrous Averaging — 두 개의 옳은 답을 평균내면 틀린다",
+          "content": "deterministic 정책의 근본 결함은 손실함수에 이미 새겨져 있다. MSE(mean squared error)로 학습하는 정책은 조건부 기댓값 $\\mathbb{E}[a \\mid s]$을 근사한다 — 주어진 상태에서 데이터에 나타난 행동들의 **평균**을 낸다. 데이터가 unimodal(정답이 하나)이면 이 평균이 곧 정답이라 문제가 없다. 재앙은 데이터가 **multi-modal**일 때 터진다.\n\n정면에 기둥이 있는 상황을 보자. 전문가 시연(혹은 여러 valid trajectory)에는 '좌회전'과 '우회전'이 모두 담긴다 — 둘 다 완벽히 유효한 회피다. MSE는 이 두 mode의 평균을 학습하는데, 좌회전(각속도 $+\\omega$)과 우회전($-\\omega$)의 평균은 $0$, 즉 **직진**이다. 정확히 피해야 할 기둥으로 돌진하는 행동이 학습된다. 두 개의 옳은 답 사이 '중간'이 옳은 답이 아닌 것 — 이것이 disastrous averaging이며, action space가 비볼록(non-convex feasible region)일 때 평균이 feasible set 밖으로 떨어지는 현상이다.\n\n$$a^* = \\arg\\min_a \\mathbb{E}_{a' \\sim p(a'|s)}\\|a - a'\\|^2 = \\mathbb{E}[a'|s]$$\n\n이 식이 말하는 바는 명확하다 — MSE 최소해는 언제나 mode들의 평균이지 mode 자체가 아니다. left mode와 right mode가 대칭이면 그 평균은 정확히 그 사이 골짜기(충돌 경로)에 앉는다.\n\ncross-embodiment는 이 함정을 두 배로 판다. 첫째 **상황 multi-modality** — 방금의 좌/우 회피처럼 한 상태에 여러 valid action이 존재한다. 둘째 **embodiment multi-modality** — 같은 상황이라도 폭이 좁은 G1은 선반 밑을 통과하고 큰 H1은 우회하는 등, 몸마다 최적 행동의 mode가 다르다(Chapter 6). generalist가 여러 몸의 행동을 하나로 distill하면 이 서로 다른 mode들이 뭉개져 어느 몸에도 맞지 않는 평균으로 붕괴할 위험이 있다. COMPASS가 Discussion에서 인정한 averaging effect가 바로 이것이다 — distillation이 embodiment 간 평균화를 유발해 embodiment-dependent 성능 편차를 만든다.\n\n따라서 문제의 진단은 분명하다. **cross-embodiment generalist는 본질적으로 multi-modal이므로, mean 하나를 내는 deterministic 정책으로는 원리적으로 담을 수 없다.** 해결은 정책을 '하나의 행동을 내는 함수'에서 '행동의 분포를 내는 생성기'로 격상하는 것뿐이다."
+        },
+        {
+          "title": "분포를 모델링한다는 것 — Normalizing Flow의 원리",
+          "content": "disastrous averaging의 해법은 mean이 아니라 **분포 $p(a \\mid s)$ 전체를 모델링**하고 거기서 sample을 뽑는 것이다. 그러면 좌/우 회피는 두 개의 mode로 보존되고, 실행 시 그중 하나를 sampling하므로 '중간(직진)'은 절대 나오지 않는다. 이를 구현하는 강력한 도구가 normalizing flow다.\n\n**Normalizing flow(정규화 흐름)** = 단순한 base 분포(예: 표준 가우시안 $z \\sim \\mathcal{N}(0, I)$)를 **invertible(가역) 변환** $f_\\theta$의 연쇄로 복잡한 목표 분포로 밀어 보내는 생성 모델. 핵심은 변수변환 공식으로 정확한 likelihood를 계산할 수 있다는 점이다.\n\n$$\\log p(a) = \\log p(z) - \\log \\left| \\det \\frac{\\partial f_\\theta(z)}{\\partial z} \\right|, \\quad a = f_\\theta(z)$$\n\n이 식의 두 항이 flow의 전부다. $\\log p(z)$는 base 가우시안의 log-density(쉬움), 두 번째 Jacobian determinant 항은 변환이 공간을 얼마나 늘리고 줄였는지를 보정한다. $f_\\theta$가 invertible하므로 **exact likelihood**를 계산할 수 있고(diffusion의 variational bound와 달리 정확), $z$를 뽑아 $f_\\theta$에 통과시키면 **exact sampling**도 된다. conditional로 확장하면 상태 $s$를 조건으로 넣어 $f_\\theta(z; s)$를 만들어 $p(a \\mid s)$를 표현한다.\n\nflow가 multi-modality를 담는 원리는 직관적이다. 가우시안 $z$ 공간은 unimodal이지만, $f_\\theta$가 이 공간을 **접고 늘려(fold and stretch)** action 공간의 여러 봉우리로 매핑한다 — 마치 종이 한 장(단봉)을 접어 두 개의 산봉우리를 만드는 것과 같다. 좌회전에 해당하는 $z$ 영역과 우회전에 해당하는 $z$ 영역이 각각 별개의 mode로 사영되어, 두 유효 행동이 뚜렷이 분리된 채 보존된다.\n\nflow를 학습하는 방법은 **maximum likelihood**다 — 데이터에 나타난 action들의 $\\log p(a \\mid s)$를 최대화한다. 여기서 MSE와의 결정적 차이가 드러난다. MSE는 데이터를 하나의 평균으로 요약하려 하지만, likelihood 최대화는 데이터의 **모든 mode에 확률질량을 배분**하려 한다 — 좌회전 데이터도 우회전 데이터도 각각 높은 likelihood를 갖도록 두 봉우리를 세운다. 그래서 flow는 평균이 아니라 분포를 배우고, 이것이 averaging을 근본에서 회피하는 이유다. 대안으로 diffusion policy도 같은 목표(분포 모델링)를 노이즈 제거의 iterative denoising으로 달성하지만, flow는 invertibility 덕에 exact likelihood와 one-pass sampling이 가능해 실시간 제어에 유리하다."
+        },
+        {
+          "title": "CE-Nav & VelFlow — COMPASS 골격의 개념적 격상",
+          "content": "[CE-Nav](https://arxiv.org/abs/2509.23203)(Amap/Alibaba, 2025.09)는 이 분포 모델링을 cross-embodiment navigation의 완성된 시스템으로 구현한다. 구조를 보면 COMPASS와 **판박이 골격**이지만, 각 부품을 개념적으로 한 단계 격상한다.\n\nCE-Nav의 뼈대는 **two-stage IL-then-RL**로, 두 가지 능력을 명시적으로 분리한다. 첫째 stage는 **universal geometric reasoning**(범용 기하 추론) — 모든 몸이 공유하는 '공간을 어떻게 통과할 것인가'라는 embodiment-무관 지식. 둘째 stage는 **embodiment-specific dynamic adaptation**(몸별 동역학 적응) — 각 몸의 dynamics에 맞춘 미세 조정. 이 분리는 COMPASS의 IL(공유 mobility prior) → residual RL(embodiment 적응) 구도와 정확히 대응한다. 차이는 COMPASS가 이를 '엔지니어링 단계'로 다뤘다면 CE-Nav는 '개념적 원리'로 격상해, 무엇이 공유되고 무엇이 몸별인지를 이론적으로 명시했다는 점이다.\n\n결정적 차별점은 action을 내는 방식이다. CE-Nav의 **VelFlow = conditional normalizing flow**로, classical planner가 대규모로 생성한 데이터에서 **kinematically-sound action의 full distribution을 학습**한다. classical planner는 어느 상황에서 좌·우 여러 유효 경로를 모두 만들어내는데, VelFlow는 이 다양성을 평균내지 않고 분포로 그대로 흡수한다 — 정확히 averaging을 회피하는 것이다. 실행 시 이 분포에서 velocity action을 sampling하므로, 좌/우 회피 상황에서 직진 붕괴가 일어나지 않는다. 적용 embodiment는 quadruped·biped·quadrotor로, 지상·이족·공중을 아우른다.\n\n| 측면 | COMPASS | CE-Nav |\n|---|---|---|\n| 공유 vs 몸별 분리 | IL → residual RL (엔지니어링 단계) | universal geometric reasoning vs embodiment-specific adaptation (개념 원리) |\n| action head | MLP mean + global variance (deterministic) | VelFlow: conditional normalizing flow (분포) |\n| 데이터 소스 | X-Mobility(world-model IL) teacher | classical planner 대규모 데이터 |\n| averaging 처리 | Discussion에서 한계로 인정 | flow로 분포 학습해 회피 |\n| embodiment | Carter·H1·Spot·G1 | quadruped·biped·quadrotor |\n\n요컨대 CE-Nav는 COMPASS의 '무엇을 나눌 것인가(공유/몸별)'라는 골격은 계승하되, '행동을 어떻게 낼 것인가'라는 지점에서 deterministic mean을 generative distribution으로 대체했다. COMPASS가 남긴 averaging 한계에 대한 직접적 응답인 셈이다."
+        },
+        {
+          "title": "Diffusion / Flow Policy와 Cross-Embodiment의 궁합",
+          "content": "VelFlow의 normalizing flow는 더 넓은 흐름의 일부다. manipulation에서 시작된 **diffusion policy**와 flow policy는 모두 'action의 분포를 모델링해 multi-modality를 보존한다'는 동일 계열에 속한다. 이 생성형 정책 패러다임이 왜 특히 cross-embodiment에서 강력한지를 짚어야 한다.\n\n**Diffusion policy**는 action에 점진적으로 노이즈를 더하는 forward process를 역으로 뒤집는 iterative denoising으로 $p(a \\mid s)$를 학습한다. manipulation에서 grasp의 여러 valid 방식(왼쪽/오른쪽에서 집기)을 하나로 뭉개지 않고 각 mode를 살려낸 것이 그 위력의 증거였다. **Flow policy**(VelFlow 계열)는 invertible transform으로 같은 분포 모델링을 달성하되, exact likelihood와 빠른 sampling(one-pass에 가까움)에서 이점이 있어 실시간 로봇 제어에 특히 적합하다.\n\n| 축 | Deterministic (MLP mean) | Diffusion policy | Normalizing flow (VelFlow) |\n|---|---|---|---|\n| 출력 | 단일 action(평균) | 분포(iterative sampling) | 분포(invertible, 1-pass 근접) |\n| likelihood | — | variational bound(근사) | exact |\n| multi-modality | 붕괴(averaging) | 보존 | 보존 |\n| 추론 속도 | 최속 | 느림(다단계 denoise) | 빠름 |\n\ncross-embodiment에서 생성형 정책이 갖는 이점은 두 겹이다. 첫째, 앞서 본 **이중 multi-modality**(상황 + embodiment)를 정면으로 담는다 — 하나의 조건부 분포 $p(a \\mid s, e)$가 상황이 만드는 여러 mode와 embodiment가 만드는 여러 mode를 함께 표현한다. deterministic head가 이 둘을 평균으로 뭉갤 때, 생성형 head는 embodiment embedding $e$에 조건화된 분포로 각 몸의 고유 mode를 선명히 유지한다.\n\n둘째, generalist distillation과의 궁합이다. Chapter 5에서 KL distillation이 MSE보다 나았던 이유가 여기서 완결된다 — teacher specialist들이 서로 다른 분포를 가질 때, student가 분포를 표현할 수 있어야 그것들을 뭉개지 않고 담는다. deterministic student는 여러 teacher의 mean으로 수렴하지만, generative student는 각 teacher의 분포를 조건부로 재현한다. 즉 생성형 정책은 cross-embodiment distillation에서 averaging을 구조적으로 막는 유일한 방식이다.\n\n대가도 정직하게 봐야 한다. diffusion은 다단계 denoising으로 추론이 느려 30Hz 실시간 제어엔 부담이고(그래서 최근 flow·consistency 계열이 속도로 응답), 분포 모델링은 학습·튜닝이 deterministic보다 까다롭다. 그럼에도 cross-embodiment의 본질이 multi-modal인 이상, 이 비용은 '성능 대 정확성'의 선택이 아니라 '작동 대 붕괴'의 선택이다 — averaging이 disastrous인 상황에서 분포 모델링은 사치가 아니라 필수다."
+        },
+        {
+          "title": "KL Distillation의 사후적 정당성 — COMPASS가 이미 옳았던 방향",
+          "content": "이 챕터의 마지막 통찰은 과거를 되돌아보는 데 있다. Chapter 5에서 COMPASS가 distillation loss로 MSE가 아니라 **KL divergence**를 택하고, teacher의 variance를 student가 보존하도록 한 것이 더 나은 결과를 냈다. 당시엔 '분포를 맞추는 게 평균만 맞추는 것보다 낫더라'는 경험적 관찰이었지만, 이 챕터의 이론이 그것을 **사후적으로 정당화**한다.\n\nMSE distillation은 teacher action의 mean만 맞춘다 — teacher가 아무리 넓은 분포(불확실성·multi-modality)를 갖더라도 student는 그 평균점 하나로 수렴한다. 반면 KL distillation은 teacher의 **분포 전체**($\\mu$와 $\\sigma$)를 맞추도록 강제한다.\n\n$$D_{KL}(\\pi_{teacher} \\| \\pi_{student}) \\Rightarrow \\text{mean뿐 아니라 variance까지 정렬}$$\n\nvariance를 보존한다는 것은 곧 '이 상황에서 행동이 얼마나 퍼져 있는가 = 얼마나 multi-modal/불확실한가'라는 정보를 student가 물려받는다는 뜻이다. 좌/우 회피처럼 valid action이 퍼진 상황에서 teacher의 큰 variance가 student로 전달되어, student가 최소한 '여기선 행동이 하나로 정해지지 않는다'는 것을 안다. MSE였다면 이 퍼짐 정보가 소실되고 평균(직진)만 남았을 것이다.\n\n이 관점에서 COMPASS의 KL 선택은 **disastrous averaging을 향한 부분적 방어**였다. 완전한 해법(full distribution 모델링)은 아니었지만 — COMPASS의 head는 여전히 MLP mean + global variance라는 단일 가우시안이라 진짜 multi-modal 분포(두 봉우리)는 표현 못 한다 — variance를 살렸다는 점에서 올바른 방향을 이미 가리키고 있었다. 즉 COMPASS는 '분포를 보존해야 한다'는 원리를 variance 수준에서 절반 실현했고, CE-Nav의 VelFlow가 그것을 full multi-modal distribution 수준으로 완성했다.\n\n큰 그림으로 마무리하자. cross-embodiment generalist는 상황과 embodiment 양쪽에서 필연적으로 multi-modal이다. 이 사실이 **deterministic distillation의 근본 한계**를 못박고, 그 한계를 생성형 정책(normalizing flow·diffusion)이 분포 모델링으로 해소하는 것이 2026년의 방향이다. COMPASS의 KL distillation은 이 여정의 첫걸음 — variance를 살려 방향을 옳게 잡았고 — 이었으며, VelFlow는 그 다음 걸음이다. 다음 Chapter 9(sim-to-real)와 Chapter 10(foundation model)은 이렇게 분포를 보존하는 정책을 실제 세계와 대규모 데이터로 확장하는 여정으로 이어진다."
+        }
+      ],
+      "analogy": {
+        "title": "갈림길에서 평균을 내면 도랑에 빠진다",
+        "content": "내비게이션이 갈림길에 도착했다고 하자. 왼쪽 길도 오른쪽 길도 목적지로 가는 완벽히 유효한 경로다. 그런데 두 경로의 방향을 '평균'내면 어떻게 될까 — 두 길 사이의 중앙분리대나 도랑을 향해 직진한다. 두 개의 옳은 선택을 산술평균한 결과가 어느 쪽도 아닌 최악의 선택이 되는 것. 이것이 deterministic 정책의 disastrous averaging이다. mean만 내는 정책은 좌회전($+$)과 우회전($-$)을 평균내 $0$, 즉 정면충돌을 학습한다.\n\n제대로 된 운전자는 평균을 내지 않는다. 대신 머릿속에 '가능한 선택지의 지도'를 그린다 — 왼쪽도 있고 오른쪽도 있다는 두 개의 뚜렷한 선택지를 유지하다가, 그중 하나를 골라 실행한다. 이것이 분포를 모델링하는 생성형 정책이다. normalizing flow는 이 '선택지 지도'를 수학적으로 만든다 — 단순한 무작위 씨앗(가우시안)을 접고 늘려 왼쪽 봉우리와 오른쪽 봉우리 두 개를 세우고, 실행할 때 한 봉우리에서 표본을 뽑는다. 그래서 절대 '중간(도랑)'으로 가지 않는다.\n\ncross-embodiment는 이 갈림길이 몸마다 다른 상황이다. 폭이 좁은 로봇은 왼쪽 좁은 길이 최적이고, 넓은 로봇은 오른쪽 넓은 길이 최적일 수 있다. 이 서로 다른 선택지들을 하나의 평균으로 뭉개면 어느 로봇에도 안 맞는 도랑 코스가 나온다. 생성형 정책은 각 몸(embodiment 조건)에 맞는 선택지 지도를 따로 유지해, 몸마다 자기에게 맞는 봉우리에서 표본을 뽑게 한다 — 평균의 도랑을 피하는 유일한 길이다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "좌/우 회피가 모두 유효한 multi-modal 상황을 conditional normalizing flow(VelFlow 축소판)로 학습하고 velocity action을 sampling하는 코드다. 대비를 위해 같은 데이터에 MSE deterministic head가 어떤 '평균 붕괴'를 내는지도 나란히 보여준다. 상태 $s$가 '정면 장애물'일 때 flow는 $\\pm\\omega$ 두 mode를 보존하지만 MSE는 $\\omega \\approx 0$(직진 충돌)로 수렴한다.",
+        "code": "import torch, torch.nn as nn\n\nclass ConditionalRealNVP(nn.Module):\n    \"\"\"velocity action a=(v, omega)의 분포 p(a|s)를 학습하는 축소 flow.\"\"\"\n    def __init__(self, act_dim=2, cond_dim=8, n_layers=6, h=128):\n        super().__init__()\n        self.act_dim = act_dim\n        self.nets = nn.ModuleList([\n            nn.Sequential(nn.Linear(act_dim // 2 + cond_dim, h), nn.ReLU(),\n                          nn.Linear(h, act_dim))  # -> (scale, shift)\n            for _ in range(n_layers)])\n\n    def _coupling(self, x, s, i, reverse):\n        x0, x1 = x.chunk(2, dim=-1)                    # affine coupling\n        log_s, t = self.nets[i](torch.cat([x0, s], -1)).chunk(2, dim=-1)\n        log_s = torch.tanh(log_s)                       # 안정화\n        if not reverse:\n            x1 = x1 * torch.exp(log_s) + t              # forward: z->a\n            return torch.cat([x0, x1], -1), log_s.sum(-1)\n        x1 = (x1 - t) * torch.exp(-log_s)              # inverse: a->z\n        return torch.cat([x0, x1], -1), -log_s.sum(-1)\n\n    def log_prob(self, a, s):                           # MLE 학습용\n        z, logdet = a, 0.0\n        for i in reversed(range(len(self.nets))):\n            z = z.flip(-1)\n            z, ld = self._coupling(z, s, i, reverse=True); logdet = logdet + ld\n        base = -0.5 * (z ** 2 + torch.log(torch.tensor(2 * torch.pi))).sum(-1)\n        return base + logdet                            # exact log p(a|s)\n\n    def sample(self, s):                                # 실행: 분포에서 표본\n        z = torch.randn(s.size(0), self.act_dim)\n        for i in range(len(self.nets)):\n            z, _ = self._coupling(z, s, i, reverse=False); z = z.flip(-1)\n        return z                                        # a=(v, omega), mode 보존\n\n# 학습: 정면 장애물 s에서 좌회전(+w)/우회전(-w) 데이터가 섞여 있음\nflow = ConditionalRealNVP()\nopt = torch.optim.Adam(flow.parameters(), 1e-3)\nfor a, s in loader:                                     # a: (B,2) 좌·우 혼재\n    loss = -flow.log_prob(a, s).mean()                  # MLE = 모든 mode에 질량\n    opt.zero_grad(); loss.backward(); opt.step()\n\n# 추론: 같은 s를 여러 번 sampling하면 +w와 -w가 번갈아 나옴 (직진 아님)\nacts = torch.stack([flow.sample(s_obstacle) for _ in range(100)])",
+        "walkthrough": "`ConditionalRealNVP`는 RealNVP식 affine coupling으로 velocity action $a=(v,\\omega)$의 조건부 분포를 학습하는 최소 flow다. `_coupling`이 입력을 반으로 갈라 한쪽($x_0$)과 조건 $s$로 다른 쪽($x_1$)의 scale·shift를 예측하는데, 이 변환은 **invertible**이라 forward($z\\to a$, sampling)와 inverse($a\\to z$, likelihood)를 모두 지원한다. `log_s = tanh(...)`는 Jacobian이 폭주하지 않게 하는 실전 안정화다.\n\n핵심은 `log_prob`과 학습 루프다. action을 base 공간 $z$로 역변환하며 log-determinant를 누적해 **exact $\\log p(a \\mid s)$**를 계산하고, 학습은 이 likelihood를 최대화(`-log_prob.mean()`)한다. 여기가 MSE와 갈리는 지점 — MSE는 좌회전 데이터와 우회전 데이터의 평균($\\omega\\approx 0$, 직진 충돌)으로 수렴하지만, MLE는 **두 mode 각각에 확률질량을 배분**해 $+\\omega$ 봉우리와 $-\\omega$ 봉우리를 모두 세운다.\n\n`sample`이 disastrous averaging을 피하는 실행부다. 표준 가우시안 $z$를 뽑아 coupling을 순방향으로 통과시키면, 접고 늘리는 변환이 $z$를 두 mode 중 하나로 사영한다. 마지막 줄처럼 같은 장애물 상태 `s_obstacle`을 100번 sampling하면 $+\\omega$(좌회전)와 $-\\omega$(우회전)가 번갈아 나오고 — 결정적으로 **직진($\\omega\\approx0$)은 거의 나오지 않는다**. deterministic head라면 매번 직진(충돌)을 냈을 그 상황에서, flow는 유효한 회피 mode를 보존한다. cond_dim에 embodiment embedding을 더 넣으면 몸마다 다른 mode 구조까지 조건화되어, cross-embodiment의 이중 multi-modality를 하나의 분포로 담는 VelFlow가 된다."
+      },
+      "industryEvaluation": {
+        "overview": "생성형 정책(diffusion·normalizing flow)은 2024~2026 로봇 학습의 핵심 패러다임 전환으로, 빅테크 robotics 팀이 manipulation과 navigation 양쪽에서 실전 채택 중이다. 면접에서는 '왜 deterministic이 실패하는가'를 multi-modality로 정확히 진단하고, 분포 모델링이 그것을 어떻게 해결하는지를 원리·비용 trade-off와 함께 설명하는 깊이를 본다.",
+        "whatEngineersLookFor": [
+          "disastrous averaging을 '두 유효 mode의 평균이 feasible set 밖(충돌)'으로 정확히 설명하고 MSE가 조건부 mean을 학습함을 아는 이해",
+          "normalizing flow의 exact likelihood·invertibility와 diffusion의 iterative denoising을 추론 속도·likelihood 정확도 축에서 구분하는 지식",
+          "cross-embodiment의 이중 multi-modality(상황 + embodiment)를 진단하고, 생성형 정책이 이를 조건부 분포로 담는 메커니즘을 설명하는 통찰",
+          "CE-Nav의 IL-then-RL + VelFlow를 COMPASS 골격과 구조적으로 비교하는 시스템 사고",
+          "생성형 정책의 추론 비용·학습 난이도를 인정하면서도 'multi-modal 상황에선 선택이 아닌 필수'임을 판단하는 균형감"
+        ],
+        "redFlags": [
+          "deterministic 정책이 multi-modal에서 실패하는 이유를 '데이터가 부족해서'로 오진(구조적 averaging을 모름)",
+          "'분포를 모델링한다'는 말을 하되 왜 그것이 두 mode를 보존하는지(likelihood가 모든 mode에 질량 배분) 설명 못 함",
+          "diffusion과 flow를 뭉뚱그려 '생성 모델'로만 취급하고 exact likelihood·추론 속도 차이를 모름",
+          "COMPASS의 KL distillation을 단순 구현 디테일로 보고 variance 보존이 averaging 방어의 부분해였음을 놓침",
+          "생성형 정책을 무조건 우월하다고 보고 실시간 추론 비용·튜닝 난이도 trade-off를 무시"
+        ],
+        "interviewQuestions": [
+          "정면에 장애물이 있고 좌/우 회피가 모두 유효할 때 MSE로 학습한 정책이 왜 충돌하는가? 손실함수 관점에서 설명하고, 이를 어떻게 해결하겠는가.",
+          "normalizing flow가 action의 full distribution을 학습하는 원리를 변수변환 공식으로 설명하고, diffusion policy 대비 장단점을 말하라.",
+          "COMPASS가 MSE 대신 KL distillation을 택해 더 나은 결과를 얻었다. 이것이 왜 사후적으로 옳은 방향이었는지, 그리고 CE-Nav의 VelFlow가 그것을 어떻게 완성하는지 논하라."
+        ],
+        "masteryVsFamiliar": "친숙한 수준은 'diffusion policy가 multi-modal action을 잘 다룬다'고 말하는 정도다. 통달한 수준은 disastrous averaging을 'MSE가 조건부 mean을 학습해 비볼록 feasible set에서 두 mode의 평균이 충돌 경로로 떨어지는 것'으로 수식과 함께 진단하고, normalizing flow가 변수변환 공식으로 exact likelihood를 얻고 base 가우시안을 접고 늘려 multi-mode를 세우는 원리를 설명하며, cross-embodiment의 이중 multi-modality(상황+embodiment)를 조건부 분포로 담는 필연성을 논하고, CE-Nav의 IL-then-RL+VelFlow를 COMPASS 골격의 개념적 격상으로 비교하며, COMPASS의 KL distillation이 variance 보존으로 averaging을 절반 방어한 부분해였고 VelFlow가 full distribution으로 완성했음을 논증한다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "Disastrous averaging은 두 옳은 답의 평균이 틀린 답이 되는 실패",
+          "content": "좌/우 회피가 모두 유효할 때 MSE가 학습하는 조건부 mean은 직진(충돌)이 되며, 이는 feasible set이 비볼록일 때 평균이 그 밖으로 떨어지는 구조적 현상이다."
+        },
+        {
+          "title": "cross-embodiment는 이중으로 multi-modal이다",
+          "content": "한 상황에 여러 valid path(상황 multi-modality)와 몸마다 다른 최적 행동(embodiment multi-modality)이 겹쳐, deterministic mean으로는 원리적으로 담을 수 없다."
+        },
+        {
+          "title": "해법은 mean이 아니라 분포 p(a|s)를 모델링하는 것",
+          "content": "action의 전체 분포를 학습하고 거기서 sampling하면 좌/우 mode가 보존되어, 실행 시 '중간(직진)'이 나오지 않는다."
+        },
+        {
+          "title": "normalizing flow는 invertible 변환으로 exact likelihood를 준다",
+          "content": "가우시안을 접고 늘려 multi-mode 분포를 만들고, 변수변환 공식으로 정확한 likelihood와 one-pass sampling이 가능해 실시간 제어에 유리하다."
+        },
+        {
+          "title": "CE-Nav는 COMPASS 골격을 개념적으로 격상한다",
+          "content": "IL-then-RL로 universal geometric reasoning과 embodiment-specific adaptation을 명시 분리하고, VelFlow(conditional flow)로 kinematically-sound action의 full distribution을 학습해 averaging을 회피한다."
+        },
+        {
+          "title": "생성형 정책은 cross-embodiment distillation에서 averaging을 구조적으로 막는다",
+          "content": "조건부 분포 p(a|s,e)가 상황과 embodiment의 mode를 함께 표현해, deterministic student가 여러 teacher를 평균낼 때 generative student는 각 분포를 재현한다."
+        },
+        {
+          "title": "COMPASS의 KL distillation은 사후적으로 옳은 방향이었다",
+          "content": "KL은 teacher의 variance까지 보존해 '행동이 얼마나 퍼졌는가'를 student에 전달 — full multi-modal은 아니지만 averaging을 절반 방어한 부분해였다."
+        },
+        {
+          "title": "분포 모델링은 사치가 아니라 필수다",
+          "content": "diffusion의 추론 비용·튜닝 난이도라는 대가에도, averaging이 disastrous한 multi-modal 상황에서 이는 '성능 대 정확성'이 아니라 '작동 대 붕괴'의 선택이다."
+        }
+      ]
+    },
+    {
+      "number": 9,
+      "emoji": "🌉",
+      "title": "Sim-to-Real & the NVIDIA Physical AI Stack",
+      "titleKr": "심투리얼과 NVIDIA 피지컬 AI 스택",
+      "tldr": "Isaac Sim/Lab·MobilityGen 합성데이터, rendering domain gap, Real2Sim(VR-Robo), Jetson 배치 — COMPASS가 R²D²·GR00T 생태계 안에서 어떤 역할을 하는지 조망한다.",
+      "topics": [
+        "Isaac Sim / Lab",
+        "MobilityGen SDG",
+        "Rendering domain gap",
+        "Real2Sim",
+        "Jetson 배치 / TensorRT"
+      ],
+      "learningGoals": [
+        "sim-to-real gap이 vision-based navigation에서 특히 어려운 이유를 안다",
+        "MobilityGen 합성데이터 → COMPASS 학습 → Jetson 배치 파이프라인을 설명한다",
+        "Real2Sim(VR-Robo)이 gap을 줄이는 접근을 이해한다",
+        "TensorRT inference latency/메모리 관점에서 배치 제약을 평가할 수 있다",
+        "COMPASS가 GR00T N의 synthetic data 생성기로 위치하는 의미를 안다"
+      ],
+      "overview": "지금까지 우리는 COMPASS를 시뮬레이션 안에서 완성했다. IL로 mobility prior를 심고(Ch2~3), residual RL로 embodiment에 적응시키고(Ch4), distillation으로 하나의 generalist로 통합했다(Ch5~6). 그러나 로봇 논문의 진짜 시험은 시뮬레이터 밖 — 실제 복도, 실제 창고, 실제 조명 아래 — 에서 정책이 작동하는가다. 이 챕터는 그 마지막 관문인 **sim-to-real transfer**를 다루며, COMPASS가 왜 처음부터 이 관문을 통과하도록 설계되었는지를 밝힌다.\n\n핵심 주장은 두 가지다. 첫째, vision-based navigation의 sim-to-real gap은 dynamics gap보다 **rendering domain gap**이 지배한다 — 즉 물리가 아니라 '픽셀이 얼마나 진짜 같은가'가 병목이다. COMPASS 논문 스스로 Isaac Lab에서 Carter 성능이 원 X-Mobility보다 하락했음을 인정하며, 그 원인을 route 단순화와 image rendering quality 변화로 지목한다. 이 정직한 자기 진단이 이 챕터의 출발점이다.\n\n둘째, COMPASS는 고립된 논문이 아니라 NVIDIA의 **Physical AI 스택**(R²D²) 안의 한 부품이다. MobilityGen이 대규모 합성 motion 데이터를 만들고, COMPASS가 그 위에서 mobility를 학습하며, TensorRT로 컴파일되어 Jetson Orin/Thor에 배치되고, 나아가 GR00T N 같은 humanoid VLA foundation model의 synthetic data 생성기로도 위치한다. 이 챕터는 개별 기법을 넘어, COMPASS가 어떤 생태계적 역할을 수행하는지 — 그리고 그 역할이 sim-to-real이라는 난제를 어떻게 시스템 수준에서 우회하는지 — 를 조망한다.",
+      "sections": [
+        {
+          "title": "왜 vision-based navigation의 sim-to-real은 특히 어려운가",
+          "content": "**Sim-to-real gap(심투리얼 격차)** = 시뮬레이터에서 학습한 정책이 실제 로봇에 배치될 때 성능이 하락하는 현상. 원인은 시뮬레이션과 현실 사이의 모든 불일치다.\n\n전통적 로봇 학습에서 이 gap의 주범은 **dynamics gap**이었다 — 마찰계수, 관성, actuator 지연, 접촉 물리가 실제와 다르다. state-based(관절 각도·속도를 직접 입력) 정책에서는 이 물리 불일치가 지배적이라, domain randomization으로 마찰·질량을 흔들어 강건하게 만드는 것이 표준 처방이었다.\n\n그러나 COMPASS는 **image를 입력받는 vision-based navigation** 정책이다. 여기서는 병목이 물리에서 픽셀로 옮겨간다. 정책이 실제로 보는 것은 카메라 이미지이고, 시뮬레이터의 렌더링된 이미지와 실제 카메라 이미지 사이에는 텍스처·조명·그림자·반사·노이즈·모션블러의 미묘한 차이가 존재한다. 이 차이가 곧 **rendering domain gap(렌더링 도메인 격차)**이다 — dynamics가 완벽해도 픽셀 분포가 다르면 latent state 인코더가 out-of-distribution 입력을 만나 붕괴한다.\n\n| 구분 | State-based control | Vision-based navigation |\n|---|---|---|\n| 정책 입력 | 관절 각도·속도 등 저차원 상태 | 카메라 image(고차원 픽셀) |\n| 지배적 gap | dynamics(마찰·관성·지연) | rendering(텍스처·조명·노이즈) |\n| 표준 처방 | physics domain randomization | visual domain randomization + 고충실도 렌더링 |\n| 실패 양상 | 접촉·균형 불안정 | 인코더 OOD → latent 붕괴 |\n\n이 관점 전환이 이 챕터 전체를 관통한다. COMPASS가 X-Mobility의 latent world model을 backbone으로 쓰는 것 자체가 부분적 방어책이다 — 원시 픽셀 대신 압축된 latent state에서 정책이 동작하므로, 렌더링 차이가 latent 공간에서 흡수될 여지가 생긴다. 그러나 latent 인코더 자체가 sim 픽셀로 학습되었다면 그 방어는 불완전하며, 여기서 뒤에 볼 개선 방향(다양한 rendering condition을 latent state 학습에 노출)과 Real2Sim이 등장한다."
+        },
+        {
+          "title": "COMPASS가 인정한 rendering gap — Carter 성능 하락의 정직한 진단",
+          "content": "sim-to-real을 다루는 대부분의 논문은 '우리 정책이 실제 로봇에서 잘 돌았다'는 성공 데모로 끝난다. [COMPASS](https://arxiv.org/abs/2502.16372)의 서술이 값진 이유는 그 반대 — **자기 파이프라인이 어디서 성능을 잃었는지를 명시**하기 때문이다.\n\nCOMPASS는 원래의 X-Mobility가 학습·평가되던 환경과 다른 Isaac Lab 환경에서 Carter를 재평가했을 때, Carter 성능이 원 X-Mobility 대비 하락했음을 인정한다. 원인으로 두 가지를 지목한다. 첫째는 **route의 단순화** — 평가에 쓰인 경로가 원 설정보다 단순해지면서 정책이 학습한 분포와 어긋났다. 둘째, 그리고 더 중요한 것은 **image rendering quality의 변화**다. 같은 물리·같은 로봇이라도 렌더러가 만들어내는 픽셀의 질감이 달라지면, 앞 절에서 말한 rendering domain gap이 sim-내부에서조차 발생한다.\n\n이 사실은 sim-to-real gap이 '시뮬레이션 대 현실'만의 문제가 아니라 '**렌더링 조건 대 렌더링 조건**'의 문제임을 폭로한다. 즉 sim → real 전이가 아니라 sim(rendering A) → sim(rendering B) 전이에서조차 gap이 나타난다. 이는 gap의 본질이 물리적 현실성이 아니라 정책이 보는 이미지 분포의 이동(distribution shift)임을 보여준다 — Chapter 3에서 배운 covariate shift가 픽셀 도메인으로 재등장한 것이다.\n\nCOMPASS가 제시하는 개선 방향은 여기서 자연스럽게 도출된다. **다양한 rendering condition을 latent state 학습 단계에 노출**시키는 것이다. world model 인코더가 하나의 렌더링 스타일이 아니라 조명·텍스처·렌더 품질이 광범위하게 흔들린 이미지들을 보고 latent를 학습하면, latent 표현이 렌더링 세부에 불변(invariant)해진다. 이것이 vision domain randomization의 latent-space 버전이며, 다음 절의 domain randomization 코드와 직접 연결된다.\n\n이 진단이 주는 연구적 교훈은 크다. cross-embodiment mobility의 다음 병목은 새 RL 알고리즘이 아니라 **인코더의 rendering-invariance**라는 것이다. morphology gap(Ch4~7)을 residual RL로 넘었듯이, rendering gap은 latent 학습의 시각적 다양성으로 넘어야 한다."
+        },
+        {
+          "title": "MobilityGen → COMPASS → Jetson — R²D² Physical AI 파이프라인",
+          "content": "COMPASS를 개별 논문이 아니라 생태계의 부품으로 보면 그 설계 결정들이 비로소 이해된다. NVIDIA의 **R²D²(Robotics Research & Development Digest, 2025.04)**는 sim-centric robotics를 위한 워크플로우 제품군으로, 세 축을 엮는다.\n\n- **MobilityGen** — Isaac Sim 기반의 대규모 synthetic motion dataset 생성기(SDG, synthetic data generation). cross-embodiment·cross-environment로 로봇의 이동 궤적·센서 관측을 대량 합성한다. COMPASS의 IL·distillation 데이터의 원천이 될 수 있는 층이다.\n- **COMPASS** — 그 데이터 위에서 cross-embodiment mobility를 학습하고(IL → residual RL → distillation), Isaac Lab에서 fine-tuning하며, zero-shot sim2real로 배치되는 mobility 학습 스택.\n- **HOVER** — humanoid whole-body controller로, 여러 제어 모드를 하나로 통합한다. COMPASS의 mobility 명령을 실제 humanoid 관절 제어로 실현하는 하위 층에 해당한다(Ch6의 joint controller 계층과 같은 자리).\n\n전체 파이프라인은 하나의 방향으로 흐른다. **MobilityGen SDG(합성 데이터 생성) → COMPASS mobility 학습(+Isaac Lab fine-tuning) → Jetson Orin/Thor 배치**. 이 흐름의 아름다움은 각 단계가 앞 단계의 산출물을 소비한다는 데 있다 — 합성 데이터가 학습을 먹이고, 학습된 정책이 엣지 하드웨어로 흘러 나간다. 사람이 실제 로봇으로 데이터를 모으는 병목이 SDG로 대체되고, 실배치의 병목이 TensorRT 컴파일로 해소된다.\n\n이 sim-centric 접근의 전략적 베팅은 명확하다. **현실 데이터 수집은 느리고 비싸며 위험하지만, 시뮬레이션 데이터는 빠르고 싸며 무한히 다양화할 수 있다**는 것. rendering gap(앞 절)이라는 대가를 치르는 대신, 데이터 규모·다양성·라벨 완전성(ground-truth pose·depth·segmentation을 공짜로 얻음)을 취한다. Chapter 10에서 볼 '대규모 데이터 foundation model' 패러다임과 대비되는, COMPASS가 속한 '구조적 분리 + sim 데이터' 패러다임의 정체성이 여기서 확립된다.\n\n그리고 이 파이프라인이 겨냥하는 하드웨어가 Jetson Orin(현세대)과 Thor(차세대)라는 점은, 처음부터 배치를 전제로 설계되었음을 말한다 — 다음 절이 그 배치 제약을 정량화한다."
+        },
+        {
+          "title": "Real2Sim으로 gap을 되돌리기 — VR-Robo와 environment semantic",
+          "content": "rendering gap을 줄이는 두 방향이 있다. 하나는 sim을 더 다양하게(domain randomization) 만들어 real을 그 다양성 안에 포함시키는 것이고, 다른 하나는 아예 **real을 sim 안으로 복원**해 gap 자체를 없애는 것이다. 후자가 **Real2Sim(리얼투심)** 접근이다.\n\n**Real2Sim** = 실제 환경을 3D 재구성해 시뮬레이터 안에 디지털 복제본(digital twin)을 만들고, 그 복제본에서 정책을 학습·평가하는 프레임워크. 정책이 학습에서 보는 픽셀과 배치에서 보는 픽셀이 같은 실제 장면에서 유래하므로 rendering gap이 근본적으로 축소된다.\n\n[VR-Robo](https://arxiv.org/abs/2502.01536)(2025.02, \"real-to-sim-to-real framework for visual robot navigation and locomotion\")가 이 방향의 대표다. 이름 그대로 real → sim → real의 3단 루프를 돈다. 실제 환경을 촬영해 photorealistic한 sim 장면으로 복원하고(real2sim), 그 안에서 visual navigation·locomotion 정책을 학습한 뒤(sim), 실제 로봇으로 되돌린다(sim2real). 핵심은 복원된 sim의 렌더링이 실제 장면의 시각적 통계를 그대로 담고 있어, 정책의 vision 인코더가 배치 환경과 일치하는 분포에서 학습된다는 점이다.\n\nCOMPASS 논문은 자신의 RL fine-tuning이 **environment의 semantic을 이해**하는 방향으로 확장되면, Real2Sim 지원이 있을 때 Sim2Real gap을 더 좁힐 수 있다고 언급한다. 이 연결이 미묘하지만 중요하다. COMPASS의 residual RL(Ch4)이 단순히 충돌 회피를 넘어 '이곳은 좁은 복도', '저것은 통과 가능한 선반 밑'처럼 환경의 의미를 latent에 반영하도록 학습되면, Real2Sim으로 복원된 실제 장면에서 그 semantic 이해가 배치로 그대로 전이된다. 즉 Real2Sim은 픽셀 gap을 줄이고, semantic-aware RL은 그 위에서 의미 gap을 줄이는 상보적 관계다.\n\n두 접근을 비교하면 트레이드오프가 드러난다. domain randomization은 임의의 새 환경에 대비하는 범용 강건성을 주지만 특정 환경에 최적은 아니다. Real2Sim은 특정 배치 환경에 대한 gap을 거의 제거하지만, 그 환경을 미리 스캔·복원해야 하므로 확장성이 제한된다. 실전에서는 둘을 결합한다 — Real2Sim으로 base 장면을 복원하고 그 위에 조명·텍스처 randomization을 얹어, '정확한 배치 환경 + 그 주변 변동'을 함께 학습한다.\n\n| 접근 | 원리 | 강점 | 약점 |\n|---|---|---|---|\n| Domain randomization | sim을 다양화해 real을 포함 | 범용 강건성, 사전 스캔 불필요 | 특정 환경엔 비최적, 과도하면 학습 난이도↑ |\n| Real2Sim (VR-Robo) | real을 sim으로 복원 | 배치 환경 gap 거의 제거 | 환경별 스캔·복원 비용, 확장성 제한 |\n| 결합 | 복원 장면 + randomization | 정확도와 강건성 동시 | 파이프라인 복잡도 증가 |"
+        },
+        {
+          "title": "엣지 배치의 물리학 — TensorRT, latency, 그리고 경량성의 대가",
+          "content": "sim-to-real의 마지막 1미터는 소프트웨어가 실제 로봇의 컴퓨터에서 실시간으로 도는가다. 아무리 정확한 정책도 제어 주기 안에 추론을 못 끝내면 무용하다. COMPASS는 이 제약을 정량적으로 통과한다.\n\n배치 스택은 **TensorRT on AGX Jetson Orin**이다. TensorRT는 NVIDIA의 추론 최적화 컴파일러로, 학습된 네트워크를 특정 GPU에 맞춰 layer fusion·precision calibration(FP16/INT8)·kernel auto-tuning으로 재컴파일한다. 그 결과 실측 지표는 다음과 같다.\n\n| 항목 | 값 | 의미 |\n|---|---|---|\n| Runtime | TensorRT / AGX Jetson Orin | 엣지 GPU, 클라우드 불필요 |\n| P50 latency | 29.3 ms | 중앙값 추론 시간 |\n| P95 latency | 29.4 ms | 상위 5% 최악 추론 시간 |\n| GPU memory | 422 MB | 모델 상주 메모리 |\n\n이 숫자를 읽는 법이 이 절의 핵심이다. 첫째, **P50(29.3ms)과 P95(29.4ms)가 거의 같다** — 이 0.1ms 차이가 뜻하는 바는 latency 분산이 극히 작다는 것이다. 실시간 제어에서는 평균 지연보다 최악 지연(tail latency)이 중요하다. 제어 루프가 33ms(30Hz) 주기라면, P95가 29.4ms라는 것은 거의 모든 추론이 데드라인을 지킨다는 뜻이다. tail이 튀면 로봇이 순간적으로 눈이 머는 것과 같으므로, 이 낮은 분산은 안전성과 직결된다.\n\n둘째, **422MB**라는 메모리 풋프린트는 Jetson Orin의 공유 메모리 예산 안에서 다른 프로세스(perception, locomotion controller, logging)와 공존할 수 있는 크기다. 이 경량성은 우연이 아니라 Chapter 5~6의 설계 결정에서 나왔다 — 배치 시 무거운 X-Mobility backbone은 유지하되 여러 embodiment의 specialist들을 하나의 **distilled generalist 정책으로 교체**함으로써, 배치 스택을 경량으로 유지한다. specialist를 embodiment 수만큼 싣는 대신 하나의 조건부 정책만 싣는 것이다.\n\n여기에 경량성의 대가라는 긴장도 있다. distillation은 성능을 유지하면서 크기를 줄이지만(Ch5), rendering gap에 대한 강건성까지 자동으로 주지는 않는다. 즉 이 챕터의 두 축 — rendering gap(정확성)과 edge latency(효율성) — 은 부분적으로 상충한다. gap을 줄이려 인코더에 더 많은 rendering 다양성을 학습시키면 모델이 커질 수 있고, 커지면 latency·메모리 예산을 압박한다. COMPASS의 30ms/422MB는 이 저울에서 '충분히 정확하되 확실히 배치 가능한' 지점을 택한 결과다.\n\n마지막으로 이 배치 프로필이 Chapter 10의 패러다임 대비를 예고한다. COMPASS류 구조적 분리는 바로 이 경량 배치를 얻기 위해 sim 데이터와 distillation을 택했다. 반대로 수십억 파라미터의 navigation foundation model(NavFoM 등)은 범용성을 얻지만 이런 30ms/422MB 엣지 배치는 어렵다 — 배치 제약이 곧 패러다임 선택의 압력임을 이 숫자들이 증언한다."
+        }
+      ],
+      "analogy": {
+        "title": "영화 세트장에서 리허설한 배우, 그리고 실제 무대",
+        "content": "COMPASS를 시뮬레이터에서 학습시키는 것은 배우가 영화 세트장에서 연기를 연습하는 것과 같다. 세트장(Isaac Sim)은 실제 거리를 흉내 낸 인공 공간이다. 배우(정책)는 여기서 동선을 완벽히 외운다. 그런데 문제는 세트장의 조명과 벽지 질감, 그림자가 실제 거리와 미묘하게 다르다는 것이다 — 이것이 rendering domain gap이다. 배우가 세트장에선 완벽했는데 실제 촬영장에 나가니 낯선 빛에 당황해 동선을 놓치는 상황, 그것이 sim-to-real 성능 하락이다. 흥미롭게도 COMPASS는 '우리 배우가 세트장을 A에서 B로 바꿨더니 이미 헤맸다'고 정직하게 고백한다 — 세트장끼리도 조명이 다르면 문제라는 것.\n\n이 문제를 푸는 두 전략이 있다. 하나는 리허설을 **온갖 조명 조건에서 반복**시키는 것(domain randomization) — 배우가 형광등·백열등·햇빛 아래 모두 연습하면 어떤 촬영장에서도 흔들리지 않는다. 다른 하나는 아예 **실제 촬영장을 그대로 세트장으로 복제**하는 것(Real2Sim, VR-Robo) — 진짜 무대를 사진 찍어 똑같이 지은 세트에서 연습하면 실전과의 차이가 사라진다. 현장에서는 둘을 섞는다. 실제 무대를 복제하되 그 위에 조명을 흔들어, '이 무대 + 그날그날의 빛 변화'를 함께 대비시킨다.\n\n그리고 마지막으로, 아무리 잘 연습한 배우라도 무대에서 대사를 제때 쳐야 한다. 30밀리초 안에 다음 동작을 결정하지 못하면 극이 무너진다 — 이것이 Jetson Orin의 latency 제약이다. COMPASS는 여러 배우(specialist)를 한 명의 만능 배우(distilled generalist)로 압축해, 무대 뒤 대기실(엣지 메모리 422MB)에 가볍게 들어가고 대사를 29ms 안에 치도록 훈련한다. 세트장 리허설, 실제 무대 복제, 그리고 제때 대사 치기 — 이 셋이 sim-to-real의 전부다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "sim-to-real 파이프라인의 두 정수를 하나로 스케치한다. (1) latent 인코더를 rendering-invariant하게 만드는 visual domain randomization 설정, (2) 학습된 정책을 TensorRT로 export하고 Jetson에서 tail latency를 측정하는 배치 루프. Isaac Lab 스타일의 개념 코드로, 실제 API를 단순화했다.",
+        "code": "import numpy as np, torch, time\n\n# ---- (1) Visual domain randomization: rendering gap 방어 ----\n# world-model latent 인코더가 렌더링 세부에 불변(invariant)해지도록\n# 조명·텍스처·렌더품질을 매 env reset마다 흔든다 (Ch2 latent에 노출).\nRANDOMIZE = {\n    \"light_intensity\": (300.0, 2000.0),   # lux\n    \"light_color_temp\": (3000, 8000),     # Kelvin\n    \"texture_set\": [\"warehouse\", \"office\", \"concrete\", \"tiled\"],\n    \"render_spp\":  (1, 8),                # samples/pixel = 렌더 품질 변동\n    \"camera_noise_std\": (0.0, 0.03),\n    \"motion_blur\": (0.0, 0.4),\n}\n\ndef randomize_scene(env, rng):\n    lo, hi = RANDOMIZE[\"light_intensity\"]\n    env.set_light(intensity=rng.uniform(lo, hi),\n                  temp=rng.integers(*RANDOMIZE[\"light_color_temp\"]))\n    env.set_texture(rng.choice(RANDOMIZE[\"texture_set\"]))\n    env.set_render(spp=rng.integers(*RANDOMIZE[\"render_spp\"]))\n    env.set_camera(noise=rng.uniform(*RANDOMIZE[\"camera_noise_std\"]),\n                   blur=rng.uniform(*RANDOMIZE[\"motion_blur\"]))\n    # -> 같은 물리·다른 픽셀. 인코더는 rendering-invariant latent를 학습.\n\n# ---- (2) TensorRT export + Jetson tail-latency 측정 ----\ndef deploy_and_profile(policy, sample_obs, n=1000):\n    trt = torch.compile(policy.eval(), backend=\"tensorrt\",\n                        options={\"precision\": \"fp16\"})   # layer fusion + FP16\n    lat = []\n    for _ in range(n):\n        t0 = time.perf_counter()\n        with torch.no_grad():\n            trt(sample_obs)                              # single-step inference\n        torch.cuda.synchronize()\n        lat.append((time.perf_counter() - t0) * 1e3)     # ms\n    lat = np.array(lat)\n    p50, p95 = np.percentile(lat, [50, 95])\n    mem_mb = torch.cuda.max_memory_allocated() / 1e6\n    # 실시간 제어(30Hz=33ms) 데드라인 대비 tail latency가 관건\n    assert p95 < 33.0, f\"P95 {p95:.1f}ms > 33ms 데드라인 위반\"\n    return dict(p50=p50, p95=p95, gpu_mb=mem_mb)  # COMPASS: 29.3 / 29.4 / 422",
+        "walkthrough": "`RANDOMIZE` 딕셔너리가 이 챕터의 핵심 주장을 코드로 옮긴다. 흔드는 대상이 마찰·질량 같은 물리량이 아니라 조명·텍스처·`render_spp`(samples-per-pixel = 렌더 품질)·노이즈·블러 같은 **시각 속성**이라는 데 주목하라. vision-based navigation의 gap이 dynamics가 아니라 rendering이기 때문이다.\n\n`randomize_scene`은 매 env reset마다 호출되어 '같은 물리, 다른 픽셀'을 만든다. 이 다양성에 노출된 world-model 인코더는 특정 렌더링 스타일이 아니라 장면의 구조(장애물·통로)를 담는 rendering-invariant latent를 배운다 — COMPASS가 제시한 개선 방향(다양한 rendering condition을 latent state 학습에 노출)의 직접 구현이다. `render_spp`를 흔드는 것이 특히 중요한데, 이것이 바로 논문이 Carter 하락 원인으로 지목한 'rendering quality 변화'를 학습 분포 안에 미리 포함시키는 장치다.\n\n`deploy_and_profile`은 배치 현실을 검증한다. `torch.compile(..., backend=\"tensorrt\", precision=\"fp16\")`이 TensorRT의 layer fusion과 FP16 정밀도 캘리브레이션을 켠다 — 이것이 30ms/422MB를 가능케 하는 최적화다. 측정에서 평균이 아니라 `p95`(tail latency)를 데드라인과 비교하는 것이 실시간 제어의 정석이다. 로봇은 최악의 순간에도 눈이 멀면 안 되므로, P50이 아무리 빨라도 P95가 33ms(30Hz 주기)를 넘으면 배치 불가로 처리한다. COMPASS의 실측 P50 29.3 / P95 29.4 / 422MB가 이 assert를 통과하는 지점이며, P50≈P95라는 낮은 분산이 안전 배치의 증거다."
+      },
+      "industryEvaluation": {
+        "overview": "sim-to-real은 embodied AI 팀(NVIDIA, Google DeepMind robotics, Tesla Optimus, Figure 등)의 채용에서 '학습을 넘어 배치까지 아는가'를 가르는 리트머스다. 면접관은 gap의 원인을 정확히 진단하고, domain randomization·Real2Sim·엣지 배치 제약을 시스템 수준에서 절충하는 사고를 본다. 특히 vision-based 정책에서 gap의 본질을 dynamics가 아닌 rendering으로 짚는지가 초급과 상급을 가른다.",
+        "whatEngineersLookFor": [
+          "vision-based navigation의 gap을 dynamics가 아니라 rendering domain gap으로 정확히 지목하는 진단력",
+          "domain randomization과 Real2Sim의 트레이드오프(범용 강건성 vs 배치 환경 정확성)를 상황에 맞게 절충하는 판단",
+          "P50이 아닌 P95(tail latency)를 제어 데드라인과 비교하고, 낮은 분산의 안전적 함의를 설명하는 배치 감각",
+          "distillation을 통한 경량 배치와 rendering 강건성 사이의 긴장을 인지하고 절충하는 시스템 사고",
+          "COMPASS를 고립된 알고리즘이 아니라 MobilityGen→학습→Jetson 파이프라인·GR00T 생태계의 부품으로 위치시키는 조망"
+        ],
+        "redFlags": [
+          "vision 정책의 sim-to-real을 물리 domain randomization(마찰·질량)만으로 해결하려 하고 rendering gap을 놓침",
+          "'domain randomization이면 다 해결된다'며 Real2Sim이나 latent invariance 같은 대안을 모름",
+          "latency를 평균값(P50)으로만 보고 tail latency와 제어 데드라인의 관계를 무시",
+          "sim 데이터의 대가(rendering gap)를 인정하지 않고 sim-centric을 만능으로 포장",
+          "COMPASS의 자기 진단(Carter 하락)을 결함으로 폄하하고, 그것이 gap의 본질을 드러낸 통찰임을 못 봄"
+        ],
+        "interviewQuestions": [
+          "vision-based navigation 정책의 sim-to-real gap은 state-based control과 무엇이 다른가? 왜 dynamics randomization만으로는 부족하며, latent 인코더 수준에서 어떻게 방어하는가?",
+          "COMPASS는 Isaac Lab에서 Carter 성능이 하락했다고 인정한다. 원인을 설명하고, 이것이 sim-to-real gap의 본질에 대해 무엇을 시사하는지 논하라.",
+          "Real2Sim(VR-Robo)과 domain randomization의 트레이드오프는 무엇이며, 특정 창고에 로봇을 배치한다면 둘을 어떻게 결합하겠는가?"
+        ],
+        "masteryVsFamiliar": "친숙한 수준은 'sim-to-real gap이 있고 domain randomization으로 줄인다'고 말하는 정도다. 통달한 수준은 vision 정책에서 gap이 dynamics가 아니라 rendering domain gap임을 짚고, COMPASS의 Carter 하락 자기 진단을 covariate shift의 픽셀 도메인 재현으로 해석하며, 개선책으로 다양한 rendering condition을 latent 학습에 노출하는 것과 Real2Sim(VR-Robo)의 real→sim→real 루프를 상보적으로 설명하고, TensorRT/Jetson의 P50≈P95(29.3/29.4ms)·422MB를 tail-latency와 경량 배치 관점에서 해석하며, COMPASS가 MobilityGen SDG→학습→Jetson 파이프라인과 GR00T N synthetic data 생성기라는 생태계 역할을 수행함을 조망한다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "vision navigation의 gap은 rendering이 지배한다",
+          "content": "state-based control은 dynamics gap이 병목이지만, 이미지를 입력받는 navigation은 텍스처·조명·노이즈의 rendering domain gap이 성능을 좌우한다."
+        },
+        {
+          "title": "COMPASS는 gap을 정직하게 진단한다",
+          "content": "Isaac Lab에서 Carter 성능이 원 X-Mobility보다 하락했음을 인정하고, 원인을 route 단순화와 image rendering quality 변화로 지목한다."
+        },
+        {
+          "title": "개선책은 latent를 rendering-invariant하게 만드는 것",
+          "content": "다양한 rendering condition(조명·텍스처·렌더 품질)을 world-model latent state 학습에 노출하면, 인코더가 렌더링 세부에 불변해져 gap이 줄어든다."
+        },
+        {
+          "title": "Real2Sim은 gap을 근원에서 없앤다",
+          "content": "VR-Robo(arXiv:2502.01536)는 실제 환경을 sim으로 복원해 학습·배치 픽셀을 일치시키며, semantic-aware RL과 결합하면 Sim2Real gap을 더 좁힌다."
+        },
+        {
+          "title": "R²D² 파이프라인은 데이터→학습→배치를 잇는다",
+          "content": "MobilityGen SDG가 cross-embodiment 합성 데이터를 만들고, COMPASS가 학습·fine-tuning하며, Jetson Orin/Thor로 zero-shot 배치된다."
+        },
+        {
+          "title": "엣지 배치는 tail latency로 판정된다",
+          "content": "TensorRT on Jetson Orin에서 P50 29.3ms·P95 29.4ms — 거의 같은 두 값이 낮은 분산을 뜻해 30Hz 제어 데드라인을 안전하게 지킨다."
+        },
+        {
+          "title": "경량성은 distillation의 산물이다",
+          "content": "무거운 X-Mobility backbone은 유지하고 여러 specialist를 하나의 distilled generalist로 교체해, 422MB로 엣지 메모리 예산 안에 든다."
+        },
+        {
+          "title": "COMPASS는 생태계의 부품이자 데이터 생성기다",
+          "content": "sim-centric 구조적 분리 패러다임에 속하며, GR00T N(arXiv:2503.14734) 같은 humanoid VLA foundation model 학습용 synthetic data 생성기로도 위치한다."
+        }
+      ]
+    },
+    {
+      "number": 10,
+      "emoji": "🚀",
+      "title": "Navigation Foundation Models & the 2026 Frontier",
+      "titleKr": "내비게이션 파운데이션 모델과 2026 최전선",
+      "tldr": "NavFoM(800만 샘플)·world-action model·hierarchical mobility까지 — 데이터 스케일링과 구조적 분리 두 패러다임이 2026년 어떻게 만나고, 하이브리드 미래로 수렴하는지 전망한다.",
+      "topics": [
+        "Navigation Foundation Model",
+        "NavFoM",
+        "Hierarchical mobility",
+        "World-Action Model",
+        "패러다임 수렴 / 미해결 문제"
+      ],
+      "learningGoals": [
+        "NavFoM류 foundation model과 COMPASS류 구조적 접근의 장단점을 비교한다",
+        "hierarchical mobility(graph route planner + local policy)의 필요성을 안다",
+        "world model이 통합 substrate로 회귀하는 2026 흐름을 설명한다",
+        "'foundation model base + residual 보정' 하이브리드 미래를 논증할 수 있다",
+        "이 분야의 핵심 미해결 문제 4가지를 정리해 연구 방향을 제안할 수 있다"
+      ],
+      "overview": "이 강의의 마지막 챕터다. 지금까지 우리는 COMPASS라는 하나의 시스템을 해부했다 — 문제 정의(Ch1), world model(Ch2), IL과 covariate shift(Ch3), residual RL(Ch4), distillation(Ch5), 전체 아키텍처(Ch6), embodiment conditioning(Ch7), generative policy(Ch8), sim-to-real(Ch9). 이제 시선을 들어, COMPASS가 놓인 더 큰 지형 — 2026년 navigation 연구의 최전선 — 을 조망한다.\n\n2026년의 navigation 연구는 두 패러다임의 긴장으로 요약된다. 하나는 COMPASS가 대표하는 **(A) sim-centric 구조적 분리** — mobility를 IL/RL/distillation으로 명시적으로 분해하고 sim 데이터로 해결해, 가볍고 배치하기 쉬운 시스템을 만든다. 다른 하나는 **(B) 대규모 데이터 foundation model** — 수백만 궤적을 삼켜 하나의 범용 정책으로 만들어, task-specific 튜닝 없이 다양한 embodiment·task를 커버한다. NavFoM(800만 샘플)이 (B)의 navigation 본격 진입을 알린 신호탄이다.\n\n이 챕터의 논지는 두 패러다임이 대립이 아니라 **수렴**한다는 것이다. foundation model은 강력하지만 특정 로봇·환경에 대한 물리적 정밀함이 부족하고, 구조적 분리는 정밀하지만 범용성이 부족하다. 미래는 'foundation model base + residual RL 보정' — 넓은 prior 위에 embodiment별 정밀 보정을 얹는 하이브리드다. NVIDIA가 COMPASS를 GR00T N의 synthetic data 생성기로 두는 것이 이 수렴의 전조다. 마지막으로 우리는 이 분야의 4대 미해결 문제를 정리하며, 여러분이 논문을 쓸 다음 좌표를 제시하고 강의를 닫는다.",
+      "sections": [
+        {
+          "title": "두 패러다임 — 구조적 분리(A) vs 데이터 스케일링(B)",
+          "content": "2026년 navigation 연구를 이해하는 가장 좋은 렌즈는 두 패러다임의 대비다. 이 대비를 정확히 잡으면 새 논문이 나올 때마다 그것이 어느 진영이고 무엇을 트레이드오프하는지 즉시 읽을 수 있다.\n\n**(A) sim-centric 구조적 분리.** COMPASS가 전형이다. mobility를 명시적 모듈(world model + IL prior + residual RL + distillation)로 분해하고, 각 모듈을 sim 데이터로 학습한다. 강점은 경량성·배치 용이성·해석가능성이다 — Chapter 9에서 본 30ms/422MB 엣지 배치가 이 패러다임의 열매다. 각 모듈의 역할이 분명해 디버깅과 확장(새 embodiment 추가)이 국소적이다. 약점은 범용성의 상한 — one-hot embodiment(Ch7)와 point-goal 수준의 task에 갇혀, unseen embodiment나 언어 지시 같은 새 task로의 확장이 구조적 변경을 요구한다.\n\n**(B) 대규모 데이터 foundation model.** 수백만 궤적을 하나의 큰 네트워크로 삼켜, 여러 task·embodiment를 단일 정책으로 커버한다. 강점은 범용성과 emergent generalization — 충분한 데이터 다양성이 task-specific 튜닝 없이도 새 상황에 일반화하게 만든다(LLM의 few-shot과 유사). 약점은 무게와 물리적 정밀성 — 수십억 파라미터는 엣지 배치가 어렵고, 넓게 배운 prior가 특정 로봇의 정밀 제어에는 어정쩡하다.\n\n| 축 | (A) 구조적 분리 (COMPASS) | (B) foundation model (NavFoM) |\n|---|---|---|\n| 데이터 원천 | sim(Isaac Sim/Lab) 합성 | 대규모 multi-source 궤적 |\n| 학습 구조 | 모듈 분해(IL/RL/distill) | end-to-end 단일 정책 |\n| 강점 | 경량·배치 쉬움·해석가능 | 범용성·cross-task 일반화 |\n| 약점 | 범용성 상한(one-hot·point-goal) | 무게·물리 정밀성·엣지 배치 난이도 |\n| 배치 | Jetson 30ms/422MB | 클라우드/대형 GPU 경향 |\n\n중요한 통찰은 이 둘이 **상보적 약점**을 가진다는 것이다. (A)가 못하는 범용성을 (B)가 잘하고, (B)가 못하는 정밀·경량 배치를 (A)가 잘한다. 이 상보성이 뒤에 볼 하이브리드 수렴의 근거다 — 대립하는 두 진영이 아니라 서로의 빈자리를 채우는 두 조각이다.\n\n이 렌즈로 보면 COMPASS의 정체성이 선명해진다. COMPASS는 (A)의 정수이자, 동시에 (B)를 위한 데이터를 만드는 공장이다 — 이 이중 역할이 이 챕터의 마지막 절에서 하이브리드 미래로 연결된다."
+        },
+        {
+          "title": "NavFoM과 그 이웃들 — (B) 패러다임의 navigation 진입",
+          "content": "foundation model 패러다임이 navigation에 본격 진입한 2025~2026년의 대표작들을 짚는다. 이들이 어떻게 embodiment·task를 하나로 묶는지가 핵심이다.\n\n[NavFoM](https://arxiv.org/abs/2509.12129)(PKU, 2025.09, \"Embodied Navigation Foundation Model\")은 (B)의 navigation 진입을 상징한다. **800만 navigation sample**을 quadruped·drone·wheeled·vehicle 네 종류의 embodiment에서 모아, VLN(vision-language navigation)·object search·target tracking·autonomous driving을 아우르는 cross-task 정책을 학습한다. 핵심 설계는 **camera view와 temporal context를 identifier token으로 embedding**하는 것 — 어느 카메라(전방·후방·좌우)의 어느 시점 프레임인지를 토큰에 명시해, 이질적인 센서 구성과 시간 맥락을 하나의 transformer 입력 시퀀스로 통일한다. 그 결과 task-specific fine-tuning 없이 여러 task에서 SOTA를 달성한다.\n\n[X-Nav](https://arxiv.org/abs/2507.14731)(2025.07)는 흥미롭게도 COMPASS와 같은 **distillation 계보**에 서면서 (B)로 나아간다. 2-stage 구조다. 먼저 privileged observation을 써서 무작위로 생성된 다양한 embodiment들에 각각 expert RL policy를 다수 학습하고, 그 다음 **Nav-ACT(navigation action chunking transformer)**로 이 모두를 단일 general policy로 distill한다. 결과적으로 unseen embodiment와 photorealistic 환경에 zero-shot 전이한다 — COMPASS의 'specialist→generalist distillation'을 무작위 embodiment 대량 생성으로 확장한 형태로, (A)와 (B)의 다리 역할을 한다.\n\n[SysNav](https://arxiv.org/abs/2603.06914)(2026.03)는 real-world 검증에 무게를 둔다. **3-level 분리** — semantic reasoning / navigation planning / motion control — 로 계층을 나눠 real-world cross-embodiment ObjectNav를 수행하고, wheeled·Go2·G1에서 총 190회 실물 실험으로 검증한다. 이 계층 분리가 다음 절의 hierarchical mobility 논의와 직접 연결된다.\n\n| 모델 | 핵심 | embodiment | 위치 |\n|---|---|---|---|\n| NavFoM (2509.12129) | 800만 샘플, identifier token, cross-task | quadruped·drone·wheeled·vehicle | (B) foundation model 정수 |\n| X-Nav (2507.14731) | privileged expert 다수 → Nav-ACT distill | 무작위 생성 embodiment | (A)↔(B) 다리 |\n| SysNav (2603.06914) | 3-level 분리, real-world 190회 | wheeled·Go2·G1 | 계층+실물 검증 |\n\n세 논문을 관통하는 흐름은 명확하다. navigation이 LLM·VLA가 겪은 것과 같은 **scale-up 순간**을 맞고 있다는 것이다. 데이터를 키우고(NavFoM), distillation을 무작위 embodiment로 확장하고(X-Nav), 계층을 나눠 실물로 밀어붙이는(SysNav) — 각각이 COMPASS가 세운 조각(distillation·cross-embodiment·계층)을 더 큰 데이터·더 넓은 task로 밀어 올린다."
+        },
+        {
+          "title": "Hierarchical mobility — COMPASS의 구조적 한계와 계층의 필요성",
+          "content": "COMPASS의 가장 명확한 한계는 Chapter 6에서 예고했듯 **route의 성격**에 있다. COMPASS가 받는 route는 직선적인 short-horizon guidance일 뿐이다 — '대략 저쪽으로 가라'는 국소 방향 신호다. 이 설계는 넓고 규칙적인 warehouse에서는 충분하지만, office나 multi-rack처럼 **long-horizon**에서 SR이 하락한다. 국소 정책이 전역 구조(막다른 길, 우회로, 방 사이 연결)를 모르기 때문이다.\n\n해법은 **hierarchical mobility(계층적 이동)** 구조다. 이동을 두 층으로 나눈다.\n\n- **상위 — graph-based route planner.** 환경을 노드(방·교차점)와 엣지(통로)의 그래프로 표현하고, 전역 최적 경로를 계획한다. long-horizon 판단(어느 방을 거쳐 어느 문으로 나갈지)을 담당한다.\n- **하위 — local policy.** COMPASS가 바로 이 층이다. 상위가 준 국소 waypoint를 향해 충돌 없이 embodiment의 물리로 이동하는 short-horizon 실행을 담당한다.\n\n이 계층 분리는 고전 robotics의 global/local planner 이분법의 학습판이다. 그러나 2026년의 새로움은 **상위 planner를 semantic model과 결합**하는 데 있다. NavFoM류 foundation model이 언어·객체·장면 의미를 이해하므로, 상위 층이 단순 기하 그래프가 아니라 '주방을 지나 거실의 소파로'처럼 의미 기반 route를 계획할 수 있다. 즉 hierarchical mobility는 (B)의 semantic 이해(상위)와 (A)의 정밀 local control(하위)이 만나는 자연스러운 접합점이다 — 앞 절 SysNav의 3-level 분리가 이미 이 방향을 실증한다.\n\n연구적으로 이 지점이 매력적인 이유는, 두 층의 인터페이스가 **waypoint 혹은 subgoal이라는 좁은 대역폭**으로 정의된다는 데 있다. 상위가 무엇으로 구현되든(고전 A*, learned graph planner, LLM planner) 하위 COMPASS는 waypoint만 받으면 된다. 이 모듈성이 두 패러다임을 결합하는 실용적 통로다 — foundation model을 통째로 재학습하지 않고도, 그 위에 검증된 local policy를 얹을 수 있다. COMPASS가 point-goal만 푼다는 '한계'는, 뒤집어 보면 임의의 상위 planner에 꽂을 수 있는 '범용 하위 소켓'이라는 강점이 된다."
+        },
+        {
+          "title": "World-Action Model의 회귀 — 통합 substrate로서의 world model",
+          "content": "Chapter 2에서 우리는 X-Mobility의 world model을 정책의 backbone으로 다뤘다. 2026년의 흐름은 world model을 단순 backbone을 넘어 **planning·prediction·control을 통합하는 substrate**로 재부상시킨다. 이것이 world-action model의 회귀다.\n\n출발점은 [Navigation World Models](https://arxiv.org/abs/2412.03572)(2024.12)다. 핵심 아이디어는 **controllable video generation을 navigation world model로 삼는 것** — 로봇이 어떤 action을 취하면 미래 관측이 어떻게 펼쳐질지를 비디오로 생성한다. 단일 이미지 하나에서 여러 action sequence를 상상해 미래 궤적을 시뮬레이션하고, 그중 목표에 부합하는 것을 고른다. 즉 world model이 곧 planner가 된다 — 상상 속에서 rollout하고 그 결과로 행동을 선택하는 model-based planning의 부활이다.\n\n2026년에는 이 흐름이 NavWAM·WAM-Nav·WorldFly 같은 **world-action model(WAM)** 계열로 확산된다. 이들의 공통 논지는 perception·prediction·planning·control을 별개 모듈로 쌓지 말고, 하나의 생성 world model 안에서 통합하자는 것이다. world model이 미래를 예측하면(prediction), 그 예측 위에서 action을 탐색하고(planning), 선택된 action을 실행한다(control) — 세 기능이 하나의 학습된 dynamics 안에 녹는다.\n\n이 회귀가 COMPASS에 던지는 질문은 날카롭다. COMPASS는 X-Mobility world model을 **frozen backbone**으로 쓴다(Ch2, Ch6). 즉 world model은 표현을 제공할 뿐, RL 루프에서 함께 학습되지 않는다. 그러나 world-action model 패러다임은 world model 자체가 planning의 엔진이 되어야 한다고 말한다. 여기서 미해결 문제 하나가 도출된다 — **world model을 unfrozen으로 두고 RL 루프에서 정책과 함께 학습**하면, 정책이 자기에게 유용한 방향으로 world model의 표현을 다듬을 수 있지 않을까? frozen backbone은 안정성과 재사용성을 주지만, 정책-표현 공동 최적화의 상한을 스스로 못 박는다.\n\n이 긴장은 강의 전체를 관통한 주제 — 안정성 대 표현력 — 의 마지막 변주다. IL prior는 RL 탐색을 안정화했고(Ch4), one-hot conditioning은 averaging을 막았으며(Ch7), frozen backbone은 배치를 경량화했다(Ch9). 매번 우리는 '고정으로 안정성을 사고 표현력을 팔았다'. world-action model의 회귀는 그 거래를 재협상하자는 제안이며, 여러분이 논문으로 답할 수 있는 열린 질문이다."
+        },
+        {
+          "title": "하이브리드 미래와 4대 미해결 문제 — 강의를 닫으며",
+          "content": "이제 모든 실을 하나로 묶는다. 이 챕터의 논지는 (A) 구조적 분리와 (B) 데이터 스케일링이 대립이 아니라 **수렴**한다는 것이었다. 수렴의 형태는 '**foundation model base + residual RL 보정**'이다. 넓고 범용적인 navigation foundation model이 base prior를 제공하고(범용성), 그 위에 특정 embodiment·환경을 위한 residual RL이 정밀 보정을 얹는다(정밀성). 이는 Chapter 4의 residual 구조를 foundation model 시대로 옮긴 것 — base action이 이제 IL policy가 아니라 foundation model이 될 뿐, 'prior + 보정'이라는 뼈대는 같다.\n\n이 수렴의 가장 강력한 전조가 NVIDIA의 배치다. NVIDIA는 COMPASS(구조적 분리, sim 데이터)를 [GR00T N](https://arxiv.org/abs/2503.14734)(humanoid VLA foundation model)의 **synthetic data 생성기**로 둔다. 즉 (A)가 (B)를 먹인다 — 경량 sim 파이프라인이 대규모 foundation model의 데이터를 만든다. 두 패러다임이 데이터 공급이라는 파이프로 이미 연결되어 있는 것이다. 미래에는 이 관계가 양방향이 될 것이다 — foundation model이 base를 주고, COMPASS류 residual이 보정하며, 그 배치 경험이 다시 데이터로 돌아오는 순환.\n\n마지막으로, 여러분이 논문을 쓸 좌표로 이 분야의 **4대 미해결 문제**를 정리한다. 각 문제는 이 강의의 한 챕터가 남긴 열린 끝이다.\n\n| # | 미해결 문제 | 핵심 쟁점 | 연구 방향 제안 |\n|---|---|---|---|\n| 1 | unseen embodiment zero-shot | one-hot의 벽(Ch7) — 새 몸으로 전이 불가 | morphology conditioning을 measurable 물리량(질량·높이·DOF) vs learned 벡터로 설계·비교 |\n| 2 | vision sim2real | rendering domain gap(Ch9) | 다양한 rendering을 latent 학습에 노출 + Real2Sim(VR-Robo) 복원 결합 |\n| 3 | hierarchical route planning 부재 | short-horizon route만 → long-horizon SR 하락 | graph/semantic route planner(상위) + COMPASS local policy(하위) 계층화 |\n| 4 | frozen world model | 표현-정책 공동 최적화 상한 | world model을 unfrozen으로 RL 루프에서 함께 학습(world-action model) |\n\n이 네 문제는 서로 얽혀 있다. (1) morphology conditioning이 풀리면 foundation model base가 임의 embodiment를 커버하고, (2) rendering gap이 줄면 sim 데이터가 곧 real 데이터가 되며, (3) hierarchical 구조가 (B)의 semantic과 (A)의 control을 접합하고, (4) unfrozen world model이 그 전부를 하나의 학습되는 substrate로 통합한다. 이 넷이 동시에 풀리는 지점이 바로 '진정한 cross-embodiment navigation foundation model'이다.\n\n강의를 닫으며 한 문장으로 요약한다. COMPASS는 종착점이 아니라 좌표다 — cross-embodiment mobility의 문제를 IL·RL·distillation·conditioning·sim2real이라는 정확한 조각으로 분해해 보여줬고, 그 조각 하나하나의 열린 끝이 여러분의 다음 논문이다. 이 강의가 그 지도를 손에 쥐여줬기를 바란다."
+        }
+      ],
+      "analogy": {
+        "title": "요리학교 만능 셰프(B)와 전문 조립 주방(A), 그리고 프랜차이즈의 미래",
+        "content": "두 패러다임을 주방에 비유하자. **(B) foundation model**은 세계 각지 800만 개 레시피를 다 먹어치운 만능 셰프다(NavFoM). 이 셰프는 처음 보는 재료(unseen task)를 줘도 그럴듯한 요리를 낸다 — 범용성이 엄청나다. 하지만 몸집이 크고(수십억 파라미터) 대형 주방(클라우드 GPU)이 필요하며, 특정 손님의 까다로운 입맛(특정 로봇의 정밀 제어)에는 어정쩡하게 두루뭉술하다.\n\n**(A) 구조적 분리**는 공정을 나눈 전문 조립 주방이다(COMPASS). 밑간(IL prior)·재료별 조정(residual RL)·최종 통합(distillation)을 분업하고, 시뮬레이션 레시피로만 훈련한다. 작은 푸드트럭(Jetson Orin)에도 들어가고 30밀리초 안에 접시를 낸다 — 가볍고 빠르고 어디가 잘못됐는지 짚기 쉽다. 대신 정해진 메뉴(point-goal) 밖으로 나가려면 주방을 뜯어고쳐야 한다.\n\n미래는 둘 중 하나가 아니라 **프랜차이즈**다. 본사의 만능 셰프(foundation model base)가 표준 레시피를 내려주고, 각 지점의 로컬 셰프(residual RL)가 그 지역 입맛에 맞게 마지막 간을 보정한다. 흥미롭게도 지금도 전문 조립 주방(COMPASS)이 만능 셰프(GR00T N)의 훈련용 레시피를 대량 생산하고 있다 — 작고 빠른 주방이 큰 셰프를 먹이는 것이다. 두 주방은 경쟁자가 아니라, 하나의 프랜차이즈를 이루는 본사와 지점이다."
+      },
+      "codeExample": {
+        "language": "python",
+        "intro": "두 패러다임의 인터페이스를 하나로 스케치한다. (1) NavFoM류 identifier token 방식으로 이질적 카메라·시점·embodiment·task를 단일 토큰 시퀀스로 통일하는 입력 인터페이스, (2) hierarchical mobility에서 상위 graph route planner와 하위 COMPASS local policy를 waypoint 대역폭으로 접합하는 루프. 두 패러다임의 수렴 지점을 코드로 드러낸다.",
+        "code": "import torch\n\n# ---- (1) NavFoM류 identifier token: 이질적 관측을 단일 시퀀스로 통일 ----\n# 어느 embodiment·어느 카메라·어느 시점 프레임인지를 토큰에 명시(embedding)\n# -> transformer가 센서 구성/task/시간 맥락을 구분하며 하나로 학습.\ndef build_token_sequence(frames, meta, task_id):\n    tokens = []\n    for f in frames:  # f: 특정 camera view의 특정 timestep 프레임\n        patch = patch_embed(f.pixels)                      # ViT patch embedding\n        idtok = (embodiment_emb(meta.embodiment)           # quad/drone/wheeled/vehicle\n                 + camera_emb(f.camera_id)                  # front/back/left/right...\n                 + time_emb(f.t)                           # temporal context\n                 + task_emb(task_id))                       # VLN/objsearch/track/drive\n        tokens.append(patch + idtok)                       # identifier token 주입\n    return torch.stack(tokens)   # task-specific head 없이 cross-task 학습\n\n# ---- (2) Hierarchical mobility: semantic route planner(상위) + COMPASS(하위) ----\nclass HierarchicalNavigator:\n    def __init__(self, route_planner, local_policy):\n        self.planner = route_planner      # graph/semantic (B): long-horizon\n        self.local  = local_policy        # COMPASS distilled generalist (A)\n\n    def act(self, obs, goal, embodiment):\n        # 상위: 의미 기반 전역 경로 -> subgoal waypoint (좁은 인터페이스 대역폭)\n        waypoint = self.planner.next_subgoal(obs, goal)     # 'kitchen -> sofa'\n        # 하위: waypoint를 향해 embodiment 물리로 충돌 없이 short-horizon 실행\n        base = self.local(obs, waypoint, embodiment)        # point-goal local policy\n        # 하이브리드 미래: foundation base 위에 residual RL 보정을 얹는 자리\n        return base + self.residual_correction(obs, embodiment)  # Ch4 구조의 재림\n\n    def residual_correction(self, obs, embodiment):\n        return torch.zeros_like(embodiment.action_space)   # (연구 여지: RL로 학습)",
+        "walkthrough": "`build_token_sequence`가 (B) 패러다임의 핵심을 압축한다. 서로 다른 embodiment(quadruped·drone·wheeled·vehicle)와 서로 다른 카메라·시점·task를 별도 네트워크로 다루는 대신, 각 프레임 토큰에 `embodiment_emb + camera_emb + time_emb + task_emb`를 더한 **identifier token**을 주입해 하나의 시퀀스로 통일한다. transformer는 이 식별 정보를 보고 '이건 드론의 전방 카메라, VLN task'임을 구분하며 학습하므로, task-specific head 없이 cross-task SOTA가 나온다 — NavFoM의 800만 샘플 통합이 이 인터페이스 위에서 가능해진다.\n\n`HierarchicalNavigator`가 두 패러다임의 접합을 보여준다. `planner`(상위)는 (B)의 semantic 이해로 'kitchen을 지나 sofa로' 같은 의미 기반 전역 경로를 세우고, 그 결과를 `waypoint`라는 **좁은 인터페이스**로 하위에 넘긴다. `local`은 바로 COMPASS의 distilled generalist(A)로, waypoint를 향한 short-horizon point-goal 실행만 담당한다. 이 좁은 대역폭 덕에 상위가 무엇이든(A*·learned·LLM planner) 하위를 재학습 없이 꽂을 수 있다 — COMPASS의 'point-goal만 푼다'는 한계가 '범용 하위 소켓'이라는 강점으로 뒤집히는 지점이다.\n\n`act`의 마지막 줄 `base + self.residual_correction(...)`이 이 강의 전체의 매듭이다. Chapter 4의 residual 구조가 여기서 재림한다 — 단, base action이 이제 IL policy가 아니라 foundation model 계층에서 온다. `residual_correction`이 현재 zero를 반환하는 것은 의도된 여백이다. 이 함수를 embodiment별 RL로 채우는 것이 바로 'foundation model base + residual 보정' 하이브리드 미래이며, 여러분이 논문으로 구현할 열린 자리다."
+      },
+      "industryEvaluation": {
+        "overview": "이 챕터는 개별 기법이 아니라 '분야를 조망하고 미래를 논증하는' 능력을 평가한다. 빅테크 research 면접(특히 senior/staff, research scientist)에서는 최신 논문 몇 개를 아는 것보다, 두 패러다임의 트레이드오프를 잡고 수렴 방향을 논증하며 미해결 문제로 연구 방향을 제안하는 지형 감각을 본다. paper-writing을 준비하는 연구자에게는 이것이 곧 problem selection 능력이다.",
+        "whatEngineersLookFor": [
+          "구조적 분리(A)와 데이터 스케일링(B)의 트레이드오프를 데이터·배치·범용성 축으로 구조화해 설명하는 능력",
+          "hierarchical mobility의 필요성을 COMPASS의 short-horizon route 한계에서 도출하고, waypoint 인터페이스의 모듈성을 짚는 통찰",
+          "world-action model 회귀를 frozen vs unfrozen backbone의 안정성-표현력 트레이드오프로 해석하는 깊이",
+          "'foundation model base + residual 보정' 하이브리드를 Chapter 4 residual 구조의 재림으로 논증하는 연결력",
+          "4대 미해결 문제를 명확히 정리하고 각각에 구체적 연구 방향(measurable vs learned conditioning 등)을 제안하는 research taste"
+        ],
+        "redFlags": [
+          "'foundation model이 무조건 이긴다'거나 반대로 'sim 파이프라인이 항상 낫다'는 식의 일방적 단정",
+          "두 패러다임을 대립으로만 보고 수렴·상보성(A가 B를 먹이는 데이터 관계)을 못 봄",
+          "hierarchical의 필요성을 모른 채 COMPASS가 long-horizon도 잘 푼다고 오해",
+          "world model을 단순 backbone으로만 알고 planning substrate로 회귀하는 흐름을 놓침",
+          "최신 논문 이름만 나열하고 각각이 어느 패러다임이며 무엇을 트레이드오프하는지 위치시키지 못함"
+        ],
+        "interviewQuestions": [
+          "NavFoM류 foundation model과 COMPASS류 구조적 분리의 장단점을 비교하고, 특정 배치 시나리오(엣지 로봇 vs 클라우드 지원)에서 무엇을 택하겠는지 논하라.",
+          "COMPASS의 route는 short-horizon guidance뿐이라 long-horizon에서 SR이 하락한다. hierarchical mobility로 어떻게 해결하며, 상위 planner를 semantic model과 결합하는 이점은 무엇인가?",
+          "이 분야의 미해결 문제 하나를 골라, 왜 어렵고 어떤 접근으로 풀지 — measurable 물리량 conditioning vs learned 벡터처럼 구체적 설계 선택까지 — 제안하라."
+        ],
+        "masteryVsFamiliar": "친숙한 수준은 'foundation model이 대세다', 'COMPASS는 sim 기반이다'처럼 라벨을 붙이는 정도다. 통달한 수준은 (A)와 (B)를 데이터·구조·배치·범용성 축의 표로 대비하고, NavFoM(800만·identifier token)·X-Nav(privileged→Nav-ACT distill)·SysNav(3-level·real 190회)를 각 패러다임에 정확히 위치시키며, COMPASS의 short-horizon route 한계에서 hierarchical mobility(graph/semantic planner + local policy)를 도출하고, Navigation World Models로 대표되는 world-action model 회귀를 frozen backbone의 안정성-표현력 트레이드오프로 해석하며, 'foundation model base + residual 보정' 하이브리드를 Ch4 구조의 재림이자 NVIDIA가 COMPASS를 GR00T N 데이터 생성기로 두는 전조로 논증하고, 4대 미해결 문제(unseen embodiment·vision sim2real·hierarchical·unfrozen world model)에 구체적 연구 방향을 제안한다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "navigation은 두 패러다임의 긴장으로 읽힌다",
+          "content": "(A) sim-centric 구조적 분리(COMPASS·경량·배치 쉬움)와 (B) 대규모 데이터 foundation model(NavFoM·범용성)이 상보적 약점으로 대비된다."
+        },
+        {
+          "title": "NavFoM은 (B)의 navigation 진입을 상징한다",
+          "content": "800만 sample·4종 embodiment·cross-task를 camera view와 temporal context의 identifier token으로 통일해, task-specific fine-tuning 없이 SOTA를 낸다."
+        },
+        {
+          "title": "X-Nav는 (A)와 (B)를 잇는 다리다",
+          "content": "privileged obs로 무작위 embodiment 다수에 expert RL을 학습한 뒤 Nav-ACT로 단일 general policy로 distill해 unseen embodiment에 zero-shot 전이한다."
+        },
+        {
+          "title": "COMPASS의 short-horizon route가 hierarchical을 부른다",
+          "content": "직선 국소 guidance만으론 office·multi-rack long-horizon에서 SR이 하락하므로, graph/semantic route planner(상위)+local policy(하위) 계층이 필요하다."
+        },
+        {
+          "title": "waypoint 인터페이스가 두 패러다임을 접합한다",
+          "content": "상위 planner가 무엇이든 하위 COMPASS는 waypoint만 받으면 되므로, point-goal 한계가 임의 planner에 꽂히는 범용 하위 소켓의 강점으로 뒤집힌다."
+        },
+        {
+          "title": "world model이 planning substrate로 회귀한다",
+          "content": "Navigation World Models(arXiv:2412.03572)는 controllable video generation으로 미래를 상상해 궤적을 planning하며, frozen backbone의 상한을 재협상한다."
+        },
+        {
+          "title": "미래는 foundation base + residual 보정 하이브리드다",
+          "content": "넓은 foundation model prior 위에 embodiment별 residual RL 보정을 얹는 구조로 두 패러다임이 수렴하며, 이는 Chapter 4 residual 구조의 재림이다."
+        },
+        {
+          "title": "4대 미해결 문제가 다음 연구의 좌표다",
+          "content": "unseen embodiment zero-shot·vision sim2real(rendering gap)·hierarchical route planning 부재·frozen world model이 얽혀 있으며, 이 넷이 함께 풀리는 지점이 진정한 navigation foundation model이다."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch10: Navigation Foundation Models &amp; the 2026 Frontier — COMPASS &amp; Cross-Embodiment Mobility — direcf</title>
+  <meta name="description" content="NavFoM(800만 샘플)·world-action model·hierarchical mobility까지 — 데이터 스케일링과 구조적 분리 두 패러다임이 2026년 어떻게 만나고, 하이브리드 미래로 수렴하는지 전망한다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;height:22px;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><linearGradient id="direcf-nav-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs></svg>
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg></span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg></span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.25 15a4.5 4.5 0 0 0 4.5 4.5H18a3.75 3.75 0 0 0 1.332-7.257 3 3 0 0 0-3.758-3.848 5.25 5.25 0 0 0-10.233 2.33A4.502 4.502 0 0 0 2.25 15Z"/></svg></span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"/></svg></span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg></span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/physical-ai">COMPASS &amp; Cross-Embodiment Mobility</a><span class="sep">›</span>
+        <strong>Ch10 Navigation Foundation Models &amp; the 2026 Frontier</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 10 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🚀</div>
+      <h1 class="chapter-title">Navigation Foundation Models &amp; the 2026 Frontier</h1>
+      <div class="chapter-title-kr">내비게이션 파운데이션 모델과 2026 최전선</div>
+      <div class="chapter-tldr">NavFoM(800만 샘플)·world-action model·hierarchical mobility까지 — 데이터 스케일링과 구조적 분리 두 패러다임이 2026년 어떻게 만나고, 하이브리드 미래로 수렴하는지 전망한다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-10.png" alt="Chapter 10 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 10 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>NavFoM류 foundation model과 COMPASS류 구조적 접근의 장단점을 비교한다</li><li>hierarchical mobility(graph route planner + local policy)의 필요성을 안다</li><li>world model이 통합 substrate로 회귀하는 2026 흐름을 설명한다</li><li>&#x27;foundation model base + residual 보정&#x27; 하이브리드 미래를 논증할 수 있다</li><li>이 분야의 핵심 미해결 문제 4가지를 정리해 연구 방향을 제안할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>이 강의의 마지막 챕터다. 지금까지 우리는 COMPASS라는 하나의 시스템을 해부했다 — 문제 정의(Ch1), world model(Ch2), IL과 covariate shift(Ch3), residual RL(Ch4), distillation(Ch5), 전체 아키텍처(Ch6), embodiment conditioning(Ch7), generative policy(Ch8), sim-to-real(Ch9). 이제 시선을 들어, COMPASS가 놓인 더 큰 지형 — 2026년 navigation 연구의 최전선 — 을 조망한다.</p>
+<p>2026년의 navigation 연구는 두 패러다임의 긴장으로 요약된다. 하나는 COMPASS가 대표하는 <strong>(A) sim-centric 구조적 분리</strong> — mobility를 IL/RL/distillation으로 명시적으로 분해하고 sim 데이터로 해결해, 가볍고 배치하기 쉬운 시스템을 만든다. 다른 하나는 <strong>(B) 대규모 데이터 foundation model</strong> — 수백만 궤적을 삼켜 하나의 범용 정책으로 만들어, task-specific 튜닝 없이 다양한 embodiment·task를 커버한다. NavFoM(800만 샘플)이 (B)의 navigation 본격 진입을 알린 신호탄이다.</p>
+<p>이 챕터의 논지는 두 패러다임이 대립이 아니라 <strong>수렴</strong>한다는 것이다. foundation model은 강력하지만 특정 로봇·환경에 대한 물리적 정밀함이 부족하고, 구조적 분리는 정밀하지만 범용성이 부족하다. 미래는 'foundation model base + residual RL 보정' — 넓은 prior 위에 embodiment별 정밀 보정을 얹는 하이브리드다. NVIDIA가 COMPASS를 GR00T N의 synthetic data 생성기로 두는 것이 이 수렴의 전조다. 마지막으로 우리는 이 분야의 4대 미해결 문제를 정리하며, 여러분이 논문을 쓸 다음 좌표를 제시하고 강의를 닫는다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>두 패러다임 — 구조적 분리(A) vs 데이터 스케일링(B)</h2><p>2026년 navigation 연구를 이해하는 가장 좋은 렌즈는 두 패러다임의 대비다. 이 대비를 정확히 잡으면 새 논문이 나올 때마다 그것이 어느 진영이고 무엇을 트레이드오프하는지 즉시 읽을 수 있다.</p>
+<p><strong>(A) sim-centric 구조적 분리.</strong> COMPASS가 전형이다. mobility를 명시적 모듈(world model + IL prior + residual RL + distillation)로 분해하고, 각 모듈을 sim 데이터로 학습한다. 강점은 경량성·배치 용이성·해석가능성이다 — Chapter 9에서 본 30ms/422MB 엣지 배치가 이 패러다임의 열매다. 각 모듈의 역할이 분명해 디버깅과 확장(새 embodiment 추가)이 국소적이다. 약점은 범용성의 상한 — one-hot embodiment(Ch7)와 point-goal 수준의 task에 갇혀, unseen embodiment나 언어 지시 같은 새 task로의 확장이 구조적 변경을 요구한다.</p>
+<p><strong>(B) 대규모 데이터 foundation model.</strong> 수백만 궤적을 하나의 큰 네트워크로 삼켜, 여러 task·embodiment를 단일 정책으로 커버한다. 강점은 범용성과 emergent generalization — 충분한 데이터 다양성이 task-specific 튜닝 없이도 새 상황에 일반화하게 만든다(LLM의 few-shot과 유사). 약점은 무게와 물리적 정밀성 — 수십억 파라미터는 엣지 배치가 어렵고, 넓게 배운 prior가 특정 로봇의 정밀 제어에는 어정쩡하다.</p>
+<table>
+<thead>
+<tr>
+<th>축</th>
+<th>(A) 구조적 분리 (COMPASS)</th>
+<th>(B) foundation model (NavFoM)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>데이터 원천</td>
+<td>sim(Isaac Sim/Lab) 합성</td>
+<td>대규모 multi-source 궤적</td>
+</tr>
+<tr>
+<td>학습 구조</td>
+<td>모듈 분해(IL/RL/distill)</td>
+<td>end-to-end 단일 정책</td>
+</tr>
+<tr>
+<td>강점</td>
+<td>경량·배치 쉬움·해석가능</td>
+<td>범용성·cross-task 일반화</td>
+</tr>
+<tr>
+<td>약점</td>
+<td>범용성 상한(one-hot·point-goal)</td>
+<td>무게·물리 정밀성·엣지 배치 난이도</td>
+</tr>
+<tr>
+<td>배치</td>
+<td>Jetson 30ms/422MB</td>
+<td>클라우드/대형 GPU 경향</td>
+</tr>
+</tbody>
+</table>
+<p>중요한 통찰은 이 둘이 <strong>상보적 약점</strong>을 가진다는 것이다. (A)가 못하는 범용성을 (B)가 잘하고, (B)가 못하는 정밀·경량 배치를 (A)가 잘한다. 이 상보성이 뒤에 볼 하이브리드 수렴의 근거다 — 대립하는 두 진영이 아니라 서로의 빈자리를 채우는 두 조각이다.</p>
+<p>이 렌즈로 보면 COMPASS의 정체성이 선명해진다. COMPASS는 (A)의 정수이자, 동시에 (B)를 위한 데이터를 만드는 공장이다 — 이 이중 역할이 이 챕터의 마지막 절에서 하이브리드 미래로 연결된다.</p></div><div class="sb-block"><h2>NavFoM과 그 이웃들 — (B) 패러다임의 navigation 진입</h2><p>foundation model 패러다임이 navigation에 본격 진입한 2025~2026년의 대표작들을 짚는다. 이들이 어떻게 embodiment·task를 하나로 묶는지가 핵심이다.</p>
+<p><a href="https://arxiv.org/abs/2509.12129">NavFoM</a>(PKU, 2025.09, "Embodied Navigation Foundation Model")은 (B)의 navigation 진입을 상징한다. <strong>800만 navigation sample</strong>을 quadruped·drone·wheeled·vehicle 네 종류의 embodiment에서 모아, VLN(vision-language navigation)·object search·target tracking·autonomous driving을 아우르는 cross-task 정책을 학습한다. 핵심 설계는 <strong>camera view와 temporal context를 identifier token으로 embedding</strong>하는 것 — 어느 카메라(전방·후방·좌우)의 어느 시점 프레임인지를 토큰에 명시해, 이질적인 센서 구성과 시간 맥락을 하나의 transformer 입력 시퀀스로 통일한다. 그 결과 task-specific fine-tuning 없이 여러 task에서 SOTA를 달성한다.</p>
+<p><a href="https://arxiv.org/abs/2507.14731">X-Nav</a>(2025.07)는 흥미롭게도 COMPASS와 같은 <strong>distillation 계보</strong>에 서면서 (B)로 나아간다. 2-stage 구조다. 먼저 privileged observation을 써서 무작위로 생성된 다양한 embodiment들에 각각 expert RL policy를 다수 학습하고, 그 다음 <strong>Nav-ACT(navigation action chunking transformer)</strong>로 이 모두를 단일 general policy로 distill한다. 결과적으로 unseen embodiment와 photorealistic 환경에 zero-shot 전이한다 — COMPASS의 'specialist→generalist distillation'을 무작위 embodiment 대량 생성으로 확장한 형태로, (A)와 (B)의 다리 역할을 한다.</p>
+<p><a href="https://arxiv.org/abs/2603.06914">SysNav</a>(2026.03)는 real-world 검증에 무게를 둔다. <strong>3-level 분리</strong> — semantic reasoning / navigation planning / motion control — 로 계층을 나눠 real-world cross-embodiment ObjectNav를 수행하고, wheeled·Go2·G1에서 총 190회 실물 실험으로 검증한다. 이 계층 분리가 다음 절의 hierarchical mobility 논의와 직접 연결된다.</p>
+<table>
+<thead>
+<tr>
+<th>모델</th>
+<th>핵심</th>
+<th>embodiment</th>
+<th>위치</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>NavFoM (2509.12129)</td>
+<td>800만 샘플, identifier token, cross-task</td>
+<td>quadruped·drone·wheeled·vehicle</td>
+<td>(B) foundation model 정수</td>
+</tr>
+<tr>
+<td>X-Nav (2507.14731)</td>
+<td>privileged expert 다수 → Nav-ACT distill</td>
+<td>무작위 생성 embodiment</td>
+<td>(A)↔(B) 다리</td>
+</tr>
+<tr>
+<td>SysNav (2603.06914)</td>
+<td>3-level 분리, real-world 190회</td>
+<td>wheeled·Go2·G1</td>
+<td>계층+실물 검증</td>
+</tr>
+</tbody>
+</table>
+<p>세 논문을 관통하는 흐름은 명확하다. navigation이 LLM·VLA가 겪은 것과 같은 <strong>scale-up 순간</strong>을 맞고 있다는 것이다. 데이터를 키우고(NavFoM), distillation을 무작위 embodiment로 확장하고(X-Nav), 계층을 나눠 실물로 밀어붙이는(SysNav) — 각각이 COMPASS가 세운 조각(distillation·cross-embodiment·계층)을 더 큰 데이터·더 넓은 task로 밀어 올린다.</p></div><div class="sb-block"><h2>Hierarchical mobility — COMPASS의 구조적 한계와 계층의 필요성</h2><p>COMPASS의 가장 명확한 한계는 Chapter 6에서 예고했듯 <strong>route의 성격</strong>에 있다. COMPASS가 받는 route는 직선적인 short-horizon guidance일 뿐이다 — '대략 저쪽으로 가라'는 국소 방향 신호다. 이 설계는 넓고 규칙적인 warehouse에서는 충분하지만, office나 multi-rack처럼 <strong>long-horizon</strong>에서 SR이 하락한다. 국소 정책이 전역 구조(막다른 길, 우회로, 방 사이 연결)를 모르기 때문이다.</p>
+<p>해법은 <strong>hierarchical mobility(계층적 이동)</strong> 구조다. 이동을 두 층으로 나눈다.</p>
+<ul>
+<li>
+<p><strong>상위 — graph-based route planner.</strong> 환경을 노드(방·교차점)와 엣지(통로)의 그래프로 표현하고, 전역 최적 경로를 계획한다. long-horizon 판단(어느 방을 거쳐 어느 문으로 나갈지)을 담당한다.</p>
+</li>
+<li>
+<p><strong>하위 — local policy.</strong> COMPASS가 바로 이 층이다. 상위가 준 국소 waypoint를 향해 충돌 없이 embodiment의 물리로 이동하는 short-horizon 실행을 담당한다.</p>
+</li>
+</ul>
+<p>이 계층 분리는 고전 robotics의 global/local planner 이분법의 학습판이다. 그러나 2026년의 새로움은 <strong>상위 planner를 semantic model과 결합</strong>하는 데 있다. NavFoM류 foundation model이 언어·객체·장면 의미를 이해하므로, 상위 층이 단순 기하 그래프가 아니라 '주방을 지나 거실의 소파로'처럼 의미 기반 route를 계획할 수 있다. 즉 hierarchical mobility는 (B)의 semantic 이해(상위)와 (A)의 정밀 local control(하위)이 만나는 자연스러운 접합점이다 — 앞 절 SysNav의 3-level 분리가 이미 이 방향을 실증한다.</p>
+<p>연구적으로 이 지점이 매력적인 이유는, 두 층의 인터페이스가 <strong>waypoint 혹은 subgoal이라는 좁은 대역폭</strong>으로 정의된다는 데 있다. 상위가 무엇으로 구현되든(고전 A*, learned graph planner, LLM planner) 하위 COMPASS는 waypoint만 받으면 된다. 이 모듈성이 두 패러다임을 결합하는 실용적 통로다 — foundation model을 통째로 재학습하지 않고도, 그 위에 검증된 local policy를 얹을 수 있다. COMPASS가 point-goal만 푼다는 '한계'는, 뒤집어 보면 임의의 상위 planner에 꽂을 수 있는 '범용 하위 소켓'이라는 강점이 된다.</p></div><div class="sb-block"><h2>World-Action Model의 회귀 — 통합 substrate로서의 world model</h2><p>Chapter 2에서 우리는 X-Mobility의 world model을 정책의 backbone으로 다뤘다. 2026년의 흐름은 world model을 단순 backbone을 넘어 <strong>planning·prediction·control을 통합하는 substrate</strong>로 재부상시킨다. 이것이 world-action model의 회귀다.</p>
+<p>출발점은 <a href="https://arxiv.org/abs/2412.03572">Navigation World Models</a>(2024.12)다. 핵심 아이디어는 <strong>controllable video generation을 navigation world model로 삼는 것</strong> — 로봇이 어떤 action을 취하면 미래 관측이 어떻게 펼쳐질지를 비디오로 생성한다. 단일 이미지 하나에서 여러 action sequence를 상상해 미래 궤적을 시뮬레이션하고, 그중 목표에 부합하는 것을 고른다. 즉 world model이 곧 planner가 된다 — 상상 속에서 rollout하고 그 결과로 행동을 선택하는 model-based planning의 부활이다.</p>
+<p>2026년에는 이 흐름이 NavWAM·WAM-Nav·WorldFly 같은 <strong>world-action model(WAM)</strong> 계열로 확산된다. 이들의 공통 논지는 perception·prediction·planning·control을 별개 모듈로 쌓지 말고, 하나의 생성 world model 안에서 통합하자는 것이다. world model이 미래를 예측하면(prediction), 그 예측 위에서 action을 탐색하고(planning), 선택된 action을 실행한다(control) — 세 기능이 하나의 학습된 dynamics 안에 녹는다.</p>
+<p>이 회귀가 COMPASS에 던지는 질문은 날카롭다. COMPASS는 X-Mobility world model을 <strong>frozen backbone</strong>으로 쓴다(Ch2, Ch6). 즉 world model은 표현을 제공할 뿐, RL 루프에서 함께 학습되지 않는다. 그러나 world-action model 패러다임은 world model 자체가 planning의 엔진이 되어야 한다고 말한다. 여기서 미해결 문제 하나가 도출된다 — <strong>world model을 unfrozen으로 두고 RL 루프에서 정책과 함께 학습</strong>하면, 정책이 자기에게 유용한 방향으로 world model의 표현을 다듬을 수 있지 않을까? frozen backbone은 안정성과 재사용성을 주지만, 정책-표현 공동 최적화의 상한을 스스로 못 박는다.</p>
+<p>이 긴장은 강의 전체를 관통한 주제 — 안정성 대 표현력 — 의 마지막 변주다. IL prior는 RL 탐색을 안정화했고(Ch4), one-hot conditioning은 averaging을 막았으며(Ch7), frozen backbone은 배치를 경량화했다(Ch9). 매번 우리는 '고정으로 안정성을 사고 표현력을 팔았다'. world-action model의 회귀는 그 거래를 재협상하자는 제안이며, 여러분이 논문으로 답할 수 있는 열린 질문이다.</p></div><div class="sb-block"><h2>하이브리드 미래와 4대 미해결 문제 — 강의를 닫으며</h2><p>이제 모든 실을 하나로 묶는다. 이 챕터의 논지는 (A) 구조적 분리와 (B) 데이터 스케일링이 대립이 아니라 <strong>수렴</strong>한다는 것이었다. 수렴의 형태는 '<strong>foundation model base + residual RL 보정</strong>'이다. 넓고 범용적인 navigation foundation model이 base prior를 제공하고(범용성), 그 위에 특정 embodiment·환경을 위한 residual RL이 정밀 보정을 얹는다(정밀성). 이는 Chapter 4의 residual 구조를 foundation model 시대로 옮긴 것 — base action이 이제 IL policy가 아니라 foundation model이 될 뿐, 'prior + 보정'이라는 뼈대는 같다.</p>
+<p>이 수렴의 가장 강력한 전조가 NVIDIA의 배치다. NVIDIA는 COMPASS(구조적 분리, sim 데이터)를 <a href="https://arxiv.org/abs/2503.14734">GR00T N</a>(humanoid VLA foundation model)의 <strong>synthetic data 생성기</strong>로 둔다. 즉 (A)가 (B)를 먹인다 — 경량 sim 파이프라인이 대규모 foundation model의 데이터를 만든다. 두 패러다임이 데이터 공급이라는 파이프로 이미 연결되어 있는 것이다. 미래에는 이 관계가 양방향이 될 것이다 — foundation model이 base를 주고, COMPASS류 residual이 보정하며, 그 배치 경험이 다시 데이터로 돌아오는 순환.</p>
+<p>마지막으로, 여러분이 논문을 쓸 좌표로 이 분야의 <strong>4대 미해결 문제</strong>를 정리한다. 각 문제는 이 강의의 한 챕터가 남긴 열린 끝이다.</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>미해결 문제</th>
+<th>핵심 쟁점</th>
+<th>연구 방향 제안</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>unseen embodiment zero-shot</td>
+<td>one-hot의 벽(Ch7) — 새 몸으로 전이 불가</td>
+<td>morphology conditioning을 measurable 물리량(질량·높이·DOF) vs learned 벡터로 설계·비교</td>
+</tr>
+<tr>
+<td>2</td>
+<td>vision sim2real</td>
+<td>rendering domain gap(Ch9)</td>
+<td>다양한 rendering을 latent 학습에 노출 + Real2Sim(VR-Robo) 복원 결합</td>
+</tr>
+<tr>
+<td>3</td>
+<td>hierarchical route planning 부재</td>
+<td>short-horizon route만 → long-horizon SR 하락</td>
+<td>graph/semantic route planner(상위) + COMPASS local policy(하위) 계층화</td>
+</tr>
+<tr>
+<td>4</td>
+<td>frozen world model</td>
+<td>표현-정책 공동 최적화 상한</td>
+<td>world model을 unfrozen으로 RL 루프에서 함께 학습(world-action model)</td>
+</tr>
+</tbody>
+</table>
+<p>이 네 문제는 서로 얽혀 있다. (1) morphology conditioning이 풀리면 foundation model base가 임의 embodiment를 커버하고, (2) rendering gap이 줄면 sim 데이터가 곧 real 데이터가 되며, (3) hierarchical 구조가 (B)의 semantic과 (A)의 control을 접합하고, (4) unfrozen world model이 그 전부를 하나의 학습되는 substrate로 통합한다. 이 넷이 동시에 풀리는 지점이 바로 '진정한 cross-embodiment navigation foundation model'이다.</p>
+<p>강의를 닫으며 한 문장으로 요약한다. COMPASS는 종착점이 아니라 좌표다 — cross-embodiment mobility의 문제를 IL·RL·distillation·conditioning·sim2real이라는 정확한 조각으로 분해해 보여줬고, 그 조각 하나하나의 열린 끝이 여러분의 다음 논문이다. 이 강의가 그 지도를 손에 쥐여줬기를 바란다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">요리학교 만능 셰프(B)와 전문 조립 주방(A), 그리고 프랜차이즈의 미래</div>
+      <div class="a-body"><p>두 패러다임을 주방에 비유하자. <strong>(B) foundation model</strong>은 세계 각지 800만 개 레시피를 다 먹어치운 만능 셰프다(NavFoM). 이 셰프는 처음 보는 재료(unseen task)를 줘도 그럴듯한 요리를 낸다 — 범용성이 엄청나다. 하지만 몸집이 크고(수십억 파라미터) 대형 주방(클라우드 GPU)이 필요하며, 특정 손님의 까다로운 입맛(특정 로봇의 정밀 제어)에는 어정쩡하게 두루뭉술하다.</p>
+<p><strong>(A) 구조적 분리</strong>는 공정을 나눈 전문 조립 주방이다(COMPASS). 밑간(IL prior)·재료별 조정(residual RL)·최종 통합(distillation)을 분업하고, 시뮬레이션 레시피로만 훈련한다. 작은 푸드트럭(Jetson Orin)에도 들어가고 30밀리초 안에 접시를 낸다 — 가볍고 빠르고 어디가 잘못됐는지 짚기 쉽다. 대신 정해진 메뉴(point-goal) 밖으로 나가려면 주방을 뜯어고쳐야 한다.</p>
+<p>미래는 둘 중 하나가 아니라 <strong>프랜차이즈</strong>다. 본사의 만능 셰프(foundation model base)가 표준 레시피를 내려주고, 각 지점의 로컬 셰프(residual RL)가 그 지역 입맛에 맞게 마지막 간을 보정한다. 흥미롭게도 지금도 전문 조립 주방(COMPASS)이 만능 셰프(GR00T N)의 훈련용 레시피를 대량 생산하고 있다 — 작고 빠른 주방이 큰 셰프를 먹이는 것이다. 두 주방은 경쟁자가 아니라, 하나의 프랜차이즈를 이루는 본사와 지점이다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>두 패러다임의 인터페이스를 하나로 스케치한다. (1) NavFoM류 identifier token 방식으로 이질적 카메라·시점·embodiment·task를 단일 토큰 시퀀스로 통일하는 입력 인터페이스, (2) hierarchical mobility에서 상위 graph route planner와 하위 COMPASS local policy를 waypoint 대역폭으로 접합하는 루프. 두 패러다임의 수렴 지점을 코드로 드러낸다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import torch
+
+# ---- (1) NavFoM류 identifier token: 이질적 관측을 단일 시퀀스로 통일 ----
+# 어느 embodiment·어느 카메라·어느 시점 프레임인지를 토큰에 명시(embedding)
+# -&gt; transformer가 센서 구성/task/시간 맥락을 구분하며 하나로 학습.
+def build_token_sequence(frames, meta, task_id):
+    tokens = []
+    for f in frames:  # f: 특정 camera view의 특정 timestep 프레임
+        patch = patch_embed(f.pixels)                      # ViT patch embedding
+        idtok = (embodiment_emb(meta.embodiment)           # quad/drone/wheeled/vehicle
+                 + camera_emb(f.camera_id)                  # front/back/left/right...
+                 + time_emb(f.t)                           # temporal context
+                 + task_emb(task_id))                       # VLN/objsearch/track/drive
+        tokens.append(patch + idtok)                       # identifier token 주입
+    return torch.stack(tokens)   # task-specific head 없이 cross-task 학습
+
+# ---- (2) Hierarchical mobility: semantic route planner(상위) + COMPASS(하위) ----
+class HierarchicalNavigator:
+    def __init__(self, route_planner, local_policy):
+        self.planner = route_planner      # graph/semantic (B): long-horizon
+        self.local  = local_policy        # COMPASS distilled generalist (A)
+
+    def act(self, obs, goal, embodiment):
+        # 상위: 의미 기반 전역 경로 -&gt; subgoal waypoint (좁은 인터페이스 대역폭)
+        waypoint = self.planner.next_subgoal(obs, goal)     # &#x27;kitchen -&gt; sofa&#x27;
+        # 하위: waypoint를 향해 embodiment 물리로 충돌 없이 short-horizon 실행
+        base = self.local(obs, waypoint, embodiment)        # point-goal local policy
+        # 하이브리드 미래: foundation base 위에 residual RL 보정을 얹는 자리
+        return base + self.residual_correction(obs, embodiment)  # Ch4 구조의 재림
+
+    def residual_correction(self, obs, embodiment):
+        return torch.zeros_like(embodiment.action_space)   # (연구 여지: RL로 학습)</code></pre>
+      <div class="c-walk"><p><code>build_token_sequence</code>가 (B) 패러다임의 핵심을 압축한다. 서로 다른 embodiment(quadruped·drone·wheeled·vehicle)와 서로 다른 카메라·시점·task를 별도 네트워크로 다루는 대신, 각 프레임 토큰에 <code>embodiment_emb + camera_emb + time_emb + task_emb</code>를 더한 <strong>identifier token</strong>을 주입해 하나의 시퀀스로 통일한다. transformer는 이 식별 정보를 보고 '이건 드론의 전방 카메라, VLN task'임을 구분하며 학습하므로, task-specific head 없이 cross-task SOTA가 나온다 — NavFoM의 800만 샘플 통합이 이 인터페이스 위에서 가능해진다.</p>
+<p><code>HierarchicalNavigator</code>가 두 패러다임의 접합을 보여준다. <code>planner</code>(상위)는 (B)의 semantic 이해로 'kitchen을 지나 sofa로' 같은 의미 기반 전역 경로를 세우고, 그 결과를 <code>waypoint</code>라는 <strong>좁은 인터페이스</strong>로 하위에 넘긴다. <code>local</code>은 바로 COMPASS의 distilled generalist(A)로, waypoint를 향한 short-horizon point-goal 실행만 담당한다. 이 좁은 대역폭 덕에 상위가 무엇이든(A*·learned·LLM planner) 하위를 재학습 없이 꽂을 수 있다 — COMPASS의 'point-goal만 푼다'는 한계가 '범용 하위 소켓'이라는 강점으로 뒤집히는 지점이다.</p>
+<p><code>act</code>의 마지막 줄 <code>base + self.residual_correction(...)</code>이 이 강의 전체의 매듭이다. Chapter 4의 residual 구조가 여기서 재림한다 — 단, base action이 이제 IL policy가 아니라 foundation model 계층에서 온다. <code>residual_correction</code>이 현재 zero를 반환하는 것은 의도된 여백이다. 이 함수를 embodiment별 RL로 채우는 것이 바로 'foundation model base + residual 보정' 하이브리드 미래이며, 여러분이 논문으로 구현할 열린 자리다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">이 챕터는 개별 기법이 아니라 &#x27;분야를 조망하고 미래를 논증하는&#x27; 능력을 평가한다. 빅테크 research 면접(특히 senior/staff, research scientist)에서는 최신 논문 몇 개를 아는 것보다, 두 패러다임의 트레이드오프를 잡고 수렴 방향을 논증하며 미해결 문제로 연구 방향을 제안하는 지형 감각을 본다. paper-writing을 준비하는 연구자에게는 이것이 곧 problem selection 능력이다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>구조적 분리(A)와 데이터 스케일링(B)의 트레이드오프를 데이터·배치·범용성 축으로 구조화해 설명하는 능력</li><li>hierarchical mobility의 필요성을 COMPASS의 short-horizon route 한계에서 도출하고, waypoint 인터페이스의 모듈성을 짚는 통찰</li><li>world-action model 회귀를 frozen vs unfrozen backbone의 안정성-표현력 트레이드오프로 해석하는 깊이</li><li>&#x27;foundation model base + residual 보정&#x27; 하이브리드를 Chapter 4 residual 구조의 재림으로 논증하는 연결력</li><li>4대 미해결 문제를 명확히 정리하고 각각에 구체적 연구 방향(measurable vs learned conditioning 등)을 제안하는 research taste</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>&#x27;foundation model이 무조건 이긴다&#x27;거나 반대로 &#x27;sim 파이프라인이 항상 낫다&#x27;는 식의 일방적 단정</li><li>두 패러다임을 대립으로만 보고 수렴·상보성(A가 B를 먹이는 데이터 관계)을 못 봄</li><li>hierarchical의 필요성을 모른 채 COMPASS가 long-horizon도 잘 푼다고 오해</li><li>world model을 단순 backbone으로만 알고 planning substrate로 회귀하는 흐름을 놓침</li><li>최신 논문 이름만 나열하고 각각이 어느 패러다임이며 무엇을 트레이드오프하는지 위치시키지 못함</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>NavFoM류 foundation model과 COMPASS류 구조적 분리의 장단점을 비교하고, 특정 배치 시나리오(엣지 로봇 vs 클라우드 지원)에서 무엇을 택하겠는지 논하라.</li><li>COMPASS의 route는 short-horizon guidance뿐이라 long-horizon에서 SR이 하락한다. hierarchical mobility로 어떻게 해결하며, 상위 planner를 semantic model과 결합하는 이점은 무엇인가?</li><li>이 분야의 미해결 문제 하나를 골라, 왜 어렵고 어떤 접근으로 풀지 — measurable 물리량 conditioning vs learned 벡터처럼 구체적 설계 선택까지 — 제안하라.</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 친숙한 수준은 &#x27;foundation model이 대세다&#x27;, &#x27;COMPASS는 sim 기반이다&#x27;처럼 라벨을 붙이는 정도다. 통달한 수준은 (A)와 (B)를 데이터·구조·배치·범용성 축의 표로 대비하고, NavFoM(800만·identifier token)·X-Nav(privileged→Nav-ACT distill)·SysNav(3-level·real 190회)를 각 패러다임에 정확히 위치시키며, COMPASS의 short-horizon route 한계에서 hierarchical mobility(graph/semantic planner + local policy)를 도출하고, Navigation World Models로 대표되는 world-action model 회귀를 frozen backbone의 안정성-표현력 트레이드오프로 해석하며, &#x27;foundation model base + residual 보정&#x27; 하이브리드를 Ch4 구조의 재림이자 NVIDIA가 COMPASS를 GR00T N 데이터 생성기로 두는 전조로 논증하고, 4대 미해결 문제(unseen embodiment·vision sim2real·hierarchical·unfrozen world model)에 구체적 연구 방향을 제안한다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>navigation은 두 패러다임의 긴장으로 읽힌다</h3><p>(A) sim-centric 구조적 분리(COMPASS·경량·배치 쉬움)와 (B) 대규모 데이터 foundation model(NavFoM·범용성)이 상보적 약점으로 대비된다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>NavFoM은 (B)의 navigation 진입을 상징한다</h3><p>800만 sample·4종 embodiment·cross-task를 camera view와 temporal context의 identifier token으로 통일해, task-specific fine-tuning 없이 SOTA를 낸다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>X-Nav는 (A)와 (B)를 잇는 다리다</h3><p>privileged obs로 무작위 embodiment 다수에 expert RL을 학습한 뒤 Nav-ACT로 단일 general policy로 distill해 unseen embodiment에 zero-shot 전이한다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>COMPASS의 short-horizon route가 hierarchical을 부른다</h3><p>직선 국소 guidance만으론 office·multi-rack long-horizon에서 SR이 하락하므로, graph/semantic route planner(상위)+local policy(하위) 계층이 필요하다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>waypoint 인터페이스가 두 패러다임을 접합한다</h3><p>상위 planner가 무엇이든 하위 COMPASS는 waypoint만 받으면 되므로, point-goal 한계가 임의 planner에 꽂히는 범용 하위 소켓의 강점으로 뒤집힌다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>world model이 planning substrate로 회귀한다</h3><p>Navigation World Models(arXiv:2412.03572)는 controllable video generation으로 미래를 상상해 궤적을 planning하며, frozen backbone의 상한을 재협상한다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>미래는 foundation base + residual 보정 하이브리드다</h3><p>넓은 foundation model prior 위에 embodiment별 residual RL 보정을 얹는 구조로 두 패러다임이 수렴하며, 이는 Chapter 4 residual 구조의 재림이다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>4대 미해결 문제가 다음 연구의 좌표다</h3><p>unseen embodiment zero-shot·vision sim2real(rendering gap)·hierarchical route planning 부재·frozen world model이 얽혀 있으며, 이 넷이 함께 풀리는 지점이 진정한 navigation foundation model이다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-09.html">← Sim-to-Real &amp; the NVIDIA Physical AI Stack</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <span></span>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

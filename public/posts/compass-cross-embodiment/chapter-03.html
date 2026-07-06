@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch3: Imitation Learning &amp; Covariate Shift — COMPASS &amp; Cross-Embodiment Mobility — direcf</title>
+  <meta name="description" content="teacher policy로 mobility prior를 학습하는 IL 단계와, IL만으로는 못 푸는 covariate shift 문제 — 그리고 왜 residual RL이 필요해지는지를 다룬다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;height:22px;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><linearGradient id="direcf-nav-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs></svg>
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg></span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg></span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.25 15a4.5 4.5 0 0 0 4.5 4.5H18a3.75 3.75 0 0 0 1.332-7.257 3 3 0 0 0-3.758-3.848 5.25 5.25 0 0 0-10.233 2.33A4.502 4.502 0 0 0 2.25 15Z"/></svg></span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"/></svg></span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg></span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/physical-ai">COMPASS &amp; Cross-Embodiment Mobility</a><span class="sep">›</span>
+        <strong>Ch03 Imitation Learning &amp; Covariate Shift</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 03 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🎓</div>
+      <h1 class="chapter-title">Imitation Learning &amp; Covariate Shift</h1>
+      <div class="chapter-title-kr">모방 학습과 코버리엇 시프트</div>
+      <div class="chapter-tldr">teacher policy로 mobility prior를 학습하는 IL 단계와, IL만으로는 못 푸는 covariate shift 문제 — 그리고 왜 residual RL이 필요해지는지를 다룬다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-03.png" alt="Chapter 3 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 3 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>behavior cloning과 covariate shift의 관계를 수식 수준에서 이해한다</li><li>classical mobility stack을 teacher로 쓰는 이유와 장단점을 안다</li><li>DAgger 등 covariate shift 완화 기법의 원리를 설명할 수 있다</li><li>latent space에서 policy를 학습할 때의 이점을 이해한다</li><li>IL의 한계가 residual RL 도입을 정당화하는 논리를 재구성할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>이전 챕터에서 우리는 X-Mobility가 raw observation을 압축된 latent state로 요약하고 미래를 예측하는 world model이라는 것을 보았다. 이 챕터는 그 world model 위에 <strong>첫 번째 policy를 어떻게 얹는가</strong>를 다룬다. COMPASS(<a href="https://arxiv.org/abs/2502.16372">arXiv:2502.16372</a>)의 3단계 파이프라인 IL→Residual RL→Distillation 중 첫 단계, 즉 imitation learning(IL)이 오늘의 주제다. 핵심 질문은 단순하다 — 강화학습은 sparse-reward navigation에서 수백만 스텝을 태워도 잘 수렴하지 않는데, 그렇다면 policy를 어디서 시작할 것인가?</p>
+<p>COMPASS의 대답은 '이미 존재하는 좋은 컨트롤러를 모방하라'다. 로봇 커뮤니티에는 수십 년간 다듬어진 classical mobility stack(예: ROS의 Nav2)이 있다. 이들은 학습 기반이 아니지만 대부분의 평범한 상황에서 안정적으로 목표까지 로봇을 몰고 간다. COMPASS는 이 teacher policy로 대량의 시연을 값싸게 뽑아, world model latent 위에서 behavior cloning으로 <strong>mobility prior</strong>를 학습한다. 이것이 이후 residual RL과 distillation이 딛고 설 발판이 된다.</p>
+<p>그러나 behavior cloning에는 이론적으로 불가피한 함정, <strong>covariate shift</strong>가 있다. 학습된 policy는 언젠가 teacher가 한 번도 보여주지 않은 state로 표류하고, 거기서 내린 나쁜 결정이 다음 state를 더 낯설게 만들어 에러가 복리로 쌓인다. 이 챕터는 covariate shift를 수식 수준에서 해부하고, DAgger 같은 고전적 완화책과 world model latent가 주는 암묵적 방어를 살펴본 뒤, '그래도 IL만으로는 부족하다'는 결론이 다음 챕터의 residual RL을 어떻게 필연적으로 불러오는지를 재구성한다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>Behavior Cloning: 지도학습으로 위장한 순차 결정 문제</h2><p><strong>Behavior cloning(행동 복제)</strong> = expert의 상태-행동 쌍 <span class="math-inline">\((o_t, a^*_t)\)</span>을 지도학습 데이터로 보고, 관측을 행동으로 매핑하는 함수를 회귀/분류로 맞추는 것.</p>
+<p>COMPASS의 IL 단계에서 데이터는 teacher policy가 만든 시연 집합 <span class="math-inline">\(D=\{(o_0,a^*_0,\dots,o_T,a^*_T)\}\)</span>이다. 여기서 <span class="math-inline">\(a^*\)</span>는 teacher(classical stack)의 행동이고, raw observation은 <span class="math-inline">\(o_t=(I_t, v_t)\)</span> — 이미지 <span class="math-inline">\(I_t\)</span>와 로봇 자기속도 <span class="math-inline">\(v_t\)</span>의 쌍이다. Policy는 이 데이터에서 다음 목적함수를 최소화한다.</p>
+<p><span class="math-display">\[\min_\theta \; \sum_t \ell\big(\pi^{IL}_\theta(p_t),\, a^*_t\big)\]</span></p>
+<p>여기서 <span class="math-inline">\(\ell\)</span>은 회귀 손실(연속 행동이므로 보통 MSE)이고 <span class="math-inline">\(p_t\)</span>는 뒤에서 설명할 fused latent다. 겉보기엔 평범한 지도학습이지만, 결정적 차이가 하나 있다 — <strong>이 데이터는 i.i.d.가 아니다.</strong> 표준 지도학습은 test 분포가 train 분포와 같다고 가정하지만, policy를 로봇에 올리는 순간 policy 자신의 행동이 다음 관측을 결정한다. 즉 test-time state 분포는 policy에 의존한다.</p>
+<p>이 의존성이 IL을 단순 회귀가 아니라 순차 결정 문제로 만든다. 학습할 때 policy는 항상 teacher가 방문한 '좋은' state에서 정답을 배우지만, 배포되면 자기 실수로 teacher가 결코 방문하지 않은 state에 도달한다. 거기서는 학습 신호가 전혀 없어 행동이 사실상 무작위에 가까워지고, 그 나쁜 행동이 다음 state를 더 낯설게 만든다. 이것이 다음 절에서 다룰 covariate shift의 씨앗이다.</p></div><div class="sb-block"><h2>Covariate Shift와 O(T²) 후회: 왜 에러가 복리로 쌓이는가</h2><p><strong>Covariate shift</strong> = 학습된 policy가 유도하는 state 방문 분포 <span class="math-inline">\(d_{\pi}\)</span>가 expert의 분포 <span class="math-inline">\(d_{\pi^*}\)</span>와 달라지는 현상. IL이 실패하는 근본 원인이다.</p>
+<p>직관은 이렇다. 매 스텝 policy가 expert와 다르게 행동할 확률을 <span class="math-inline">\(\epsilon\)</span>이라 하자. 지도학습이라면 총 기대 실수는 <span class="math-inline">\(O(\epsilon T)\)</span>로 선형이다. 그러나 순차 문제에서는 한 번의 실수가 다음 state를 train 분포 밖으로 밀어내고, 그 밖에서는 실수 확률이 더 커진다. Ross et al.의 고전 결과(<a href="https://arxiv.org/abs/1011.0686">DAgger, 2011</a>)는 이 누적 효과가 최악의 경우 <strong><span class="math-inline">\(O(\epsilon T^2)\)</span>의 후회(regret)</strong>를 낳음을 보인다.</p>
+<p><span class="math-display">\[J(\pi) - J(\pi^*) \;\leq\; O(\epsilon\, T^2)\]</span></p>
+<p><span class="math-inline">\(T\)</span>가 커질수록(긴 horizon의 navigation) 이 이차항이 치명적이 된다. 실전 번역: teacher를 90% 정확도로 복제해도, 256스텝 에피소드에서 한 번 코너를 잘못 돌아 낯선 복도로 들어서면 그 다음부터는 배운 적 없는 상황의 연속이라 회복하지 못하고 벽에 처박힌다. 이것이 pure BC의 navigation policy가 '조용한 실패'를 겪는 메커니즘이다.</p>
+<p>COMPASS 저자들이 특히 강조하는 점은, humanoid처럼 복잡한 modality에서는 애초에 고품질 teacher 시연을 만드는 것 자체가 어렵다는 것이다. Wheeled 로봇은 성숙한 classical stack이 있어 데이터가 값싸지만, 다리 달린 로봇에는 그런 범용 teacher가 없다. 그래서 IL로 얻는 prior의 품질이 embodiment마다 들쭉날쭉하고, 이 불균형이 '모든 embodiment를 IL만으로 완성한다'는 선택지를 처음부터 배제한다. 결국 IL은 완성품이 아니라 <strong>좋은 초기화</strong>를 제공하는 역할로 자리매김된다.</p></div><div class="sb-block"><h2>DAgger: 분포를 policy 쪽으로 끌어오는 online 완화책</h2><p>Covariate shift의 근본 처방은 '학습 분포를 policy가 실제로 방문하는 분포와 일치시키는 것'이다. <strong>DAgger(Dataset Aggregation)</strong> = policy를 굴려 policy가 방문한 state를 수집하고, 그 state에 대해 expert에게 정답 라벨을 물어 데이터셋에 계속 합치는 반복 절차(<a href="https://arxiv.org/abs/1011.0686">Ross et al. 2011</a>).</p>
+<p>알고리즘의 뼈대는 다음과 같다. (1) 현재 policy <span class="math-inline">\(\pi_i\)</span>로 궤적을 굴린다. (2) 그 궤적의 각 state <span class="math-inline">\(o_t\)</span>에 대해 expert <span class="math-inline">\(\pi^*\)</span>가 무엇을 했을지 라벨 <span class="math-inline">\(a^*_t\)</span>를 얻는다. (3) 이 새 쌍들을 누적 데이터셋 <span class="math-inline">\(D \leftarrow D \cup \{(o_t, a^*_t)\}\)</span>에 합쳐 policy를 다시 학습한다. 반복하면 학습 분포가 점점 <span class="math-inline">\(d_{\pi}\)</span>로 수렴하고, no-regret online learning 관점에서 후회가 <span class="math-inline">\(O(\epsilon T^2)\)</span>에서 <span class="math-inline">\(O(\epsilon T)\)</span>의 선형 영역으로 내려온다.</p>
+<p>DAgger의 결정적 전제는 <strong>query 가능한 expert</strong>다. 즉 policy가 만든 임의의 낯선 state에 대해서도 expert가 즉석에서 정답을 줄 수 있어야 한다. 바로 여기서 classical mobility stack을 teacher로 쓰는 선택이 빛난다 — Nav2 같은 stack은 학습된 정적 데이터셋이 아니라 실행 가능한 알고리즘이므로, 어떤 state를 던져도 즉시 행동을 계산해 준다. 사람 시연이 teacher라면 불가능한 online labeling이 classical teacher에서는 공짜다.</p>
+<p>그러나 DAgger에도 한계가 있다. teacher 자신이 도달할 수 없거나 애초에 어떻게 행동해야 할지 모르는 state(예: 넘어지기 직전의 humanoid)에서는 teacher의 라벨이 무의미해진다. teacher의 성능이 곧 policy 성능의 상한이 되는 것이다. 즉 DAgger는 covariate shift를 완화하지만 <strong>teacher를 능가하게 만들지는 못한다.</strong> 이 상한을 뚫으려면 라벨을 모방하는 대신 환경의 reward로부터 직접 개선하는 신호가 필요하고, 그것이 다음 챕터 residual RL의 존재 이유다.</p></div><div class="sb-block"><h2>Latent-space Policy: world model이 주는 암묵적 covariate shift 방어</h2><p>COMPASS는 policy를 raw pixel 위에서 학습하지 않는다. 대신 world model이 만든 latent state 위에서 학습한다. 이 설계가 covariate shift에 대한 세 번째 방어선이 된다.</p>
+<p>구조를 따라가 보자. World model은 latent transition <span class="math-inline">\(s_t=f_\phi(s_{t-1}, a_{t-1})\)</span>로 상태를 굴리고 reconstruction <span class="math-inline">\(\hat{o}_t=g_\psi(s_t)\)</span>로 관측을 복원하도록 학습된다. 목표(goal)는 route로 주어지며 route encoding <span class="math-inline">\(r_t=f_\theta(g_t)\)</span>로 인코딩되고, latent state와 route가 fusion되어 <span class="math-inline">\(p_t=\Phi(s_t, r_t)\)</span>가 만들어진다. 최종 행동은 이 fused representation에서 나온다 — <span class="math-inline">\(a_t=\pi^{IL}_\theta(p_t)\)</span>. 즉 policy가 보는 것은 픽셀이 아니라 '미래를 예측하도록 훈련된 압축 표현'이다.</p>
+<p>왜 이것이 covariate shift를 완화하는가? world model은 미래 관측과 latent를 예측하도록 학습되므로, 표현 공간이 로봇 dynamics의 매끄러운 manifold를 따라 구조화된다. 낯선 관측이 들어와도 그것이 latent manifold 위의 가까운 점으로 투영되는 경향이 있어, policy가 '완전히 처음 보는 입력'을 만날 확률이 raw pixel보다 낮다. 다시 말해 world model이 OOD state를 in-distribution latent로 흡수해 주는 정규화 효과를 낸다.</p>
+<p>또 하나의 실질적 이점은 데이터 효율이다. 고차원 픽셀에서 직접 행동을 회귀하려면 방대한 시연이 필요하지만, 이미 사전학습된 latent 위에서는 훨씬 적은 시연으로 mobility prior가 잡힌다. 정리하면, latent-space policy는 (a) 표현 정규화로 covariate shift를 줄이고 (b) sample efficiency를 높인다. 그럼에도 이것은 완화이지 해결이 아니다 — 예측 표현이 아무리 좋아도, teacher를 모방하는 신호 자체에는 '나쁜 state에서 회복하는 법'이 들어 있지 않기 때문이다.</p></div><div class="sb-block"><h2>IL의 한계가 residual RL을 부르는 논리</h2><p>이 챕터의 모든 실이 여기서 하나로 묶인다. IL 단계는 세 가지를 준다 — (1) classical teacher의 값싼 대량 시연, (2) world model latent 위의 강한 mobility prior, (3) DAgger·latent 정규화로 완화된(그러나 제거되지 않은) covariate shift. 그리고 세 가지를 주지 못한다 — teacher를 능가하는 능력, teacher가 없는 embodiment에서의 견고함, 진짜 OOD 회복.</p>
+<p>이 결핍을 메우는 신호는 본질적으로 다르다. IL은 '전문가가 무엇을 했는가'라는 라벨을 모방하지만, 필요한 것은 '이 행동이 목표 달성에 좋았는가'라는 결과 신호, 곧 reward다. Reward는 teacher가 방문하지 못한 state에서도 정의되므로, policy가 스스로 표류한 낯선 곳에서 회복하는 법을 배울 수 있다. 이것이 IL과 RL의 근본적 상보성이다.</p>
+<p>그렇다면 왜 처음부터 RL만 하지 않는가? 다음 챕터에서 정량적으로 보겠지만, sparse-reward navigation에서 RL-from-scratch는 IL base 없이는 1000 에피소드에도 수렴하지 못한다. 목표에 우연히 도달해야만 첫 보상이 생기는데, 무작위 초기 policy가 2~5m 떨어진 목표에 우연히 닿을 확률이 사실상 0이기 때문이다. 즉 RL은 '무엇이 좋은지' 알려주지만 '어디서 시작할지'는 알려주지 못한다.</p>
+<p>여기서 COMPASS의 설계 철학이 드러난다 — IL이 강한 초기화(where to start)를 주고, RL이 결과 기반 개선(what is good)을 준다. 이 둘을 <strong>덧셈으로</strong> 결합하는 것, 즉 frozen IL base 위에 작은 residual을 학습하는 것이 다음 챕터의 residual RL이다. IL을 버리지 않고 그 위에 얹는 이유, base를 freeze하는 이유가 모두 이 논리에서 나온다. IL은 실패한 접근이 아니라, RL이 딛고 설 유일하게 견고한 발판이다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">운전 강사 옆자리와 도로 위 실전</div>
+      <div class="a-body"><p>Behavior cloning은 조수석에서 베테랑 강사의 운전을 며칠 지켜보고 그대로 흉내 내는 것과 같다. 강사는 항상 차선 한가운데, 적절한 속도의 '좋은 상태'만 보여준다. 그래서 당신은 좋은 상태에서 무엇을 해야 하는지는 완벽히 배우지만, 차가 차선 밖으로 반쯤 벗어난 상황은 한 번도 본 적이 없다. 강사는 그런 실수를 하지 않으니까.</p>
+<p>혼자 운전대를 잡는 순간 문제가 터진다. 작은 실수로 차가 살짝 갓길로 쏠리면, 그 상황은 '강사가 보여준 적 없는 낯선 장면'이고 당신은 어떻게 되돌려야 할지 모른다. 잘못된 조작이 차를 더 밖으로 밀어내고, 그 다음은 더 낯설어지고 — 이것이 covariate shift가 에러를 복리로 키우는 방식이다.</p>
+<p>DAgger는 강사를 조수석에 계속 태우고, 당신이 실수로 갓길에 갔을 때 '이럴 땐 이렇게 핸들을 돌려'라고 그 자리에서 정답을 알려주는 것이다. 하지만 강사조차 겪어본 적 없는 상황(빙판 위 스핀)에서는 강사도 답이 없다. 결국 진짜 실력은 도로에서 직접 미끄러져 보고 '이렇게 하니 회복되더라'는 결과를 몸으로 익힐 때 생긴다 — 그 결과 기반 학습이 바로 다음 챕터의 RL이다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>IL 단계의 두 축을 스케치한다. (1) latent 위의 behavior cloning loss, (2) classical teacher를 online으로 query하는 DAgger aggregation loop. teacher는 query 가능한 알고리즘(Nav2류)이라는 점이 DAgger를 성립시키는 핵심이다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import torch, torch.nn.functional as F
+
+def bc_loss(policy, world_model, obs, expert_action, route):
+    # obs -&gt; latent state (world model은 frozen된 encoder로 사용)
+    with torch.no_grad():
+        s_t = world_model.encode(obs)          # s_t = f_phi(...)
+    r_t = policy.route_encoder(route)          # r_t = f_theta(g_t)
+    p_t = policy.fuse(s_t, r_t)                # p_t = Phi(s_t, r_t)
+    a_pred = policy.actor(p_t)                 # a_t = pi_theta(p_t)
+    return F.mse_loss(a_pred, expert_action)  # regression to teacher
+
+def dagger_epoch(policy, world_model, teacher, env, dataset, opt, beta):
+    # beta: teacher를 직접 실행할 확률 (초기 1.0 -&gt; 점차 0)
+    obs = env.reset()
+    for t in range(env.max_steps):
+        a_star = teacher.query(obs)           # classical stack: 어떤 state든 라벨 제공
+        with torch.no_grad():
+            s_t = world_model.encode(obs)
+            a_pi = policy.actor(policy.fuse(s_t, policy.route_encoder(obs[&#x27;route&#x27;])))
+        # policy가 방문한 state를 teacher 라벨과 함께 누적 (분포를 d_pi로 이동)
+        dataset.add(obs, a_star)
+        # rollout은 mixture로: beta*teacher + (1-beta)*policy
+        act = a_star if torch.rand(1) &lt; beta else a_pi
+        obs = env.step(act)
+
+    # aggregated dataset으로 policy 재학습
+    for obs_b, a_star_b in dataset.batches():
+        loss = bc_loss(policy, world_model, obs_b, a_star_b, obs_b[&#x27;route&#x27;])
+        opt.zero_grad(); loss.backward(); opt.step()
+    return loss.item()</code></pre>
+      <div class="c-walk"><p><strong><code>bc_loss</code></strong> — policy가 raw pixel이 아니라 world model latent <span class="math-inline">\(s_t\)</span> 위에서 행동을 회귀한다는 점이 핵심이다. <code>world_model.encode</code>를 <code>no_grad</code>로 감싸 IL 단계에서 표현을 얼린 채 policy head만 학습하는 전형적 구성을 보여준다. route는 별도로 인코딩되어 fusion <span class="math-inline">\(\Phi(s_t,r_t)\)</span>로 합쳐지고, 손실은 teacher action에 대한 MSE — 즉 <span class="math-inline">\(\min_\theta \sum_t \ell(\pi^{IL}_\theta(p_t), a^*_t)\)</span>의 코드 형태다.</p>
+<p><strong><code>dagger_epoch</code></strong> — covariate shift 완화의 실체다. 매 스텝 <code>teacher.query(obs)</code>로 policy가 방문한 낯선 state에 대해서도 정답을 즉석에서 얻는다. 이것이 가능한 이유는 teacher가 정적 데이터셋이 아니라 실행 가능한 classical stack이기 때문이다(사람 시연이면 불가능). 수집된 <span class="math-inline">\((obs, a^*)\)</span>는 <code>dataset.add</code>로 누적되어 학습 분포를 <span class="math-inline">\(d_\pi\)</span> 쪽으로 이동시킨다.</p>
+<p><strong><code>beta</code> mixture</strong> — 초기에는 teacher를 직접 굴려(<span class="math-inline">\(\beta\approx1\)</span>) 안전하게 좋은 궤적을 모으고, 점차 policy에 제어를 넘겨(<span class="math-inline">\(\beta\to0\)</span>) policy가 실제로 표류하는 state를 노출시킨다. 이 스케줄이 DAgger가 <span class="math-inline">\(O(T^2)\)</span> 후회를 <span class="math-inline">\(O(T)\)</span>로 낮추는 실질적 장치다. 단, <code>teacher.query</code>가 무의미한 state(회복 불가능한 넘어짐)에서는 이 라벨의 품질이 무너진다는 것이 IL의 구조적 한계이며, residual RL이 필요한 지점이다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">IL과 covariate shift는 로봇 학습 면접의 단골 주제이자, 실무에서 &#x27;왜 우리 BC 정책이 데모에선 되는데 배포하면 무너지는가&#x27;를 진단하는 렌즈다. 면접관은 후보가 이것을 데이터 문제가 아니라 분포 문제로 프레이밍할 수 있는지를 본다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>covariate shift를 i.i.d. 가정 위반으로 정확히 설명하고 O(T²) vs O(T) 후회 스케일을 언급하는가</li><li>DAgger의 전제가 &#x27;query 가능한 expert&#x27;임을 알고, 그래서 classical stack teacher가 사람 시연보다 유리한 이유를 연결하는가</li><li>IL을 완성품이 아니라 초기화로 프레이밍하고, RL과의 상보성(where to start vs what is good)을 설명하는가</li><li>latent-space policy가 covariate shift와 sample efficiency 양쪽에 주는 이점을 world model 예측 목표와 연결하는가</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>covariate shift를 단순히 &#x27;데이터가 부족하다&#x27;로 뭉뚱그리고 분포 이동을 언급하지 못함</li><li>DAgger를 &#x27;데이터를 더 모으는 것&#x27;으로만 이해하고 online expert query라는 핵심 전제를 놓침</li><li>&#x27;IL이 안 되면 RL을 더 하면 된다&#x27;며 sparse-reward에서 from-scratch RL이 수렴 못 함을 모름</li><li>teacher 성능이 BC/DAgger policy의 상한이라는 점을 인지하지 못함</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>Behavior cloning이 지도학습처럼 보이는데 왜 test error가 O(εT)가 아니라 O(εT²)로 커질 수 있는지 유도해 보라.</li><li>DAgger가 covariate shift를 줄이는 원리를 설명하고, 사람 시연 대신 classical planner를 teacher로 쓸 때 무엇이 달라지는지 말하라.</li><li>world model latent 위에서 policy를 학습하는 것이 raw pixel BC보다 OOD에 강한 이유를 표현 학습 관점에서 논하라.</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 익숙한 수준은 &#x27;BC는 covariate shift 때문에 실패하고 DAgger로 고친다&#x27;까지 말한다. 통달한 수준은 후회의 이차 스케일을 유도하고, DAgger의 query-expert 전제가 classical teacher 선택과 어떻게 맞물리는지, latent 표현이 왜 암묵적 정규화가 되는지, 그리고 이 모든 완화에도 남는 &#x27;결과 신호의 부재&#x27;가 residual RL을 필연적으로 부른다는 논리 사슬 전체를 스스로 재구성한다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>BC는 위장한 순차 문제</h3><p>behavior cloning은 지도학습처럼 보이지만 policy가 자기 관측 분포를 결정하므로 i.i.d. 가정이 깨진다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>Covariate shift = 분포 이동</h3><p>policy가 방문하는 state 분포 d_π가 expert 분포에서 벗어나며 에러가 복리로 누적된다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>O(T²) 후회</h3><p>한 번의 실수가 낯선 state를 낳아 긴 horizon에서 후회가 스텝 수의 제곱으로 커진다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>DAgger는 online 완화책</h3><p>policy가 방문한 state를 expert에게 라벨링받아 학습 분포를 d_π로 끌어와 후회를 선형으로 낮춘다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>Classical teacher는 query 가능</h3><p>Nav2류 stack은 실행 가능한 알고리즘이라 어떤 state든 즉석 라벨을 주므로 DAgger의 전제를 공짜로 만족한다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>Latent가 암묵적 방어</h3><p>world model latent는 예측 목표로 정규화된 표현이라 OOD 관측을 흡수하고 sample efficiency도 높인다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>teacher가 성능 상한</h3><p>IL·DAgger는 teacher를 능가하지 못하고, teacher가 없는 embodiment에서는 prior 품질이 무너진다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>IL은 발판, RL이 다음</h3><p>결과(reward) 신호의 부재가 IL의 마지막 한계이며, 이를 메우는 residual RL이 필연적으로 등장한다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-02.html">← World Models for Navigation — The X-Mobility Backbone</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-04.html">Residual RL — Fine-Tuning Without Forgetting →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

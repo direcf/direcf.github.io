@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch4: Residual RL — Fine-Tuning Without Forgetting — COMPASS &amp; Cross-Embodiment Mobility — direcf</title>
+  <meta name="description" content="a = a_base + a_res 구조로 frozen base policy를 embodiment별로 보정하는 residual RL — 왜 이게 sparse-reward navigation에서 from-scratch RL보다 압도적으로 빠른지 파헤친다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;height:22px;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><linearGradient id="direcf-nav-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs></svg>
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg></span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg></span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.25 15a4.5 4.5 0 0 0 4.5 4.5H18a3.75 3.75 0 0 0 1.332-7.257 3 3 0 0 0-3.758-3.848 5.25 5.25 0 0 0-10.233 2.33A4.502 4.502 0 0 0 2.25 15Z"/></svg></span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"/></svg></span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg></span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/physical-ai">COMPASS &amp; Cross-Embodiment Mobility</a><span class="sep">›</span>
+        <strong>Ch04 Residual RL — Fine-Tuning Without Forgetting</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 04 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">➕</div>
+      <h1 class="chapter-title">Residual RL — Fine-Tuning Without Forgetting</h1>
+      <div class="chapter-title-kr">레지듀얼 RL — 잊지 않고 미세조정하기</div>
+      <div class="chapter-tldr">a = a_base + a_res 구조로 frozen base policy를 embodiment별로 보정하는 residual RL — 왜 이게 sparse-reward navigation에서 from-scratch RL보다 압도적으로 빠른지 파헤친다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-04.png" alt="Chapter 4 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 4 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>residual RL의 a = a_base + a_res 정식화와 학습 안정성의 관계를 설명할 수 있다</li><li>왜 base policy를 freeze하고 마지막 layer만 재초기화하는지 안다</li><li>PPO critic이 policy state를 공유할 때의 trade-off를 이해한다</li><li>COMPASS의 reward 구성(progress·collision·goal)을 설계할 수 있다</li><li>RL-from-scratch가 1000 episode에도 수렴 못 하는 이유를 IL prior로 설명한다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>앞 챕터에서 우리는 IL이 강한 mobility prior를 주지만 covariate shift와 teacher 상한이라는 벽에 부딪히고, 이를 넘으려면 라벨이 아니라 reward 기반 개선이 필요하다는 결론에 도달했다. 이 챕터는 그 개선을 어떻게 '기존 능력을 잊지 않고' 수행하는가를 다룬다. COMPASS(<a href="https://arxiv.org/abs/2502.16372">arXiv:2502.16372</a>)의 두 번째 단계, <strong>residual RL</strong>이다.</p>
+<p>핵심 아이디어는 놀랄 만큼 단순하다. IL policy가 내놓는 base action을 그대로 두고, 그 위에 작은 교정항(residual)을 RL로 학습해 더하는 것 — <span class="math-inline">\(a_t = a^{base}_t + a^{res}_t\)</span>. base는 얼려 두고 residual만 PPO로 훈련한다. 이 덧셈 구조가 왜 sparse-reward navigation에서 from-scratch RL을 5x~40x 성공률로 압도하는지, 그리고 왜 학습이 안정적인지가 이 챕터의 중심 질문이다.</p>
+<p>우리는 residual 정식화를 exploration과 optimization 관점에서 해부하고, base를 freeze하고 마지막 output layer만 재초기화하는 미묘한 설계 결정을 뜯어본다. 이어 COMPASS의 3-항 reward(progress·collision·goal)를 설계 관점에서 재구성하고, critic이 policy state를 공유할 때의 trade-off, Isaac Lab 위 병렬 학습 세팅, 그리고 curriculum·depth-critic ablation의 반직관적 결과까지 짚는다. 마지막으로 residual RL의 계보(Johannink 2019, Ankile 2024)를 통해 이 기법이 COMPASS만의 트릭이 아니라 IL→RL 전환의 일반 원리임을 확인한다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>a = a_base + a_res: exploration을 prior 근방으로 국소화하기</h2><p><strong>Residual policy(잔차 정책)</strong> = 이미 쓸 만한 base controller의 출력에 학습 가능한 보정항을 더해 최종 행동을 만드는 정책. COMPASS에서 base action은 frozen IL policy <span class="math-inline">\(a^{base}_t=\pi^{base}_\theta(p_t)\)</span>이고, residual policy <span class="math-inline">\(\pi^{res}_\phi\)</span>가 <span class="math-inline">\(a^{res}_t\)</span>를 내며, 최종 행동은 다음과 같다.</p>
+<p><span class="math-display">\[a_t = \pi^{base}_\theta(p_t) + \pi^{res}_\phi(p_t), \qquad \pi^{base}\text{ frozen}\]</span></p>
+<p>이 구조의 위력은 exploration을 재정의하는 데 있다. from-scratch RL의 초기 policy는 사실상 무작위라, 행동 공간 전체를 헤매며 목표에 우연히 닿기를 기다린다. 반면 residual RL은 IL prior가 이미 대략 옳은 방향으로 로봇을 몰고 있고, RL은 그 궤적 <strong>근방의 작은 교정</strong>만 탐색한다. 즉 탐색 분포가 <span class="math-inline">\(a^{base}\)</span>를 중심으로 좁게 형성되어, 유의미한 궤적(목표에 가까워지는 궤적)을 훨씬 자주 만난다.</p>
+<p>학습 안정성도 여기서 나온다. residual head를 0에 가깝게 초기화하면 학습 시작 시점의 policy는 사실상 IL policy 그 자체다. 즉 이미 '잘 작동하는 정책'에서 출발해 조금씩 벗어나며 개선하므로, RL 특유의 초기 붕괴(무작위 policy가 catastrophic한 행동을 반복하는 구간)가 없다. 이것이 '잊지 않고 미세조정한다(fine-tuning without forgetting)'의 정확한 의미다 — base의 능력은 구조적으로 보존되고, residual은 오직 그 위의 delta만 담당한다.</p>
+<p>정식화 관점에서 residual RL은 행동 공간의 재파라미터화다. 최적화 대상이 '절대 행동 <span class="math-inline">\(a\)</span>'가 아니라 'prior로부터의 편차 <span class="math-inline">\(a^{res}\)</span>'로 바뀌면서, 좋은 해가 원점(<span class="math-inline">\(a^{res}=0\)</span>) 근처에 있다는 강한 사전 정보가 optimization landscape에 주입된다. sparse reward에서 이 사전 정보가 곧 sample efficiency의 원천이다.</p></div><div class="sb-block"><h2>Freeze + 마지막 layer만 재초기화: 표현은 잇고 출력은 끊는다</h2><p>COMPASS의 residual network는 백지에서 만들어지지 않는다. IL과 <strong>같은 world model</strong>을 공유하고, IL의 action policy 가중치를 그대로 <strong>복사</strong>한 뒤 <strong>마지막 output layer만 재초기화(reinit)</strong>한다. 이 세 가지 결정에는 각각 이유가 있다.</p>
+<p>같은 world model을 쓰는 이유는 표현을 다시 배우지 않기 위해서다. latent state <span class="math-inline">\(s_t\)</span>는 이미 mobility에 유용한 정보를 압축하고 있으므로, residual policy가 픽셀부터 다시 학습할 이유가 없다. IL 가중치를 복사하는 이유는 residual head의 하위 feature 추출부가 이미 mobility-relevant한 표현으로 초기화되어, 무작위 초기화보다 훨씬 좋은 출발점을 주기 때문이다.</p>
+<p>그런데 왜 하필 마지막 layer만 재초기화하는가? 만약 마지막 layer까지 복사하면 residual policy의 초기 출력이 base와 동일해져 <span class="math-inline">\(a^{res}\)</span>가 base action을 그대로 복제하는 값으로 시작한다 — 이는 <span class="math-inline">\(a=2a^{base}\)</span>를 의미해 궤적을 망가뜨린다. 반대로 전체를 재초기화하면 앞서 말한 좋은 feature 초기화를 잃는다. 마지막 layer만 reinit하면 <strong>하위 표현은 물려받되 출력은 0 근방의 작은 residual로 시작</strong>하는, 정확히 원하는 상태가 된다.</p>
+<p>여기서 미묘하지만 중요한 점은 IL policy가 <strong>끝까지 frozen으로 유지</strong>된다는 것이다. residual head가 아무리 학습되어도 base branch의 가중치는 gradient를 받지 않는다. 이 덕분에 base의 mobility prior는 학습 내내 훼손되지 않고, residual은 순수하게 embodiment별·환경별 교정만 담당한다. 만약 base까지 함께 학습하면 sparse reward의 노이즈가 애써 얻은 prior를 지워버릴 위험이 있다 — catastrophic forgetting을 구조적으로 차단하는 것이 freeze의 목적이다.</p></div><div class="sb-block"><h2>PPO와 shared-state critic: 무엇을 함께 두고 무엇을 나눌까</h2><p>residual policy는 <strong>PPO</strong>(<a href="https://arxiv.org/abs/1707.06347">Schulman et al. 2017</a>)로 학습된다. PPO는 clipped surrogate objective로 policy 업데이트 크기를 제한해 on-policy 학습을 안정화하는 알고리즘으로, residual처럼 '작은 교정'을 점진적으로 쌓는 세팅에 잘 맞는다. 매 업데이트가 현재 policy에서 너무 멀리 벗어나지 않으므로, 어렵게 얻은 prior 근방의 좋은 궤적을 급격히 이탈할 위험이 작다.</p>
+<p>critic 설계가 흥미롭다. COMPASS의 critic은 <strong>policy state <span class="math-inline">\(p_t\)</span>를 입력받는 표준 MLP</strong>다. 즉 actor(residual)와 critic이 같은 fused representation을 공유한다. 이 공유의 장점은 명확하다 — 이미 mobility-relevant하게 정제된 표현 위에서 value를 추정하므로 critic이 표현을 처음부터 학습할 필요가 없고, sample efficiency가 좋아진다.</p>
+<p>trade-off도 있다. actor와 critic이 표현을 공유하면 두 목표(policy gradient와 value regression)의 gradient가 같은 표현에 섞여 들어가 서로 간섭할 수 있다. 게다가 policy state <span class="math-inline">\(p_t\)</span>는 world model과 fusion을 거친 압축 표현이라, value 추정에 필요하지만 policy state에는 빠져 있는 정보(예: 특정 장애물 기하)가 있으면 critic이 그것을 볼 수 없다. 이 한계가 아래 depth-critic ablation의 동기가 된다.</p>
+<p>실제로 COMPASS는 critic에 추가 정보를 주는 실험을 한다. <strong>depth-critic</strong>(ResNet18로 depth image를 인코딩해 critic 입력에 추가)은 office처럼 키 큰 장애물이 많은 환경에서는 도움이 되지만, warehouse처럼 낮은 장애물 환경에서는 오히려 손해였다. 교훈은 critic augmentation이 만능이 아니라 환경의 관측 병목에 의존한다는 것 — depth가 policy state에 이미 충분히 반영된 환경에서는 중복 신호가 노이즈로 작용한다.</p></div><div class="sb-block"><h2>Reward 설계와 병렬 학습: progress · collision · goal의 삼각 균형</h2><p>navigation은 대표적 sparse-reward 문제다. 목표 도달이라는 최종 사건만으로 보상을 주면 학습 초기에 신호가 거의 없다. COMPASS는 이를 <strong>3-항 reward</strong>로 shaping한다.</p>
+<ul>
+<li>
+<p><strong>Progress</strong> = 목표까지 거리가 줄어든 만큼 비례해 주는 양의 보상. 매 스텝 dense 신호를 제공해 '올바른 방향으로 가고 있다'를 알려준다.</p>
+</li>
+<li>
+<p><strong>Collision avoidance</strong> = 충돌·넘어짐에 대한 penalty. 목표만 좇다 벽에 박는 행동을 억제한다.</p>
+</li>
+<li>
+<p><strong>Goal completion</strong> = 목표 도달 시의 큰 양의 보상. 최종 성공을 명시적으로 강화한다.</p>
+</li>
+</ul>
+<p>이 세 항의 균형이 정책의 성격을 결정한다. progress 가중치가 너무 크면 장애물을 무시하고 직진하는 저돌적 정책이, collision penalty가 너무 크면 움직이길 두려워하는 소극적 정책이 나온다. 특히 progress가 매 스텝 dense하게 들어오기 때문에, residual RL은 첫 성공 이전에도 '거리를 줄이는 법'을 배울 수 있다 — 이것이 순수 sparse goal-only reward보다 학습을 크게 가속한다.</p>
+<p>학습 인프라는 대규모 병렬화다. <strong>Isaac Lab</strong>에서 64개 환경을 병렬로 굴리고 2x L40 GPU를 사용하며, specialist 하나당 약 1000 episode를 학습한다(단 Carter 로봇은 X-Mobility가 이미 Carter로 사전학습되어 overfit을 피하려 300 episode만). 목표 거리는 2~5m uniform, 에피소드는 최대 256 timestep, 직선 경로가 simplified route로 주어진다. 결정적 디테일 하나 — 환경 reset(도달·충돌·timeout) 시 <strong>world model의 history state까지 clear</strong>한다. 그렇지 않으면 이전 에피소드의 latent 기억이 새 에피소드로 새어 들어가 credit assignment를 오염시킨다.</p>
+<p>ablation은 반직관적 교훈을 준다. <strong>goal-distance curriculum</strong>(쉬운 가까운 목표부터 점진적으로)은 도움이 되지 않았다 — IL prior가 이미 강한 초기화를 주므로, curriculum이 어려운 시나리오 노출을 줄여 오히려 손해였다. from-scratch RL이라면 curriculum이 필수였겠지만, 좋은 prior가 있으면 처음부터 어려운 분포에 노출시키는 편이 낫다는 것이다. 이는 'prior의 존재가 학습 레시피 전체를 바꾼다'는 이 챕터의 큰 그림을 압축한다.</p></div><div class="sb-block"><h2>왜 5x~40x인가: IL prior가 뚫는 sample-efficiency 병목</h2><p>이제 정량 결과를 논리로 꿰맞출 차례다. residual RL specialist는 X-Mobility(IL base) 대비 <strong>성공률(SR) 5x~40x</strong>, <strong>WTT(weighted travel time류 지표) 3x</strong> 개선을 보인다. 더 결정적인 대조군은 <strong>RL-from-scratch</strong> — 같은 latent를 쓰되 IL base action 없이 처음부터 RL만 한 경우로, 1000 episode에도 수렴하지 못했다.</p>
+<p>이 대비가 이 챕터 전체의 핵심 증거다. 두 경우의 차이는 오직 하나 — base action의 유무다. 같은 표현, 같은 reward, 같은 PPO인데 IL base가 있으면 수렴하고 없으면 실패한다. 왜인가? sparse-reward navigation에서 무작위 policy가 2~5m 떨어진 목표에 우연히 도달할 확률은 극히 낮고, 도달하지 못하면 goal reward 신호가 아예 발생하지 않는다. progress reward가 있어도, 무작위 policy는 장애물에 막히거나 제자리를 맴돌아 유의미한 progress 궤적조차 드물게 만든다.</p>
+<p>residual RL은 이 병목을 정확히 우회한다. IL base가 로봇을 대략 목표 방향으로 몰아주므로, 학습 첫 스텝부터 progress reward가 꾸준히 발생하고 goal 도달도 종종 일어난다. 즉 IL prior는 '탐색을 유의미한 궤적에 집중'시켜 sparse reward를 사실상 dense reward처럼 만든다. RL의 근본 병목이 exploration이라면, IL은 바로 그 exploration 문제를 해결해 주는 부품이다.</p>
+<p>이것이 residual RL의 계보와 연결된다. Johannink et al.(<a href="https://arxiv.org/abs/1812.03201">2019 ICRA</a>)은 residual RL을 로봇 제어에 도입했고, Ankile et al.(<a href="https://arxiv.org/abs/2407.16677">2024</a>)은 imitation에서 refinement로 넘어가는 정밀 조립에 residual RL을 적용했다. COMPASS는 이 일반 원리를 cross-embodiment navigation에 옮긴 것이다. 결론 — residual RL은 트릭이 아니라 'IL이 준 prior를 RL이 결과 신호로 다듬는' IL→RL 전환의 표준 문법이며, 다음 챕터에서 각 embodiment specialist들을 하나의 policy로 합치는 distillation의 재료가 된다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">베테랑 조수와 신입의 미세 교정</div>
+      <div class="a-body"><p>residual RL은 이미 실력 있는 베테랑 운전자를 운전석에 앉혀 두고, 신입이 그 옆에서 핸들에 손을 살짝 얹어 미세하게 각도만 보정하는 것과 같다. 베테랑(IL base)은 대체로 옳은 방향으로 차를 몰고, 신입(residual)은 '이 코너에선 조금 더 안쪽으로'처럼 작은 delta만 더한다. 차가 절대 크게 흔들리지 않는 이유는, 베이스가 항상 안정적으로 유지되기 때문이다.</p>
+<p>만약 신입 혼자 백지에서 운전을 배운다면(from-scratch RL), 도로에 나서자마자 무작위로 핸들을 꺾다가 목적지 근처엔 가보지도 못하고 사고를 반복한다 — '목적지에 도착하면 칭찬'이라는 보상은 도착 자체를 못 하니 영영 주어지지 않는다. 베테랑이 대략 목적지 방향으로 몰아주기에, 비로소 신입은 '방금 그 보정이 도착을 앞당겼다'는 피드백을 받아 배울 수 있다.</p>
+<p>베테랑을 '얼려 둔다(freeze)'는 것은, 신입이 실수해도 베테랑의 운전 습관 자체는 절대 나빠지지 않게 한다는 뜻이다. 신입의 서툰 시도가 베테랑의 실력을 갉아먹지 않으므로, 최악의 경우에도 성능은 베테랑 수준 아래로 떨어지지 않는다. 그리고 신입의 손에서 힘을 빼 시작하면(마지막 layer만 0 근처로 reinit), 처음엔 베테랑 그대로 달리다가 점점 자기만의 교정을 얹어 간다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>ResidualPolicy를 nn.Module로 스케치한다. frozen IL base + trainable residual, 마지막 layer만 reinit, 그리고 PPO update 한 스텝. 핵심은 base가 gradient를 받지 않으면서 최종 행동이 두 branch의 합이 되는 구조다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import torch, torch.nn as nn
+
+class ResidualPolicy(nn.Module):
+    def __init__(self, il_policy):
+        super().__init__()
+        # 1) frozen IL base: gradient 차단
+        self.base = il_policy
+        for p in self.base.parameters():
+            p.requires_grad_(False)
+        # 2) residual: IL action head 가중치를 복사...
+        self.res = copy.deepcopy(il_policy.actor)
+        for p in self.res.parameters():
+            p.requires_grad_(True)
+        # 3) ...단 마지막 layer만 reinit -&gt; 초기 a_res ~ 0
+        nn.init.zeros_(self.res.out.weight)
+        nn.init.zeros_(self.res.out.bias)
+
+    def forward(self, p_t):
+        with torch.no_grad():
+            a_base = self.base.actor(p_t)   # frozen, no grad
+        a_res = self.res(p_t)              # trainable delta
+        return a_base + a_res             # a = a_base + a_res
+
+def ppo_step(policy, critic, batch, opt, clip=0.2):
+    p_t = batch[&#x27;policy_state&#x27;]           # world model + route fusion
+    a = policy(p_t)
+    logp = policy.res_dist(p_t).log_prob(batch[&#x27;action&#x27;]).sum(-1)
+    ratio = torch.exp(logp - batch[&#x27;logp_old&#x27;])
+    adv = batch[&#x27;advantage&#x27;]
+    # clipped surrogate: prior 근방에서 급격한 이탈 방지
+    l_clip = -torch.min(ratio * adv,
+                        torch.clamp(ratio, 1-clip, 1+clip) * adv).mean()
+    v = critic(p_t)                        # shared policy_state 위 MLP critic
+    l_v = (v - batch[&#x27;return&#x27;]).pow(2).mean()
+    loss = l_clip + 0.5 * l_v
+    opt.zero_grad(); loss.backward(); opt.step()
+    return loss.item()</code></pre>
+      <div class="c-walk"><p><strong>frozen base</strong> — 생성자에서 <code>self.base</code>의 모든 파라미터에 <code>requires_grad_(False)</code>를 걸고, <code>forward</code>에서 <code>a_base</code> 계산을 <code>no_grad</code>로 감싼다. 이 두 겹의 차단으로 base branch는 학습 내내 gradient를 받지 않아 mobility prior가 훼손되지 않는다 — catastrophic forgetting의 구조적 방지다.</p>
+<p><strong>copy then reinit last layer</strong> — residual은 IL actor를 <code>deepcopy</code>해 하위 표현을 물려받되, 마지막 <code>out</code> layer의 weight·bias를 0으로 재초기화한다. 그 결과 학습 시작 시 <span class="math-inline">\(a_{res}\approx0\)</span>이므로 최종 행동은 사실상 IL policy와 같다. 만약 마지막 layer까지 복사했다면 초기 출력이 base를 복제해 <span class="math-inline">\(a=2a^{base}\)</span>가 되어 궤적이 망가진다 — reinit이 바로 이 문제를 막는다.</p>
+<p><strong>forward = a_base + a_res</strong> — 두 branch의 합이 곧 재파라미터화의 핵심이다. RL은 절대 행동이 아니라 prior로부터의 편차 <span class="math-inline">\(a_{res}\)</span>만 최적화하므로, 좋은 해가 원점 근처에 있다는 강한 사전 정보가 optimization에 주입된다.</p>
+<p><strong>ppo_step</strong> — clipped surrogate objective가 policy 업데이트를 현재에서 <span class="math-inline">\([1-\text{clip}, 1+\text{clip}]\)</span> 비율 안으로 묶어, 어렵게 찾은 prior 근방의 궤적에서 급격히 이탈하는 것을 막는다. critic은 actor와 같은 <code>policy_state</code>를 입력받는 MLP로, 표현을 공유해 sample efficiency를 얻지만 value에 필요한 정보가 policy state에 빠져 있으면 볼 수 없다는 trade-off를 안는다 — 이것이 depth-critic ablation의 동기다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">residual RL은 &#x27;IL로 초기화하고 RL로 다듬는&#x27; 현대 로봇 학습 레시피의 핵심이라, big-tech 로보틱스·embodied AI 면접에서 sample efficiency와 학습 안정성을 동시에 묻는 렌즈로 쓰인다. 면접관은 후보가 이 구조를 단순 트릭이 아니라 exploration·optimization 관점에서 설명하는지를 본다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>a = a_base + a_res를 행동 공간 재파라미터화로 이해하고, 그것이 exploration을 prior 근방으로 국소화함을 설명하는가</li><li>base를 freeze하고 마지막 layer만 reinit하는 이유(표현 계승 + 초기 a_res~0 + forgetting 방지)를 정확히 구분하는가</li><li>sparse-reward에서 RL-from-scratch가 실패하고 residual이 수렴하는 차이를 exploration 병목으로 설명하는가</li><li>reward shaping의 progress·collision·goal 균형과 그 가중치가 정책 성격에 미치는 영향을 논하는가</li><li>shared-state critic의 sample efficiency 이득과 정보 병목 trade-off(depth-critic ablation)를 아는가</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>residual을 그냥 &#x27;RL fine-tuning&#x27;으로 뭉뚱그리고 덧셈 구조가 exploration을 바꾸는 원리를 설명 못 함</li><li>base를 freeze하는 이유를 catastrophic forgetting 방지와 연결하지 못하거나, 전체 재학습이 왜 나쁜지 모름</li><li>sparse reward를 dense progress로 shaping하는 이유와 curriculum이 prior 존재 시 오히려 손해인 점을 모름</li><li>critic에 정보를 더 주면 항상 좋다고 단정(depth-critic이 환경 의존적임을 모름)</li><li>world model history state를 reset 시 clear해야 하는 이유(credit assignment 오염)를 놓침</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>같은 latent·reward·PPO를 쓰는데 IL base action 유무만으로 하나는 수렴하고 하나는 1000 episode에도 실패한다. 이 차이를 sparse-reward exploration 관점에서 설명하라.</li><li>residual policy를 만들 때 base 전체를 재초기화하는 것, 전혀 재초기화하지 않는 것, 마지막 layer만 재초기화하는 것의 초기 행동을 각각 비교하고 왜 세 번째가 옳은지 논하라.</li><li>actor와 critic이 같은 policy state를 공유하는 설계의 장단점을 설명하고, depth-critic이 office엔 도움 되고 warehouse엔 해로운 이유를 관측 병목으로 해석하라.</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 익숙한 수준은 &#x27;residual RL은 base에 delta를 더해 안정적으로 fine-tune한다&#x27;까지 말한다. 통달한 수준은 덧셈이 행동 공간 재파라미터화로서 exploration을 prior 근방에 국소화해 sparse reward를 dense처럼 만든다는 것, freeze와 마지막-layer reinit의 세 가지 이유를 분리해 설명하는 것, shared-state critic의 trade-off가 depth-critic ablation의 환경 의존성으로 드러나는 것, 그리고 prior의 존재가 curriculum 무용론까지 학습 레시피 전체를 바꾼다는 큰 그림을 스스로 재구성한다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>a = a_base + a_res</h3><p>frozen IL base 위에 학습 가능한 residual을 더해, RL은 절대 행동이 아니라 prior로부터의 편차만 최적화한다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>Exploration 국소화</h3><p>덧셈 구조가 탐색을 base 궤적 근방으로 좁혀 sparse reward를 사실상 dense reward처럼 만든다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>Freeze로 forgetting 차단</h3><p>base를 얼려 두면 residual이 아무리 학습돼도 mobility prior가 훼손되지 않아 성능이 base 아래로 떨어지지 않는다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>마지막 layer만 reinit</h3><p>하위 표현은 IL에서 계승하되 출력만 0 근방으로 시작해, 초기 정책이 IL 그대로에서 부드럽게 개선된다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>PPO + shared-state critic</h3><p>clipped surrogate로 prior 근방 이탈을 막고, policy state를 공유한 MLP critic으로 sample efficiency를 얻지만 정보 병목을 감수한다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>3-항 reward 균형</h3><p>progress(dense)·collision(penalty)·goal(sparse)의 가중치 균형이 저돌적·소극적 정책 사이에서 성격을 결정한다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>RL-from-scratch는 수렴 실패</h3><p>IL base 없이는 무작위 policy가 목표에 닿지 못해 보상이 발생하지 않아 1000 episode에도 수렴하지 못한다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>Prior가 레시피를 바꾼다</h3><p>강한 IL prior 덕에 goal-distance curriculum이 오히려 손해가 되는 등, prior의 존재가 학습 레시피 전체를 재정의한다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-03.html">← Imitation Learning &amp; Covariate Shift</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-05.html">Policy Distillation &amp; Generalist Policies →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

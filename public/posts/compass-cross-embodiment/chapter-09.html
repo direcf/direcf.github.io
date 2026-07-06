@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch9: Sim-to-Real &amp; the NVIDIA Physical AI Stack — COMPASS &amp; Cross-Embodiment Mobility — direcf</title>
+  <meta name="description" content="Isaac Sim/Lab·MobilityGen 합성데이터, rendering domain gap, Real2Sim(VR-Robo), Jetson 배치 — COMPASS가 R²D²·GR00T 생태계 안에서 어떤 역할을 하는지 조망한다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;height:22px;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><linearGradient id="direcf-nav-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs></svg>
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg></span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg></span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.25 15a4.5 4.5 0 0 0 4.5 4.5H18a3.75 3.75 0 0 0 1.332-7.257 3 3 0 0 0-3.758-3.848 5.25 5.25 0 0 0-10.233 2.33A4.502 4.502 0 0 0 2.25 15Z"/></svg></span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"/></svg></span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg></span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/physical-ai">COMPASS &amp; Cross-Embodiment Mobility</a><span class="sep">›</span>
+        <strong>Ch09 Sim-to-Real &amp; the NVIDIA Physical AI Stack</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 09 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🌉</div>
+      <h1 class="chapter-title">Sim-to-Real &amp; the NVIDIA Physical AI Stack</h1>
+      <div class="chapter-title-kr">심투리얼과 NVIDIA 피지컬 AI 스택</div>
+      <div class="chapter-tldr">Isaac Sim/Lab·MobilityGen 합성데이터, rendering domain gap, Real2Sim(VR-Robo), Jetson 배치 — COMPASS가 R²D²·GR00T 생태계 안에서 어떤 역할을 하는지 조망한다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-09.png" alt="Chapter 9 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 9 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>sim-to-real gap이 vision-based navigation에서 특히 어려운 이유를 안다</li><li>MobilityGen 합성데이터 → COMPASS 학습 → Jetson 배치 파이프라인을 설명한다</li><li>Real2Sim(VR-Robo)이 gap을 줄이는 접근을 이해한다</li><li>TensorRT inference latency/메모리 관점에서 배치 제약을 평가할 수 있다</li><li>COMPASS가 GR00T N의 synthetic data 생성기로 위치하는 의미를 안다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>지금까지 우리는 COMPASS를 시뮬레이션 안에서 완성했다. IL로 mobility prior를 심고(Ch2~3), residual RL로 embodiment에 적응시키고(Ch4), distillation으로 하나의 generalist로 통합했다(Ch5~6). 그러나 로봇 논문의 진짜 시험은 시뮬레이터 밖 — 실제 복도, 실제 창고, 실제 조명 아래 — 에서 정책이 작동하는가다. 이 챕터는 그 마지막 관문인 <strong>sim-to-real transfer</strong>를 다루며, COMPASS가 왜 처음부터 이 관문을 통과하도록 설계되었는지를 밝힌다.</p>
+<p>핵심 주장은 두 가지다. 첫째, vision-based navigation의 sim-to-real gap은 dynamics gap보다 <strong>rendering domain gap</strong>이 지배한다 — 즉 물리가 아니라 '픽셀이 얼마나 진짜 같은가'가 병목이다. COMPASS 논문 스스로 Isaac Lab에서 Carter 성능이 원 X-Mobility보다 하락했음을 인정하며, 그 원인을 route 단순화와 image rendering quality 변화로 지목한다. 이 정직한 자기 진단이 이 챕터의 출발점이다.</p>
+<p>둘째, COMPASS는 고립된 논문이 아니라 NVIDIA의 <strong>Physical AI 스택</strong>(R²D²) 안의 한 부품이다. MobilityGen이 대규모 합성 motion 데이터를 만들고, COMPASS가 그 위에서 mobility를 학습하며, TensorRT로 컴파일되어 Jetson Orin/Thor에 배치되고, 나아가 GR00T N 같은 humanoid VLA foundation model의 synthetic data 생성기로도 위치한다. 이 챕터는 개별 기법을 넘어, COMPASS가 어떤 생태계적 역할을 수행하는지 — 그리고 그 역할이 sim-to-real이라는 난제를 어떻게 시스템 수준에서 우회하는지 — 를 조망한다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>왜 vision-based navigation의 sim-to-real은 특히 어려운가</h2><p><strong>Sim-to-real gap(심투리얼 격차)</strong> = 시뮬레이터에서 학습한 정책이 실제 로봇에 배치될 때 성능이 하락하는 현상. 원인은 시뮬레이션과 현실 사이의 모든 불일치다.</p>
+<p>전통적 로봇 학습에서 이 gap의 주범은 <strong>dynamics gap</strong>이었다 — 마찰계수, 관성, actuator 지연, 접촉 물리가 실제와 다르다. state-based(관절 각도·속도를 직접 입력) 정책에서는 이 물리 불일치가 지배적이라, domain randomization으로 마찰·질량을 흔들어 강건하게 만드는 것이 표준 처방이었다.</p>
+<p>그러나 COMPASS는 <strong>image를 입력받는 vision-based navigation</strong> 정책이다. 여기서는 병목이 물리에서 픽셀로 옮겨간다. 정책이 실제로 보는 것은 카메라 이미지이고, 시뮬레이터의 렌더링된 이미지와 실제 카메라 이미지 사이에는 텍스처·조명·그림자·반사·노이즈·모션블러의 미묘한 차이가 존재한다. 이 차이가 곧 <strong>rendering domain gap(렌더링 도메인 격차)</strong>이다 — dynamics가 완벽해도 픽셀 분포가 다르면 latent state 인코더가 out-of-distribution 입력을 만나 붕괴한다.</p>
+<table>
+<thead>
+<tr>
+<th>구분</th>
+<th>State-based control</th>
+<th>Vision-based navigation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>정책 입력</td>
+<td>관절 각도·속도 등 저차원 상태</td>
+<td>카메라 image(고차원 픽셀)</td>
+</tr>
+<tr>
+<td>지배적 gap</td>
+<td>dynamics(마찰·관성·지연)</td>
+<td>rendering(텍스처·조명·노이즈)</td>
+</tr>
+<tr>
+<td>표준 처방</td>
+<td>physics domain randomization</td>
+<td>visual domain randomization + 고충실도 렌더링</td>
+</tr>
+<tr>
+<td>실패 양상</td>
+<td>접촉·균형 불안정</td>
+<td>인코더 OOD → latent 붕괴</td>
+</tr>
+</tbody>
+</table>
+<p>이 관점 전환이 이 챕터 전체를 관통한다. COMPASS가 X-Mobility의 latent world model을 backbone으로 쓰는 것 자체가 부분적 방어책이다 — 원시 픽셀 대신 압축된 latent state에서 정책이 동작하므로, 렌더링 차이가 latent 공간에서 흡수될 여지가 생긴다. 그러나 latent 인코더 자체가 sim 픽셀로 학습되었다면 그 방어는 불완전하며, 여기서 뒤에 볼 개선 방향(다양한 rendering condition을 latent state 학습에 노출)과 Real2Sim이 등장한다.</p></div><div class="sb-block"><h2>COMPASS가 인정한 rendering gap — Carter 성능 하락의 정직한 진단</h2><p>sim-to-real을 다루는 대부분의 논문은 '우리 정책이 실제 로봇에서 잘 돌았다'는 성공 데모로 끝난다. <a href="https://arxiv.org/abs/2502.16372">COMPASS</a>의 서술이 값진 이유는 그 반대 — <strong>자기 파이프라인이 어디서 성능을 잃었는지를 명시</strong>하기 때문이다.</p>
+<p>COMPASS는 원래의 X-Mobility가 학습·평가되던 환경과 다른 Isaac Lab 환경에서 Carter를 재평가했을 때, Carter 성능이 원 X-Mobility 대비 하락했음을 인정한다. 원인으로 두 가지를 지목한다. 첫째는 <strong>route의 단순화</strong> — 평가에 쓰인 경로가 원 설정보다 단순해지면서 정책이 학습한 분포와 어긋났다. 둘째, 그리고 더 중요한 것은 <strong>image rendering quality의 변화</strong>다. 같은 물리·같은 로봇이라도 렌더러가 만들어내는 픽셀의 질감이 달라지면, 앞 절에서 말한 rendering domain gap이 sim-내부에서조차 발생한다.</p>
+<p>이 사실은 sim-to-real gap이 '시뮬레이션 대 현실'만의 문제가 아니라 '<strong>렌더링 조건 대 렌더링 조건</strong>'의 문제임을 폭로한다. 즉 sim → real 전이가 아니라 sim(rendering A) → sim(rendering B) 전이에서조차 gap이 나타난다. 이는 gap의 본질이 물리적 현실성이 아니라 정책이 보는 이미지 분포의 이동(distribution shift)임을 보여준다 — Chapter 3에서 배운 covariate shift가 픽셀 도메인으로 재등장한 것이다.</p>
+<p>COMPASS가 제시하는 개선 방향은 여기서 자연스럽게 도출된다. <strong>다양한 rendering condition을 latent state 학습 단계에 노출</strong>시키는 것이다. world model 인코더가 하나의 렌더링 스타일이 아니라 조명·텍스처·렌더 품질이 광범위하게 흔들린 이미지들을 보고 latent를 학습하면, latent 표현이 렌더링 세부에 불변(invariant)해진다. 이것이 vision domain randomization의 latent-space 버전이며, 다음 절의 domain randomization 코드와 직접 연결된다.</p>
+<p>이 진단이 주는 연구적 교훈은 크다. cross-embodiment mobility의 다음 병목은 새 RL 알고리즘이 아니라 <strong>인코더의 rendering-invariance</strong>라는 것이다. morphology gap(Ch4~7)을 residual RL로 넘었듯이, rendering gap은 latent 학습의 시각적 다양성으로 넘어야 한다.</p></div><div class="sb-block"><h2>MobilityGen → COMPASS → Jetson — R²D² Physical AI 파이프라인</h2><p>COMPASS를 개별 논문이 아니라 생태계의 부품으로 보면 그 설계 결정들이 비로소 이해된다. NVIDIA의 <strong>R²D²(Robotics Research &amp; Development Digest, 2025.04)</strong>는 sim-centric robotics를 위한 워크플로우 제품군으로, 세 축을 엮는다.</p>
+<ul>
+<li>
+<p><strong>MobilityGen</strong> — Isaac Sim 기반의 대규모 synthetic motion dataset 생성기(SDG, synthetic data generation). cross-embodiment·cross-environment로 로봇의 이동 궤적·센서 관측을 대량 합성한다. COMPASS의 IL·distillation 데이터의 원천이 될 수 있는 층이다.</p>
+</li>
+<li>
+<p><strong>COMPASS</strong> — 그 데이터 위에서 cross-embodiment mobility를 학습하고(IL → residual RL → distillation), Isaac Lab에서 fine-tuning하며, zero-shot sim2real로 배치되는 mobility 학습 스택.</p>
+</li>
+<li>
+<p><strong>HOVER</strong> — humanoid whole-body controller로, 여러 제어 모드를 하나로 통합한다. COMPASS의 mobility 명령을 실제 humanoid 관절 제어로 실현하는 하위 층에 해당한다(Ch6의 joint controller 계층과 같은 자리).</p>
+</li>
+</ul>
+<p>전체 파이프라인은 하나의 방향으로 흐른다. <strong>MobilityGen SDG(합성 데이터 생성) → COMPASS mobility 학습(+Isaac Lab fine-tuning) → Jetson Orin/Thor 배치</strong>. 이 흐름의 아름다움은 각 단계가 앞 단계의 산출물을 소비한다는 데 있다 — 합성 데이터가 학습을 먹이고, 학습된 정책이 엣지 하드웨어로 흘러 나간다. 사람이 실제 로봇으로 데이터를 모으는 병목이 SDG로 대체되고, 실배치의 병목이 TensorRT 컴파일로 해소된다.</p>
+<p>이 sim-centric 접근의 전략적 베팅은 명확하다. <strong>현실 데이터 수집은 느리고 비싸며 위험하지만, 시뮬레이션 데이터는 빠르고 싸며 무한히 다양화할 수 있다</strong>는 것. rendering gap(앞 절)이라는 대가를 치르는 대신, 데이터 규모·다양성·라벨 완전성(ground-truth pose·depth·segmentation을 공짜로 얻음)을 취한다. Chapter 10에서 볼 '대규모 데이터 foundation model' 패러다임과 대비되는, COMPASS가 속한 '구조적 분리 + sim 데이터' 패러다임의 정체성이 여기서 확립된다.</p>
+<p>그리고 이 파이프라인이 겨냥하는 하드웨어가 Jetson Orin(현세대)과 Thor(차세대)라는 점은, 처음부터 배치를 전제로 설계되었음을 말한다 — 다음 절이 그 배치 제약을 정량화한다.</p></div><div class="sb-block"><h2>Real2Sim으로 gap을 되돌리기 — VR-Robo와 environment semantic</h2><p>rendering gap을 줄이는 두 방향이 있다. 하나는 sim을 더 다양하게(domain randomization) 만들어 real을 그 다양성 안에 포함시키는 것이고, 다른 하나는 아예 <strong>real을 sim 안으로 복원</strong>해 gap 자체를 없애는 것이다. 후자가 <strong>Real2Sim(리얼투심)</strong> 접근이다.</p>
+<p><strong>Real2Sim</strong> = 실제 환경을 3D 재구성해 시뮬레이터 안에 디지털 복제본(digital twin)을 만들고, 그 복제본에서 정책을 학습·평가하는 프레임워크. 정책이 학습에서 보는 픽셀과 배치에서 보는 픽셀이 같은 실제 장면에서 유래하므로 rendering gap이 근본적으로 축소된다.</p>
+<p><a href="https://arxiv.org/abs/2502.01536">VR-Robo</a>(2025.02, "real-to-sim-to-real framework for visual robot navigation and locomotion")가 이 방향의 대표다. 이름 그대로 real → sim → real의 3단 루프를 돈다. 실제 환경을 촬영해 photorealistic한 sim 장면으로 복원하고(real2sim), 그 안에서 visual navigation·locomotion 정책을 학습한 뒤(sim), 실제 로봇으로 되돌린다(sim2real). 핵심은 복원된 sim의 렌더링이 실제 장면의 시각적 통계를 그대로 담고 있어, 정책의 vision 인코더가 배치 환경과 일치하는 분포에서 학습된다는 점이다.</p>
+<p>COMPASS 논문은 자신의 RL fine-tuning이 <strong>environment의 semantic을 이해</strong>하는 방향으로 확장되면, Real2Sim 지원이 있을 때 Sim2Real gap을 더 좁힐 수 있다고 언급한다. 이 연결이 미묘하지만 중요하다. COMPASS의 residual RL(Ch4)이 단순히 충돌 회피를 넘어 '이곳은 좁은 복도', '저것은 통과 가능한 선반 밑'처럼 환경의 의미를 latent에 반영하도록 학습되면, Real2Sim으로 복원된 실제 장면에서 그 semantic 이해가 배치로 그대로 전이된다. 즉 Real2Sim은 픽셀 gap을 줄이고, semantic-aware RL은 그 위에서 의미 gap을 줄이는 상보적 관계다.</p>
+<p>두 접근을 비교하면 트레이드오프가 드러난다. domain randomization은 임의의 새 환경에 대비하는 범용 강건성을 주지만 특정 환경에 최적은 아니다. Real2Sim은 특정 배치 환경에 대한 gap을 거의 제거하지만, 그 환경을 미리 스캔·복원해야 하므로 확장성이 제한된다. 실전에서는 둘을 결합한다 — Real2Sim으로 base 장면을 복원하고 그 위에 조명·텍스처 randomization을 얹어, '정확한 배치 환경 + 그 주변 변동'을 함께 학습한다.</p>
+<table>
+<thead>
+<tr>
+<th>접근</th>
+<th>원리</th>
+<th>강점</th>
+<th>약점</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Domain randomization</td>
+<td>sim을 다양화해 real을 포함</td>
+<td>범용 강건성, 사전 스캔 불필요</td>
+<td>특정 환경엔 비최적, 과도하면 학습 난이도↑</td>
+</tr>
+<tr>
+<td>Real2Sim (VR-Robo)</td>
+<td>real을 sim으로 복원</td>
+<td>배치 환경 gap 거의 제거</td>
+<td>환경별 스캔·복원 비용, 확장성 제한</td>
+</tr>
+<tr>
+<td>결합</td>
+<td>복원 장면 + randomization</td>
+<td>정확도와 강건성 동시</td>
+<td>파이프라인 복잡도 증가</td>
+</tr>
+</tbody>
+</table></div><div class="sb-block"><h2>엣지 배치의 물리학 — TensorRT, latency, 그리고 경량성의 대가</h2><p>sim-to-real의 마지막 1미터는 소프트웨어가 실제 로봇의 컴퓨터에서 실시간으로 도는가다. 아무리 정확한 정책도 제어 주기 안에 추론을 못 끝내면 무용하다. COMPASS는 이 제약을 정량적으로 통과한다.</p>
+<p>배치 스택은 <strong>TensorRT on AGX Jetson Orin</strong>이다. TensorRT는 NVIDIA의 추론 최적화 컴파일러로, 학습된 네트워크를 특정 GPU에 맞춰 layer fusion·precision calibration(FP16/INT8)·kernel auto-tuning으로 재컴파일한다. 그 결과 실측 지표는 다음과 같다.</p>
+<table>
+<thead>
+<tr>
+<th>항목</th>
+<th>값</th>
+<th>의미</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Runtime</td>
+<td>TensorRT / AGX Jetson Orin</td>
+<td>엣지 GPU, 클라우드 불필요</td>
+</tr>
+<tr>
+<td>P50 latency</td>
+<td>29.3 ms</td>
+<td>중앙값 추론 시간</td>
+</tr>
+<tr>
+<td>P95 latency</td>
+<td>29.4 ms</td>
+<td>상위 5% 최악 추론 시간</td>
+</tr>
+<tr>
+<td>GPU memory</td>
+<td>422 MB</td>
+<td>모델 상주 메모리</td>
+</tr>
+</tbody>
+</table>
+<p>이 숫자를 읽는 법이 이 절의 핵심이다. 첫째, <strong>P50(29.3ms)과 P95(29.4ms)가 거의 같다</strong> — 이 0.1ms 차이가 뜻하는 바는 latency 분산이 극히 작다는 것이다. 실시간 제어에서는 평균 지연보다 최악 지연(tail latency)이 중요하다. 제어 루프가 33ms(30Hz) 주기라면, P95가 29.4ms라는 것은 거의 모든 추론이 데드라인을 지킨다는 뜻이다. tail이 튀면 로봇이 순간적으로 눈이 머는 것과 같으므로, 이 낮은 분산은 안전성과 직결된다.</p>
+<p>둘째, <strong>422MB</strong>라는 메모리 풋프린트는 Jetson Orin의 공유 메모리 예산 안에서 다른 프로세스(perception, locomotion controller, logging)와 공존할 수 있는 크기다. 이 경량성은 우연이 아니라 Chapter 5~6의 설계 결정에서 나왔다 — 배치 시 무거운 X-Mobility backbone은 유지하되 여러 embodiment의 specialist들을 하나의 <strong>distilled generalist 정책으로 교체</strong>함으로써, 배치 스택을 경량으로 유지한다. specialist를 embodiment 수만큼 싣는 대신 하나의 조건부 정책만 싣는 것이다.</p>
+<p>여기에 경량성의 대가라는 긴장도 있다. distillation은 성능을 유지하면서 크기를 줄이지만(Ch5), rendering gap에 대한 강건성까지 자동으로 주지는 않는다. 즉 이 챕터의 두 축 — rendering gap(정확성)과 edge latency(효율성) — 은 부분적으로 상충한다. gap을 줄이려 인코더에 더 많은 rendering 다양성을 학습시키면 모델이 커질 수 있고, 커지면 latency·메모리 예산을 압박한다. COMPASS의 30ms/422MB는 이 저울에서 '충분히 정확하되 확실히 배치 가능한' 지점을 택한 결과다.</p>
+<p>마지막으로 이 배치 프로필이 Chapter 10의 패러다임 대비를 예고한다. COMPASS류 구조적 분리는 바로 이 경량 배치를 얻기 위해 sim 데이터와 distillation을 택했다. 반대로 수십억 파라미터의 navigation foundation model(NavFoM 등)은 범용성을 얻지만 이런 30ms/422MB 엣지 배치는 어렵다 — 배치 제약이 곧 패러다임 선택의 압력임을 이 숫자들이 증언한다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">영화 세트장에서 리허설한 배우, 그리고 실제 무대</div>
+      <div class="a-body"><p>COMPASS를 시뮬레이터에서 학습시키는 것은 배우가 영화 세트장에서 연기를 연습하는 것과 같다. 세트장(Isaac Sim)은 실제 거리를 흉내 낸 인공 공간이다. 배우(정책)는 여기서 동선을 완벽히 외운다. 그런데 문제는 세트장의 조명과 벽지 질감, 그림자가 실제 거리와 미묘하게 다르다는 것이다 — 이것이 rendering domain gap이다. 배우가 세트장에선 완벽했는데 실제 촬영장에 나가니 낯선 빛에 당황해 동선을 놓치는 상황, 그것이 sim-to-real 성능 하락이다. 흥미롭게도 COMPASS는 '우리 배우가 세트장을 A에서 B로 바꿨더니 이미 헤맸다'고 정직하게 고백한다 — 세트장끼리도 조명이 다르면 문제라는 것.</p>
+<p>이 문제를 푸는 두 전략이 있다. 하나는 리허설을 <strong>온갖 조명 조건에서 반복</strong>시키는 것(domain randomization) — 배우가 형광등·백열등·햇빛 아래 모두 연습하면 어떤 촬영장에서도 흔들리지 않는다. 다른 하나는 아예 <strong>실제 촬영장을 그대로 세트장으로 복제</strong>하는 것(Real2Sim, VR-Robo) — 진짜 무대를 사진 찍어 똑같이 지은 세트에서 연습하면 실전과의 차이가 사라진다. 현장에서는 둘을 섞는다. 실제 무대를 복제하되 그 위에 조명을 흔들어, '이 무대 + 그날그날의 빛 변화'를 함께 대비시킨다.</p>
+<p>그리고 마지막으로, 아무리 잘 연습한 배우라도 무대에서 대사를 제때 쳐야 한다. 30밀리초 안에 다음 동작을 결정하지 못하면 극이 무너진다 — 이것이 Jetson Orin의 latency 제약이다. COMPASS는 여러 배우(specialist)를 한 명의 만능 배우(distilled generalist)로 압축해, 무대 뒤 대기실(엣지 메모리 422MB)에 가볍게 들어가고 대사를 29ms 안에 치도록 훈련한다. 세트장 리허설, 실제 무대 복제, 그리고 제때 대사 치기 — 이 셋이 sim-to-real의 전부다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>sim-to-real 파이프라인의 두 정수를 하나로 스케치한다. (1) latent 인코더를 rendering-invariant하게 만드는 visual domain randomization 설정, (2) 학습된 정책을 TensorRT로 export하고 Jetson에서 tail latency를 측정하는 배치 루프. Isaac Lab 스타일의 개념 코드로, 실제 API를 단순화했다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import numpy as np, torch, time
+
+# ---- (1) Visual domain randomization: rendering gap 방어 ----
+# world-model latent 인코더가 렌더링 세부에 불변(invariant)해지도록
+# 조명·텍스처·렌더품질을 매 env reset마다 흔든다 (Ch2 latent에 노출).
+RANDOMIZE = {
+    &quot;light_intensity&quot;: (300.0, 2000.0),   # lux
+    &quot;light_color_temp&quot;: (3000, 8000),     # Kelvin
+    &quot;texture_set&quot;: [&quot;warehouse&quot;, &quot;office&quot;, &quot;concrete&quot;, &quot;tiled&quot;],
+    &quot;render_spp&quot;:  (1, 8),                # samples/pixel = 렌더 품질 변동
+    &quot;camera_noise_std&quot;: (0.0, 0.03),
+    &quot;motion_blur&quot;: (0.0, 0.4),
+}
+
+def randomize_scene(env, rng):
+    lo, hi = RANDOMIZE[&quot;light_intensity&quot;]
+    env.set_light(intensity=rng.uniform(lo, hi),
+                  temp=rng.integers(*RANDOMIZE[&quot;light_color_temp&quot;]))
+    env.set_texture(rng.choice(RANDOMIZE[&quot;texture_set&quot;]))
+    env.set_render(spp=rng.integers(*RANDOMIZE[&quot;render_spp&quot;]))
+    env.set_camera(noise=rng.uniform(*RANDOMIZE[&quot;camera_noise_std&quot;]),
+                   blur=rng.uniform(*RANDOMIZE[&quot;motion_blur&quot;]))
+    # -&gt; 같은 물리·다른 픽셀. 인코더는 rendering-invariant latent를 학습.
+
+# ---- (2) TensorRT export + Jetson tail-latency 측정 ----
+def deploy_and_profile(policy, sample_obs, n=1000):
+    trt = torch.compile(policy.eval(), backend=&quot;tensorrt&quot;,
+                        options={&quot;precision&quot;: &quot;fp16&quot;})   # layer fusion + FP16
+    lat = []
+    for _ in range(n):
+        t0 = time.perf_counter()
+        with torch.no_grad():
+            trt(sample_obs)                              # single-step inference
+        torch.cuda.synchronize()
+        lat.append((time.perf_counter() - t0) * 1e3)     # ms
+    lat = np.array(lat)
+    p50, p95 = np.percentile(lat, [50, 95])
+    mem_mb = torch.cuda.max_memory_allocated() / 1e6
+    # 실시간 제어(30Hz=33ms) 데드라인 대비 tail latency가 관건
+    assert p95 &lt; 33.0, f&quot;P95 {p95:.1f}ms &gt; 33ms 데드라인 위반&quot;
+    return dict(p50=p50, p95=p95, gpu_mb=mem_mb)  # COMPASS: 29.3 / 29.4 / 422</code></pre>
+      <div class="c-walk"><p><code>RANDOMIZE</code> 딕셔너리가 이 챕터의 핵심 주장을 코드로 옮긴다. 흔드는 대상이 마찰·질량 같은 물리량이 아니라 조명·텍스처·<code>render_spp</code>(samples-per-pixel = 렌더 품질)·노이즈·블러 같은 <strong>시각 속성</strong>이라는 데 주목하라. vision-based navigation의 gap이 dynamics가 아니라 rendering이기 때문이다.</p>
+<p><code>randomize_scene</code>은 매 env reset마다 호출되어 '같은 물리, 다른 픽셀'을 만든다. 이 다양성에 노출된 world-model 인코더는 특정 렌더링 스타일이 아니라 장면의 구조(장애물·통로)를 담는 rendering-invariant latent를 배운다 — COMPASS가 제시한 개선 방향(다양한 rendering condition을 latent state 학습에 노출)의 직접 구현이다. <code>render_spp</code>를 흔드는 것이 특히 중요한데, 이것이 바로 논문이 Carter 하락 원인으로 지목한 'rendering quality 변화'를 학습 분포 안에 미리 포함시키는 장치다.</p>
+<p><code>deploy_and_profile</code>은 배치 현실을 검증한다. <code>torch.compile(..., backend="tensorrt", precision="fp16")</code>이 TensorRT의 layer fusion과 FP16 정밀도 캘리브레이션을 켠다 — 이것이 30ms/422MB를 가능케 하는 최적화다. 측정에서 평균이 아니라 <code>p95</code>(tail latency)를 데드라인과 비교하는 것이 실시간 제어의 정석이다. 로봇은 최악의 순간에도 눈이 멀면 안 되므로, P50이 아무리 빨라도 P95가 33ms(30Hz 주기)를 넘으면 배치 불가로 처리한다. COMPASS의 실측 P50 29.3 / P95 29.4 / 422MB가 이 assert를 통과하는 지점이며, P50≈P95라는 낮은 분산이 안전 배치의 증거다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">sim-to-real은 embodied AI 팀(NVIDIA, Google DeepMind robotics, Tesla Optimus, Figure 등)의 채용에서 &#x27;학습을 넘어 배치까지 아는가&#x27;를 가르는 리트머스다. 면접관은 gap의 원인을 정확히 진단하고, domain randomization·Real2Sim·엣지 배치 제약을 시스템 수준에서 절충하는 사고를 본다. 특히 vision-based 정책에서 gap의 본질을 dynamics가 아닌 rendering으로 짚는지가 초급과 상급을 가른다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>vision-based navigation의 gap을 dynamics가 아니라 rendering domain gap으로 정확히 지목하는 진단력</li><li>domain randomization과 Real2Sim의 트레이드오프(범용 강건성 vs 배치 환경 정확성)를 상황에 맞게 절충하는 판단</li><li>P50이 아닌 P95(tail latency)를 제어 데드라인과 비교하고, 낮은 분산의 안전적 함의를 설명하는 배치 감각</li><li>distillation을 통한 경량 배치와 rendering 강건성 사이의 긴장을 인지하고 절충하는 시스템 사고</li><li>COMPASS를 고립된 알고리즘이 아니라 MobilityGen→학습→Jetson 파이프라인·GR00T 생태계의 부품으로 위치시키는 조망</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>vision 정책의 sim-to-real을 물리 domain randomization(마찰·질량)만으로 해결하려 하고 rendering gap을 놓침</li><li>&#x27;domain randomization이면 다 해결된다&#x27;며 Real2Sim이나 latent invariance 같은 대안을 모름</li><li>latency를 평균값(P50)으로만 보고 tail latency와 제어 데드라인의 관계를 무시</li><li>sim 데이터의 대가(rendering gap)를 인정하지 않고 sim-centric을 만능으로 포장</li><li>COMPASS의 자기 진단(Carter 하락)을 결함으로 폄하하고, 그것이 gap의 본질을 드러낸 통찰임을 못 봄</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>vision-based navigation 정책의 sim-to-real gap은 state-based control과 무엇이 다른가? 왜 dynamics randomization만으로는 부족하며, latent 인코더 수준에서 어떻게 방어하는가?</li><li>COMPASS는 Isaac Lab에서 Carter 성능이 하락했다고 인정한다. 원인을 설명하고, 이것이 sim-to-real gap의 본질에 대해 무엇을 시사하는지 논하라.</li><li>Real2Sim(VR-Robo)과 domain randomization의 트레이드오프는 무엇이며, 특정 창고에 로봇을 배치한다면 둘을 어떻게 결합하겠는가?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 친숙한 수준은 &#x27;sim-to-real gap이 있고 domain randomization으로 줄인다&#x27;고 말하는 정도다. 통달한 수준은 vision 정책에서 gap이 dynamics가 아니라 rendering domain gap임을 짚고, COMPASS의 Carter 하락 자기 진단을 covariate shift의 픽셀 도메인 재현으로 해석하며, 개선책으로 다양한 rendering condition을 latent 학습에 노출하는 것과 Real2Sim(VR-Robo)의 real→sim→real 루프를 상보적으로 설명하고, TensorRT/Jetson의 P50≈P95(29.3/29.4ms)·422MB를 tail-latency와 경량 배치 관점에서 해석하며, COMPASS가 MobilityGen SDG→학습→Jetson 파이프라인과 GR00T N synthetic data 생성기라는 생태계 역할을 수행함을 조망한다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>vision navigation의 gap은 rendering이 지배한다</h3><p>state-based control은 dynamics gap이 병목이지만, 이미지를 입력받는 navigation은 텍스처·조명·노이즈의 rendering domain gap이 성능을 좌우한다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>COMPASS는 gap을 정직하게 진단한다</h3><p>Isaac Lab에서 Carter 성능이 원 X-Mobility보다 하락했음을 인정하고, 원인을 route 단순화와 image rendering quality 변화로 지목한다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>개선책은 latent를 rendering-invariant하게 만드는 것</h3><p>다양한 rendering condition(조명·텍스처·렌더 품질)을 world-model latent state 학습에 노출하면, 인코더가 렌더링 세부에 불변해져 gap이 줄어든다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>Real2Sim은 gap을 근원에서 없앤다</h3><p>VR-Robo(arXiv:2502.01536)는 실제 환경을 sim으로 복원해 학습·배치 픽셀을 일치시키며, semantic-aware RL과 결합하면 Sim2Real gap을 더 좁힌다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>R²D² 파이프라인은 데이터→학습→배치를 잇는다</h3><p>MobilityGen SDG가 cross-embodiment 합성 데이터를 만들고, COMPASS가 학습·fine-tuning하며, Jetson Orin/Thor로 zero-shot 배치된다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>엣지 배치는 tail latency로 판정된다</h3><p>TensorRT on Jetson Orin에서 P50 29.3ms·P95 29.4ms — 거의 같은 두 값이 낮은 분산을 뜻해 30Hz 제어 데드라인을 안전하게 지킨다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>경량성은 distillation의 산물이다</h3><p>무거운 X-Mobility backbone은 유지하고 여러 specialist를 하나의 distilled generalist로 교체해, 422MB로 엣지 메모리 예산 안에 든다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>COMPASS는 생태계의 부품이자 데이터 생성기다</h3><p>sim-centric 구조적 분리 패러다임에 속하며, GR00T N(arXiv:2503.14734) 같은 humanoid VLA foundation model 학습용 synthetic data 생성기로도 위치한다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-08.html">← Generative Policies &amp; the Averaging Problem</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-10.html">Navigation Foundation Models &amp; the 2026 Frontier →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

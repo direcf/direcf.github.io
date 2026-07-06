@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch5: Policy Distillation &amp; Generalist Policies — COMPASS &amp; Cross-Embodiment Mobility — direcf</title>
+  <meta name="description" content="여러 embodiment specialist를 embodiment embedding으로 조건화해 하나의 generalist로 합치는 KL-distillation — 그리고 여기서 발생하는 &#x27;averaging&#x27; 문제의 씨앗을 본다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;height:22px;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><linearGradient id="direcf-nav-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs></svg>
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg></span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg></span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.25 15a4.5 4.5 0 0 0 4.5 4.5H18a3.75 3.75 0 0 0 1.332-7.257 3 3 0 0 0-3.758-3.848 5.25 5.25 0 0 0-10.233 2.33A4.502 4.502 0 0 0 2.25 15Z"/></svg></span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"/></svg></span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg></span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/physical-ai">COMPASS &amp; Cross-Embodiment Mobility</a><span class="sep">›</span>
+        <strong>Ch05 Policy Distillation &amp; Generalist Policies</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 05 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🔀</div>
+      <h1 class="chapter-title">Policy Distillation &amp; Generalist Policies</h1>
+      <div class="chapter-title-kr">정책 증류와 제너럴리스트 정책</div>
+      <div class="chapter-tldr">여러 embodiment specialist를 embodiment embedding으로 조건화해 하나의 generalist로 합치는 KL-distillation — 그리고 여기서 발생하는 &#x27;averaging&#x27; 문제의 씨앗을 본다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-05.png" alt="Chapter 5 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 5 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>specialist → generalist KL distillation의 목적함수를 쓸 수 있다</li><li>one-hot embodiment embedding의 장점과 한계를 안다</li><li>KL(분포 보존) vs MSE(평균만)의 차이가 왜 중요한지 이해한다</li><li>Open-X/RT-X 등 대규모 generalist 계보와의 연결을 설명할 수 있다</li><li>distillation의 averaging effect가 어디서 오는지 진단할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>Chapter 4까지 우리는 embodiment마다 별도의 residual RL specialist를 얻었다. Carter(wheeled), H1·G1(humanoid), Spot(quadruped) 각각에 대해 X-Mobility가 뽑는 base action 위에 residual을 얹어 morphology에 맞춘 정책을 학습한 것이다. 문제는 배포다. 로봇 fleet마다 서로 다른 네트워크 가중치를 관리하고, 새 embodiment가 추가될 때마다 독립 파이프라인을 유지하는 것은 시스템적으로 지속 불가능하다. 우리가 진짜 원하는 것은 <strong>하나의 정책</strong>이 embodiment id만 바꿔주면 여러 몸을 모두 몰 수 있는 generalist다.</p>
+<p>COMPASS의 3단계 중 마지막인 <strong>policy distillation(정책 증류)</strong>은 바로 이 통합을 supervised learning 문제로 바꾼다. 각 specialist를 teacher로 두고, 그들이 남긴 입출력 분포 — (world model policy state <span class="math-inline">\(p\)</span>, one-hot embodiment id <span class="math-inline">\(e\)</span>, PPO Gaussian action의 mean·variance) — 를 데이터셋으로 기록한다. 그리고 단 하나의 conditional policy <span class="math-inline">\(\pi^{dist}_\theta\)</span>가 <span class="math-inline">\((p, e)\)</span>를 받아 teacher의 action 분포를 재현하도록 KL divergence를 최소화한다. RL의 불안정성과 exploration은 이미 specialist 단계에서 끝났으므로, distillation은 안정적인 회귀 문제로 축소된다.</p>
+<p>하지만 이 단계는 동시에 이 강의 후반부(Chapter 8)를 관통하는 <strong>averaging problem</strong>의 씨앗을 심는다. 서로 다른 몸을 위한 여러 정책을 하나의 조건부 네트워크로 압축할 때, 조건화가 충분히 강하지 않으면 정책은 embodiment 간 행동을 평균 내버린다. 왜 COMPASS가 MSE가 아니라 KL을 쓰는지, 왜 one-hot이 가장 단순하면서도 안전한 출발점인지 — 이 모든 설계 결정이 averaging을 억제하기 위한 방어선이라는 관점에서 이 챕터를 읽어야 한다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>Specialist에서 Generalist로 — Distillation의 데이터 셋업</h2><p><strong>Policy distillation(정책 증류)</strong> = teacher policy(들)의 행동을 하나의 student policy가 supervised로 모방하도록 학습하는 절차. 원래 Hinton의 knowledge distillation을 정책 학습으로 옮긴 것으로, RL의 online 탐색을 offline 회귀로 바꾸는 것이 핵심 이득이다.</p>
+<p>COMPASS에서 teacher는 Chapter 4에서 얻은 embodiment별 specialist <span class="math-inline">\(\pi^{(i)}_\phi\)</span>다. 각 specialist는 world model이 뽑은 policy state <span class="math-inline">\(p\)</span>를 입력받아 Gaussian action <span class="math-inline">\(\mathcal{N}(\mu^{(i)}(p), \sigma^2)\)</span>를 출력한다. 여기서 <span class="math-inline">\(\sigma\)</span>는 PPO가 학습 과정에서 유지하는 exploration variance다. Distillation을 위해 우리는 각 specialist를 환경에서 굴리면서(rollout) 매 스텝의 튜플 <span class="math-inline">\((p, e^{(i)}, \mu^{(i)}(p), \sigma^2)\)</span>를 기록한다. 즉 teacher의 '무엇을 봤고, 어떤 몸이었고, 어떤 분포로 행동했는가'를 통째로 저장하는 것이다.</p>
+<p>데이터 규모는 embodiment당 320 trajectory × 128 step ≈ 40k frame이다. 이 정도 규모는 4x H100에서 다룰 수 있는 실용적 크기이며, 각 embodiment가 균등하게 대표되도록 설계된다. 중요한 미묘함은 <strong>어떤 rollout을 기록하는가</strong>인데, COMPASS는 성공한 궤적만 남기는 good-only 필터링이 오히려 marginal한 개선만 준다는 것을 발견했다. 실패 케이스가 담고 있는 corner case — 충돌 직전의 회피, 좁은 통로에서의 재조정 — 가 오히려 학습에 유용하기 때문이다(이 점은 Chapter 4의 covariate shift 논의와 정확히 맞닿는다).</p>
+<p>student <span class="math-inline">\(\pi^{dist}_\theta\)</span>의 구조는 teacher와 latent pipeline을 공유하되, 결정적 차이는 입력에 <strong>embodiment embedding</strong>을 조건으로 받는다는 점이다. 같은 latent pipeline 뒤에 embodiment embedding conditioning을 붙이고, 그 위에 MLP가 mean <span class="math-inline">\(\mu_\theta(p, e)\)</span>를 내고 별도의 global variance <span class="math-inline">\(\sigma_\theta^2\)</span>를 학습한다. 여러 teacher의 지식이 이 하나의 조건부 헤드로 흘러 들어가는 것이 distillation의 물리적 실체다.</p></div><div class="sb-block"><h2>KL Distillation 목적함수 — 분포를 통째로 옮긴다</h2><p>COMPASS의 distillation 목적함수는 모든 embodiment <span class="math-inline">\(E\)</span>와 각 embodiment의 데이터셋 <span class="math-inline">\(D^i\)</span>에 대해 teacher 분포와 student 분포 사이의 KL을 최소화하는 것이다.</p>
+<p><span class="math-display">\[\min_\theta \sum_{i\in E}\sum_{d^i\in D^i} \text{KL}\big(\mathcal{N}(\mu^{(i)}(p),\sigma^2)\,\big\|\,\mathcal{N}(\mu_\theta(p,e^{(i)}),\sigma_\theta^2)\big)\]</span></p>
+<p>여기서 teacher 분포 <span class="math-inline">\(\mathcal{N}(\mu^{(i)}(p),\sigma^2)\)</span>는 고정된 target이고, student는 자신의 mean <span class="math-inline">\(\mu_\theta(p, e^{(i)})\)</span>와 variance <span class="math-inline">\(\sigma_\theta^2\)</span>를 조정해 이 target에 맞춘다. 조건 <span class="math-inline">\(e^{(i)}\)</span>가 결정적이다 — 같은 policy state <span class="math-inline">\(p\)</span>라도 embodiment id가 다르면 다른 target 분포를 맞춰야 하므로, 네트워크는 embodiment마다 행동을 분기시키도록 강제된다.</p>
+<p>두 Gaussian 사이의 KL은 닫힌 형태(closed form)로 계산된다. 1차원 성분에 대해:</p>
+<p><span class="math-display">\[\text{KL}\big(\mathcal{N}(\mu_1,\sigma_1^2)\,\|\,\mathcal{N}(\mu_2,\sigma_2^2)\big) = \log\frac{\sigma_2}{\sigma_1} + \frac{\sigma_1^2 + (\mu_1-\mu_2)^2}{2\sigma_2^2} - \frac{1}{2}\]</span></p>
+<p>이 식을 뜯어보면 distillation이 무엇을 하는지가 드러난다. 우변의 <span class="math-inline">\((\mu_1-\mu_2)^2\)</span> 항은 student mean이 teacher mean에서 벗어난 만큼 벌점을 주는데, 그 벌점의 크기는 <span class="math-inline">\(2\sigma_2^2\)</span>로 나뉜다. 즉 <strong>student가 확신하는(variance가 작은) action 차원일수록 mean 오차에 더 민감</strong>하고, uncertain한 차원은 관대해진다. 여기에 <span class="math-inline">\(\log(\sigma_2/\sigma_1)\)</span>와 <span class="math-inline">\(\sigma_1^2/2\sigma_2^2\)</span> 항이 더해져 student의 variance가 teacher의 variance를 따라가도록 만든다.</p>
+<p>실무적으로 이 KL 항의 gradient는 안정적이다. teacher가 고정되어 있으므로 target이 움직이지 않고, exploration이나 reward 노이즈가 개입하지 않는다. 이것이 distillation을 'RL의 껍데기를 쓴 회귀'로 만드는 이유이며, 4x H100에서 40k frame/embodiment를 무리 없이 수렴시킬 수 있는 배경이다.</p></div><div class="sb-block"><h2>Embodiment Embedding — one-hot의 단순함과 한계</h2><p>student가 어떤 몸을 몰고 있는지 아는 유일한 통로가 <strong>embodiment embedding</strong>이다. COMPASS의 가장 단순한 버전은 길이 <span class="math-inline">\(N\)</span>의 one-hot 벡터(<span class="math-inline">\(N\)</span> = embodiment 수)로 각 몸을 표현한다. Carter=[1,0,0,0], H1=[0,1,0,0]처럼 완전히 직교하는 표현이다.</p>
+<p>one-hot의 장점은 <strong>간섭이 없다는 것</strong>이다. 각 embodiment가 임베딩 공간에서 서로 최대로 떨어져 있으므로, 한 몸의 gradient가 다른 몸의 표현을 오염시키지 않는다. 이는 averaging problem에 대한 가장 보수적이고 강력한 방어다. 조건 신호가 명확할수록 네트워크가 embodiment 간 행동을 뭉갤 여지가 줄어든다. distillation처럼 여러 teacher를 하나로 합치는 상황에서, one-hot은 '평균 내지 마라'는 신호를 가장 선명하게 전달한다.</p>
+<p>한계는 명백하다. one-hot은 <strong>unseen embodiment에 대해 무력</strong>하다. 벡터 공간에 여유 축이 없으므로, 학습 시 본 적 없는 새 로봇은 표현할 자리 자체가 없다. 새 embodiment를 추가하려면 임베딩 차원을 늘리고 재학습해야 한다. 이는 Chapter 1에서 언급한 '구조적 분리' 패러다임의 대가로, 확장성을 유연성과 맞바꾼 셈이다.</p>
+<p>COMPASS 논문은 대안으로 <strong>learnable embedding</strong>을 future work으로 지목한다. 각 embodiment를 연속적인 <span class="math-inline">\(d\)</span>차원 벡터로 학습하면, embedding space에서의 보간(interpolation)을 통해 unseen embodiment로 일반화할 가능성이 열린다. 예컨대 Spot과 H1 사이 어딘가에 위치하는 새 4족-2족 하이브리드를 두 임베딩의 보간으로 근사하는 식이다. 하지만 이 유연성은 averaging risk를 다시 불러온다 — 임베딩이 가까운 embodiment들의 행동이 서로 새어 나갈(leak) 수 있기 때문이다. one-hot에서 learned로 가는 것은 단순한 구현 디테일이 아니라, 확장성과 averaging 억제 사이의 근본적 trade-off를 다시 협상하는 일이다.</p>
+<table>
+<thead>
+<tr>
+<th>기준</th>
+<th>one-hot embedding</th>
+<th>learnable embedding</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>차원</td>
+<td><span class="math-inline">\(N\)</span> (embodiment 수)</td>
+<td>임의 <span class="math-inline">\(d\)</span></td>
+</tr>
+<tr>
+<td>embodiment 간 간섭</td>
+<td>없음(직교)</td>
+<td>존재(보간 가능성의 대가)</td>
+</tr>
+<tr>
+<td>unseen 일반화</td>
+<td>불가</td>
+<td>보간으로 가능성 (future work)</td>
+</tr>
+<tr>
+<td>averaging risk</td>
+<td>최소</td>
+<td>상승</td>
+</tr>
+<tr>
+<td>COMPASS 채택</td>
+<td>기본 버전</td>
+<td>향후 방향</td>
+</tr>
+</tbody>
+</table></div><div class="sb-block"><h2>KL vs MSE — variance를 왜 보존해야 하는가</h2><p>가장 자연스러운 질문. mean만 맞추면 되지 않나? student mean <span class="math-inline">\(\mu_\theta\)</span>가 teacher mean <span class="math-inline">\(\mu^{(i)}\)</span>를 재현하도록 단순 MSE로 회귀하면 훨씬 간단하다. COMPASS는 KL/All(분포 전체)과 MSE/All(mean만)을 ablation으로 비교했고, <strong>MSE가 약간 열등하다 — 특히 H1(humanoid)에서</strong> 는 결과를 얻었다.</p>
+<p>이유는 variance에 담긴 정보에 있다. teacher specialist의 <span class="math-inline">\(\sigma^2\)</span>는 PPO가 학습하며 남긴 exploration의 흔적이자, 각 action 차원의 <strong>민감도 지도</strong>다. variance가 큰 차원은 정확한 값이 덜 중요한(로봇이 좀 틀려도 괜찮은) 차원이고, variance가 작은 차원은 정밀해야 하는 차원이다. MSE는 모든 차원을 동등하게 취급해 이 지도를 통째로 버린다. 반면 KL은 앞서 본 <span class="math-inline">\((\mu_1-\mu_2)^2 / 2\sigma_2^2\)</span> 항을 통해 민감한 차원에 자동으로 더 큰 가중치를 준다.</p>
+<p>variance 보존이 결정적인 두 번째 이유는 <strong>training noise와 architectural 차이의 관리</strong>다. distillation은 여러 teacher(구조·학습 노이즈가 제각각인)를 하나의 student 구조로 압축한다. teacher마다 다른 variance를 student가 그대로 흡수하면, 네트워크는 '이 embodiment의 이 차원은 원래 불확실하다'는 사실을 인지한 채 학습한다. 이것이 서로 다른 teacher를 무리하게 하나의 sharp한 점 추정으로 뭉개는 것을 막아준다 — 다시 말해 KL은 averaging의 자연스러운 완충재다.</p>
+<p>H1에서 격차가 특히 큰 것은 humanoid의 action 분포가 wheeled보다 훨씬 복잡하고 multimodal에 가깝기 때문으로 해석할 수 있다. 복잡한 분포일수록 mean만으로는 재현이 어렵고, variance 정보가 있어야 그 분포의 '폭'을 올바로 복원한다. 이 관찰은 Chapter 8의 generative policy(diffusion·flow) 논의로 직결된다 — Gaussian variance조차 이렇게 중요하다면, 진짜 multimodal 분포를 다루려면 단일 Gaussian을 넘어서야 한다는 복선이다.</p>
+<table>
+<thead>
+<tr>
+<th>기준</th>
+<th>KL/All (분포 전체)</th>
+<th>MSE/All (mean만)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>모방 대상</td>
+<td>mean + variance</td>
+<td>mean만</td>
+</tr>
+<tr>
+<td>variance 정보</td>
+<td>보존</td>
+<td>소실</td>
+</tr>
+<tr>
+<td>차원별 가중</td>
+<td>자동(1/σ²)</td>
+<td>균등</td>
+</tr>
+<tr>
+<td>관측 성능</td>
+<td>우수</td>
+<td>약간 열등 (특히 H1)</td>
+</tr>
+<tr>
+<td>averaging 억제</td>
+<td>강함</td>
+<td>약함</td>
+</tr>
+</tbody>
+</table></div><div class="sb-block"><h2>대규모 Generalist 계보 — Open-X/RT-X와의 연결, 그리고 averaging의 씨앗</h2><p>COMPASS의 generalist 정책은 진공에서 나온 것이 아니다. '하나의 정책으로 여러 로봇을' 이라는 문법에는 대규모 선례가 있다. <a href="https://arxiv.org/abs/2310.08864">Open X-Embodiment / RT-X</a>는 22개 로봇, 100만+ trajectory, 60+ dataset, 527개 skill을 하나의 데이터셋으로 통합해 <strong>positive transfer</strong> — 여러 embodiment를 함께 학습하면 개별 학습보다 나아지는 현상 — 를 대규모로 입증했다. <a href="https://arxiv.org/abs/2408.11812">CrossFormer</a>는 900K trajectory·20 embodiment를 단일 transformer로, <a href="https://arxiv.org/abs/2409.20537">HPT</a>는 이질적 데이터를 공유 표현으로 묶는 접근을 보였다.</p>
+<p>이들과 COMPASS의 근본적 차이는 <strong>데이터 스케일링 vs 구조적 분리</strong>라는 Chapter 1의 두 패러다임 축에 있다. Open-X/RT-X는 방대한 실제 데이터를 하나의 transformer에 부어 embodiment 구분을 데이터가 알아서 배우게 한다. COMPASS는 반대로 embodiment마다 명시적으로 specialist를 분리해 학습한 뒤 distillation으로 신중하게 합친다. 전자는 스케일에, 후자는 구조에 베팅한다.</p>
+<p>이 대비가 중요한 이유는 두 접근이 <strong>averaging problem을 서로 다른 방식으로 만난다</strong>는 데 있다. 대규모 generalist는 embodiment 조건이 약하거나 데이터 불균형이 있으면 흔한 embodiment의 행동으로 평균이 쏠린다. COMPASS의 distillation은 specialist를 먼저 완성한 뒤 합치므로 각 몸의 '정답'이 이미 확보돼 있지만, 그 정답들을 하나의 조건부 네트워크로 압축하는 순간 — 조건화(one-hot의 강도)와 손실 함수(KL의 variance 보존)가 부실하면 — 여전히 평균으로 무너질 수 있다.</p>
+<p>따라서 이 챕터의 모든 설계 결정(KL, one-hot, 실패 케이스 포함)은 하나의 목표를 공유한다. <strong>여러 teacher를 하나로 합치되 각자의 정체성을 지키는 것</strong>이다. distillation은 통합의 수단이지만 동시에 averaging의 발원지다. Chapter 8에서 우리는 이 씨앗이 어떻게 자라나며, generative policy가 왜 단일 Gaussian distillation의 한계를 넘는 대안으로 등장하는지를 보게 될 것이다. 지금 기억할 것은 하나다 — generalist를 만드는 순간, 당신은 averaging과의 싸움을 시작한 것이다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">여러 통역사를 한 명의 다국어 통역사로 합치기</div>
+      <div class="a-body"><p>회사에 영어·일본어·독일어 전문 통역사 세 명(specialist)이 있다고 하자. 각자 자기 언어는 완벽하지만, 세 명을 늘 데리고 다니는 건 비효율적이다. 우리는 세 언어를 모두 하는 통역사 한 명(generalist)을 새로 키우고 싶다. 방법은? 세 전문가를 실제 통역 현장에 투입해 '어떤 상황에서 어떤 문장을 어떤 뉘앙스로 옮겼는지'를 통째로 녹음한다. 그리고 신입에게 '지금은 일본어 모드'라는 명찰(embodiment embedding)을 달아주고 그 녹음을 따라 하게 한다.</p>
+<p>여기서 핵심은 명찰이 얼마나 선명한가다. 명찰이 흐릿하면(약한 조건화) 신입은 일본어 상황에서 독일어 어순이 새어 나오는 뒤죽박죽 통역을 하게 된다 — 이것이 averaging이다. one-hot 명찰은 '이건 100% 일본어, 다른 언어와 절대 안 섞임'이라고 못 박아 이 오염을 막는다. 반대로 명찰에 언어들의 유사도를 담으면(learnable embedding) 배운 적 없는 방언도 근처 언어의 보간으로 흉내 낼 수 있지만, 대신 비슷한 언어끼리 새어 나올 위험이 생긴다.</p>
+<p>그리고 왜 '문장'만이 아니라 '뉘앙스(variance)'까지 녹음할까? 전문가가 어떤 단어는 딱 하나로 못 박고(작은 variance) 어떤 표현은 여러 갈래로 자유롭게 옮겼는지(큰 variance)를 알면, 신입은 어디서 정밀해야 하고 어디서 유연해도 되는지를 배운다. 문장만 베끼는(MSE) 신입은 이 지도를 잃어버려, 특히 문장 구조가 복잡한 언어(H1 같은 humanoid)에서 어설퍼진다. KL은 문장과 뉘앙스를 함께 옮기는 녹음이다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>COMPASS distillation의 핵심을 PyTorch로 옮긴 것이다. teacher(specialist)가 남긴 Gaussian action 분포 (μ, σ)를 target으로, embodiment embedding으로 조건화된 student가 KL을 최소화한다. two-Gaussian KL의 closed form을 직접 구현해 variance가 어떻게 손실에 들어오는지를 드러낸다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import torch
+import torch.nn as nn
+
+
+class DistilledPolicy(nn.Module):
+    &quot;&quot;&quot;(world-model policy state p, embodiment id e) -&gt; Gaussian action.&quot;&quot;&quot;
+
+    def __init__(self, state_dim, num_embodiments, act_dim, emb_dim=16):
+        super().__init__()
+        # 가장 단순한 버전은 one-hot. 여기선 learnable embedding으로 확장 가능.
+        self.embodiment = nn.Embedding(num_embodiments, emb_dim)
+        self.trunk = nn.Sequential(
+            nn.Linear(state_dim + emb_dim, 256), nn.ELU(),
+            nn.Linear(256, 256), nn.ELU(),
+        )
+        self.mu_head = nn.Linear(256, act_dim)
+        # global(state-independent) log-std — COMPASS distilled head와 동일
+        self.log_std = nn.Parameter(torch.zeros(act_dim))
+
+    def forward(self, p, e_idx):
+        e = self.embodiment(e_idx)                     # 조건 신호
+        h = self.trunk(torch.cat([p, e], dim=-1))
+        mu = self.mu_head(h)
+        return mu, self.log_std.expand_as(mu)
+
+
+def gaussian_kl(mu_t, log_std_t, mu_s, log_std_s):
+    &quot;&quot;&quot;KL( N(mu_t, s_t^2) || N(mu_s, s_s^2) ), teacher=specialist / student=distilled.&quot;&quot;&quot;
+    var_t = (2 * log_std_t).exp()
+    var_s = (2 * log_std_s).exp()
+    kl = (log_std_s - log_std_t
+          + (var_t + (mu_t - mu_s).pow(2)) / (2 * var_s) - 0.5)
+    return kl.sum(-1)                                  # action 차원 합
+
+
+def distill_step(student, batch, opt):
+    # batch: specialist가 rollout하며 기록한 (p, e_idx, mu_spec, log_std_spec)
+    p, e_idx, mu_spec, log_std_spec = batch
+    mu_s, log_std_s = student(p, e_idx)
+    # good-only 필터링 없이 실패 케이스도 포함 → corner case 학습에 유용
+    loss = gaussian_kl(mu_spec, log_std_spec, mu_s, log_std_s).mean()
+    opt.zero_grad()
+    loss.backward()
+    opt.step()
+    return loss.item()</code></pre>
+      <div class="c-walk"><p><code>DistilledPolicy</code>는 하나의 네트워크로 모든 embodiment를 처리한다. <code>nn.Embedding(num_embodiments, ...)</code>가 embodiment id를 벡터로 바꿔 trunk 입력에 concat되는데, 이 조건 신호가 강할수록(one-hot에 가까울수록) averaging이 억제된다. <code>emb_dim</code>을 크게 두고 이 embedding을 학습 가능하게 두면 learnable embedding 버전이 된다.</p>
+<p><code>log_std</code>가 <code>nn.Parameter</code>로 state와 무관한 global variance인 점에 주목하라 — COMPASS distilled head가 mean은 MLP로, variance는 global로 두는 설계와 일치한다.</p>
+<p><code>gaussian_kl</code>은 본문의 closed-form KL을 그대로 옮긴 것이다. <code>(mu_t - mu_s)**2 / (2*var_s)</code> 항 때문에 student가 확신하는(var_s가 작은) 차원일수록 mean 오차 벌점이 커진다. 만약 이 함수를 <code>(mu_t - mu_s).pow(2).mean()</code>로 바꾸면 그것이 바로 MSE 버전이고, variance 정보가 사라져 특히 humanoid에서 성능이 떨어진다.</p>
+<p><code>distill_step</code>은 teacher가 고정 target이므로 순수한 supervised 회귀다. RL의 reward·advantage·exploration이 전혀 없어 gradient가 안정적이고, 이것이 40k frame/embodiment를 4x H100에서 무리 없이 수렴시키는 이유다. batch에 실패 rollout을 섞어 corner case를 학습에 노출시키는 것이 good-only 필터링보다 낫다는 것이 COMPASS의 발견이다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">Policy distillation은 빅테크 robotics·RL 팀에서 &#x27;multi-task/multi-embodiment 정책을 어떻게 하나로 합치는가&#x27;라는 시스템 질문의 표준 도구다. 면접에서는 distillation을 안다는 것 이상으로, KL을 쓰는 이유·조건화 설계·averaging failure mode를 진단할 수 있는지를 본다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>two-Gaussian KL의 closed form을 유도하고 각 항이 mean/variance 학습에 어떻게 기여하는지 설명하는 능력</li><li>distillation을 online RL이 아닌 offline 회귀로 바라보고, 그로 인한 학습 안정성·데이터 효율 이점을 정량적으로 논하는 태도</li><li>embodiment(또는 task) 조건화의 강도와 averaging 사이의 인과를 명시적으로 연결하는 사고</li><li>MSE로 충분한 경우와 분포 보존(KL)이 필요한 경우를 문제 특성(multimodality, action 민감도)으로 구분하는 판단력</li><li>Open-X/RT-X·CrossFormer 등 대규모 generalist 계보와 COMPASS의 구조적 분리 접근을 두 패러다임으로 대비하는 큰 그림</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>distillation을 그냥 &#x27;teacher output을 MSE로 따라 하기&#x27;로만 이해하고 variance/분포의 역할을 모름</li><li>embodiment embedding을 단순 입력 feature로만 보고 averaging risk와의 관계를 인지하지 못함</li><li>one-hot의 한계(unseen 일반화 불가)를 모른 채 항상 최선이라고 단언</li><li>실패 rollout을 무조건 걸러야 한다고 생각(good-only가 더 낫다는 잘못된 직관)</li><li>KL의 비대칭성(forward vs reverse)이 mode-covering/mode-seeking에 주는 영향을 전혀 고려하지 않음</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>specialist N개를 하나의 generalist로 합칠 때 KL distillation 목적함수를 쓰고, MSE 대신 KL을 쓰면 무엇이 달라지는지 humanoid 예로 설명하라.</li><li>one-hot embodiment embedding과 learnable embedding의 trade-off를 unseen embodiment 일반화와 averaging risk 관점에서 비교하라.</li><li>distillation dataset을 만들 때 성공 궤적만 쓰는 것이 왜 최선이 아닐 수 있는가? covariate shift와 연결해 답하라.</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 친숙한 수준은 &#x27;distillation은 teacher를 student가 모방하는 것&#x27;이라고 말하고 KL loss를 부를 줄 아는 정도다. 통달한 수준은 two-Gaussian KL의 각 항을 손으로 유도해 variance가 차원별 가중을 만드는 메커니즘을 보이고, one-hot·KL·실패 케이스 포함이라는 세 설계 결정이 모두 averaging 억제라는 하나의 목표로 수렴함을 설명하며, 이 접근이 Open-X 식 데이터 스케일링과 어떤 패러다임적 대비를 이루는지까지 좌표를 잡는다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>Distillation = RL을 회귀로 바꾸기</h3><p>specialist가 남긴 (p, e, μ, σ)를 target으로 하나의 conditional policy를 supervised 학습해, RL의 불안정성 없이 여러 몸을 하나로 합친다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>목적함수는 embodiment별 KL 합</h3><p>min_θ Σᵢ KL( N(μ⁽ⁱ⁾,σ²) ‖ N(μ_θ(p,e⁽ⁱ⁾),σ_θ²) ) — 조건 e⁽ⁱ⁾가 embodiment마다 행동을 분기시킨다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>KL은 variance를 보존한다</h3><p>closed-form KL의 (μ₁−μ₂)²/2σ₂² 항이 확신하는 차원에 더 큰 벌점을 줘, mean만 맞추는 MSE보다 특히 H1(humanoid)에서 우수하다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>one-hot은 averaging의 최전선 방어</h3><p>직교하는 one-hot은 embodiment 간 간섭을 원천 차단하지만 unseen embodiment로 일반화할 수 없다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>learnable embedding은 유연성과 risk의 맞교환</h3><p>연속 임베딩은 보간으로 unseen 일반화 가능성을 열지만(future work), 가까운 embodiment 간 행동이 새어 averaging risk를 높인다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>실패 케이스가 유용하다</h3><p>good-only 필터링은 marginal 개선뿐 — 실패 rollout의 corner case가 covariate shift 완화에 기여한다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>대규모 generalist 계보와의 대비</h3><p>Open-X/RT-X·CrossFormer가 데이터 스케일링으로 generalist를 만든다면, COMPASS는 specialist를 분리 학습 후 distillation으로 합치는 구조적 분리 접근이다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>generalist를 만드는 순간 averaging과 싸움이 시작된다</h3><p>distillation은 통합의 수단이자 averaging의 발원지이며, KL·one-hot·실패 포함은 모두 정체성 보존을 위한 방어선이다(→ Ch8).</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-04.html">← Residual RL — Fine-Tuning Without Forgetting</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-06.html">COMPASS Architecture — Putting It All Together →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>
