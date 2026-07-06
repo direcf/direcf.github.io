@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch12: Deployment Hardware — Jetson Thor &amp; the Robot Computer — NVIDIA Physical AI Map — direcf</title>
+  <meta name="description" content="cloud에서 학습한 정책이 실제 로봇에 내려앉는 마지막 단계 — Jetson Thor(Blackwell)·AGX와 GR00T Reference Humanoid로 edge inference의 제약과 설계를 본다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;height:22px;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><linearGradient id="direcf-nav-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs></svg>
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg></span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg></span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.25 15a4.5 4.5 0 0 0 4.5 4.5H18a3.75 3.75 0 0 0 1.332-7.257 3 3 0 0 0-3.758-3.848 5.25 5.25 0 0 0-10.233 2.33A4.502 4.502 0 0 0 2.25 15Z"/></svg></span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"/></svg></span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg></span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/physical-ai">NVIDIA Physical AI Map</a><span class="sep">›</span>
+        <strong>Ch12 Deployment Hardware — Jetson Thor &amp; the Robot Computer</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 12 <span style="opacity:.3">·</span> 13 chapters
+      </div>
+      <div class="chapter-emoji">💻</div>
+      <h1 class="chapter-title">Deployment Hardware — Jetson Thor &amp; the Robot Computer</h1>
+      <div class="chapter-title-kr">배치 하드웨어 — Jetson Thor &amp; the Robot Computer</div>
+      <div class="chapter-tldr">cloud에서 학습한 정책이 실제 로봇에 내려앉는 마지막 단계 — Jetson Thor(Blackwell)·AGX와 GR00T Reference Humanoid로 edge inference의 제약과 설계를 본다.</div>
+
+      <div class="cs-wrap">
+        <div style="padding:40px;background:var(--bg-soft);border-radius:12px;color:var(--muted);text-align:center;border:1px dashed var(--border);">🍌 이미지 준비 중</div>
+        <div class="cs-label">🍌 Nano Banana — Chapter 12 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>학습-배치를 잇는 cloud-to-edge 구조를 설명한다</li><li>Jetson Thor가 로봇용 &#x27;robot computer&#x27;로 설계된 맥락을 안다</li><li>edge inference의 latency·전력·메모리 제약을 이해한다</li><li>GR00T Reference Humanoid(H2 Plus+Thor)의 구성을 안다</li><li>배치 제약이 모델·정책 설계에 주는 피드백을 파악한다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>지금까지 이 코스는 대체로 '정책을 어떻게 만드는가'를 이야기했다 — Omniverse에서 세계를 짓고, Isaac Sim·Cosmos로 데이터를 만들고, Isaac Lab에서 학습하고, GR00T 같은 foundation model을 빚었다. 이 모든 것은 데이터센터, 즉 DGX와 OVX가 있는 cloud에서 벌어진다. 하지만 로봇은 데이터센터 안에 살지 않는다. 로봇은 공장 바닥과 창고 통로, 사람 곁에서 움직인다. 이 챕터는 그 마지막 한 걸음 — cloud에서 학습한 정책이 실제 로봇의 몸으로 내려앉는 순간 — 을 다룬다.</p>
+<p>이 순간을 지배하는 것이 NVIDIA의 전역 프레임인 <strong>three computers</strong>의 세 번째 컴퓨터다. DGX가 학습을, Omniverse+OVX가 시뮬을 담당했다면, 세 번째는 로봇 위에 실제로 올라가 추론을 돌리는 <strong>robot computer</strong> — 곧 Jetson이다. 데이터센터에서 만들어진 지능이 이 작은 모듈로 '내려오는(cloud-to-edge)' 것이 전체 스택의 완결이다.</p>
+<p>핵심 통찰은 단순하지 않다. edge에 배치한다는 것은 그저 '학습한 모델을 옮겨 실행'하는 물류 문제가 아니다. 로봇 위의 컴퓨터는 벽에 꽂힌 데이터센터와 달리 latency(실시간이어야 넘어지지 않는다)·전력(배터리로 돈다)·메모리(모듈 하나에 들어가야 한다)라는 냉혹한 물리적 제약에 묶인다. 그리고 이 제약은 거꾸로 흐른다 — edge의 한계가 cloud에서 만드는 모델과 정책의 설계 자체를 규정한다. 경량 backbone, distillation, TensorRT 최적화가 그래서 필수가 된다.</p>
+<p>이 챕터는 이 논리를 네 겹으로 본다. 먼저 cloud-to-edge라는 전체 구조(12.1), 그 edge를 담당하는 하드웨어 Jetson Thor와 AGX(12.2), 실시간 추론을 가능하게 하는 TensorRT와 물리적 제약(12.3), 그리고 이 모든 것이 하나의 몸으로 합쳐진 GR00T Reference Humanoid(12.4)다. 마지막으로 이 제약이 왜 NVIDIA의 수직 통합 전략의 핵심인지(12.5)를 짚는다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>12.1 Cloud-to-Edge — three computers의 세 번째가 내려온다</h2><p>이 챕터를 여는 첫 번째 인식은 '지능이 만들어지는 곳과 쓰이는 곳이 다르다'는 것이다.</p>
+<p>이 코스가 처음부터 깔아온 전역 프레임이 <strong>three computers</strong>다. 세 대의 서로 다른 컴퓨터가 Physical AI의 생애주기를 나눠 맡는다.</p>
+<p><strong>three computers</strong> = (1) 학습용 DGX/데이터센터, (2) 시뮬용 Omniverse+OVX, (3) 배치용 Jetson·DRIVE. 각각 지능을 만들고(train), 안전하게 연습시키고(simulate), 실제 몸에 올려 실행한다(deploy).</p>
+<p>앞선 열한 챕터는 사실상 앞의 두 컴퓨터 이야기였다. Isaac Sim·Cosmos로 데이터를 만들고 Isaac Lab에서 정책을 학습시키는 모든 과정이 데이터센터 안에서 벌어졌다. 이 챕터는 세 번째 컴퓨터, 즉 정책이 실제로 실행되는 로봇 위의 컴퓨터로 무게중심을 옮긴다.</p>
+<p>그 이동을 부르는 이름이 <strong>cloud-to-edge</strong>다.</p>
+<p><strong>cloud-to-edge</strong> = 데이터센터(cloud)에서 학습한 정책을, 로봇 위에 탑재된 edge 컴퓨터(Jetson·DRIVE)로 내려보내 실시간으로 추론시키는 흐름. 지능이 만들어진 곳에서 쓰이는 곳으로 '내려오는' 방향이다.</p>
+<p>왜 이 방향성이 중요한가? cloud와 edge는 정반대의 세계다. cloud는 전력·냉각·메모리가 사실상 무제한이고, 며칠에 걸쳐 거대한 모델을 학습시킬 수 있다. 반면 edge는 로봇의 몸 안이다 — 배터리로 돌고, 발열을 감당해야 하고, 손바닥만 한 모듈에 들어가야 하며, 무엇보다 결과를 밀리초 단위로 내놓아야 한다. 넘어지려는 휴머노이드에게 '잠시 후 답을 드리겠다'는 없다.</p>
+<p>그래서 cloud-to-edge는 단순한 파일 복사가 아니다. cloud에서 만든 무거운 정책을 edge의 물리적 제약에 맞게 압축·최적화해 얹는, 별도의 엔지니어링 단계다. 이 챕터의 나머지는 그 edge 컴퓨터가 무엇이고(12.2), 어떻게 실시간을 달성하며(12.3), 그것이 어떤 로봇 몸으로 완성되는지(12.4)를 따라간다.</p></div><div class="sb-block"><h2>12.2 Jetson Thor — 로봇을 위해 설계된 &#x27;robot computer&#x27;</h2><p>세 번째 컴퓨터의 실체가 Jetson이다. 이 절은 그 하드웨어가 왜 '로봇용'으로 따로 설계되었는지를 본다.</p>
+<p><strong>Jetson</strong> = 로봇 위에 직접 탑재되는 edge 컴퓨터, 곧 NVIDIA가 말하는 'robot computer'. 데이터센터 GPU와 달리 로봇의 몸 안에 들어가도록 전력·크기·발열이 설계된 모듈이다.</p>
+<p>그 최신 세대가 Jetson Thor다.</p>
+<p><strong>Jetson AGX Thor</strong> = Blackwell GPU 아키텍처 기반의 로봇용 edge 컴퓨터. 휴머노이드를 겨냥한 모듈이 <strong>T5000</strong>이며, cloud에서 학습한 정책을 로봇 위에서 실시간으로 추론하는 것이 존재 이유다.</p>
+<p>Thor를 이해하는 핵심은 '왜 데이터센터 GPU를 그냥 로봇에 넣지 않는가'라는 질문이다. 데이터센터의 Blackwell GPU는 수백 와트를 쓰고 거대한 냉각을 요구한다 — 배터리로 도는 로봇 몸에는 물리적으로 불가능하다. Thor는 같은 Blackwell 계보의 연산 능력을 로봇이 감당할 수 있는 전력·크기·발열 예산 안으로 압축해 넣은 것이다. 즉 Thor는 '작아진 데이터센터'가 아니라, edge의 제약을 처음부터 전제로 설계된 다른 종류의 컴퓨터다.</p>
+<p>차량 쪽에는 짝이 되는 형제가 있다.</p>
+<p><strong>DRIVE AGX Thor</strong> = 같은 Thor 계보의 차량용(automotive) 버전. 자율주행차(Chapter 10)의 실시간 추론을 담당한다. 휴머노이드용 Jetson AGX Thor와 자율주행용 DRIVE AGX Thor가 하나의 아키텍처에서 갈라져 나온다는 점이 중요하다 — 로봇이든 차든, 결국 같은 edge 추론 문제를 푸는 같은 뿌리의 하드웨어다.</p>
+<p>이 통일성이 NVIDIA 스택의 일관성을 보여준다. Isaac SW 스택(Isaac Sim→Isaac Lab→policy)이 Jetson 위에서 돌고, DRIVE 스택이 DRIVE AGX 위에서 돈다. cloud에서 학습에 쓴 것과 같은 계보의 GPU 아키텍처가 edge에도 있으므로, 학습에서 배치까지 소프트웨어·연산 모델이 매끄럽게 이어진다. Thor는 이 cloud-to-edge 다리의 edge 쪽 교각인 셈이다.</p></div><div class="sb-block"><h2>12.3 실시간 추론 — TensorRT와 edge의 물리적 제약</h2><p>하드웨어(Thor)가 있어도, cloud에서 만든 무거운 모델이 그대로 로봇 위에서 실시간으로 돌지는 않는다. 그 간극을 메우는 것이 이 절의 주제다.</p>
+<p>edge inference를 지배하는 것은 세 가지 물리적 제약이다.</p>
+<p><strong>edge의 3대 제약</strong> = (1) <strong>latency(지연)</strong> — 결과를 밀리초 안에 내놓아야 로봇이 넘어지지 않는다, (2) <strong>전력(power)</strong> — 배터리로 돌므로 연산당 전력이 곧 작동 시간이다, (3) <strong>메모리(memory)</strong> — 모델과 활성값이 모듈의 제한된 메모리 안에 들어가야 한다.</p>
+<p>이 세 제약을 뚫는 핵심 도구가 TensorRT다.</p>
+<p><strong>TensorRT</strong> = NVIDIA GPU에서 딥러닝 추론을 최적화하는 런타임. 학습된 모델을 그래프 최적화·정밀도 축소(예: FP16/INT8 quantization)·커널 융합 등으로 압축해, 같은 하드웨어에서 훨씬 낮은 latency와 메모리로 실행되게 만든다.</p>
+<p>TensorRT가 하는 일을 직관적으로 보면, 학습 시점의 모델은 '유연하지만 무거운' 형태다 — 온갖 연산이 일반적인 형태로 흩어져 있다. TensorRT는 이 모델을 특정 Jetson 하드웨어에 맞춰 '실행 전용'으로 다시 컴파일한다. 여러 연산을 하나의 GPU 커널로 융합하고, 정밀도를 FP32에서 FP16/INT8로 낮춰 메모리와 연산을 줄이고, 하드웨어에 가장 빠른 커널을 골라 붙인다. 정확도 손실을 최소화하면서 속도·메모리·전력을 크게 개선하는 것이다.</p>
+<p>이것이 얼마나 실질적인지 이 코스가 앞서 다룬 사례가 보여준다. mobility 워크플로우 <strong>COMPASS</strong>는 TensorRT 최적화를 거쳐 Jetson Orin(Thor 이전 세대) 위에서 약 <strong>29ms latency, 약 422MB 메모리</strong>로 돌았다. 이 숫자가 요점을 압축한다 — 29ms는 실시간 제어 루프에 들어갈 만큼 빠르고, 422MB는 edge 모듈에 들어갈 만큼 작다. cloud에서라면 신경도 안 쓸 이 두 숫자가, edge에서는 배치 가능/불가능을 가르는 결정적 지표다.</p>
+<p>그래서 실시간 추론은 '모델을 실행한다'가 아니라 '제약 안에 모델을 밀어 넣는다'는 엔지니어링이다. 그리고 이 제약이 학습 단계로 거슬러 올라가 영향을 미친다는 것이 다음 절과 이 챕터 전체의 통찰이다.</p></div><div class="sb-block"><h2>12.4 GR00T Reference Humanoid — cloud-to-edge가 하나의 몸이 되다</h2><p>지금까지의 조각들 — cloud 학습, Thor 하드웨어, TensorRT 실시간 추론 — 이 하나의 실제 로봇 몸으로 합쳐진 것이 GR00T Reference Humanoid다. 이 챕터의 모든 개념을 한눈에 보여주는 종합판이다.</p>
+<p><strong>GR00T Reference Humanoid Robot</strong>(GTC 2026 공개) = 학계·연구용으로 NVIDIA가 내놓은 오픈 reference design(참조 설계) 휴머노이드. 연구자가 맨바닥부터 하드웨어를 짜지 않고, 검증된 몸체·컴퓨트·소프트웨어 조합을 그대로 가져다 쓸 수 있게 한 표준 플랫폼이다.</p>
+<p>그 구성이 이 코스 전체를 압축한다.</p>
+<ul>
+<li>
+<p><strong>몸체(chassis)</strong>: <strong>Unitree H2 Plus</strong> — 약 6ft(약 183cm) 키, 약 150lb(약 68kg) 무게, <strong>75 DoF(자유도)</strong>. 사람 크기에 가까운 고자유도 휴머노이드 몸이다.</p>
+</li>
+<li>
+<p><strong>손(hands)</strong>: <strong>Sharpa Wave</strong> — 5-finger tactile hands, 즉 촉각을 갖춘 다섯 손가락 손. contact-rich manipulation(접촉이 많은 정밀 조작)을 위한 부분이다.</p>
+</li>
+<li>
+<p><strong>온보드 컴퓨트(compute)</strong>: <strong>Jetson AGX Thor T5000</strong> — 12.2에서 본 바로 그 휴머노이드용 robot computer가 이 몸 위에 올라간다.</p>
+</li>
+<li>
+<p><strong>소프트웨어(software)</strong>: <strong>Isaac GR00T 오픈 SW 스택</strong> — Chapter 8에서 본 GR00T foundation model과 그 스택이 이 몸을 움직인다.</p>
+</li>
+</ul>
+<p>이 구성이 왜 이 챕터의 결론인지 보자. GR00T Reference Humanoid는 three computers의 세 컴퓨터가 하나의 몸에서 만나는 지점이다 — DGX에서 학습된 GR00T 정책이, Omniverse/Isaac Lab에서 검증되고, Jetson Thor T5000 위에서 TensorRT로 실시간 추론되어, 75 DoF의 Unitree 몸과 Sharpa 촉각 손을 움직인다. 이 코스가 챕터마다 따로 본 조각들이 여기서 하나의 물리적 로봇으로 수렴한다.</p>
+<p>'reference design'이라는 형식도 짚어야 한다. NVIDIA는 이 로봇을 팔아 돈을 벌려는 게 아니라, 연구 생태계 전체가 같은 표준 몸·컴퓨트·SW 위에서 연구하도록 판을 깐다. 앞선 Blueprint들(Mega·GR00T-Dreams·Cosmos 워크플로우)이 소프트웨어 청사진이었다면, GR00T Reference Humanoid는 그 하드웨어 버전이다 — '능력을 재현 가능한 참조 구현으로 배포한다'는 NVIDIA의 일관된 방식이, 마침내 로봇의 몸 자체에까지 적용된 것이다.</p><div class="fig-row"><figure class="fig-item"><img src="figures/reference-humanoid.jpg" alt="NVIDIA Isaac GR00T Reference Humanoid — Unitree H2 Plus 섀시(75 DoF) + Sharpa Wave 촉각 손 + Jetson AGX Thor T5000 온보드 컴퓨트. (출처: NVIDIA, GTC 2026)" loading="lazy"><figcaption>NVIDIA Isaac GR00T Reference Humanoid — Unitree H2 Plus 섀시(75 DoF) + Sharpa Wave 촉각 손 + Jetson AGX Thor T5000 온보드 컴퓨트. (출처: NVIDIA, GTC 2026)</figcaption></figure></div></div><div class="sb-block"><h2>12.5 제약이 설계를 규정한다 — 그리고 수직 통합</h2><p>마지막 겹은 이 챕터의 가장 깊은 통찰이자, NVIDIA 전략의 핵심이다 — edge의 제약은 흐름의 끝이 아니라, 거꾸로 흐름의 시작을 규정한다.</p>
+<p>순진하게 보면 파이프라인은 한 방향이다 — cloud에서 최고의 모델을 만들고, 그다음 edge에 얹는다. 하지만 현실은 반대로도 흐른다.</p>
+<p><strong>핵심 insight</strong> = edge의 제약(latency·전력·메모리)이 거꾸로 cloud에서 만드는 모델·정책의 설계 자체를 규정한다. Jetson에 29ms·수백 MB로 들어가야 한다는 사실이, 학습 단계의 아키텍처 선택을 미리 결정한다.</p>
+<p>이 역방향 피드백이 구체적으로 무엇을 강제하는가.</p>
+<ul>
+<li>
+<p><strong>경량 backbone</strong> — 애초에 edge에 들어갈 크기의 backbone을 골라 학습한다. 거대한 모델을 만든 뒤 억지로 줄이는 게 아니라, 처음부터 edge 예산을 염두에 둔다.</p>
+</li>
+<li>
+<p><strong>distillation(증류)</strong> — 큰 teacher 모델의 능력을, edge에 들어갈 작은 student 모델로 옮긴다. 성능은 유지하되 크기는 줄인다.</p>
+</li>
+<li>
+<p><strong>TensorRT 최적화</strong> — 12.3에서 본 실행 단계 압축을, 설계 단계부터 전제한다. 'TensorRT로 변환 가능한' 연산으로 모델을 구성한다.</p>
+</li>
+</ul>
+<p>즉 edge 제약은 배치 담당 엔지니어만의 문제가 아니라, 모델을 설계하는 연구자에게까지 거슬러 올라가는 설계 원리다. '실시간으로 로봇 몸에서 돌아야 한다'는 요구가, 정책의 크기·구조·학습 방식 전체를 조형한다.</p>
+<p>그리고 여기서 NVIDIA의 전략적 강점이 드러난다.</p>
+<p><strong>cloud-to-robot 수직 통합</strong> = 학습(DGX)·시뮬(Omniverse/OVX)·배치(Jetson/DRIVE)가 모두 같은 회사의 같은 GPU 아키텍처·소프트웨어 스택으로 이어지는 구조. cloud에서 edge까지 하나의 수직선으로 묶여 있다.</p>
+<p>이 수직 통합이 왜 강점인가? edge 제약이 cloud 설계를 규정한다면, cloud와 edge가 같은 아키텍처(Blackwell 계보)·같은 도구(CUDA·TensorRT·Isaac)로 묶여 있을 때 그 되먹임이 매끄럽다. 학습 시점에 이미 배치 하드웨어(Thor)의 특성을 알고, TensorRT 변환을 전제하고, 같은 소프트웨어 스택으로 시뮬·검증·배치가 이어진다. 학습과 배치가 서로 다른 벤더의 이질적 스택이라면 이 되먹임 고리 곳곳에서 마찰이 생긴다.</p>
+<p>그래서 이 챕터는 하드웨어 챕터이면서 전략 챕터다. Jetson Thor는 단지 '좋은 edge 칩'이 아니라, DGX에서 시작해 Jetson에서 끝나는 하나의 수직선을 완성하는 마지막 조각이다. 이 수직 통합이 NVIDIA를 로봇 부품 공급자가 아니라 'Physical AI의 cloud-to-robot 전체 스택 소유자'로 만든다 — 그 전체 그림을 다음 마지막 챕터에서 종합한다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">무대 위 배우와 극장 밖 연출가</div>
+      <div class="a-body"><p>cloud-to-edge를 이해하려면, 거대한 연습실에서 몇 달간 배역을 다듬는 연출가와, 실제 무대에 홀로 서서 실시간으로 연기하는 배우를 떠올리면 된다. 연습실(cloud)에는 시간도 자원도 넉넉하다 — 대본을 수백 번 다시 쓰고, 온갖 해석을 실험하고, 필요하면 며칠씩 매달린다. 하지만 막이 오르고 배우가 무대(edge)에 서는 순간, 세계가 완전히 바뀐다. 관객 앞에서는 '잠깐만요, 생각 좀 할게요'가 없다. 다음 대사는 지금 이 순간, 정확한 타이밍에, 준비된 에너지 안에서 나와야 한다. 넘어지려는 휴머노이드에게 29ms가 데드라인인 것과 똑같다.</p>
+<p>그래서 무대에 오르는 배우는 연습실의 방대한 노트를 통째로 들고 가지 않는다. 핵심을 몸에 익혀 압축한다 — 이것이 TensorRT의 distillation·quantization이다. 두꺼운 연출 노트(FP32 대형 모델)를, 무대에서 반사적으로 튀어나오는 몸의 기억(INT8 경량 모델)으로 바꾸는 것이다. Jetson Thor는 이 배우의 몸 그 자체다 — 연습실의 거대한 장비를 다 가져올 순 없지만, 같은 예술을 무대의 제약(전력·크기·실시간) 안에서 해내도록 설계된 몸.</p>
+<p>결정적인 통찰은 방향에 있다. 순진하게 보면 연출가가 먼저 완벽한 대본을 쓰고 배우가 그걸 무대에 옮기는 한 방향처럼 보인다. 하지만 훌륭한 연출가는 처음부터 '이건 무대에서 실시간으로 나올 수 있는가'를 염두에 두고 대본을 쓴다. 무대의 제약이 연습실의 창작을 거꾸로 규정하는 것이다 — edge 제약이 cloud 모델 설계를 규정한다는 이 챕터의 핵심과 정확히 같다.</p>
+<p>그리고 GR00T Reference Humanoid는, 연출가·배우·무대·대본이 모두 한 극단 소속인 상태다. 연습실(DGX)·리허설 무대(Omniverse)·본무대의 몸(Jetson Thor)·대본(GR00T SW)이 전부 같은 언어와 방식으로 통합되어 있으니, 연습에서 본공연까지 마찰 없이 이어진다. NVIDIA의 수직 통합이란 결국 이렇게 극단 전체를 한 지붕 아래 두는 것이다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>cloud-to-edge 배치의 개념 코드다. 실제 API가 아니며, 요점은 '학습된 정책을 TensorRT로 최적화해 Jetson Thor에 얹고, 실시간 제어 루프 안에서 latency 예산을 지켜 추론한다'는 것과, 그 몸이 되는 GR00T Reference Humanoid의 스펙이다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">from dataclasses import dataclass
+
+# 1) cloud에서 학습한 정책 -&gt; edge용으로 TensorRT 최적화
+#    (경량 backbone + distillation은 이미 학습 단계에서 반영됨)
+engine = tensorrt_export(
+    policy=&quot;groot_policy.pt&quot;,   # DGX에서 학습된 정책
+    precision=&quot;int8&quot;,           # FP32 -&gt; INT8 quantization
+    target=&quot;jetson_agx_thor&quot;,   # 배치 하드웨어를 명시
+)  # 결과: 저지연·저메모리 실행 전용 engine
+
+# 2) Jetson Thor 위 실시간 제어 루프 (edge inference)
+LATENCY_BUDGET_MS = 30   # 넘으면 로봇이 불안정해진다
+while robot.is_active():
+    obs = robot.read_sensors()          # 카메라·촉각·관절 상태
+    action, ms = engine.infer(obs)      # 실시간 추론 (예: ~29ms)
+    assert ms &lt; LATENCY_BUDGET_MS       # latency 제약을 지켰는가
+    robot.apply(action)                 # 75 DoF 몸에 명령
+
+# 3) GR00T Reference Humanoid = cloud-to-edge가 합쳐진 몸
+@dataclass
+class GR00TReferenceHumanoid:
+    chassis: str = &quot;Unitree H2 Plus&quot;    # ~6ft, ~150lb, 75 DoF
+    dof: int = 75
+    hands: str = &quot;Sharpa Wave (5-finger tactile)&quot;
+    compute: str = &quot;Jetson AGX Thor T5000&quot;  # 세 번째 컴퓨터
+    software: str = &quot;Isaac GR00T open stack&quot;
+# DGX 학습 -&gt; Omniverse 검증 -&gt; Thor 실시간 추론이 이 한 몸에서 만난다</code></pre>
+      <div class="c-walk"><p>이 코드의 핵심은 배치가 '파일 복사'가 아니라 '제약에 모델을 밀어 넣는 엔지니어링'이라는 점이다. <strong>1) tensorrt_export</strong>는 cloud(DGX)에서 학습된 정책을 특정 배치 하드웨어(target="jetson_agx_thor")를 명시해 INT8로 quantize하며 실행 전용 engine으로 다시 컴파일한다 — 12.3의 TensorRT 최적화다. 주석이 짚듯 경량 backbone·distillation은 이미 학습 단계에서 반영되어 있다(12.5의 역방향 피드백). <strong>2) 제어 루프</strong>가 edge inference의 본질을 담는다 — LATENCY_BUDGET_MS=30이라는 예산과 assert ms &lt; BUDGET이 요점이다. 29ms 같은 실측 latency가 이 예산을 지켜야 로봇이 안정적으로 제어된다(COMPASS의 Jetson Orin ~29ms 사례가 이 숫자의 근거다). cloud에서라면 신경 안 쓸 밀리초가 여기서는 배치 가능/불가능을 가른다. <strong>3) GR00TReferenceHumanoid</strong> dataclass는 12.4의 종합이다 — Unitree H2 Plus(75 DoF) 몸, Sharpa Wave 촉각 손, Jetson AGX Thor T5000 컴퓨트, Isaac GR00T SW가 한 데이터 구조로 묶인다. 마지막 주석대로 DGX 학습·Omniverse 검증·Thor 추론이라는 three computers가 이 한 몸에서 만나는 것이 이 챕터의 결론이다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">이 챕터는 &#x27;cloud에서 학습한 정책이 실제 로봇 edge에 배치되는 구조와 제약을 이해하고, 그 제약이 거꾸로 모델 설계를 규정한다는 되먹임을 설명할 수 있는가&#x27;를 재는 주제다. 면접관은 Jetson Thor 이름 암기보다, cloud-to-edge 방향성·edge 3대 제약·TensorRT의 역할·수직 통합의 전략을 연결해 사고하는지를 본다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>three computers(DGX 학습·Omniverse 시뮬·Jetson/DRIVE 배치)를 구분하고, cloud-to-edge가 지능이 만들어진 곳에서 쓰이는 곳으로 내려오는 별도의 엔지니어링 단계임을 규정하는가</li><li>Jetson을 로봇용 &#x27;robot computer&#x27;로, Jetson AGX Thor를 Blackwell 기반 휴머노이드용(T5000)·DRIVE AGX Thor를 차량용으로 구분하고, 왜 데이터센터 GPU를 그대로 못 쓰는지(전력·크기·발열) 설명하는가</li><li>edge의 3대 제약(latency·전력·메모리)을 구체적으로 들고, TensorRT가 quantization·커널 융합으로 이를 뚫는 도구임을 이해하며, COMPASS의 Jetson Orin ~29ms/~422MB 같은 실측 지표의 의미를 읽는가</li><li>GR00T Reference Humanoid(Unitree H2 Plus 75 DoF + Sharpa Wave 촉각 손 + Jetson AGX Thor T5000 + Isaac GR00T 스택)를 three computers가 한 몸에서 만나는 종합으로 설명하고, reference design의 목적을 아는가</li><li>edge 제약이 거꾸로 cloud 모델·정책 설계(경량 backbone·distillation·TensorRT 전제)를 규정한다는 역방향 피드백을 인식하고, 이것이 cloud-to-robot 수직 통합의 전략적 강점·lock-in과 연결됨을 읽는가</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>배치를 &#x27;학습한 모델을 그냥 옮겨 실행&#x27;하는 물류 문제로만 보고, latency·전력·메모리라는 물리적 제약과 별도 최적화 단계의 존재를 인식하지 못하는 경우</li><li>Jetson/DRIVE Thor를 &#x27;작아진 데이터센터 GPU&#x27;로만 보고, edge 제약을 전제로 설계된 다른 종류의 컴퓨터라는 점과 휴머노이드용·차량용 구분을 놓치는 경우</li><li>TensorRT를 단순 &#x27;실행 라이브러리&#x27;로만 알고, quantization·커널 융합을 통한 latency·메모리 압축의 실질과 배치 가능성을 가르는 지표(29ms·수백 MB)의 의미를 설명하지 못하는 경우</li><li>GR00T Reference Humanoid를 그냥 &#x27;또 하나의 로봇 제품&#x27;으로 보고, three computers의 종합이자 연구 생태계용 reference design이라는 성격을 놓치는 경우</li><li>파이프라인을 cloud→edge 한 방향으로만 이해하고, edge 제약이 거꾸로 cloud 설계를 규정하는 되먹임과 수직 통합의 전략적 함의(강점이자 lock-in)를 읽지 못하는 경우</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>Q1 (구조): three computers에서 세 번째 컴퓨터가 무엇이며 cloud-to-edge가 왜 단순 파일 복사가 아닌지 설명하라. 왜 데이터센터 GPU를 로봇에 그대로 넣을 수 없는가?</li><li>Q2 (제약·도구): edge inference의 3대 제약을 들고, TensorRT가 각각을 어떻게 완화하는지 설명하라. COMPASS가 Jetson Orin에서 ~29ms/~422MB로 돌았다는 수치가 배치 관점에서 왜 결정적인가?</li><li>Q3 (되먹임·전략): edge 제약이 거꾸로 cloud의 모델 설계를 규정한다는 것이 무슨 뜻인지 경량 backbone·distillation·TensorRT로 설명하고, 이것이 NVIDIA의 cloud-to-robot 수직 통합의 강점이자 lock-in 리스크인 이유를 논하라.</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> Familiar 수준은 &#x27;Jetson Thor가 로봇에 들어가는 NVIDIA 칩이다&#x27; 정도를 아는 것이다. Mastery 수준은 (1) three computers를 구분하고 cloud-to-edge를 지능이 만들어진 곳에서 쓰이는 곳으로 내려오는 별도 엔지니어링 단계로 규정하며, (2) Jetson을 robot computer로, Jetson AGX Thor(Blackwell·휴머노이드용 T5000)와 DRIVE AGX Thor(차량용)를 구분하고 데이터센터 GPU를 그대로 못 쓰는 이유(전력·크기·발열)를 설명하고, (3) edge의 3대 제약(latency·전력·메모리)을 들고 TensorRT의 quantization·커널 융합과 COMPASS의 Jetson Orin ~29ms/~422MB 실측의 의미를 읽으며, (4) GR00T Reference Humanoid(Unitree H2 Plus 75 DoF + Sharpa Wave 촉각 손 + Jetson AGX Thor T5000 + Isaac GR00T 오픈 스택)를 three computers가 한 몸에서 만나는 종합이자 연구용 reference design으로 설명하고, (5) edge 제약이 거꾸로 cloud 모델·정책 설계를 규정한다는 역방향 피드백을 경량 backbone·distillation·TensorRT 전제로 논하며, 이것이 DGX→Omniverse→Jetson으로 이어지는 cloud-to-robot 수직 통합의 강점이자 lock-in 리스크임까지 균형있게 평가한다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>세 번째 컴퓨터가 내려온다 — cloud-to-edge</h3><p>three computers는 DGX(학습)·Omniverse+OVX(시뮬)·Jetson/DRIVE(배치)다. cloud-to-edge는 데이터센터에서 학습한 정책을 로봇 위 edge 컴퓨터로 내려보내 실시간 추론시키는 흐름으로, 단순 파일 복사가 아니라 제약에 맞춰 압축·최적화하는 별도 단계다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>Jetson = 로봇용 &#x27;robot computer&#x27;</h3><p>Jetson은 로봇 몸 안에 들어가도록 전력·크기·발열이 설계된 edge 컴퓨터다. Jetson AGX Thor는 Blackwell 기반이며 휴머노이드용 모듈이 T5000이다. 데이터센터 GPU를 못 쓰는 이유가 바로 그 물리적 제약이며, Thor는 &#x27;작아진 데이터센터&#x27;가 아니라 edge를 전제로 설계된 다른 컴퓨터다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>Thor의 두 형제 — 로봇과 차</h3><p>Jetson AGX Thor(휴머노이드용)와 DRIVE AGX Thor(차량용)는 같은 Thor 아키텍처에서 갈라진다. 로봇이든 자율주행차든 결국 같은 edge 실시간 추론 문제를 푸는 같은 뿌리의 하드웨어다 — Isaac SW는 Jetson에, DRIVE 스택은 DRIVE AGX에 얹힌다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>edge의 3대 제약과 TensorRT</h3><p>edge inference는 latency(밀리초 데드라인)·전력(배터리)·메모리(모듈 용량)에 묶인다. TensorRT는 quantization(FP16/INT8)·커널 융합·그래프 최적화로 이를 뚫는다. COMPASS가 Jetson Orin에서 ~29ms/~422MB로 돈 것이 실증이다 — 이 두 숫자가 배치 가능/불가능을 가른다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>GR00T Reference Humanoid — 한 몸으로의 종합</h3><p>GTC 2026 공개된 학계용 오픈 reference design. Unitree H2 Plus(~6ft, ~150lb, 75 DoF) 몸 + Sharpa Wave 5-finger 촉각 손 + Jetson AGX Thor T5000 온보드 컴퓨트 + Isaac GR00T 오픈 SW 스택. three computers가 하나의 물리적 로봇에서 만나는 지점이다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>제약이 설계를 규정한다 — 역방향 피드백</h3><p>핵심 insight: edge 제약(latency·전력·메모리)이 거꾸로 cloud에서 만드는 모델·정책 설계를 규정한다. 경량 backbone을 처음부터 고르고, distillation으로 능력을 작은 모델에 옮기고, TensorRT 변환을 전제로 아키텍처를 짠다. 배치 담당만이 아니라 연구자에게까지 거슬러 올라가는 설계 원리다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>reference design이라는 배포 방식</h3><p>NVIDIA는 이 휴머노이드를 팔려는 게 아니라 연구 생태계가 같은 표준 몸·컴퓨트·SW 위에서 연구하도록 판을 깐다. Mega·Cosmos 워크플로우 같은 소프트웨어 Blueprint의 하드웨어 버전으로, &#x27;능력을 재현 가능한 참조 구현으로 배포&#x27;하는 일관된 방식이 로봇의 몸에까지 적용된 것이다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>cloud-to-robot 수직 통합</h3><p>학습(DGX)·시뮬(Omniverse/OVX)·배치(Jetson/DRIVE)가 같은 GPU 아키텍처·소프트웨어 스택(CUDA·TensorRT·Isaac)으로 하나의 수직선으로 이어진다. edge 제약이 cloud 설계를 규정하는 되먹임이 매끄러워지는 것이 강점이자, NVIDIA를 부품 공급자가 아닌 전체 스택 소유자로 만드는 전략의 핵심이다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-11.html">← Industrial Digital Twins &amp; Robot Fleets</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-13.html">The 2026 Frontier &amp; the Whole Map →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

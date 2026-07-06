@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch2: Omniverse &amp; OpenUSD — The Substrate — NVIDIA Physical AI Map — direcf</title>
+  <meta name="description" content="2019년부터 이어진 Omniverse의 역사와, 그 심장인 OpenUSD가 어떻게 Physical AI의 공통 3D 데이터 층(substrate)이 되었는지 본다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;height:22px;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><linearGradient id="direcf-nav-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs></svg>
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg></span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg></span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.25 15a4.5 4.5 0 0 0 4.5 4.5H18a3.75 3.75 0 0 0 1.332-7.257 3 3 0 0 0-3.758-3.848 5.25 5.25 0 0 0-10.233 2.33A4.502 4.502 0 0 0 2.25 15Z"/></svg></span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"/></svg></span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg></span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/physical-ai">NVIDIA Physical AI Map</a><span class="sep">›</span>
+        <strong>Ch02 Omniverse &amp; OpenUSD — The Substrate</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 02 <span style="opacity:.3">·</span> 13 chapters
+      </div>
+      <div class="chapter-emoji">🌐</div>
+      <h1 class="chapter-title">Omniverse &amp; OpenUSD — The Substrate</h1>
+      <div class="chapter-title-kr">Omniverse &amp; OpenUSD — 모든 것의 기반</div>
+      <div class="chapter-tldr">2019년부터 이어진 Omniverse의 역사와, 그 심장인 OpenUSD가 어떻게 Physical AI의 공통 3D 데이터 층(substrate)이 되었는지 본다.</div>
+
+      <div class="cs-wrap">
+        <div style="padding:40px;background:var(--bg-soft);border-radius:12px;color:var(--muted);text-align:center;border:1px dashed var(--border);">🍌 이미지 준비 중</div>
+        <div class="cs-label">🍌 Nano Banana — Chapter 2 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>Omniverse가 &#x27;앱&#x27;이 아니라 &#x27;OS/플랫폼&#x27;으로 진화한 맥락을 안다</li><li>OpenUSD가 왜 상호운용성의 핵심인지 설명할 수 있다</li><li>digital twin과 SimReady asset의 의미를 이해한다</li><li>Omniverse가 Isaac Sim·Cosmos의 기반이 되는 구조를 그린다</li><li>산업용 Physical AI OS로 확장되는 방향(DSX)을 안다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>1장에서 three computers 중 '시뮬레이션 컴퓨터'가 sim-to-real 루프의 데이터 공장이라고 했다. 그런데 그 공장이 무언가 위에 서 있어야 한다 — 로봇·공장·도시를 하나의 일관된 3D 세계로 표현하는 공통 데이터 층 말이다. 그 층이 <strong>Omniverse</strong> 이고, 그 심장이 <strong>OpenUSD</strong> 다.</p>
+<p>Omniverse는 처음엔 '3D 협업 툴'로 태어났지만(2019 발표, 2021 오픈베타 GA), 지금은 하나의 앱이 아니라 라이브러리·마이크로서비스의 묶음, 즉 다른 앱들이 그 위에 서는 <strong>플랫폼/OS</strong> 로 진화했다. NVIDIA가 이를 "Physical AI operating system"으로 포지셔닝하는 이유가 여기 있다.</p>
+<p>이 챕터는 세 가지를 파고든다. 첫째, Omniverse가 왜 앱이 아니라 substrate(기반층)인가. 둘째, 그 substrate의 공통 언어인 OpenUSD가 어떻게 상호운용성(interoperability)을 만드는가. 셋째, 그 위에 SimReady asset·digital twin·DSX Blueprint 같은 산업 규모의 구조물이 어떻게 올라가고, 결국 Isaac Sim(3장)과 Cosmos(5장)가 왜 모두 이 층 위에 서는가.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>2.1 Omniverse의 역사 — 앱에서 플랫폼으로</h2><p><strong>Omniverse(옴니버스)</strong> = NVIDIA의 실시간 3D 협업·시뮬레이션 플랫폼. digital twin과 산업 시뮬레이션을 위한 공통 무대다.</p>
+<p>타임라인을 보면 성격 변화가 보인다.</p>
+<table>
+<thead>
+<tr>
+<th>시점</th>
+<th>사건</th>
+<th>성격</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2019</td>
+<td>NVIDIA가 Omniverse 발표</td>
+<td>3D 협업 툴로 시작</td>
+</tr>
+<tr>
+<td>2021</td>
+<td>오픈베타 → GA(정식 출시)</td>
+<td>실시간 협업 플랫폼</td>
+</tr>
+<tr>
+<td>2022~24</td>
+<td>Isaac Sim·산업 파트너 결합</td>
+<td>시뮬레이션 substrate</td>
+</tr>
+<tr>
+<td>2025~26</td>
+<td>libraries/microservices화, DSX Blueprint</td>
+<td>Physical AI OS</td>
+</tr>
+</tbody>
+</table>
+<p>초기 Omniverse는 아티스트들이 서로 다른 DCC 툴(Maya, 3ds Max, Blender 등)에서 같은 3D 씬을 실시간으로 공동 편집하게 해주는 협업 도구로 팔렸다. 여러 툴이 하나의 씬을 동시에 만지려면 공통 데이터 포맷이 필요했고, 그 답으로 채택한 것이 OpenUSD다 — 이 선택이 나중에 모든 것을 바꾼다.</p>
+<p>지금의 Omniverse는 '실행하는 하나의 앱'이 아니다. NVIDIA는 Omniverse를 <strong>libraries와 microservices의 집합</strong> 으로 재구성해, 다른 애플리케이션이 그 기능(렌더·물리·USD 조합·협업)을 가져다 자기 앱에 통합할 수 있게 만들었다. 즉 Omniverse는 이제 '앱'보다 '플랫폼/SDK'에 가깝다.</p>
+<p>이 전환이 중요한 이유: 앱은 경쟁 제품이 대체할 수 있지만, 플랫폼은 그 위에 다른 것들이 서는 순간 대체 비용이 폭발한다. Isaac Sim도, Cosmos의 일부도, 산업 파트너의 digital twin도 모두 이 층 위에 선다. Omniverse가 'Physical AI의 OS'라는 말은 바로 이 구조를 가리킨다.</p></div><div class="sb-block"><h2>2.2 OpenUSD — Omniverse의 심장</h2><p>Omniverse를 플랫폼으로 만든 진짜 주인공은 <strong>OpenUSD</strong> 다.</p>
+<p><strong>OpenUSD(Universal Scene Description)</strong> = Pixar가 개발해 오픈소스로 공개한 3D 씬 기술 프레임워크. 하나의 3D 세계(지오메트리·재질·조명·애니메이션·물리)를 서술하고, 여러 소스를 비파괴적으로 조합하는 공통 포맷이다.</p>
+<p>Pixar가 이걸 만든 이유는 애니메이션 스튜디오의 현실 때문이었다. 한 장면(scene)에 모델러·리깅·조명·이펙트 아티스트 수십 명이 동시에 손을 대야 한다. 그래서 USD의 설계 철학은 '하나의 거대 파일'이 아니라 <strong>layering(레이어링)과 composition(합성)</strong> 이다.</p>
+<ul>
+<li>
+<p><strong>Stage(스테이지)</strong> = 최종적으로 조합되어 보이는 하나의 씬 전체. 여러 레이어를 합성한 결과.</p>
+</li>
+<li>
+<p><strong>Prim(프림)</strong> = 씬 그래프의 노드. <code>/World/Robot/Arm</code> 같은 계층 경로로 식별되며, 메시·조명·카메라·물리 바디 등 무엇이든 될 수 있다.</p>
+</li>
+<li>
+<p><strong>Reference / Layer</strong> = 다른 USD 파일을 '참조'로 끌어오거나, 기존 씬 위에 새 레이어를 '덮어써서' 비파괴적으로 변경. 조명 팀은 지오메트리를 건드리지 않고 조명 레이어만 얹는다.</p>
+</li>
+</ul>
+<p>이 layering 구조가 곧 <strong>상호운용성(interoperability)</strong> 의 열쇠다. 서로 다른 툴·회사·팀이 같은 Stage를 각자의 레이어로 기여하고, 충돌 없이 합성된다. NVIDIA가 이 표준을 혼자 소유하지 않겠다고 선언하며 <strong>Alliance for OpenUSD(AOUSD)</strong> 를 Pixar·Adobe·Apple·Autodesk 등과 결성한 것도 이 때문이다 — 표준이 중립적일수록 더 많은 생태계가 올라탄다.</p>
+<p>통찰: OpenUSD는 3D 세계의 '공용어'다. 로봇(Isaac Sim)도, 공장(digital twin)도, 생성 모델(Cosmos)도 같은 USD로 세계를 표현하기 때문에, 한 층에서 만든 asset이 다른 층에서 그대로 쓰인다. 이것이 NVIDIA 수직 통합의 데이터 접착제다.</p></div><div class="sb-block"><h2>2.3 Digital twin과 SimReady asset</h2><p>OpenUSD가 공용어라면, 그 위에 실제로 무엇을 짓는가? 두 개념이 핵심이다: digital twin과 SimReady asset.</p>
+<p><strong>Digital twin(디지털 트윈)</strong> = 실제 물리 시스템(로봇·생산 라인·창고·데이터센터·도시)을 물리적으로 충실하게 반영한 가상 복제본. 실물과 동기화되어 시뮬레이션·모니터링·what-if 테스트에 쓰인다.</p>
+<p>digital twin이 단순한 3D 모델과 다른 점은 <strong>물리적으로 유효(physically valid)</strong> 하다는 것이다. 그냥 예쁜 창고 렌더가 아니라, 그 안에서 로봇을 돌리면 실제와 같은 충돌·마찰·센서 반응이 나와야 한다. 그래서 등장하는 것이 SimReady다.</p>
+<p><strong>SimReady asset(심레디 에셋)</strong> = 시각적 지오메트리뿐 아니라 시뮬레이션에 필요한 물리 속성 — 질량, 마찰계수, 충돌 형상, 관절(joint), 재질의 물리 특성, semantic label — 까지 포함하도록 표준화된 3D asset.</p>
+<p>일반 3D asset과 SimReady의 차이를 표로 보면 분명하다.</p>
+<table>
+<thead>
+<tr>
+<th>속성</th>
+<th>일반 3D asset</th>
+<th>SimReady asset</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>지오메트리</td>
+<td>있음</td>
+<td>있음</td>
+</tr>
+<tr>
+<td>재질(시각)</td>
+<td>있음</td>
+<td>있음 (물리 기반 PBR)</td>
+</tr>
+<tr>
+<td>질량·관성</td>
+<td>없음</td>
+<td>있음</td>
+</tr>
+<tr>
+<td>충돌 형상</td>
+<td>없거나 근사</td>
+<td>정의됨</td>
+</tr>
+<tr>
+<td>관절/조인트</td>
+<td>없음</td>
+<td>로봇/기계는 있음</td>
+</tr>
+<tr>
+<td>semantic label</td>
+<td>없음</td>
+<td>있음 (SDG용)</td>
+</tr>
+</tbody>
+</table>
+<p>SimReady가 왜 결정적인가? 1장의 sim-to-real gap이 여기서 결정되기 때문이다. asset의 물리 속성이 부실하면 시뮬레이션이 아무리 예뻐도 실물과 다르게 움직이고, gap이 커진다. 반대로 SimReady asset이 잘 갖춰지면 같은 asset을 렌더링(3장 RTX)·물리(3장 PhysX)·합성 데이터 라벨(3장 SDG)에 그대로 재사용할 수 있다. OpenUSD가 '한 번 만들면 어디서나 쓴다'를 데이터 포맷 수준에서, SimReady가 '물리적으로 유효하게'를 asset 수준에서 보장한다.</p></div><div class="sb-block"><h2>2.4 왜 Isaac Sim·Cosmos가 이 위에 서는가</h2><p>이제 이 챕터의 구조적 핵심 — Omniverse/OpenUSD가 substrate라는 말의 실제 의미 — 을 명확히 하자.</p>
+<p>substrate(기반층)라는 건 상위 제품들이 자기만의 세계 표현을 새로 만들지 않고 이 층을 빌려 쓴다는 뜻이다. 구체적으로:</p>
+<ul>
+<li>
+<p><strong>Isaac Sim(3장)</strong> 은 Omniverse 위에 세운 로봇 시뮬레이션 reference application이다. 자기 씬 포맷을 발명하지 않고 OpenUSD Stage를 그대로 쓰고, Omniverse의 RTX 렌더·PhysX 물리를 빌린다. 그래서 SimReady asset·digital twin이 Isaac Sim에서 즉시 통한다.</p>
+</li>
+<li>
+<p><strong>Cosmos(5장)</strong> 의 World Foundation Model은 물리적으로 그럴듯한 영상을 생성하는데, 그 조건(condition)과 검증의 상당 부분이 Omniverse에서 렌더된 USD 씬과 맞물린다. 시뮬레이션이 만든 정확한 3D ground-truth가 생성 모델의 재료이자 채점 기준이 된다.</p>
+</li>
+<li>
+<p><strong>산업 파트너의 앱</strong> (아래 2.5)도 각자의 digital twin을 OpenUSD로 표현해 Omniverse에 얹는다.</p>
+</li>
+</ul>
+<p>이 관계를 층으로 그리면 이렇다.</p>
+<table>
+<thead>
+<tr>
+<th>층</th>
+<th>무엇</th>
+<th>역할</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>상위</td>
+<td>Isaac Lab (train), 정책</td>
+<td>학습·정책</td>
+</tr>
+<tr>
+<td>데이터</td>
+<td>Isaac Sim, Cosmos</td>
+<td>시뮬레이션·생성</td>
+</tr>
+<tr>
+<td>기반</td>
+<td>Omniverse + OpenUSD</td>
+<td>공통 3D substrate</td>
+</tr>
+<tr>
+<td>바닥</td>
+<td>CUDA / RTX GPU</td>
+<td>연산·렌더</td>
+</tr>
+</tbody>
+</table>
+<p>핵심 통찰: NVIDIA가 상위 제품을 아무리 많이 내놓아도 그것들이 서로 데이터를 주고받을 수 있는 이유는, 전부 <strong>같은 substrate(OpenUSD 씬)를 공유</strong> 하기 때문이다. 만약 Isaac Sim과 Cosmos가 각자 다른 씬 포맷을 썼다면, 시뮬에서 만든 세계를 생성 모델에 넘기거나 학습으로 보내는 매 단계마다 변환·손실이 생겼을 것이다. Omniverse/OpenUSD는 그 변환을 없앤다 — 이것이 1장에서 말한 '파이프의 마찰 제거'의 데이터 층 구현이다.</p></div><div class="sb-block"><h2>2.5 산업 Physical AI OS로 — DSX Blueprint와 파트너 생태계</h2><p>Omniverse의 야심은 로봇 시뮬레이터 아래 깔린 층에 머물지 않는다. 2025~2026년의 방향은 <strong>산업 전체의 운영 체계</strong> 로의 확장이다.</p>
+<p>가장 상징적인 것이 <strong>Omniverse DSX Blueprint</strong> 다.</p>
+<p><strong>DSX Blueprint(디에스엑스 블루프린트)</strong> = 기가와트급 AI 팩토리(대규모 AI 데이터센터)를 통째로 digital twin으로 설계·시뮬레이션·운영하기 위한 참조 설계(blueprint). 건물·전력·냉각·네트워크·GPU 랙 배치까지 가상에서 먼저 짓고 검증한다.</p>
+<p>여기서 '팩토리'는 두 가지 의미로 겹친다 — AI를 굽는 물리적 데이터센터 자체이면서, 동시에 그것을 짓기 전에 가상에서 리허설하는 digital twin 공장. NVIDIA는 이 blueprint로 "물리 세계의 거대 인프라도 먼저 Omniverse에서 짓는다"는 메시지를 던진다.</p>
+<p>이 확장을 가능케 하는 것이 파트너 생태계다. Omniverse는 산업 소프트웨어 강자들과 통합된다.</p>
+<ul>
+<li><strong>Siemens</strong> — 산업 자동화·PLM</li>
+<li><strong>Ansys</strong> — 물리 시뮬레이션(구조·유체·전자기)</li>
+<li><strong>SAP</strong> — 엔터프라이즈·공급망</li>
+<li><strong>Schneider Electric</strong> — 전력·에너지 인프라</li>
+<li><strong>Databricks</strong> — 데이터·분석</li>
+</ul>
+<p>이들이 각자의 도메인 데이터를 OpenUSD로 Omniverse에 얹으면, 하나의 digital twin 안에서 물리·전력·공급망·분석이 동시에 돌아간다. 파트너를 붙일수록 substrate로서의 중력이 커지는 전형적인 플랫폼 전략이다.</p>
+<p>통찰: 로봇 하나를 시뮬레이션하는 것과 기가와트 팩토리를 시뮬레이션하는 것은 스케일이 다르지만, 밑바닥 논리는 같다 — <strong>물리 세계를 짓기 전에 OpenUSD 세계에서 먼저 짓고 검증한다.</strong> Omniverse가 로봇용 substrate에서 '산업 Physical AI OS'로 자연스럽게 확장되는 이유가 여기 있고, 이 확장의 산업 측면은 11장(산업 디지털 트윈)에서 다시 만난다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">OpenUSD는 3D 세계의 &#x27;Google Docs + 웹 표준&#x27;이다</div>
+      <div class="a-body"><p>OpenUSD가 왜 대단한지는 문서 편집에 비유하면 단번에 이해된다.</p>
+<p>옛날 방식은 워드 파일을 이메일로 주고받는 것이었다. 모델러가 씬을 만들어 조명 팀에 보내면, 조명 팀이 파일을 열어 고치고 다시 보낸다. 누군가 동시에 고치면 충돌하고, '최종_진짜최종_v3.max' 같은 지옥이 열린다. 초기 3D 파이프라인이 정확히 이랬다.</p>
+<p><strong>Google Docs</strong> 는 이를 바꿨다. 여러 사람이 같은 문서를 동시에 편집하되, 각자의 변경이 충돌 없이 합쳐진다. OpenUSD의 layering이 정확히 이것이다 — 모델러는 지오메트리 레이어, 조명 팀은 조명 레이어, 물리 엔지니어는 SimReady 물리 레이어를 각자 얹고, Stage가 이를 하나로 합성(composition)한다. 지오메트리를 건드리지 않고 조명만 바꾸는 '비파괴 편집'이 기본값이다.</p>
+<p>동시에 OpenUSD는 <strong>웹 표준(HTML)</strong> 같기도 하다. HTML이 없었다면 모든 브라우저·에디터가 자기만의 문서 포맷을 썼을 것이고 웹은 파편화됐을 것이다. HTML이라는 중립 표준 덕에 누구의 도구로 만든 페이지든 어디서나 열린다. OpenUSD가 Pixar·NVIDIA·Apple·Adobe가 모인 AOUSD를 통해 중립 표준이 되려는 이유가 같다 — 어느 회사 툴로 만든 3D 세계든 Isaac Sim에서도, Cosmos에서도, 파트너 앱에서도 그대로 열리게.</p>
+<p>그래서 Omniverse는 '더 좋은 3D 앱'이 아니라 '3D 세계의 공용 문서 플랫폼'이다. 로봇도 공장도 도시도 같은 문서(USD Stage) 위에서 함께 편집되는 세계 — 그게 Physical AI의 substrate다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>OpenUSD의 핵심 개념 — Stage, Prim, Reference, SimReady physics 속성, layering — 을 Pixar의 pxr.Usd API 스타일로 보여준다. 실제 Isaac Sim 씬도 내부적으로 이런 USD 조합으로 구성된다. 실행보다 '어떻게 조합되는가'의 구조를 읽는 것이 목적이다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">from pxr import Usd, UsdGeom, UsdPhysics, Sdf
+
+# 1. Stage = 최종 조합되어 보이는 하나의 3D 씬(최상위 컨테이너)
+stage = Usd.Stage.CreateNew(&quot;warehouse.usd&quot;)
+
+# 2. Prim = 씬 그래프의 노드, 계층 경로로 식별
+UsdGeom.Xform.Define(stage, &quot;/World&quot;)
+robot = UsdGeom.Xform.Define(stage, &quot;/World/Robot&quot;)
+
+# 3. Reference = 다른 USD asset을 &#x27;참조&#x27;로 끌어옴 (비파괴 조합)
+robot.GetPrim().GetReferences().AddReference(&quot;assets/carter_amr.usd&quot;)
+
+# 4. SimReady 물리 속성 부여 = 렌더용 메시를 &#x27;시뮬 가능&#x27;하게 만든다
+UsdPhysics.RigidBodyAPI.Apply(robot.GetPrim())        # 강체
+UsdPhysics.CollisionAPI.Apply(robot.GetPrim())        # 충돌 형상
+mass = UsdPhysics.MassAPI.Apply(robot.GetPrim())
+mass.CreateMassAttr(12.0)                              # kg
+
+# 5. Layering = 다른 팀이 조명 레이어를 &#x27;위에&#x27; 덮어씀 (override)
+lighting = Sdf.Layer.CreateNew(&quot;lighting.usda&quot;)
+stage.GetRootLayer().subLayerPaths.append(lighting.identifier)
+
+# 6. 저장 = 지오메트리·물리·조명이 하나의 Stage로 합성(compose)됨
+stage.GetRootLayer().Save()</code></pre>
+      <div class="c-walk"><p>이 스니펫은 OpenUSD의 다섯 개념을 순서대로 밟는다. (1) Stage를 만들고, (2) <code>/World/Robot</code> 같은 계층 경로로 Prim을 정의한다 — 경로 자체가 씬 그래프의 주소다. (3) AddReference로 미리 만든 로봇 USD를 통째로 참조해 끌어온다: 복사가 아니라 참조이므로 원본이 바뀌면 자동 반영되고, 같은 asset을 수천 번 배치해도 저렴하다. (4) RigidBodyAPI·CollisionAPI·MassAPI를 Apply하는 부분이 바로 SimReady의 핵심 — 시각적 메시에 질량·충돌 같은 물리 속성을 '덧입혀' 시뮬레이션 가능하게 만든다. (5) subLayer로 조명 레이어를 얹는 것이 layering: 지오메트리를 건드리지 않고 조명만 override한다. (6) 최종 Save 시 이 모든 레이어가 하나의 Stage로 합성된다. Isaac Sim이 자기 씬 포맷을 새로 만들지 않고 이 USD 조합을 그대로 쓰기 때문에, 여기서 만든 SimReady 로봇이 3장의 RTX·PhysX·SDG로 곧장 흘러간다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">면접에서 이 주제는 &#x27;Omniverse=예쁜 3D 툴&#x27;이라는 표면을 넘어, OpenUSD가 왜 수직 통합의 데이터 접착제인지를 구조적으로 설명할 수 있는가를 본다. layering·상호운용성·SimReady·substrate의 연결을 그릴 수 있으면 상위권이다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>OpenUSD의 Stage/Prim/layering/composition을 정확히 설명하고, 그것이 상호운용성으로 이어지는 논리</li><li>SimReady asset이 일반 3D asset과 다른 점(물리 속성·semantic)과 그것이 sim-to-real gap에 미치는 영향</li><li>Omniverse가 &#x27;앱&#x27;이 아니라 libraries/microservices 기반 플랫폼으로 진화한 맥락</li><li>Isaac Sim·Cosmos가 같은 substrate(USD)를 공유해 파이프 마찰이 제거되는 구조</li><li>AOUSD 같은 중립 표준화 전략과 산업 파트너(DSX) 확장의 플랫폼 논리</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>OpenUSD를 그냥 &#x27;3D 파일 포맷&#x27;(OBJ/FBX 같은)으로만 이해하고 layering/composition을 모름</li><li>SimReady와 일반 asset의 차이를 물리 속성 수준에서 구분하지 못함</li><li>Omniverse를 하나의 실행 앱으로만 봄 (플랫폼/substrate 관점 부재)</li><li>왜 Isaac Sim·Cosmos가 굳이 같은 층 위에 서는지 설명 못 함</li><li>digital twin을 &#x27;예쁜 3D 렌더&#x27;와 동일시하고 물리적 유효성을 놓침</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>Q1. OpenUSD의 layering/composition이 왜 상호운용성의 핵심인지, FBX 같은 단일 파일 포맷과 대비해 설명하라.</li><li>Q2. SimReady asset이 일반 3D asset과 무엇이 다르며, 그 차이가 sim-to-real gap과 어떻게 연결되는가?</li><li>Q3. Isaac Sim과 Cosmos가 서로 다른 씬 포맷을 썼다면 어떤 비용이 생기며, 공통 substrate(OpenUSD)가 그것을 어떻게 없애는가?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> Familiar: Omniverse는 NVIDIA의 3D 시뮬 플랫폼이고 OpenUSD라는 Pixar 포맷을 쓴다. Mastery: Omniverse는 2019 협업 툴에서 libraries/microservices 기반 플랫폼(OS)으로 진화했고, 그 핵심은 OpenUSD의 layering/composition이다 — Stage에 여러 팀·툴이 비파괴 레이어로 기여하고 합성되므로 상호운용성이 구조적으로 보장된다. SimReady asset은 질량·충돌·관절·semantic까지 담아 물리적으로 유효하고, 이것이 sim-to-real gap을 asset 수준에서 결정한다. Isaac Sim·Cosmos·산업 파트너가 전부 같은 USD substrate를 공유하기에 층 사이 변환·손실이 사라진다. AOUSD 중립 표준화와 DSX Blueprint·파트너 통합은 substrate의 중력을 키우는 플랫폼 전략이다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>Omniverse는 앱이 아니라 substrate다</h3><p>2019년 3D 협업 툴로 시작(2021 GA)했지만, 지금은 libraries/microservices 기반 플랫폼으로 진화해 다른 앱들이 그 위에 선다. NVIDIA가 &#x27;Physical AI OS&#x27;라 부르는 이유다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>OpenUSD가 그 심장이다</h3><p>Pixar가 만든 오픈소스 3D 씬 프레임워크. 하나의 세계를 서술하고 여러 소스를 비파괴적으로 조합하는 공통 포맷으로, Omniverse의 상호운용성을 떠받친다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>layering/composition이 상호운용성의 열쇠다</h3><p>Stage(전체 씬)에 Prim(노드)들이 계층 경로로 놓이고, 여러 팀·툴이 각자의 레이어를 비파괴적으로 얹어 합성한다. 이것이 &#x27;같은 세계를 함께 편집&#x27;을 가능케 한다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>AOUSD로 표준을 중립화한다</h3><p>NVIDIA는 OpenUSD를 독점하지 않고 Pixar·Adobe·Apple·Autodesk와 Alliance for OpenUSD를 결성했다. 표준이 중립적일수록 더 많은 생태계가 올라타 substrate의 중력이 커진다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>SimReady = 물리 속성을 담은 asset</h3><p>질량·마찰·충돌 형상·관절·semantic label까지 표준화해 포함한 3D asset. 일반 asset과 달리 &#x27;시뮬레이션 가능&#x27;하며, 그 충실도가 sim-to-real gap을 asset 수준에서 좌우한다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>digital twin은 물리적으로 유효한 복제본이다</h3><p>실제 로봇·공장·데이터센터를 물리적으로 충실하게 반영한 가상 복제본. 예쁜 렌더가 아니라, 그 안에서 실제와 같은 충돌·마찰·센서 반응이 나와야 한다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>Isaac Sim·Cosmos가 이 층 위에 선다</h3><p>둘 다 자기 씬 포맷을 발명하지 않고 같은 OpenUSD substrate를 공유한다. 그래서 시뮬→생성→학습으로 세계를 넘길 때 변환·손실이 없다 — 파이프 마찰 제거의 데이터 층 구현이다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>DSX로 산업 Physical AI OS로 확장된다</h3><p>Omniverse DSX Blueprint는 기가와트급 AI 팩토리를 통째로 digital twin으로 짓는 참조 설계다. Siemens·Ansys·SAP·Schneider·Databricks 통합으로 로봇 substrate가 산업 OS로 넓어진다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-01.html">← What Is Physical AI &amp; NVIDIA&#x27;s Bet</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-03.html">Isaac Sim — The Robotics Simulator →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch4: Isaac Lab &amp; Newton — Robot Learning Evolves — NVIDIA Physical AI Map — direcf</title>
+  <meta name="description" content="Isaac Gym→OmniIsaacGymEnvs→Orbit→Isaac Lab 계보와, Isaac Lab 3.0이 Newton physics backend·kit-less로 재편되는 최신 흐름을 정리한다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;height:22px;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><linearGradient id="direcf-nav-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs></svg>
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg></span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg></span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.25 15a4.5 4.5 0 0 0 4.5 4.5H18a3.75 3.75 0 0 0 1.332-7.257 3 3 0 0 0-3.758-3.848 5.25 5.25 0 0 0-10.233 2.33A4.502 4.502 0 0 0 2.25 15Z"/></svg></span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"/></svg></span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg></span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/physical-ai">NVIDIA Physical AI Map</a><span class="sep">›</span>
+        <strong>Ch04 Isaac Lab &amp; Newton — Robot Learning Evolves</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 04 <span style="opacity:.3">·</span> 13 chapters
+      </div>
+      <div class="chapter-emoji">🧪</div>
+      <h1 class="chapter-title">Isaac Lab &amp; Newton — Robot Learning Evolves</h1>
+      <div class="chapter-title-kr">Isaac Lab &amp; Newton — 로봇 학습 프레임워크의 진화</div>
+      <div class="chapter-tldr">Isaac Gym→OmniIsaacGymEnvs→Orbit→Isaac Lab 계보와, Isaac Lab 3.0이 Newton physics backend·kit-less로 재편되는 최신 흐름을 정리한다.</div>
+
+      <div class="cs-wrap">
+        <div style="padding:40px;background:var(--bg-soft);border-radius:12px;color:var(--muted);text-align:center;border:1px dashed var(--border);">🍌 이미지 준비 중</div>
+        <div class="cs-label">🍌 Nano Banana — Chapter 4 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>Isaac 로봇학습 프레임워크의 계보를 시간순으로 설명할 수 있다</li><li>Isaac Lab이 이전 프레임워크들을 대체한 이유를 안다</li><li>Newton(NVIDIA+DeepMind+Disney)의 differentiable·Warp 기반 특징을 이해한다</li><li>Isaac Lab 3.0의 kit-less·factory pattern backend 전환 의미를 안다</li><li>PhysX vs Newton backend의 trade-off를 비교할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>Chapter 3에서 본 Isaac Sim이 '로봇을 위한 시뮬레이터(디지털 트윈)'였다면, Isaac Lab은 그 시뮬레이터 위에서 실제로 로봇 정책(policy)을 학습시키는 프레임워크다. 둘의 관계는 게임 엔진과 게임의 관계에 가깝다 — Isaac Sim이 물리·렌더·센서를 제공하는 엔진이라면, Isaac Lab은 그 엔진 위에서 RL·IL 실험을 굴리는 '학습 하네스'다. three computers 프레임으로 보면 Isaac Lab은 정확히 시뮬레이션 컴퓨터(Omniverse/OVX) 위에서 DGX로 넘어갈 정책을 빚어내는 지점에 위치한다.</p>
+<p>이 챕터의 핵심은 두 가지 진화다. 첫째는 <strong>계보의 통합</strong>이다. NVIDIA의 로봇 학습 도구는 Isaac Gym(Preview) → OmniIsaacGymEnvs → Orbit → Isaac Lab으로 이어지며 파편화되어 있었는데, 공식 문서가 못박듯 "Isaac Lab supersedes IsaacGymEnvs, OmniIsaacGymEnvs, and Orbit as the single robot learning framework for Isaac Sim" — 즉 Isaac Lab이 이 모든 것을 하나로 대체했다. 둘째는 <strong>물리 백엔드의 재편</strong>이다. 2026년 초 early access로 나온 Isaac Lab 3.0은 오랫동안 유일한 물리 엔진이던 PhysX 옆에 Newton이라는 새 백엔드를 나란히 세운다.</p>
+<p>Newton은 단순한 물리 엔진 교체가 아니라 NVIDIA·Google DeepMind·Disney Research가 함께 만든 오픈소스 differentiable physics 엔진이며, 2025년 9월 Linux Foundation으로 기여되며 오픈 거버넌스로 넘어갔다. 이 챕터는 '왜 학습 프레임워크가 이렇게 여러 번 이름을 바꿨는가', '왜 이제 와서 새 물리 엔진이 필요한가', 그리고 'kit-less·factory pattern이라는 아키텍처 결정이 무엇을 가능하게 하는가'를 파고든다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>4.1 계보 — Isaac Gym에서 Isaac Lab까지, 왜 네 번이나 바뀌었나</h2><p>NVIDIA 로봇 학습 도구의 계보는 겉으로 보면 어지럽지만, 각 단계마다 명확한 '해결하려던 문제'가 있다.</p>
+<p><strong>Isaac Gym(한글: 아이작 짐)</strong> = NVIDIA 최초의 GPU 병렬 물리 기반 RL 환경. Preview 릴리스로 공개되었고, 결정적으로 <strong>아직 Omniverse 기반이 아니었다</strong>. Isaac Gym이 증명한 것은 단 하나 — 수천 개의 로봇 환경을 GPU 한 장에서 동시에 시뮬레이션하면 RL 학습이 CPU 시대보다 수백 배 빨라진다는 것이다. 기존 RL은 CPU 시뮬레이터(MuJoCo 단일 인스턴스)에서 경험을 모으느라 병목이었는데, Isaac Gym은 물리·관측·보상 계산을 전부 GPU에 올려 CPU-GPU 왕복을 없앴다.</p>
+<p>하지만 Isaac Gym은 독자적인 렌더·자산 파이프라인을 썼기에 Omniverse 생태계(OpenUSD, RTX 렌더, SimReady asset)와 단절되어 있었다. 그래서 나온 것이 <strong>OmniIsaacGymEnvs(Omniverse Isaac Gym Envs)</strong> — Isaac Gym의 병렬 학습 이점을 Omniverse/Isaac Sim 위로 옮긴 버전이다. 이제 학습 환경이 OpenUSD 씬과 RTX 렌더를 공유할 수 있게 됐다.</p>
+<p>그다음 <strong>Orbit(오빗)</strong>은 환경 정의를 더 모듈화하고 재사용 가능한 task·sensor·asset 추상을 도입한 연구 프레임워크였다. 그리고 이 Orbit이 그대로 <strong>Isaac Lab으로 rename</strong>되었다 — 즉 Isaac Lab의 코드 뿌리는 Orbit이다. 최종적으로 NVIDIA는 파편화된 세 갈래(IsaacGymEnvs·OmniIsaacGymEnvs·Orbit)를 공식적으로 은퇴시키고 Isaac Lab 하나로 수렴시켰다. 계보를 한눈에 보면 다음과 같다.</p>
+<table>
+<thead>
+<tr>
+<th>단계</th>
+<th>핵심 기여</th>
+<th>Omniverse 기반</th>
+<th>상태</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Isaac Gym (Preview)</td>
+<td>GPU 대량 병렬 물리로 RL 가속</td>
+<td>아니오</td>
+<td>deprecated</td>
+</tr>
+<tr>
+<td>OmniIsaacGymEnvs</td>
+<td>병렬 학습을 Omniverse/Isaac Sim으로 이식</td>
+<td>예</td>
+<td>deprecated</td>
+</tr>
+<tr>
+<td>Orbit</td>
+<td>재사용 가능한 task/env/asset 모듈화</td>
+<td>예</td>
+<td>Isaac Lab으로 rename</td>
+</tr>
+<tr>
+<td><strong>Isaac Lab</strong></td>
+<td>위 셋을 대체하는 단일 로봇 학습 프레임워크</td>
+<td>예</td>
+<td><strong>현행</strong></td>
+</tr>
+</tbody>
+</table>
+<p>이 흐름의 교훈은, NVIDIA가 '실험적 아이디어(GPU 병렬) → 생태계 통합(Omniverse) → 재사용 추상(Orbit) → 표준 프레임워크(Isaac Lab)'라는 성숙 곡선을 밟았다는 것이다.</p></div><div class="sb-block"><h2>4.2 Isaac Lab의 구조 — Manager 기반 환경과 RL/IL 어댑터</h2><p><strong>Isaac Lab(한글: 아이작 랩)</strong> = Isaac Sim 위에서 동작하는 로봇 학습 프레임워크로, RL(강화학습)과 IL(모방학습)을 위한 재사용 가능한 task·environment·asset을 제공한다. 핵심 설계 철학은 '환경 정의를 코드가 아니라 config로 조립한다'는 것이다.</p>
+<p>Isaac Lab의 환경은 보통 여러 <strong>Manager</strong>의 조합으로 정의된다. observation manager(무엇을 관측할지), action manager(무엇을 제어할지), reward manager(무엇을 보상할지), termination manager(언제 에피소드를 끝낼지), event manager(도메인 randomization·리셋 이벤트)로 나뉜다. 사용자는 각 manager에 어떤 term을 넣을지 선언적으로 조립하며, 이 방식 덕분에 하나의 로봇 task를 살짝 바꿔 다른 실험으로 파생시키기가 쉽다. 이것이 Orbit에서 물려받은 '모듈화'의 실체다.</p>
+<p>RL을 실제로 돌리려면 정책 최적화 알고리즘이 필요한데, Isaac Lab은 특정 라이브러리에 묶이지 않고 여러 RL 어댑터를 제공한다 — <strong>RSL-RL, skrl, Stable Baselines 3, RL Games</strong>. 같은 환경을 이 넷 중 어느 것으로도 학습시킬 수 있다는 뜻이다. 각 라이브러리는 PPO 등의 구현 디테일과 성숙도가 다르므로, 연구자는 벤치마크 재현이나 성능에 맞춰 골라 쓴다.</p>
+<p>모방학습·데이터 수집 쪽도 두 컴포넌트로 갖춰져 있다. <strong>isaaclab_mimic</strong> = IL(모방학습)을 위한 데이터 증강·정책 학습 모듈로, 소수의 시연을 대량의 학습 궤적으로 불려주는 역할을 한다(이것이 뒤 챕터의 GR00T·합성 데이터 흐름과 이어진다). <strong>isaaclab_teleop</strong> = XR(VR 헤드셋 등) 원격조작으로 사람이 직접 로봇을 조종해 시연 데이터를 만드는 모듈이다. 즉 Isaac Lab 안에서 '사람 시연 수집(teleop) → 데이터 증강(mimic) → 정책 학습(RL/IL 어댑터)'이라는 전체 루프가 닫힌다.</p>
+<p>정리하면 Isaac Lab은 '환경은 manager로 조립, 학습은 어댑터로 교체, 데이터는 teleop·mimic으로 확보'라는 세 축의 조립식 프레임워크다. 이 조립성이 다음 절에서 볼 백엔드 교체를 가능하게 하는 토대가 된다.</p><div class="fig-row"><figure class="fig-item"><img src="figures/isaac-lab-ecosystem.svg" alt="Isaac Lab 패키지 생태계 — NVIDIA GPU 플랫폼 위에 PhysX/Newton 백엔드, Isaac Sim, 그리고 Isaac Lab이 층으로 얹힌다. (출처: NVIDIA Isaac Lab 3.0 공식 문서)" loading="lazy"><figcaption>Isaac Lab 패키지 생태계 — NVIDIA GPU 플랫폼 위에 PhysX/Newton 백엔드, Isaac Sim, 그리고 Isaac Lab이 층으로 얹힌다. (출처: NVIDIA Isaac Lab 3.0 공식 문서)</figcaption></figure></div></div><div class="sb-block"><h2>4.3 Newton — NVIDIA·DeepMind·Disney가 함께 만든 오픈 물리 엔진</h2><p><strong>Newton(한글: 뉴턴)</strong> = NVIDIA, Google DeepMind, Disney Research가 공동 개발한 오픈소스 GPU 가속 물리 엔진이다. 2025년 3월 GTC에서 발표되었고, 발표 무대에서 Disney의 Star Wars BDX droid가 Newton으로 구동되며 시연되었다. 이후 2025년 9월 29일 <strong>Linux Foundation</strong>에 기여되어 오픈 거버넌스 체제로 넘어갔다 — 즉 이제 Newton은 특정 벤더의 폐쇄 자산이 아니라 커뮤니티가 함께 발전시키는 표준 후보다.</p>
+<p>Newton의 기술적 뿌리는 두 가지다. 첫째 <strong>NVIDIA Warp</strong> — 파이썬으로 GPU 커널을 작성하게 해주는 프레임워크로, 물리 계산을 GPU 네이티브로 표현한다. 둘째 <strong>OpenUSD</strong> — Chapter 2에서 본 공통 3D 데이터 층으로, Newton의 씬·자산이 Omniverse 생태계와 자연스럽게 호환된다. 이 조합 덕에 Newton은 Warp 위에서 물리를 '네이티브로' 표현하면서도 USD 씬을 그대로 먹을 수 있다.</p>
+<p>하지만 Newton의 진짜 차별점은 <strong>differentiable physics(미분 가능 물리)</strong>다.</p>
+<p><strong>Differentiable physics(미분 가능 물리)</strong> = 시뮬레이션 전체를 하나의 미분 가능한 함수로 보고, 최종 결과(예: 로봇이 넘어졌는지)에 대한 gradient를 시뮬레이션을 거꾸로 타고 입력 파라미터(제어 신호, 물성치)까지 전파할 수 있는 물리 엔진.</p>
+<p>왜 이게 중요한가? 전통적 RL은 물리를 블랙박스로 두고 '행동을 바꿔보고 보상이 오르면 채택'하는 방식이라 gradient 정보가 없어 샘플 효율이 낮다. 반면 미분 가능 물리에서는 '이 관절 토크를 조금 키우면 손끝 위치가 어느 방향으로 얼마나 움직이는지'를 gradient로 직접 계산할 수 있다. 개념적으로는 다음과 같다.</p>
+<p><span class="math-display">\[\frac{\partial \, \text{Loss}}{\partial \, \theta_{\text{control}}} = \frac{\partial \, \text{Loss}}{\partial \, s_T} \cdot \prod_{t} \frac{\partial \, s_{t+1}}{\partial \, s_t}\]</span></p>
+<p>즉 최종 상태의 loss를 시간축을 따라 각 물리 스텝의 미분으로 역전파해 제어 파라미터까지 gradient를 흘린다. 이는 trajectory optimization·system identification·정밀 조작(dexterous manipulation) 학습에서 큰 이점이 된다. 여기에 Newton은 확장성 높은 <strong>multiphysics</strong>(강체·연체·천·유체 등 이질적 물리의 결합)를 지향해, Disney BDX droid처럼 복잡한 캐릭터 운동을 다룰 수 있다. 현재 버전은 Newton 1.0이다.</p></div><div class="sb-block"><h2>4.4 Isaac Lab 3.0 — kit-less와 factory pattern 백엔드</h2><p>Newton이라는 새 물리 엔진이 생겼다고 해서, 사용자가 기존 코드를 전부 다시 짜야 한다면 아무도 쓰지 않을 것이다. Isaac Lab 3.0(2026년 초 early access)의 아키텍처 핵심은 바로 이 전환 비용을 없애는 데 있다.</p>
+<p>첫째, <strong>kit-less(킷리스) 모드</strong>다.</p>
+<p><strong>Kit-less</strong> = Isaac Sim(내부적으로 Omniverse Kit 위에서 동작)을 통째로 설치하지 않고, Newton backend만으로 경량 실행·배치가 가능한 모드.</p>
+<p>지금까지 Isaac Lab을 돌리려면 무거운 Isaac Sim/Kit 런타임 전체가 필요했다. RTX 렌더나 풍부한 GUI가 필요 없는 상황(예: 헤드리스 대량 학습, 경량 배치 환경)에서도 전체 스택을 짊어져야 했던 것이다. kit-less는 이 의존성을 끊어, Newton 물리와 최소한의 코어만으로 학습·롤아웃을 돌릴 수 있게 한다. 이는 클라우드에서 대량 병렬 학습을 띄우거나, 렌더가 필요 없는 물리 중심 실험을 저비용으로 굴릴 때 결정적이다.</p>
+<p>둘째, <strong>factory pattern(팩토리 패턴) 백엔드 디스패치</strong>다. 핵심 아이디어는 '유저 코드는 물리 엔진을 몰라야 한다'는 것이다. 사용자가 '이 로봇 asset을, 이 센서를 만들어줘'라고 선언하면, Isaac Lab 3.0이 런타임에 이 요청을 선택된 backend(PhysX 또는 Newton)로 디스패치해 실제 객체를 생성한다. 결과적으로 <strong>유저의 task·env 코드는 backend가 무엇이든 그대로 불변</strong>이고, 백엔드 전환은 config 한 줄(sim.physics_backend를 physx↔newton)로 끝난다. 이것이 4.1의 '조립식 설계'가 물리 엔진 층까지 확장된 모습이다.</p>
+<p>이 구조는 패키지 분할로 물리적으로 구현된다.</p>
+<table>
+<thead>
+<tr>
+<th>패키지</th>
+<th>역할</th>
+<th>Isaac Sim 필요</th>
+<th>kit-less</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>isaaclab</td>
+<td>코어 프레임워크(manager·config·factory)</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td>isaaclab_physx</td>
+<td>PhysX backend</td>
+<td>필요</td>
+<td>불가</td>
+</tr>
+<tr>
+<td>isaaclab_newton</td>
+<td>Newton backend</td>
+<td>불필요 가능</td>
+<td><strong>가능</strong></td>
+</tr>
+<tr>
+<td>isaaclab_ov</td>
+<td>RTX tiled 렌더링(Omniverse)</td>
+<td>필요</td>
+<td>불가</td>
+</tr>
+</tbody>
+</table>
+<p>즉 코어(isaaclab)는 backend를 모른 채 팩토리 인터페이스만 알고, 실제 구현은 isaaclab_physx / isaaclab_newton이 각각 채운다. Isaac Lab 3.0 자체는 Newton 1.0을 기반으로 하며, 특히 dexterous(정밀 손 조작) task의 RL을 강화한 것이 이 릴리스의 초점이다 — 이는 앞 절의 differentiable physics 이점과 정확히 맞물린다.</p></div><div class="sb-block"><h2>4.5 PhysX vs Newton — 어느 백엔드를 언제 쓰는가</h2><p>Isaac Lab 3.0이 두 backend를 나란히 두었다는 것은, 둘이 서로를 대체하는 게 아니라 상보적이라는 뜻이다. 각각의 성격을 이해해야 올바르게 고를 수 있다.</p>
+<p><strong>PhysX(피직스)</strong> = NVIDIA의 성숙한 상용 물리 엔진으로, Isaac Sim에 깊이 통합되어 있고 오랜 검증을 거친 안정적·기능 풍부한 기본 백엔드. 대부분의 로봇 시뮬레이션(관절 로봇, 마찰·접촉이 중요한 조작)에서 오랫동안 검증된 결과를 낸다. 반면 Isaac Sim/Kit 전체 런타임을 요구하고, 기본적으로 미분 가능하지 않다.</p>
+<p><strong>Newton(뉴턴)</strong> = Warp 네이티브·kit-less 실행 가능·differentiable을 강점으로 하는 새 백엔드. 경량 배치와 gradient 기반 최적화, 확장 multiphysics에 유리하지만, PhysX만큼의 오랜 실전 검증·기능 성숙도는 아직 쌓는 중이다.</p>
+<table>
+<thead>
+<tr>
+<th>기준</th>
+<th>PhysX</th>
+<th>Newton</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>성숙도·검증</td>
+<td>높음(오랜 실전)</td>
+<td>새로움(1.0)</td>
+</tr>
+<tr>
+<td>Isaac Sim 통합</td>
+<td>깊음(기본)</td>
+<td>독립 가능</td>
+</tr>
+<tr>
+<td>kit-less 경량 실행</td>
+<td>불가</td>
+<td>가능</td>
+</tr>
+<tr>
+<td>differentiable physics</td>
+<td>아니오</td>
+<td>예</td>
+</tr>
+<tr>
+<td>거버넌스</td>
+<td>NVIDIA</td>
+<td>오픈(Linux Foundation)</td>
+</tr>
+<tr>
+<td>대표 강점</td>
+<td>안정적 접촉·관절</td>
+<td>gradient 최적화·multiphysics</td>
+</tr>
+</tbody>
+</table>
+<p>실무 판단의 축은 대략 이렇다. (1) '검증된 안정성과 기존 자산 재사용이 최우선'이면 PhysX. (2) '헤드리스로 클라우드에서 초대량 병렬 학습을 저비용으로 굴리고 싶다'면 kit-less가 되는 Newton. (3) 'trajectory optimization이나 정밀 조작을 gradient로 풀고 싶다'면 differentiable한 Newton. (4) '오픈 거버넌스·커뮤니티 확장을 중시'하면 Newton.</p>
+<p>중요한 것은, factory pattern 덕분에 이 선택이 <strong>되돌릴 수 있는 결정</strong>이 되었다는 점이다. 예전이라면 물리 엔진 교체가 프로젝트 재작성을 의미했지만, 이제는 같은 task 코드를 두 backend에서 돌려 결과를 대조하는 것 자체가 하나의 검증 방법이 된다. 이는 sim-to-real의 신뢰성(한 엔진의 특이한 접촉 처리에 정책이 overfit되지 않았는지)을 높이는 실질적 무기다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">물리 엔진을 콘센트 규격처럼 — 어댑터 하나로 갈아끼우기</div>
+      <div class="a-body"><p>Isaac Lab의 진화를 이해하려면, 노트북과 콘센트를 떠올리면 좋다. 예전의 Isaac Gym → OmniIsaacGymEnvs → Orbit 시대는, 나라마다 콘센트 모양이 다른 상황과 같았다. 미국에 가면 미국 코드, 유럽에 가면 유럽 코드를 새로 사야 했다 — 즉 새 도구가 나올 때마다 환경 정의를 새로 짜야 했다. NVIDIA가 이걸 Isaac Lab 하나의 표준 콘센트로 통일한 것이 계보 통합이다.</p>
+<p>그다음 Isaac Lab 3.0의 factory pattern은 '멀티 어댑터 플러그'다. 당신의 노트북(task·env 코드)은 그대로 두고, 벽에 꽂는 어댑터 헤드만 PhysX용에서 Newton용으로 딸깍 바꾸면 된다. 노트북은 자기가 미국 전기를 먹는지 유럽 전기를 먹는지 알 필요가 없다 — 그게 'backend에 무관하게 유저 코드 불변'의 의미다.</p>
+<p>kit-less는 여기서 한 발 더 나간다. 원래는 콘센트를 쓰려면 집 전체의 발전기(무거운 Isaac Sim/Kit 런타임)를 돌려야 했는데, kit-less는 벽의 배터리 팩(Newton 단독)만으로도 노트북을 켜게 해준다. 렌더라는 화려한 조명이 필요 없는 밤샘 계산(헤드리스 대량 학습)에는, 발전기 없이 배터리만으로 충분하고 훨씬 싸다. 그래서 낮(정밀 시각 검증)에는 발전기(PhysX+RTX), 밤(대량 물리 학습)에는 배터리(kit-less Newton)를 골라 쓰는 것이다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>Isaac Lab의 ManagerBasedRLEnvCfg 스타일 환경 config와, factory pattern이 physx·newton backend를 어떻게 '유저 코드 불변'으로 스위칭하는지를 보여주는 개념 코드다. 실제 API와 세부는 다를 수 있는 pseudo이며, 요점은 '환경은 그대로, 물리 backend만 교체'되는 구조다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">from dataclasses import dataclass, field
+
+# --- 물리 backend 선택: 이 한 줄만 바꾸면 됨 (factory가 나머지를 처리) ---
+@dataclass
+class SimCfg:
+    dt: float = 1 / 120
+    physics_backend: str = &quot;newton&quot;   # &quot;physx&quot; or &quot;newton&quot;
+    kit_less: bool = True             # Newton일 때만 유효: Isaac Sim 없이 경량 실행
+
+# --- Manager 기반 환경 정의: backend를 전혀 언급하지 않음 ---
+@dataclass
+class ObservationCfg:
+    terms: list = field(default_factory=lambda: [&quot;joint_pos&quot;, &quot;joint_vel&quot;, &quot;ee_pose&quot;])
+
+@dataclass
+class RewardCfg:
+    terms: dict = field(default_factory=lambda: {&quot;reach_goal&quot;: 1.0, &quot;action_rate&quot;: -0.01})
+
+@dataclass
+class ManagerBasedRLEnvCfg:
+    sim: SimCfg = field(default_factory=SimCfg)
+    num_envs: int = 4096              # GPU 대량 병렬 (Isaac Gym이 연 유산)
+    observations: ObservationCfg = field(default_factory=ObservationCfg)
+    rewards: RewardCfg = field(default_factory=RewardCfg)
+    robot_usd: str = &quot;omniverse://assets/robots/franka.usd&quot;  # OpenUSD asset
+
+# --- factory: 런타임에 backend별 구현으로 디스패치 ---
+def make_physics(sim: SimCfg):
+    if sim.physics_backend == &quot;physx&quot;:
+        from isaaclab_physx import PhysXEngine   # Isaac Sim 필요, 미분 불가
+        return PhysXEngine(dt=sim.dt)
+    elif sim.physics_backend == &quot;newton&quot;:
+        from isaaclab_newton import NewtonEngine  # kit-less 가능, differentiable
+        return NewtonEngine(dt=sim.dt, kit_less=sim.kit_less, differentiable=True)
+    raise ValueError(sim.physics_backend)
+
+def build_env(cfg: ManagerBasedRLEnvCfg):
+    engine = make_physics(cfg.sim)              # 여기서만 backend가 갈림
+    engine.load_usd(cfg.robot_usd)
+    engine.spawn(num_envs=cfg.num_envs)
+    # 이후 observation/reward manager는 engine 종류를 몰라도 동일하게 동작
+    return engine</code></pre>
+      <div class="c-walk"><p>핵심은 네 가지다. (1) <strong>환경 정의(ManagerBasedRLEnvCfg)는 backend를 모른다</strong> — observation·reward term과 robot_usd만 선언하며, PhysX인지 Newton인지 한 글자도 등장하지 않는다. (2) <strong>make_physics가 factory</strong> — 오직 이 함수만 physics_backend 값을 보고 isaaclab_physx.PhysXEngine 또는 isaaclab_newton.NewtonEngine을 import·생성한다. 유저는 SimCfg.physics_backend 한 줄만 바꾸면 전체 학습이 다른 물리로 돌아간다. (3) <strong>kit_less는 Newton 전용 스위치</strong> — True면 무거운 Isaac Sim/Kit 없이 경량 실행이 되어 클라우드 대량 학습에 유리하다. (4) <strong>num_envs=4096</strong>은 Isaac Gym이 연 GPU 대량 병렬 유산으로, 계보 전체가 이 한 필드로 이어진다. differentiable=True는 Newton에서 gradient 기반 최적화를 켜는 지점이다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">Isaac Lab/Newton은 로봇 학습 엔지니어 면접에서 &#x27;sim 스택을 얼마나 실무적으로 이해하는가&#x27;를 재는 좋은 렌즈다. 면접관은 프레임워크 이름 암기가 아니라 &#x27;왜 이 아키텍처인가&#x27;, &#x27;PhysX와 Newton을 언제 고르는가&#x27;를 본다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>계보(Isaac Gym→OmniIsaacGymEnvs→Orbit→Isaac Lab)를 각 단계의 &#x27;해결한 문제&#x27;와 함께 설명하는가 — 특히 Isaac Gym이 아직 Omniverse 기반이 아니었다는 점</li><li>Isaac Lab의 manager 기반 조립식 환경 설계와 RL 어댑터(RSL-RL·skrl·SB3·RL Games) 교체성을 이해하는가</li><li>Newton의 세 핵심 — Warp+OpenUSD 기반, differentiable physics, NVIDIA+DeepMind+Disney 공동개발/Linux Foundation 오픈 거버넌스 — 를 정확히 말하는가</li><li>kit-less와 factory pattern이 각각 무엇을 가능하게 하는지(경량 배치, backend 무관 유저 코드) 구분하는가</li><li>PhysX vs Newton trade-off를 실무 시나리오(헤드리스 대량 학습 vs 검증된 안정성 vs gradient 최적화)에 매핑하는가</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>Isaac Sim과 Isaac Lab을 같은 것으로 뭉뚱그리는 경우(엔진 vs 그 위 학습 프레임워크)</li><li>Newton이 PhysX를 &#x27;완전히 대체&#x27;한다고 단정하는 경우 — 실제로는 상보적이며 factory로 공존</li><li>differentiable physics가 왜 유용한지(gradient 전파로 샘플 효율·정밀 조작·trajectory opt) 설명하지 못하는 경우</li><li>Isaac Gym이 처음부터 Omniverse 기반이었다고 잘못 아는 경우</li><li>kit-less를 단순 &#x27;가벼운 버전&#x27;으로만 이해하고 Isaac Sim/Kit 의존성 제거라는 본질을 놓치는 경우</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>Q1 (계보와 통합): NVIDIA의 로봇 학습 도구가 Isaac Gym부터 Isaac Lab까지 왜 여러 번 바뀌었는가? 각 단계가 해결한 문제와, Isaac Lab이 이전 셋을 supersede했다는 공식 입장의 의미를 설명하라.</li><li>Q2 (backend 아키텍처): factory pattern과 kit-less가 각각 무엇이며, 이 둘이 있을 때 PhysX↔Newton 전환이 유저 코드에 어떤 영향을 주는가? config 관점에서 답하라.</li><li>Q3 (trade-off 판단): 클라우드에서 4096개 환경을 헤드리스로 대량 학습시켜야 하고, 이후 정밀 손 조작(dexterous)을 gradient로 최적화하려 한다. PhysX와 Newton 중 무엇을, 왜 고르겠는가? 반대로 PhysX가 나은 상황도 하나 들어라.</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> Familiar 수준은 &#x27;Isaac Lab은 Isaac Sim 위 RL 프레임워크이고 Newton이라는 새 물리 엔진이 추가됐다&#x27;를 말하는 정도다. Mastery 수준은 (1) 계보 네 단계를 각 단계가 해결한 병목과 함께 시간순으로 재구성하고, (2) manager 기반 환경 조립과 어댑터 교체성을 예로 설명하며, (3) Newton의 Warp+OpenUSD 토대·differentiable physics의 gradient 전파 원리·공동개발/Linux Foundation 거버넌스를 정확히 짚고, (4) kit-less(Kit 의존성 제거)와 factory pattern(런타임 backend 디스패치, 유저 코드 불변)을 구분해 설명하며, (5) PhysX vs Newton을 검증성·경량성·미분성·거버넌스 축으로 나눠 구체적 시나리오에 매핑할 수 있다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>Isaac Lab은 파편화된 계보를 하나로 수렴시켰다</h3><p>Isaac Gym(Preview, 비-Omniverse) → OmniIsaacGymEnvs → Orbit → Isaac Lab의 흐름에서, 공식적으로 Isaac Lab이 앞의 셋(IsaacGymEnvs·OmniIsaacGymEnvs·Orbit)을 대체하는 단일 로봇 학습 프레임워크가 되었다. Orbit이 그대로 rename된 것이 Isaac Lab이다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>Isaac Sim은 엔진, Isaac Lab은 그 위의 학습 하네스</h3><p>Isaac Sim이 물리·렌더·센서를 제공하는 시뮬레이터라면, Isaac Lab은 그 위에서 RL·IL로 로봇 정책을 빚어내는 프레임워크다. three computers에서 시뮬레이션 컴퓨터가 DGX(학습)로 넘길 정책을 만드는 지점이다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>환경은 manager로 조립, 학습은 어댑터로 교체</h3><p>Isaac Lab은 observation·action·reward·termination·event manager로 환경을 선언적으로 조립하고, RSL-RL·skrl·Stable Baselines 3·RL Games 중 골라 학습한다. teleop(XR 시연 수집)과 mimic(IL 데이터 증강)으로 데이터 루프까지 닫는다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>Newton은 NVIDIA·DeepMind·Disney의 오픈 differentiable 물리 엔진</h3><p>GTC 2025.03에 Disney BDX droid 시연으로 발표되었고, 2025.09.29 Linux Foundation에 기여되어 오픈 거버넌스가 되었다. Warp+OpenUSD 기반이며 gradient를 시뮬레이션에 전파하는 differentiable physics와 확장 multiphysics가 핵심이다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>differentiable physics는 gradient로 학습·최적화를 가속한다</h3><p>물리 스텝을 미분 가능하게 만들어 최종 loss의 gradient를 제어 파라미터까지 역전파한다. 이는 blackbox RL보다 샘플 효율이 높고, trajectory optimization과 dexterous manipulation 학습에 특히 유리하다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>Isaac Lab 3.0의 두 축 — kit-less와 factory pattern</h3><p>kit-less는 Isaac Sim/Kit 전체 설치 없이 Newton backend만으로 경량 실행·배치를 가능하게 하고, factory pattern은 런타임에 asset·sensor를 PhysX/Newton으로 디스패치해 유저 task 코드를 backend에 무관하게 불변으로 유지한다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>패키지 분할이 아키텍처를 물리적으로 구현한다</h3><p>isaaclab(코어)는 backend를 모른 채 팩토리 인터페이스만 알고, isaaclab_physx(PhysX, Isaac Sim 필요)·isaaclab_newton(kit-less 가능)·isaaclab_ov(RTX tiled 렌더)가 구현을 채운다. Isaac Lab 3.0은 Newton 1.0 기반이며 dexterous RL을 강화했다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>PhysX와 Newton은 대체가 아니라 상보 관계</h3><p>PhysX는 검증된 안정성·깊은 Isaac Sim 통합이 강점이고, Newton은 kit-less 경량 실행·differentiable·오픈 거버넌스가 강점이다. factory pattern 덕에 backend 선택이 되돌릴 수 있는 config 결정이 되어, 두 엔진 대조가 sim-to-real 검증 수단이 된다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-03.html">← Isaac Sim — The Robotics Simulator</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-05.html">Cosmos — World Foundation Models →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

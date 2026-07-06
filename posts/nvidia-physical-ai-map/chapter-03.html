@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch3: Isaac Sim — The Robotics Simulator — NVIDIA Physical AI Map — direcf</title>
+  <meta name="description" content="Isaac SDK에서 Omniverse 기반 앱으로 전환한 Isaac Sim이, RTX 렌더·PhysX·synthetic data generation으로 로봇 개발의 디지털 트윈을 어떻게 제공하는지 해부한다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;height:22px;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><linearGradient id="direcf-nav-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs></svg>
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg></span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg></span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.25 15a4.5 4.5 0 0 0 4.5 4.5H18a3.75 3.75 0 0 0 1.332-7.257 3 3 0 0 0-3.758-3.848 5.25 5.25 0 0 0-10.233 2.33A4.502 4.502 0 0 0 2.25 15Z"/></svg></span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"/></svg></span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg></span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/physical-ai">NVIDIA Physical AI Map</a><span class="sep">›</span>
+        <strong>Ch03 Isaac Sim — The Robotics Simulator</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 03 <span style="opacity:.3">·</span> 13 chapters
+      </div>
+      <div class="chapter-emoji">🤖</div>
+      <h1 class="chapter-title">Isaac Sim — The Robotics Simulator</h1>
+      <div class="chapter-title-kr">Isaac Sim — 로봇을 위한 시뮬레이터</div>
+      <div class="chapter-tldr">Isaac SDK에서 Omniverse 기반 앱으로 전환한 Isaac Sim이, RTX 렌더·PhysX·synthetic data generation으로 로봇 개발의 디지털 트윈을 어떻게 제공하는지 해부한다.</div>
+
+      <div class="cs-wrap">
+        <div style="padding:40px;background:var(--bg-soft);border-radius:12px;color:var(--muted);text-align:center;border:1px dashed var(--border);">🍌 이미지 준비 중</div>
+        <div class="cs-label">🍌 Nano Banana — Chapter 3 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>Isaac Sim이 Omniverse 위에 서 있는 이유와 이점을 안다</li><li>RTX 렌더·PhysX가 sim-to-real에 주는 영향을 설명한다</li><li>synthetic data generation(SDG) 파이프라인의 역할을 이해한다</li><li>ROS/ROS2 통합과 digital twin 검증의 의미를 안다</li><li>Isaac Sim이 Isaac Lab·Cosmos와 어떻게 연결되는지 그린다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>2장에서 Omniverse/OpenUSD라는 substrate를 깔았다. 이제 그 위에 로봇을 위한 첫 번째 실제 애플리케이션이 올라간다 — <strong>Isaac Sim</strong> 이다. 1장의 three computers 중 '시뮬레이션 컴퓨터'가 로봇에 대해 구체적으로 무엇을 하는지가 이 챕터다.</p>
+<p>Isaac Sim은 처음부터 시뮬레이터였던 게 아니다. NVIDIA의 로봇 소프트웨어는 원래 <strong>Isaac SDK</strong> 라는 로봇 앱 개발 프레임워크로 출발했고, 시뮬레이션 파트가 Omniverse 위에 세운 별도의 reference application, 즉 <strong>Isaac Sim</strong> 으로 분화·성장했다. 지금은 오픈소스(GitHub isaac-sim/IsaacSim)로 공개되어 있다.</p>
+<p>Isaac Sim이 하는 일은 한 문장으로 '로봇을 물리 기반 가상 세계에서 개발·테스트하고, sim-to-real을 검증하며, 대량의 synthetic data를 찍어내는 것'이다. 이를 위해 세 개의 엔진 — RTX 렌더(빛), PhysX(물리), Replicator 기반 SDG(라벨된 데이터) — 이 OpenUSD 씬 위에서 함께 돈다. 이 챕터는 그 세 엔진이 왜 sim-to-real gap과 직결되는지, 그리고 Isaac Sim이 위로는 Isaac Lab(4장)·Cosmos(5장), 옆으로는 ROS 생태계와 어떻게 물리는지를 해부한다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>3.1 Isaac SDK에서 Isaac Sim으로 — 왜 Omniverse 위인가</h2><p><strong>Isaac SDK(아이작 SDK)</strong> = NVIDIA가 초기에 내놓은 로봇 소프트웨어 개발 프레임워크. 인식·계획·제어 모듈을 조립해 로봇 앱을 만드는 도구 모음이었다.</p>
+<p>여기서 시뮬레이션 부분이 갈라져 나와 성장한 것이 <strong>Isaac Sim(아이작 심)</strong> 이다.</p>
+<p><strong>Isaac Sim</strong> = Omniverse 위에 세운 로봇 시뮬레이션 reference application. 오픈소스이며(GitHub isaac-sim/IsaacSim), 로봇을 물리 기반 가상환경에서 개발·테스트·검증하고 대량의 synthetic data를 생성하는 것이 목적이다.</p>
+<p>'reference application'이라는 표현이 중요하다. Isaac Sim은 완결된 폐쇄 제품이 아니라, Omniverse의 기능(USD·RTX·PhysX·Replicator)을 로봇용으로 조립해 보여주는 참조 구현이다. 그래서 사용자가 필요에 맞게 확장·개조할 수 있다.</p>
+<p>Isaac Sim이 자기만의 엔진을 새로 만들지 않고 <strong>Omniverse 위에</strong> 선 것의 이점은 2장의 substrate 논리가 그대로 실현된 것이다.</p>
+<ul>
+<li>
+<p><strong>공통 씬 포맷(OpenUSD)</strong>: 로봇·환경·SimReady asset을 USD로 표현하므로, 2장에서 만든 asset이 그대로 통한다. URDF/MJCF 같은 로봇 서술 포맷을 import해 USD로 변환할 수도 있다.</p>
+</li>
+<li>
+<p><strong>RTX 렌더 재사용</strong>: 사진처럼 사실적인 센서 이미지를 공짜로 얻는다.</p>
+</li>
+<li>
+<p><strong>PhysX 물리 재사용</strong>: 강체·관절·접촉 물리를 검증된 엔진으로 돌린다.</p>
+</li>
+<li>
+<p><strong>상위/하위 연결</strong>: 같은 USD 씬이 Isaac Lab(학습)으로, Cosmos(생성 증강)로, ROS(실로봇 스택)로 이어진다.</p>
+</li>
+</ul>
+<p>통찰: 만약 Isaac Sim이 독립 시뮬레이터였다면 렌더·물리·씬 포맷을 다 자체 개발하고 상위 도구와의 연결을 매번 다시 짜야 했을 것이다. Omniverse 위에 선 덕에 Isaac Sim은 '로봇용 조립'에만 집중하고 나머지는 substrate에서 상속받는다. 이것이 NVIDIA 수직 통합이 개발 속도로 나타나는 지점이다.</p></div><div class="sb-block"><h2>3.2 RTX 렌더와 PhysX — sim-to-real gap의 두 축</h2><p>sim-to-real gap(1장)은 크게 두 갈래에서 나온다: <strong>보이는 것이 다르다(perception gap)</strong> 와 <strong>움직이는 것이 다르다(dynamics gap)</strong>. Isaac Sim은 각각을 RTX 렌더와 PhysX로 공략한다.</p>
+<p><strong>RTX 렌더 — perception gap 공략.</strong> RTX는 NVIDIA의 실시간 ray tracing 렌더러다. 로봇의 카메라가 시뮬레이션에서 보는 이미지가 실제 카메라 이미지와 최대한 가깝도록, 물리 기반 조명·그림자·반사·재질(PBR)을 사실적으로 렌더한다.</p>
+<p>왜 이게 중요한가? 로봇의 인식 모델(vision)은 픽셀을 먹고 자란다. 시뮬레이션 이미지가 만화처럼 밋밋하면, 거기서 학습한 vision 모델이 실제 카메라의 복잡한 조명·반사·노이즈 앞에서 무너진다. RTX의 사실적 렌더는 이 perception gap을 좁힌다. Isaac Sim은 RGB뿐 아니라 depth·semantic segmentation·instance segmentation·LiDAR 같은 multi-sensor 출력을 동시에, 그리고 완벽한 ground-truth 라벨과 함께 뽑아낸다.</p>
+<p><strong>PhysX — dynamics gap 공략.</strong> <strong>PhysX(피직스엑스)</strong> = NVIDIA의 GPU 가속 물리 엔진. 강체 역학, 관절(joint)·조인트 제약, 마찰·접촉, 그리고 로봇 팔·다리의 articulated body를 시뮬레이션한다.</p>
+<p>로봇 정책은 물리 위에서 학습된다. PhysX가 접촉·마찰·관성을 실제에 가깝게 풀지 못하면, 시뮬에서 완벽히 걷던 휴머노이드가 실물에서 넘어진다 — dynamics gap이다. GPU 가속이 핵심인 이유는 강화학습이 수천 개의 로봇을 병렬로 굴려야 하기 때문인데, 이 대규모 병렬 물리가 4장 Isaac Lab의 토대가 된다.</p>
+<p>두 엔진의 역할을 정리하면 이렇다.</p>
+<table>
+<thead>
+<tr>
+<th>엔진</th>
+<th>공략하는 gap</th>
+<th>무엇을 사실적으로</th>
+<th>학습에 주는 것</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>RTX 렌더</td>
+<td>perception gap</td>
+<td>빛·재질·센서 이미지</td>
+<td>사실적 vision 입력 + GT 라벨</td>
+</tr>
+<tr>
+<td>PhysX</td>
+<td>dynamics gap</td>
+<td>접촉·마찰·관절 역학</td>
+<td>물리적으로 유효한 rollout</td>
+</tr>
+</tbody>
+</table>
+<p>핵심 통찰: Isaac Sim의 가치는 '예쁜 그림'이 아니라 <strong>perception gap과 dynamics gap을 동시에, 하나의 USD 씬 위에서 좁힌다</strong> 는 데 있다. 렌더와 물리가 같은 SimReady asset(2장)을 공유하기 때문에, 보이는 것과 움직이는 것이 일관된다.</p></div><div class="sb-block"><h2>3.3 Synthetic Data Generation — 데이터 공장의 핵심</h2><p>1장에서 Physical AI의 진짜 병목이 데이터라고 했다. Isaac Sim에서 그 병목을 직접 공략하는 기능이 <strong>Synthetic Data Generation(SDG)</strong> 이고, 그 도구가 <strong>Replicator(리플리케이터)</strong> 다.</p>
+<p><strong>Synthetic Data Generation(합성 데이터 생성)</strong> = 시뮬레이션 안에서 이미지·센서 데이터와 그에 대한 완벽한 ground-truth 라벨(bounding box, segmentation, depth, pose 등)을 자동으로 대량 생성하는 것.</p>
+<p>SDG가 실세계 데이터 수집을 이기는 두 가지 이유가 있다.</p>
+<ul>
+<li>
+<p><strong>라벨이 공짜다</strong>: 실세계에서는 사람이 손으로 bounding box를 그리고 segmentation을 칠해야 한다. 시뮬레이션은 물체의 정확한 위치·형상·클래스를 이미 알고 있으므로, 픽셀 단위로 완벽한 라벨을 즉시 뽑는다. 사람 라벨러의 오류도, 비용도 없다.</p>
+</li>
+<li>
+<p><strong>domain randomization으로 다양성을 만든다</strong>: 매 프레임 조명·재질·물체 위치·카메라 각도·배경을 무작위로 흔든다. 그러면 모델이 특정 조명·배경에 과적합하지 않고 '어떤 조건에서도' 물체를 인식하도록 강제된다.</p>
+</li>
+</ul>
+<p><strong>domain randomization(도메인 랜덤화)</strong> = 시뮬레이션의 외형·물리 파라미터를 넓은 분포로 무작위화해, 실세계가 그 분포 '안'에 들어오게 만드는 sim-to-real 기법. 시뮬을 실세계에 정밀히 맞추는 대신, 실세계를 하나의 특수 케이스로 포함하도록 다양성을 넓힌다는 발상이다.</p>
+<p>파이프라인은 개념적으로 이렇게 돈다.</p>
+<ol>
+<li>
+<p>USD 씬에 대상 물체(SimReady asset)와 센서(카메라·LiDAR)를 배치한다.</p>
+</li>
+<li>
+<p>randomizer가 매 프레임 조명·재질·포즈를 분포에서 샘플링한다.</p>
+</li>
+<li>
+<p>RTX가 그 프레임을 렌더하고, writer가 이미지 + GT 라벨을 자동 저장한다.</p>
+</li>
+<li>
+<p>N 프레임 = N개의 완벽히 라벨된 학습 샘플. 수만~수백만 장을 밤새 찍는다.</p>
+</li>
+</ol>
+<p>통찰: SDG는 '데이터가 없다'는 Physical AI의 근본 문제를 '컴퓨트로 데이터를 산다'로 바꾼다. 다만 SDG만으로는 물리적으로 가능한 상황만 만들 수 있고, 실세계의 '있을 법하지 않지만 실제로 일어나는' 롱테일은 놓치기 쉽다 — 이 한계를 Cosmos의 생성 증강(5장)과 합성 데이터 워크플로우(7장)가 메운다. SDG는 데이터 공장의 1층이다.</p></div><div class="sb-block"><h2>3.4 ROS 통합과 digital twin 검증</h2><p>시뮬레이터가 아무리 좋아도 실제 로봇 소프트웨어와 말이 통하지 않으면 반쪽이다. 그래서 Isaac Sim은 로봇 업계 표준 미들웨어인 <strong>ROS/ROS2</strong> 와 통합된다.</p>
+<p><strong>ROS/ROS2(로스)</strong> = Robot Operating System. 로봇의 센서·제어·인식·계획 노드들이 메시지로 통신하는 사실상의 산업 표준 미들웨어.</p>
+<p>Isaac Sim이 ROS와 통합된다는 것의 실제 의미는, 시뮬레이션 안의 가상 로봇이 실제 로봇과 <strong>똑같은 인터페이스</strong> 로 데이터를 주고받는다는 것이다. 가상 카메라가 ROS 이미지 토픽을 publish하고, ROS로 짠 제어 노드가 그 토픽을 구독해 명령을 보내면, 가상 로봇이 움직인다. 즉:</p>
+<ul>
+<li>
+<p><strong>하드웨어 없이 소프트웨어 검증</strong>: 실제 로봇을 사기 전에, 혹은 로봇이 위험한 상황에 놓이기 전에, 전체 ROS 스택을 시뮬에서 그대로 돌려본다.</p>
+</li>
+<li>
+<p><strong>software-in-the-loop / hardware-in-the-loop</strong>: 실제 제어 코드가 시뮬 로봇을 제어하도록 연결해, 배치 전에 통째로 리허설한다.</p>
+</li>
+</ul>
+<p>이것이 로봇 관점의 <strong>digital twin 검증</strong> 이다. 2장에서 digital twin을 '물리적으로 유효한 가상 복제본'으로 정의했는데, 그 복제본이 실제와 같은 ROS 인터페이스로 동작하기에, 시뮬에서 검증한 것이 실물로 옮겨갈 때의 신뢰가 생긴다.</p>
+<p>또한 Isaac Sim은 <strong>URDF/MJCF import</strong> 를 지원한다. 로봇을 서술하는 표준 포맷(URDF는 ROS 생태계, MJCF는 MuJoCo 생태계)을 그대로 가져와 USD로 변환하므로, 이미 존재하는 로봇 모델을 처음부터 다시 만들 필요가 없다.</p>
+<p>통찰: RTX·PhysX·SDG가 '시뮬을 실세계처럼' 만드는 축이라면, ROS 통합은 '시뮬을 실제 소프트웨어 스택에 연결하는' 축이다. 전자는 데이터·물리의 사실성, 후자는 인터페이스의 호환성이다. 둘이 함께여야 sim-to-real이 데이터뿐 아니라 코드 수준에서도 성립한다.</p></div><div class="sb-block"><h2>3.5 위아래 연결 — Isaac Lab과 Cosmos로 가는 길</h2><p>Isaac Sim은 홀로 서지 않는다. 스택의 데이터 층으로서, 위로는 학습(Isaac Lab), 옆으로는 생성 증강(Cosmos)과 맞물린다. 이 연결을 그리는 것이 이 챕터의 마무리이자 코스 전체의 예고다.</p>
+<p><strong>위로: Isaac Lab(4장, train).</strong> Isaac Sim의 PhysX 병렬 물리는 수천 개의 로봇을 동시에 굴릴 수 있다. Isaac Lab은 이 병렬성을 강화학습(RL)·모방학습(IL)에 특화된 학습 프레임워크로 감싼 것이다. 즉 Isaac Sim이 '물리적으로 유효한 대량 rollout'을 제공하면, Isaac Lab이 그 위에서 정책을 학습한다. Isaac Sim은 데이터·물리를, Isaac Lab은 학습 루프를 담당한다.</p>
+<p><strong>옆으로: Cosmos(5장, data 증강).</strong> SDG(3.3)는 물리적으로 가능한 상황을 잘 만들지만, 렌더의 사실성과 시나리오 다양성에는 한계가 있다. <strong>Cosmos의 World Foundation Model</strong> 은 Isaac Sim이 만든 정확한 3D 씬을 조건으로 받아, 더 사실적이거나 더 다양한 변주(날씨·조명·질감·희귀 상황)를 생성으로 증강한다. 시뮬(정확하지만 다양성 제한)과 생성(다양하지만 물리 정확성 관리 필요)이 상보적으로 결합하는 지점이다.</p>
+<p>이 관계를 데이터 흐름으로 정리하면 이렇다.</p>
+<table>
+<thead>
+<tr>
+<th>방향</th>
+<th>대상</th>
+<th>Isaac Sim이 넘기는 것</th>
+<th>받는 쪽이 하는 일</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>위</td>
+<td>Isaac Lab (train)</td>
+<td>병렬 물리 rollout</td>
+<td>RL/IL 정책 학습</td>
+</tr>
+<tr>
+<td>옆</td>
+<td>Cosmos (data)</td>
+<td>정확한 3D USD 씬</td>
+<td>생성 기반 다양성 증강</td>
+</tr>
+<tr>
+<td>아래</td>
+<td>Omniverse/USD</td>
+<td>(상속)</td>
+<td>substrate 제공</td>
+</tr>
+<tr>
+<td>밖</td>
+<td>ROS/실로봇</td>
+<td>표준 인터페이스</td>
+<td>실배치 검증</td>
+</tr>
+</tbody>
+</table>
+<p>핵심 통찰: Isaac Sim의 진짜 정체는 '시뮬레이터'라기보다 <strong>스택의 데이터 허브</strong> 다. 아래로는 OpenUSD substrate에서 세계를 상속받고, 안에서는 RTX·PhysX·SDG로 사실적 데이터를 굽고, 위로는 Isaac Lab에 학습 rollout을, 옆으로는 Cosmos에 증강 재료를, 밖으로는 ROS에 검증 인터페이스를 내보낸다. 6장에서 네 기둥을 하나의 지도로 통합할 때, Isaac Sim은 그 지도의 한복판에 놓인다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">Isaac Sim은 로봇을 위한 &#x27;영화 촬영장 + 스턴트 훈련장&#x27;이다</div>
+      <div class="a-body"><p>Isaac Sim이 세 엔진(RTX·PhysX·SDG)을 왜 한 무대 위에 올리는지는 영화 제작에 비유하면 선명해진다.</p>
+<p>먼저 Isaac Sim은 <strong>영화 촬영장(사운드 스테이지)</strong> 이다. RTX 렌더는 조명 감독이다 — 빛의 각도, 그림자, 재질의 반사를 실제처럼 만들어, 카메라(로봇의 눈)에 담기는 화면이 진짜 세트에서 찍은 것과 구분이 안 되게 한다. 세트가 만화 배경처럼 어설프면 그걸 보고 훈련한 배우(vision 모델)가 실제 로케이션에서 얼어붙는다. 그래서 조명을 진짜처럼 만드는 데 돈을 쓴다 — 그게 perception gap을 좁히는 일이다.</p>
+<p>동시에 Isaac Sim은 <strong>스턴트 훈련장</strong> 이다. PhysX는 스턴트 코디네이터다 — 배우가 뛰어내리고 부딪히고 미끄러질 때 중력·관성·마찰이 실제와 같게 작동하게 한다. 훈련장의 물리가 가짜면, 완벽히 연습한 스턴트가 실제 촬영에서 어긋난다 — 그게 dynamics gap이다.</p>
+<p>그리고 SDG는 <strong>무한 리테이크가 가능한 마법</strong> 이다. 실제 촬영은 한 컷마다 조명을 다시 세팅하고 비용이 든다. 하지만 이 가상 촬영장에서는 조명·의상·소품 위치를 매 프레임 바꿔가며 수만 번 찍고, 게다가 '이 컷에서 배우가 어디에 있었는지'를 감독이 이미 완벽히 알기에 라벨이 자동으로 딸려 나온다.</p>
+<p>마지막으로 ROS 통합은 <strong>실제 촬영 크루와 같은 무전 채널을 쓰는 것</strong> 이다. 가상 촬영장의 배우가 실제 현장에서 쓰는 것과 똑같은 무전(ROS 토픽)으로 지시를 받는다. 그래서 훈련장에서 완성한 연기를 실제 현장에 그대로 가져갈 수 있다. 촬영장·훈련장·무전이 하나로 붙어 있는 곳 — 그게 Isaac Sim이다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>Isaac Sim의 Replicator 스타일 SDG 파이프라인을 개념 코드로 보여준다. domain randomization으로 조명·재질·포즈를 흔들고, RTX가 렌더한 이미지에 완벽한 GT 라벨(segmentation·bbox)을 붙여 대량 저장하는 루프다. 실제 API와 유사하되, 핵심은 '어떻게 라벨된 데이터가 공짜로 쏟아지는가'를 읽는 것이다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import omni.replicator.core as rep
+
+MATERIALS = [&quot;metal.mdl&quot;, &quot;plastic.mdl&quot;, &quot;rubber.mdl&quot;]
+
+with rep.new_layer():
+    # 1. USD 씬에 대상 물체(SimReady)와 센서를 배치
+    parts  = rep.create.from_usd(&quot;assets/bolt.usd&quot;, count=20)
+    camera = rep.create.camera()
+    render = rep.create.render_product(camera, (1280, 720))
+
+    # 2. Domain Randomization: 매 프레임 포즈·재질·조명을 분포에서 샘플링
+    def randomize():
+        with parts:
+            rep.modify.pose(
+                position=rep.distribution.uniform((-0.3,-0.3,0.1),(0.3,0.3,0.4)),
+                rotation=rep.distribution.uniform((0,0,0),(360,360,360)),
+            )
+            rep.randomizer.materials(rep.distribution.choice(MATERIALS))
+        lights = rep.get.prims(semantics=[(&quot;class&quot;, &quot;light&quot;)])
+        with lights:
+            rep.modify.attribute(&quot;intensity&quot;,
+                                 rep.distribution.uniform(300, 3000))
+        return parts.node
+
+    rep.randomizer.register(randomize)
+
+    # 3. Writer: RTX 렌더 이미지 + 완벽한 GT 라벨을 자동 저장
+    writer = rep.WriterRegistry.get(&quot;BasicWriter&quot;)
+    writer.initialize(output_dir=&quot;_out&quot;, rgb=True,
+                      bounding_box_2d_tight=True,
+                      semantic_segmentation=True)
+    writer.attach([render])
+
+    # 4. N 프레임 = N개의 완벽히 라벨된 합성 샘플 (밤새 수만 장)
+    rep.orchestrator.run(num_frames=10000)</code></pre>
+      <div class="c-walk"><p>이 루프가 SDG의 본질을 압축한다. (1) SimReady 볼트 asset 20개와 카메라·render product를 USD 씬에 올린다 — render product가 RTX 렌더 출력을 받는 창구다. (2) randomize 함수가 domain randomization의 핵심: 매 프레임 물체의 위치·회전을 균등분포에서 뽑고, 재질을 metal/plastic/rubber 중 무작위로 고르고, 조명 강도를 300~3000으로 흔든다. 이렇게 넓게 흔들어야 실세계 조건이 이 분포 안에 들어와 sim-to-real이 성립한다. (3) BasicWriter가 결정적인 부분 — rgb 이미지와 함께 bounding_box_2d_tight, semantic_segmentation을 요청하면, 시뮬레이터가 물체의 정확한 위치·클래스를 이미 알기에 픽셀 단위 GT 라벨이 자동으로 딸려 나온다. 사람 라벨러가 없다. (4) run(num_frames=10000)은 이 무작위화-렌더-저장 사이클을 1만 번 돌려 1만 장의 완벽히 라벨된 데이터를 만든다. '데이터가 없다'가 '컴퓨트로 데이터를 산다'로 바뀌는 순간이며, 이 출력이 위로는 Isaac Lab 학습, 옆으로는 Cosmos 증강의 재료가 된다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">면접에서 Isaac Sim은 &#x27;NVIDIA의 로봇 시뮬레이터&#x27; 수준을 넘어, RTX·PhysX·SDG가 각각 sim-to-real gap의 어떤 축을 공략하는지, 그리고 Isaac Sim이 스택의 데이터 허브로서 Isaac Lab·Cosmos·ROS와 어떻게 물리는지를 구조적으로 설명할 수 있는가를 본다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>Isaac Sim이 Omniverse 위 reference application이라는 점과 그로 인한 이점(USD 공유·엔진 상속) 설명</li><li>RTX(perception gap)와 PhysX(dynamics gap)를 sim-to-real의 두 축으로 분리해 설명</li><li>SDG의 두 강점(GT 라벨 공짜, domain randomization 다양성)과 그 한계(롱테일)를 함께 인식</li><li>ROS/ROS2 통합의 의미를 &#x27;실제와 같은 인터페이스로 코드 수준 검증&#x27;으로 규정</li><li>Isaac Sim을 데이터 허브로 보고 Isaac Lab(train)·Cosmos(증강)·ROS(배치)와의 연결을 그림</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>Isaac Sim을 &#x27;예쁜 3D 렌더 툴&#x27;로만 이해하고 물리(PhysX)·데이터(SDG) 축을 놓침</li><li>RTX 렌더의 사실성이 왜 vision 모델의 sim-to-real에 중요한지 설명 못 함</li><li>domain randomization을 모르거나 &#x27;시뮬을 실세계에 정밀히 맞추면 된다&#x27;고 오해</li><li>SDG의 라벨이 왜 공짜인지(시뮬이 GT를 이미 안다) 설명 못 함</li><li>Isaac Sim을 독립 제품으로만 보고 Isaac Lab·Cosmos·ROS와의 연결을 못 그림</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>Q1. sim-to-real gap을 perception gap과 dynamics gap으로 나누고, Isaac Sim의 RTX와 PhysX가 각각 어느 쪽을 어떻게 공략하는지 설명하라.</li><li>Q2. 실세계 라벨링 대신 SDG를 쓰면 라벨이 왜 &#x27;공짜&#x27;가 되며, domain randomization이 sim-to-real에 어떻게 기여하는가? SDG만으로 부족한 지점은?</li><li>Q3. Isaac Sim이 Omniverse 위에 선 것이 왜 이점이며, Isaac Lab·Cosmos·ROS와 각각 어떤 데이터/인터페이스로 연결되는가?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> Familiar: Isaac Sim은 NVIDIA의 로봇 시뮬레이터이고 RTX 렌더와 PhysX 물리를 쓰며 합성 데이터를 만든다. Mastery: Isaac Sim은 Isaac SDK에서 분화해 Omniverse 위에 선 오픈소스 reference application으로, USD·RTX·PhysX·Replicator를 로봇용으로 조립한 것이다. RTX는 perception gap을, PhysX는 dynamics gap을 공략하며 둘이 같은 SimReady asset을 공유해 보이는 것과 움직이는 것이 일관된다. SDG는 시뮬이 GT를 이미 알기에 라벨이 공짜이고 domain randomization으로 실세계를 분포 안에 포함시키지만, 롱테일은 Cosmos·합성데이터 워크플로우가 메운다. ROS/ROS2 통합과 URDF/MJCF import로 코드 수준 sim-to-real이 성립하며, Isaac Sim은 사실상 Isaac Lab(rollout)·Cosmos(증강 씬)·ROS(배치)를 잇는 데이터 허브다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>Isaac SDK에서 분화한 Omniverse 위 앱</h3><p>NVIDIA 로봇 SW는 Isaac SDK로 출발했고, 시뮬레이션 파트가 Omniverse 위 reference application인 Isaac Sim으로 성장했다. 오픈소스(GitHub isaac-sim/IsaacSim)이며 로봇 개발·테스트·데이터 생성을 담당한다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>Omniverse 위에 선 것이 곧 이점이다</h3><p>자체 엔진을 만들지 않고 OpenUSD 씬·RTX 렌더·PhysX 물리를 상속받는다. 그래서 2장의 SimReady asset이 그대로 통하고, 위(Isaac Lab)·옆(Cosmos)·밖(ROS)으로 자연스럽게 연결된다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>RTX 렌더는 perception gap을 공략한다</h3><p>물리 기반 조명·반사·재질로 사실적인 센서 이미지를 만든다. RGB·depth·segmentation·LiDAR를 GT 라벨과 함께 뽑아, 시뮬에서 학습한 vision 모델이 실제 카메라 앞에서 무너지지 않게 한다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>PhysX는 dynamics gap을 공략한다</h3><p>GPU 가속 물리 엔진으로 강체·관절·접촉·마찰을 실제에 가깝게 푼다. 대규모 병렬 물리가 가능해 수천 로봇을 동시에 굴리며, 이 병렬성이 4장 Isaac Lab의 RL 토대가 된다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>SDG는 라벨을 공짜로 만든다</h3><p>시뮬레이터는 물체의 정확한 위치·클래스를 이미 알기에, 사람 라벨러 없이 픽셀 단위 GT(bbox·segmentation·depth·pose)를 자동 생성한다. &#x27;데이터가 없다&#x27;를 &#x27;컴퓨트로 데이터를 산다&#x27;로 바꾼다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>domain randomization이 sim-to-real의 열쇠다</h3><p>조명·재질·포즈·배경을 넓은 분포로 흔들어 모델이 특정 조건에 과적합하지 않게 한다. 시뮬을 실세계에 정밀히 맞추는 대신, 실세계를 분포의 한 특수 케이스로 포함시키는 발상이다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>ROS 통합은 코드 수준 sim-to-real이다</h3><p>가상 로봇이 실제와 똑같은 ROS/ROS2 인터페이스로 통신하므로, 하드웨어 없이 전체 로봇 스택을 검증한다. URDF/MJCF import로 기존 로봇 모델도 그대로 가져온다 — 데이터·물리의 사실성에 더한 인터페이스 호환성이다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>Isaac Sim은 스택의 데이터 허브다</h3><p>아래 Omniverse에서 세계를 상속받고, 안에서 사실적 데이터를 굽고, 위 Isaac Lab에 rollout을, 옆 Cosmos에 증강 씬을, 밖 ROS에 검증 인터페이스를 내보낸다. 6장 통합 지도의 한복판에 놓인다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-02.html">← Omniverse &amp; OpenUSD — The Substrate</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-04.html">Isaac Lab &amp; Newton — Robot Learning Evolves →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

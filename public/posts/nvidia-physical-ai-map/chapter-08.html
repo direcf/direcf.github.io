@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch8: GR00T — The Humanoid Foundation Model — NVIDIA Physical AI Map — direcf</title>
+  <meta name="description" content="Project GR00T(2024)에서 N1→N1.5→N1.6→N1.7(2026)로 이어진 GR00T 계보와, dual-system(빠른 행동/느린 추론) 아키텍처를 정리한다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;height:22px;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><linearGradient id="direcf-nav-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs></svg>
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg></span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg></span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.25 15a4.5 4.5 0 0 0 4.5 4.5H18a3.75 3.75 0 0 0 1.332-7.257 3 3 0 0 0-3.758-3.848 5.25 5.25 0 0 0-10.233 2.33A4.502 4.502 0 0 0 2.25 15Z"/></svg></span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"/></svg></span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg></span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/physical-ai">NVIDIA Physical AI Map</a><span class="sep">›</span>
+        <strong>Ch08 GR00T — The Humanoid Foundation Model</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 08 <span style="opacity:.3">·</span> 13 chapters
+      </div>
+      <div class="chapter-emoji">🧠</div>
+      <h1 class="chapter-title">GR00T — The Humanoid Foundation Model</h1>
+      <div class="chapter-title-kr">GR00T — 휴머노이드 Foundation Model</div>
+      <div class="chapter-tldr">Project GR00T(2024)에서 N1→N1.5→N1.6→N1.7(2026)로 이어진 GR00T 계보와, dual-system(빠른 행동/느린 추론) 아키텍처를 정리한다.</div>
+
+      <div class="cs-wrap">
+        <div style="padding:40px;background:var(--bg-soft);border-radius:12px;color:var(--muted);text-align:center;border:1px dashed var(--border);">🍌 이미지 준비 중</div>
+        <div class="cs-label">🍌 Nano Banana — Chapter 8 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>GR00T 계보를 버전별 핵심 변화와 함께 설명할 수 있다</li><li>dual-system(System1 action / System2 VLM reasoning)을 이해한다</li><li>휴머노이드 VLA의 cross-embodiment 학습 데이터 구성을 안다</li><li>human video(EgoScale) 활용이 일반화에 주는 효과를 설명한다</li><li>GR00T와 Cosmos·Isaac Lab의 학습 파이프라인 연결을 그린다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>지난 챕터가 'Physical AI의 진짜 병목은 데이터다'를 다뤘다면, 이 챕터는 바로 그 데이터 공장이 먹여 키운 모델을 정면으로 본다 — <strong>GR00T</strong>. LLM 시대에 GPT가 '언어의 foundation model'이었다면, GR00T는 '휴머노이드 행동의 foundation model'을 노린다. 하나의 모델이 tabletop arm부터 손가락을 정교하게 놀리는 dexterous humanoid까지, 여러 몸체(embodiment)에서 언어 지시를 받아 물리적 행동을 수행하는 것이 목표다.</p>
+<p>GR00T의 여정은 2024년 3월 GTC에서 <strong>Project GR00T</strong>로 선언됐고, 2025년 3월 <strong>GR00T N1</strong>으로 세계 최초의 오픈·완전 커스터마이즈 가능한 humanoid foundation model이 되었으며, 이후 N1.5→N1.6→N1.7로 빠르게 진화했다. 이 챕터는 그 계보를 단순 연대기가 아니라 '무엇이 왜 개선됐는가'의 서사로 읽는다 — 특히 GR00T-Dreams로 36시간 만에 만든 N1.5, 그리고 20K시간 EgoScale human video를 섞은 N1.7까지.</p>
+<p>기술의 심장은 인간 인지를 모방한 <strong>dual-system 아키텍처</strong>다. 느리게 생각하는 System 2(VLM)가 '무엇을 어떻게 할지' 추론·계획하고, 빠르게 반응하는 System 1(diffusion transformer)이 그 계획을 연속적인 관절 동작으로 번역한다. Kahneman의 '빠른 생각·느린 생각'을 로봇 제어에 이식한 이 구조가, 왜 휴머노이드 VLA(Vision-Language-Action) 모델의 지배적 설계가 되었는지를 파고든다. 그리고 이 모델이 Cosmos(데이터)·Isaac Lab(학습)·Jetson Thor(배치)라는 three computers 스택과 어떻게 맞물리는지로 챕터를 닫는다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>8.1 Project GR00T — 휴머노이드 foundation model의 선언</h2><p>2024년 3월 GTC에서 NVIDIA는 <strong>Project GR00T</strong>를 발표했다. GR00T는 'Generalist Robot 00 Technology'를 뜻하며, 핵심 선언은 하나였다 — 휴머노이드 로봇을 위한 범용 foundation model을 만들겠다는 것.</p>
+<p><strong>Project GR00T(프로젝트 그루트)</strong> = 2024년 3월 GTC에서 발표된, 휴머노이드 로봇을 위한 범용 foundation model 개발 이니셔티브. 동시에 이를 뒷받침하는 Isaac 로보틱스 플랫폼 업데이트(시뮬·학습·배치 도구군)를 함께 공개했다.</p>
+<p>주목할 점은 GR00T가 단순히 '또 하나의 모델'이 아니라 <strong>플랫폼과 한 몸으로 발표</strong>됐다는 사실이다. 모델(GR00T)과 그것을 만드는 인프라(Isaac Sim·Isaac Lab·Jetson) 업데이트가 동시에 나온 것은, NVIDIA가 이 문제를 '모델 하나'가 아니라 '모델을 계속 찍어내는 시스템'으로 접근한다는 신호였다.</p>
+<p>왜 하필 <strong>휴머노이드</strong>인가? 세상은 인간을 위해 설계됐다 — 문손잡이 높이, 계단 폭, 도구의 손잡이 모두 인간의 몸에 맞춰져 있다. 따라서 인간 형태의 로봇은 별도의 환경 개조 없이 인간의 세계에 곧장 투입될 수 있다. 게다가 인간형이면 방대한 human video(사람이 행동하는 영상)를 학습 데이터로 재활용할 수 있다는 결정적 이점이 있다 — 이 아이디어는 뒤의 EgoScale에서 절정에 이른다.</p>
+<p>Project GR00T가 던진 근본 질문은 이것이다: 언어에는 GPT라는 foundation model이 있는데, 왜 '행동'에는 없는가? 그동안 로봇 정책은 대개 특정 로봇·특정 task에 맞춰 처음부터 학습됐다. GR00T의 야심은 이 관행을 뒤집어, <strong>한 번 크게 학습한 뒤 여러 로봇·task에 적응(fine-tune)시키는</strong> foundation model 패러다임을 로봇에 이식하는 것이다. 이후의 N1~N1.7 계보는 모두 이 선언을 현실로 만드는 과정이다.</p></div><div class="sb-block"><h2>8.2 GR00T N1~N1.7 — 계보와 버전별 진화</h2><p>Project GR00T가 선언이었다면, 실체는 2025년 3월의 <strong>GR00T N1</strong>에서 시작됐다.</p>
+<p><strong>GR00T N1(그루트 엔원)</strong> = 2025년 3월 발표(<a href="https://arxiv.org/abs/2503.14734">arXiv:2503.14734</a>)된, 세계 최초의 오픈·완전 커스터마이즈 가능한 humanoid foundation model. 'open'과 'fully customizable'이 핵심 — 가중치와 구조가 공개돼 누구나 자사 로봇에 맞춰 후학습할 수 있다.</p>
+<p>이후의 진화 속도가 이 분야의 열기를 증언한다. 아래 표로 계보를 정리한다.</p>
+<table>
+<thead>
+<tr>
+<th>버전</th>
+<th>시점</th>
+<th>핵심 변화</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Project GR00T</td>
+<td>2024.03</td>
+<td>휴머노이드 foundation model 이니셔티브 선언 + Isaac 플랫폼 업데이트</td>
+</tr>
+<tr>
+<td>GR00T N1</td>
+<td>2025.03</td>
+<td>세계 최초 오픈·완전 커스터마이즈 humanoid foundation model, dual-system 도입</td>
+</tr>
+<tr>
+<td>GR00T N1.5</td>
+<td>2025.05</td>
+<td>GR00T-Dreams blueprint 합성데이터로 단 36시간 만에 개발</td>
+</tr>
+<tr>
+<td>GR00T N1.6</td>
+<td>2025.12</td>
+<td>bimanual·locomanipulation 개선, diverse embodiment 전반 향상</td>
+</tr>
+<tr>
+<td>GR00T N1.7</td>
+<td>2026.06</td>
+<td>early access + commercial license, advanced dexterous control, 20K시간 EgoScale human video 추가</td>
+</tr>
+</tbody>
+</table>
+<p>각 버전의 서사를 읽자. <strong>N1.5</strong>의 하이라이트는 개발 속도다 — 이전 챕터에서 본 GR00T-Dreams blueprint로 합성 데이터를 생성해, N1에서 N1.5로의 개선을 <strong>단 36시간</strong> 만에 이뤄냈다. 이는 '데이터 공장'이 모델 반복(iteration) 주기를 어떻게 압축하는지 보여주는 상징적 수치다. 데이터가 병목이 아니게 되면, 모델은 주(week)가 아니라 시(hour) 단위로 진화한다.</p>
+<p><strong>N1.6</strong>은 두 손을 함께 쓰는 <strong>bimanual(양손 조작)</strong>과 이동하며 조작하는 <strong>locomanipulation</strong>을 개선했다. 이는 휴머노이드가 '가만히 서서 한 손으로'를 넘어, 실제 사람처럼 걸으며 양손으로 일하는 방향으로 나아감을 뜻한다.</p>
+<p><strong>N1.7</strong>은 상업화의 문턱을 넘는다 — early access와 <strong>commercial license</strong>가 붙어 연구실 밖 실제 제품 개발에 쓸 수 있게 됐고, 정교한 손 제어(advanced dexterous control)와 함께 bimanual·semi-humanoid·대규모 humanoid 데이터를 섞어 학습했다. 그리고 이 버전의 결정적 무기가 <strong>20K시간의 EgoScale human video</strong>다(8.4절에서 상세히 다룬다). 계보 전체를 관통하는 방향은 명확하다 — 더 많은 embodiment, 더 정교한 손, 더 넓은 데이터, 그리고 연구에서 상용으로.</p></div><div class="sb-block"><h2>8.3 Dual-system 아키텍처 — 빠른 행동과 느린 추론</h2><p>GR00T의 기술적 심장은 인간 인지 구조를 모방한 <strong>dual-system(이중 시스템) 아키텍처</strong>다. 심리학자 Daniel Kahneman의 유명한 이분법 — 빠르고 직관적인 사고(System 1)와 느리고 숙고적인 사고(System 2) — 를 로봇 제어에 이식한 것이다.</p>
+<p><strong>System 2(느린 사고)</strong> = VLM(Vision-Language Model)이 담당. 카메라로 본 환경과 언어 지시를 함께 이해하고, '무엇을 어떤 순서로 할지'를 추론해 행동 계획(plan)을 세운다. 느리지만 똑똑한, 숙고하는 뇌다.</p>
+<p><strong>System 1(빠른 사고)</strong> = diffusion transformer가 담당. System 2가 세운 계획을 받아, 그것을 연속적인 관절 동작(continuous joint action)으로 실시간 변환한다. 추론하지 않고 반사적으로 몸을 움직이는, 빠른 운동 피질이다.</p>
+<p>왜 둘로 나누는가? 여기에 이 설계의 정수가 있다. 로봇 제어에는 상충하는 두 요구가 있다 — 한편으로는 '이 어질러진 책상에서 빨간 컵을 집어 싱크대에 넣어'라는 지시를 <strong>이해하고 계획</strong>해야 하고(느려도 되지만 똑똑해야 함), 다른 한편으로는 팔의 관절을 초당 수십 번 <strong>부드럽게 제어</strong>해야 한다(멍청해도 되지만 빨라야 함). 하나의 신경망으로 둘을 다 하려면 비효율적이다. VLM은 크고 느려서 고빈도 제어에 부적합하고, 저수준 제어기는 언어 추론을 못 한다.</p>
+<p>dual-system은 이 긴장을 <strong>분업</strong>으로 푼다. System 2(VLM)는 낮은 빈도로 '무엇을'을 정하고, System 1(diffusion transformer)은 높은 빈도로 '어떻게'를 실행한다. diffusion transformer가 쓰이는 이유도 명확하다 — 로봇의 관절 동작은 부드럽고 연속적인 궤적인데, diffusion 모델은 노이즈에서 점진적으로 매끄러운 신호를 복원하는 데 강해 연속 동작 생성에 잘 맞는다.</p>
+<p>이 구조를 VLA(Vision-Language-Action) 모델의 관점에서 보면, System 2가 Vision-Language를, System 1이 Action을 맡는 자연스러운 분해다. GR00T가 휴머노이드 VLA의 지배적 설계로 자리 잡은 이유는, 이 dual-system이 '똑똑함'과 '빠름'을 하나의 모델 안에서 타협 없이 동시에 얻는 우아한 방법이기 때문이다. 이후 등장한 여러 로봇 정책 모델이 이 빠른/느린 이분법을 계승한다.</p></div><div class="sb-block"><h2>8.4 학습 데이터 믹스와 cross-embodiment — human video의 힘</h2><p>foundation model의 능력은 결국 무엇을 먹고 자랐는가에서 나온다. GR00T의 학습 데이터는 세 갈래의 <strong>혼합(data mix)</strong>이다.</p>
+<ul>
+<li><strong>실로봇 궤적(real robot trajectory)</strong>: 실제 로봇을 teleop해 모은, 가장 값비싸지만 가장 정확한 ground-truth 행동 데이터</li>
+<li><strong>human video(인간 행동 영상)</strong>: 사람이 물건을 다루고 일하는 영상 — 인간형 로봇이기에 재활용 가능한 방대한 자원</li>
+<li><strong>합성 데이터(synthetic)</strong>: GR00T-Dreams/Mimic과 Cosmos 파이프라인이 생성한, 값싸게 대량 확보 가능한 데이터</li>
+</ul>
+<p>이 세 갈래를 섞는 이유는 각자의 약점을 서로가 메우기 때문이다. 실로봇 데이터는 정확하지만 적고, human video는 방대하지만 로봇 행동과 직접 대응하지 않으며, 합성은 대량이지만 domain gap이 있다. 셋을 결합하면 '정확·방대·대량'을 동시에 근사할 수 있다.</p>
+<p>GR00T의 또 다른 핵심 성질은 <strong>cross-embodiment(교차 몸체)</strong>다. 하나의 GR00T 모델이 tabletop arm(탁상 위 고정 팔)부터 dexterous humanoid(손가락을 정교하게 놀리는 인간형)까지 서로 다른 몸체를 아우른다. 이것이 가능한 이유는, foundation model이 특정 로봇의 관절 구조에 종속된 지식이 아니라 '물체를 어떻게 다루는가'라는 더 추상적인 조작 지식을 학습하기 때문이다. 실제로 GR00T는 <strong>Fourier의 GR-1 휴머노이드에 배치</strong>되어, language-conditioned bimanual manipulation(언어 지시에 따라 양손으로 조작)을 수행했다 — '컵을 집어'라는 말을 듣고 두 손으로 실제 물체를 다루는 것.</p>
+<p>데이터 믹스의 정점이 N1.7의 <strong>EgoScale</strong>이다.</p>
+<p><strong>EgoScale human video</strong> = GR00T N1.7(2026.06)에 추가된 20,000시간 규모의 1인칭(egocentric) 인간 행동 영상 데이터. 사람 시점에서 촬영한 방대한 손동작·조작 영상을 학습에 섞었다.</p>
+<p>EgoScale이 왜 중요한가? human video의 위력은 '인간형이라 사람 영상을 그대로 배울 수 있다'는 Project GR00T의 원래 통찰을 20K시간 규모로 실현했다는 데 있다. 실로봇 데이터는 모으는 데 로봇·사람·시간이 들어 태생적으로 희소하지만, 사람이 일하는 1인칭 영상은 상대적으로 훨씬 풍부하다. 이 방대한 human video를 섞자 N1.7의 <strong>일반화(generalization)와 language-following(언어 지시 따르기)이 향상</strong>됐다 — 본 적 없는 물체·상황에도 더 잘 대응하고, 지시를 더 정확히 이해하게 된 것이다. 이는 로봇 데이터 병목을 '인간 데이터'로 우회하는 전략이 실제로 작동함을 보여주는 증거다.</p></div><div class="sb-block"><h2>8.5 GR00T와 three computers — Cosmos·Isaac Lab·Jetson Thor의 결합</h2><p>GR00T는 홀로 존재하지 않는다. 이 코스의 전역 프레임인 <strong>three computers</strong>(DGX=학습 / Omniverse=시뮬 / Jetson=배치)와 스택(Omniverse→Isaac Sim/Cosmos→Isaac Lab→policy→Jetson) 위에서, GR00T는 정확히 'policy' 자리를 차지하는 산출물이다.</p>
+<p>GR00T의 생애주기를 스택으로 따라가보자.</p>
+<ul>
+<li>
+<p><strong>데이터 — Cosmos</strong>: GR00T가 먹을 합성 데이터는 GR00T-Dreams/Mimic과 Cosmos WFM 파이프라인이 생성한다(Chapter 5·7). neural trajectory와 domain randomization으로 데이터 병목을 우회한 그 산출물이 GR00T의 밥이다.</p>
+</li>
+<li>
+<p><strong>학습 — Isaac Lab</strong>: 모은 데이터로 GR00T 정책을 실제로 학습·후학습(post-train)하는 곳이 Isaac Lab이다(Chapter 4). foundation model을 특정 embodiment·task에 맞춰 fine-tune하는 무대다.</p>
+</li>
+<li>
+<p><strong>배치 — Jetson Thor</strong>: 학습된 GR00T를 실제 로봇의 뇌에 올리는 것이 <strong>Jetson Thor</strong>다. 휴머노이드의 몸 안에서 실시간으로 dual-system 추론을 돌리는 on-robot 컴퓨터다(Chapter 12에서 상세).</p>
+</li>
+</ul>
+<p>이 결합이 왜 중요한가? GR00T가 'open·customizable foundation model'로서 가치를 가지려면, 그것을 자사 로봇에 맞춰 데이터를 만들고(Cosmos), 학습시키고(Isaac Lab), 올릴(Jetson) 전 과정이 하나의 일관된 도구 사슬로 이어져야 한다. NVIDIA의 전략적 우아함이 여기 있다 — GR00T라는 모델 자체보다, 그 모델을 각 기업이 자기 것으로 만드는 <strong>전체 파이프라인을 소유</strong>한다는 점이다.</p>
+<p>dual-system 관점에서도 스택이 맞물린다. System 2(VLM)의 세계 이해는 Cosmos Reason 같은 물리 추론 자산과 계보를 공유하고, System 1(diffusion transformer)의 연속 제어는 Isaac Lab의 물리 시뮬에서 다듬어진다. 즉 GR00T의 두 뇌는 각각 '데이터·추론'과 '시뮬·제어'라는 스택의 서로 다른 층에서 길러진다.</p>
+<p>정리하면, GR00T는 앞선 일곱 챕터에서 하나씩 쌓아 올린 도구들 — OpenUSD·Omniverse·Isaac Sim·Isaac Lab·Cosmos·합성데이터 — 이 수렴하는 <strong>하나의 결정체</strong>다. 그리고 다음 챕터는 GR00T 같은 거대 모델 옆에서, NVIDIA Research가 mobility·whole-body·memory라는 구체적 능력을 어떻게 워크플로우로 조립하는지(R²D²)를 본다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">새 요리사를 키우는 두 개의 뇌</div>
+      <div class="a-body"><p>GR00T를 이해하려면, 갓 채용한 만능 요리사 한 명을 떠올리면 된다. 이 요리사에게는 서로 다른 속도로 도는 두 개의 뇌가 있다. 하나는 <strong>느리지만 사려 깊은 총괄 셰프의 뇌(System 2, VLM)</strong>다 — 주문서('빨간 컵을 집어 싱크대에 넣어')와 지금 주방 상태를 눈으로 훑고, '먼저 컵을 잡고, 돌아서서, 싱크대에 놓는다'는 순서를 머릿속으로 짠다. 다른 하나는 <strong>빠르지만 생각 없는 손의 뇌(System 1, diffusion transformer)</strong>다 — 총괄 셰프의 계획을 받아, 팔 관절을 초당 수십 번 부드럽게 움직여 실제로 컵을 잡는다. 총괄 셰프가 매 순간 손가락 하나하나를 지시했다면 요리는 굼떴을 것이고, 손이 스스로 주문을 해석하려 했다면 엉뚱한 걸 집었을 것이다. 둘의 분업이 '똑똑하면서 빠른' 요리사를 만든다.</p>
+<p>그런데 이 요리사를 어떻게 훈련시켰나? 세 종류의 교재를 섞어 먹였다. 진짜 주방에서 손을 잡고 가르친 값비싼 실습(실로봇 궤적)은 정확하지만 몇 시간 안 된다. 유튜브에 널린 사람들의 요리 영상(human video, EgoScale 20K시간)은 어마어마하게 많고, 이 요리사가 사람 모양이라 그 손동작을 그대로 흉내 낼 수 있다. 그리고 상상으로 찍어낸 무한한 연습 영상(합성 데이터, GR00T-Dreams)이 나머지를 채운다.</p>
+<p>놀라운 건 이 요리사가 한 주방에만 매인 게 없다는 점이다 — 탁상 위 로봇 팔로도, 두 발로 걷는 휴머노이드로도 같은 요리 지식을 발휘한다(cross-embodiment). 몸이 바뀌어도 '요리를 어떻게 하는가'라는 추상적 감각은 유지되기 때문이다. 심지어 이 요리사를 더 똑똑하게 만드는 데 예전엔 몇 주가 걸렸지만(N1→N1.5), 상상 교재를 자동으로 찍어내자 단 36시간이면 충분해졌다. 총괄 셰프의 뇌, 손의 뇌, 그리고 세 겹의 교재 — 이것이 GR00T라는 만능 요리사의 정체다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>GR00T의 dual-system 추론 흐름을 개념 코드로 표현한다. 실제 API가 아니며, 요점은 'System 2(VLM)가 느리게 plan을 세우고 → System 1(diffusion transformer)이 빠르게 그 plan을 연속 action chunk로 변환한다'는 이중 루프 구조다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python"># GR00T dual-system 개념: 느린 추론(System 2) + 빠른 실행(System 1)
+
+system2 = load_vlm(&quot;groot-n1.7/system2&quot;)           # 느린 사고: 환경+지시 추론
+system1 = load_diffusion_policy(&quot;groot-n1.7/system1&quot;)  # 빠른 사고: 관절 동작 생성
+
+def groot_control(camera, instruction, robot):
+    plan = None
+    # System 2는 저빈도(느리게)로 &#x27;무엇을&#x27;을 정한다
+    for step in range(HORIZON):
+        if step % PLAN_EVERY == 0:                  # 예: 매 수십 스텝마다 재계획
+            obs = camera.read()
+            plan = system2.reason(image=obs,        # VLM: 보고 + 지시 이해
+                                   instruction=instruction)
+            # plan 예: [&quot;reach red cup&quot;, &quot;grasp&quot;, &quot;move to sink&quot;, &quot;release&quot;]
+
+        # System 1은 고빈도(빠르게)로 &#x27;어떻게&#x27;를 실행한다
+        state = robot.proprioception()              # 현재 관절 상태
+        action_chunk = system1.denoise(plan=plan,   # diffusion: 연속 동작 복원
+                                        state=state,
+                                        embodiment=robot.kind)  # cross-embodiment
+        robot.execute(action_chunk)                 # 부드러운 관절 궤적 실행
+
+# 같은 정책을 서로 다른 몸체에 배치 (cross-embodiment)
+groot_control(cam, &quot;put the red cup in the sink&quot;, robot=TabletopArm())
+groot_control(cam, &quot;put the red cup in the sink&quot;, robot=FourierGR1())  # 휴머노이드</code></pre>
+      <div class="c-walk"><p>핵심은 '두 시스템이 다른 빈도로 돈다'는 점이다. (1) <strong>system2.reason</strong>은 VLM으로, 카메라 이미지와 언어 지시를 함께 이해해 고수준 plan을 세운다 — 느리지만 똑똑하므로 매 스텝이 아니라 PLAN_EVERY 주기로만 호출한다. (2) <strong>system1.denoise</strong>는 diffusion transformer로, 그 plan과 현재 관절 상태(proprioception)를 받아 연속적인 action_chunk를 복원한다 — noise에서 매끄러운 궤적을 뽑는 diffusion의 강점이 연속 동작 생성에 맞는다. (3) 이 System 1이 고빈도로 돌며 로봇을 실시간 제어한다. 맨 아래를 보라 — 동일한 groot_control이 TabletopArm과 FourierGR1(휴머노이드)에 똑같이 적용된다. embodiment 인자만 바뀔 뿐 조작 지식은 공유되는 것이 cross-embodiment의 코드적 표현이다. '느린 계획 + 빠른 실행'의 분업이 GR00T가 똑똑함과 실시간성을 동시에 얻는 방식이다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">이 챕터는 &#x27;humanoid foundation model이란 무엇이며, 왜 dual-system으로 설계되는가&#x27;를 이해하는지 재는 주제다. 면접관은 버전 번호 암기보다, System 1/2 분업의 이유·cross-embodiment의 원리·human video로 데이터 병목을 우회하는 전략을 논리적으로 설명하는 사고를 본다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>GR00T를 &#x27;humanoid 행동의 foundation model&#x27;로 정의하고, 한 번 크게 학습 후 여러 embodiment·task에 적응시키는 패러다임을 언어 모델(GPT)과 대비해 설명하는가</li><li>dual-system을 정확히 분해하는가 — System 2(VLM, 느린 추론·계획)와 System 1(diffusion transformer, 빠른 연속 동작)이 왜 다른 빈도로 분업하며, diffusion이 연속 제어에 적합한 이유는 무엇인가</li><li>cross-embodiment의 원리 — 특정 관절 구조가 아니라 추상적 조작 지식을 학습하기에 tabletop arm~dexterous humanoid를 한 모델로 아우름 — 를 이해하는가</li><li>학습 데이터 믹스(실로봇 궤적·human video·합성)의 상보성과, EgoScale 20K시간 human video가 일반화·language-following을 높이는 이유를 설명하는가</li><li>GR00T가 three computers 스택에서 Cosmos(데이터)·Isaac Lab(학습)·Jetson Thor(배치)와 맞물리는 policy 자리임을 그리는가</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>GR00T를 그냥 &#x27;로봇 LLM&#x27;이나 특정 task 모델로 뭉뚱그리고, foundation model로서 여러 embodiment에 적응한다는 핵심을 놓치는 경우</li><li>dual-system을 단순히 &#x27;두 개 모델&#x27;로만 말하고, 왜 나누는가(똑똑함 vs 빠름의 상충, 빈도 분업)를 설명하지 못하는 경우</li><li>System 1의 diffusion transformer가 왜 연속 관절 동작에 적합한지, System 2의 VLM이 왜 저빈도인지 혼동하는 경우</li><li>human video/EgoScale을 단순 &#x27;데이터 추가&#x27;로만 보고, 인간형이라 사람 영상을 재활용해 데이터 병목을 우회한다는 전략적 의미를 놓치는 경우</li><li>GR00T를 스택에서 고립된 모델로 보고 Cosmos·Isaac Lab·Jetson과의 파이프라인 연결을 그리지 못하는 경우</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>Q1 (개념): GR00T를 humanoid foundation model이라 부를 때 &#x27;foundation model&#x27;이라는 표현이 뜻하는 바를 언어 모델과 대비해 설명하라. cross-embodiment가 어떻게 가능한가?</li><li>Q2 (아키텍처): dual-system 아키텍처에서 System 1과 System 2의 역할·구성·동작 빈도를 설명하라. 왜 하나의 신경망으로 통합하지 않고 둘로 나누는가? System 1에 diffusion transformer를 쓰는 이유는?</li><li>Q3 (데이터·전략): GR00T의 학습 데이터는 실로봇 궤적·human video·합성의 믹스다. 각각의 장단점과 상보성을 설명하고, N1.7의 EgoScale 20K시간 human video가 왜 일반화와 language-following을 높이는지 논하라.</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> Familiar 수준은 &#x27;GR00T는 NVIDIA의 휴머노이드 AI 모델이고 빠른/느린 두 시스템이 있다&#x27;를 말하는 정도다. Mastery 수준은 (1) GR00T를 foundation model 패러다임으로 규정해 한 번 학습·여러 embodiment 적응을 GPT와 대비하고, (2) dual-system을 System 2(VLM, 저빈도 추론·계획)와 System 1(diffusion transformer, 고빈도 연속 동작)의 빈도 분업으로 정확히 분해하며 diffusion이 연속 궤적에 맞는 이유까지 설명하고, (3) cross-embodiment를 &#x27;추상적 조작 지식 학습&#x27;으로 근거 짓고 Fourier GR-1 배치 사례를 들며, (4) 실로봇·human video·합성 데이터 믹스의 상보성과 EgoScale 20K시간이 일반화·language-following을 높이는 메커니즘을 논하고, (5) N1→N1.5(36시간)→N1.6→N1.7(상용 라이선스) 계보의 방향성과, Cosmos·Isaac Lab·Jetson Thor로 이어지는 three computers 파이프라인 위 policy 자리까지 연결한다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>GR00T는 휴머노이드 행동의 foundation model이다</h3><p>2024.03 Project GR00T로 선언, 2025.03 GR00T N1으로 세계 최초 오픈·완전 커스터마이즈 humanoid foundation model이 됐다. 언어의 GPT처럼, 한 번 크게 학습한 뒤 여러 로봇·task에 적응시키는 패러다임을 로봇 행동에 이식했다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>N1→N1.5→N1.6→N1.7 — 빠른 계보</h3><p>N1.5(2025.05)는 GR00T-Dreams 합성데이터로 단 36시간에 개발, N1.6(2025.12)은 bimanual·locomanipulation 개선, N1.7(2026.06)은 commercial license·advanced dexterous control·20K시간 EgoScale 추가. 데이터 공장이 모델 반복 주기를 시(hour) 단위로 압축했다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>Dual-system — 빠른 행동과 느린 추론의 분업</h3><p>인간 인지를 모방해, System 2(VLM)가 느리게 환경·지시를 추론해 계획하고, System 1(diffusion transformer)이 빠르게 그 계획을 연속 관절 동작으로 변환한다. 똑똑함(느림)과 실시간성(빠름)의 상충을 빈도 분업으로 동시에 얻는다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>System 1에 diffusion transformer를 쓰는 이유</h3><p>로봇의 관절 동작은 부드럽고 연속적인 궤적인데, diffusion 모델은 noise에서 매끄러운 신호를 점진적으로 복원하는 데 강해 연속 동작 생성에 잘 맞는다. VLM(System 2)은 크고 느려 고빈도 제어에 부적합하므로 둘을 분리한다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>Cross-embodiment — 하나의 모델, 여러 몸체</h3><p>tabletop arm부터 dexterous humanoid까지 서로 다른 embodiment를 한 GR00T가 아우른다. 특정 관절 구조가 아니라 &#x27;물체를 어떻게 다루는가&#x27;라는 추상적 조작 지식을 학습하기 때문이다. 실제로 Fourier GR-1에 배치돼 language-conditioned bimanual manipulation을 수행했다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>세 겹의 학습 데이터 믹스</h3><p>실로봇 궤적(정확·희소)·human video(방대·간접)·합성 데이터(대량·domain gap)를 섞어, 각자의 약점을 서로 메운다. 셋의 결합으로 &#x27;정확·방대·대량&#x27;을 동시에 근사하는 것이 foundation model 능력의 원천이다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>EgoScale — human video로 데이터 병목을 우회</h3><p>N1.7에 추가된 20K시간의 1인칭 인간 행동 영상. 인간형 로봇이라 사람 손동작 영상을 그대로 배울 수 있다는 Project GR00T의 통찰을 대규모로 실현해, 일반화와 language-following을 끌어올렸다. 로봇 데이터 희소성을 인간 데이터로 우회하는 전략이다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>GR00T는 three computers 스택의 수렴점</h3><p>데이터는 Cosmos(GR00T-Dreams/Mimic), 학습은 Isaac Lab, 배치는 Jetson Thor가 맡는다. NVIDIA의 힘은 GR00T 모델 자체보다, 각 기업이 자사 로봇에 맞춰 데이터 생성·학습·배치하는 전체 파이프라인을 소유한다는 데 있다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-07.html">← The Synthetic Data Problem — The Real Bottleneck</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-09.html">Robot Policy Workflows — The R²D² Catalog →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

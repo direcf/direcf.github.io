@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch1: What Is Physical AI &amp; NVIDIA&#x27;s Bet — NVIDIA Physical AI Map — direcf</title>
+  <meta name="description" content="Physical AI가 왜 &#x27;AI의 다음 물결&#x27;인지, 그리고 NVIDIA가 이걸 하나의 OS·three computers 구조로 만들어가는 큰 그림을 잡는다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;height:22px;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><linearGradient id="direcf-nav-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs></svg>
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg></span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg></span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.25 15a4.5 4.5 0 0 0 4.5 4.5H18a3.75 3.75 0 0 0 1.332-7.257 3 3 0 0 0-3.758-3.848 5.25 5.25 0 0 0-10.233 2.33A4.502 4.502 0 0 0 2.25 15Z"/></svg></span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"/></svg></span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg></span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/physical-ai">NVIDIA Physical AI Map</a><span class="sep">›</span>
+        <strong>Ch01 What Is Physical AI &amp; NVIDIA&#x27;s Bet</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 01 <span style="opacity:.3">·</span> 13 chapters
+      </div>
+      <div class="chapter-emoji">🗺️</div>
+      <h1 class="chapter-title">What Is Physical AI &amp; NVIDIA&#x27;s Bet</h1>
+      <div class="chapter-title-kr">Physical AI란 무엇인가 &amp; NVIDIA의 판돈</div>
+      <div class="chapter-tldr">Physical AI가 왜 &#x27;AI의 다음 물결&#x27;인지, 그리고 NVIDIA가 이걸 하나의 OS·three computers 구조로 만들어가는 큰 그림을 잡는다.</div>
+
+      <div class="cs-wrap">
+        <div style="padding:40px;background:var(--bg-soft);border-radius:12px;color:var(--muted);text-align:center;border:1px dashed var(--border);">🍌 이미지 준비 중</div>
+        <div class="cs-label">🍌 Nano Banana — Chapter 1 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>Physical AI와 기존 digital AI의 차이를 embodiment 관점에서 설명할 수 있다</li><li>NVIDIA의 &#x27;three computers&#x27;(train·simulate·deploy) 프레임을 그릴 수 있다</li><li>sim-to-real 학습 루프가 왜 Physical AI의 중심인지 이해한다</li><li>NVIDIA가 layer마다 무엇을 파는지(하드웨어~모델) 지도를 잡는다</li><li>이 코스 전체가 어떤 순서로 지형을 훑을지 예측할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>지난 10여 년의 AI는 대부분 <strong>digital AI</strong>였다. 텍스트를 읽고 쓰고, 이미지를 만들고, 코드를 생성한다. 이 세계의 출력은 화면 안에 머문다 — 틀려도 물리적으로 다치는 사람이 없고, 시간을 무시하고 배치로 처리할 수 있으며, 데이터는 인터넷에 넘쳐난다. 그런데 로봇 팔이 컵을 집고, 휴머노이드가 계단을 오르고, 차가 교차로를 통과하는 순간 규칙이 완전히 달라진다. 출력이 물리 세계에 힘을 가하기 때문이다.</p>
+<p><strong>Physical AI(피지컬 AI)</strong> 는 바로 이 세계 — AI가 물리 세계에서 지각(perceive)·추론(reason)·행동(act)하는 것 — 을 가리킨다. 로봇, 자율주행, 휴머노이드가 대표적이다. digital AI와 달리 embodiment(신체성)·물리법칙·실시간(real-time)·안전(safety)이라는 제약이 처음부터 끝까지 따라붙는다. 이 제약들이 왜 문제를 근본적으로 바꾸는지가 이 챕터의 첫 절반이다.</p>
+<p>나머지 절반은 NVIDIA의 판돈이다. Jensen Huang은 Physical AI를 <strong>"three computers"</strong> 문제로 프레이밍한다 — 학습하는 컴퓨터, 시뮬레이션하는 컴퓨터, 로봇/차에 탑재되어 실시간 추론하는 컴퓨터. 이 세 컴퓨터를 잇는 것이 sim-to-real 학습 루프이고, NVIDIA는 그 루프의 모든 층 — 실리콘(CUDA)부터 시뮬레이터(Omniverse), 학습 프레임워크(Isaac), 데이터 생성 모델(Cosmos), 배치 칩(Jetson)까지 — 을 수직 통합해 'Physical AI의 OS'를 팔려 한다. 이 코스 전체가 그 지도를 한 층씩 걸어 내려가는 여정이다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>1.1 Physical AI = 물리 세계로 나온 AI</h2><p><strong>Physical AI(피지컬 AI)</strong> = AI 시스템이 센서로 물리 세계를 지각하고, 물리 법칙 아래에서 추론하며, 액추에이터로 실제 행동을 일으키는 것. 로봇 매니퓰레이션, 이족보행 휴머노이드, 자율주행(AV)이 대표 도메인이다.</p>
+<p>digital AI와 Physical AI를 나누는 것은 모델 크기나 아키텍처가 아니라 <strong>embodiment(신체성)</strong> 이다. 몸을 가진 순간 네 가지 제약이 동시에 켜진다.</p>
+<ul>
+<li>
+<p><strong>물리 법칙</strong>: 중력·마찰·관성·충돌이 항상 참이다. 모델이 물리적으로 불가능한 행동을 출력하면 실패하는 게 아니라 넘어지거나 부순다.</p>
+</li>
+<li>
+<p><strong>실시간(real-time)</strong>: 로봇은 배치로 생각할 수 없다. 세계가 계속 움직이므로 정해진 control frequency(예: 50~1000Hz) 안에 결정을 내야 한다. latency가 곧 성능이자 안전이다.</p>
+</li>
+<li>
+<p><strong>안전(safety)</strong>: 틀린 문장은 지우면 되지만, 틀린 토크는 사람을 다치게 한다. 오류의 비용이 비대칭적으로 크다.</p>
+</li>
+<li>
+<p><strong>데이터 희소성</strong>: 텍스트는 인터넷에 조 단위 토큰이 있지만, "로봇이 이 특정 컵을 이 각도에서 집는" teleoperation 데이터는 시간당 수십 달러로 사람이 직접 만들어야 한다.</p>
+</li>
+</ul>
+<p>이 차이를 표로 정리하면 문제의 형태가 왜 다른지 분명해진다.</p>
+<table>
+<thead>
+<tr>
+<th>축</th>
+<th>Digital AI</th>
+<th>Physical AI</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>출력</td>
+<td>화면 안 (텍스트·픽셀)</td>
+<td>물리 세계의 힘·토크</td>
+</tr>
+<tr>
+<td>시간</td>
+<td>batch, 무시 가능</td>
+<td>real-time, control loop</td>
+</tr>
+<tr>
+<td>오류 비용</td>
+<td>되돌릴 수 있음</td>
+<td>되돌릴 수 없음, 안전</td>
+</tr>
+<tr>
+<td>데이터</td>
+<td>인터넷 스케일</td>
+<td>희소, 수집 비쌈</td>
+</tr>
+<tr>
+<td>평가</td>
+<td>offline metric</td>
+<td>실제 물리 rollout</td>
+</tr>
+</tbody>
+</table>
+<p>핵심 통찰: Physical AI의 난이도는 "더 똑똑한 모델"이 아니라 <strong>"데이터를 어디서 구하고, 물리를 어떻게 값싸게 겪게 하느냐"</strong> 에서 나온다. 그리고 그 답이 시뮬레이션이다.</p></div><div class="sb-block"><h2>1.2 Jensen Huang의 &#x27;three computers&#x27;</h2><p>NVIDIA가 Physical AI를 설명할 때 항상 꺼내는 프레임이 <strong>three computers</strong> 다. 하나의 로봇을 만들려면 성격이 전혀 다른 세 대의 컴퓨터가 필요하다는 관점이다.</p>
+<ul>
+<li>
+<p><strong>(1) 학습 컴퓨터 — NVIDIA DGX</strong>: 데이터센터의 GPU 클러스터. foundation model과 policy를 학습한다. "무겁고 느리게, 그러나 대규모로 배우는" 뇌.</p>
+</li>
+<li>
+<p><strong>(2) 시뮬레이션 컴퓨터 — Omniverse (+ OVX)</strong>: 가상 세계를 돌려 synthetic data를 만들고, 정책을 안전하게 test하며, digital twin을 유지한다. 실세계 데이터의 희소성을 우회하는 '연습장'.</p>
+</li>
+<li>
+<p><strong>(3) 배치 컴퓨터 — Jetson AGX/Thor(로봇) 또는 DRIVE AGX(차량)</strong>: 로봇/차 안에 탑재되어 real-time으로 추론하고 행동한다. 작고 저전력이지만 지연 없이 도는 '척수'.</p>
+</li>
+</ul>
+<p>세 컴퓨터의 역할을 매핑하면 이렇게 된다.</p>
+<table>
+<thead>
+<tr>
+<th>컴퓨터</th>
+<th>하드웨어</th>
+<th>소프트웨어</th>
+<th>역할</th>
+<th>위치</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Train</td>
+<td>DGX (Blackwell/Hopper)</td>
+<td>PyTorch, Isaac Lab, GR00T</td>
+<td>모델·정책 학습</td>
+<td>data center</td>
+</tr>
+<tr>
+<td>Simulate</td>
+<td>Omniverse / OVX</td>
+<td>OpenUSD, Isaac Sim, Cosmos</td>
+<td>synthetic data·test·twin</td>
+<td>data center / cloud</td>
+</tr>
+<tr>
+<td>Deploy</td>
+<td>Jetson Thor / DRIVE Thor</td>
+<td>TensorRT, Isaac ROS</td>
+<td>real-time 추론·행동</td>
+<td>robot / vehicle edge</td>
+</tr>
+</tbody>
+</table>
+<p>이 프레임이 왜 강력한가? 세 컴퓨터가 <strong>하나의 데이터·모델 포맷으로 연결되어 순환</strong>하기 때문이다. 시뮬레이션이 데이터를 만들면 학습 컴퓨터가 정책을 굽고, 그 정책이 배치 컴퓨터로 내려가 실세계를 겪고, 그 실패가 다시 시뮬레이션으로 돌아온다. NVIDIA의 전략은 이 세 꼭짓점과 그 사이를 잇는 파이프 전부를 파는 것이다.</p><div class="fig-row"><figure class="fig-item"><img src="figures/three-computers.jpg" alt="NVIDIA의 &#x27;three computers&#x27; — DGX(학습)·Omniverse(시뮬레이션·합성데이터)·AGX(배치). 자율주행/로봇 모두 같은 3대 구조를 쓴다. (출처: NVIDIA Blog, CES 2025)" loading="lazy"><figcaption>NVIDIA의 &#x27;three computers&#x27; — DGX(학습)·Omniverse(시뮬레이션·합성데이터)·AGX(배치). 자율주행/로봇 모두 같은 3대 구조를 쓴다. (출처: NVIDIA Blog, CES 2025)</figcaption></figure></div></div><div class="sb-block"><h2>1.3 sim-to-real 학습 루프 — Physical AI의 심장</h2><p>Physical AI가 digital AI와 결정적으로 갈리는 지점은 학습 데이터를 <strong>어디서</strong> 얻느냐다. 인터넷에는 로봇의 행동 데이터가 없다. 그래서 등장하는 것이 sim-to-real 루프다.</p>
+<p>루프는 다음 순서로 돈다.</p>
+<ol>
+<li>
+<p><strong>real (씨앗 데이터)</strong>: 소량의 실제 시연(teleoperation)·센서 로그를 모은다. 비싸므로 적다.</p>
+</li>
+<li>
+<p><strong>sim (증폭)</strong>: 시뮬레이터에서 그 씨앗을 물리적으로 그럴듯한 수천~수백만 배로 늘린다. 조명·재질·물체 위치를 무작위로 흔드는 domain randomization으로 다양성을 준다.</p>
+</li>
+<li>
+<p><strong>train (학습)</strong>: 이 대량의 합성 데이터로 정책/모델을 학습한다.</p>
+</li>
+<li>
+<p><strong>deploy (배치)</strong>: 학습한 정책을 실제 로봇에 올려 물리 세계에서 돌린다.</p>
+</li>
+<li>
+<p><strong>gap (측정·환류)</strong>: 실패를 관찰하고 다시 1로.</p>
+</li>
+</ol>
+<p>거칠게 말하면 유효 데이터량은 <span class="math-inline">\(D_{\mathrm{eff}} = D_{\mathrm{real}} \times k_{\mathrm{sim}}\)</span> 처럼 시뮬레이션 배수 <span class="math-inline">\(k_{\mathrm{sim}}\)</span> 에 비례해 폭발한다. sim이 사실상 공짜로 데이터를 찍어내기 때문에, 병목이 "데이터 수집"에서 "시뮬레이션의 충실도"로 이동한다.</p>
+<p>그 대가가 <strong>sim-to-real gap</strong> 이다.</p>
+<p><strong>sim-to-real gap(심투리얼 갭)</strong> = 시뮬레이션에서 학습한 정책이 실제 세계로 옮겨질 때 생기는 성능 저하. 물리 근사 오차, 렌더링과 실제 카메라의 차이, 센서 노이즈 모델 불일치 등에서 나온다.</p>
+<p>이 코스에서 앞으로 만나는 거의 모든 기술 — RTX 렌더의 사실성(3장), Newton 물리(4장), Cosmos의 물리 정확 생성(5장), 합성 데이터 파이프라인(7장) — 은 결국 이 gap을 줄이거나, gap이 있어도 견디는 정책을 만들기 위한 것이다. Physical AI를 이해한다는 건 이 루프를 이해한다는 것과 거의 같다.</p></div><div class="sb-block"><h2>1.4 왜 NVIDIA인가 — Physical AI의 OS를 판다</h2><p>three computers 프레임이 드러내는 NVIDIA의 진짜 야심은 GPU를 파는 게 아니다. <strong>Physical AI의 운영체제(OS)</strong> 를 파는 것이다.</p>
+<p>NVIDIA는 스택의 모든 층에 제품을 깔아 두었다.</p>
+<ul>
+<li>
+<p><strong>실리콘·CUDA</strong>: 모든 것의 바닥. 병렬 연산의 사실상 표준.</p>
+</li>
+<li>
+<p><strong>Omniverse + OpenUSD</strong>: 3D 세계의 공통 데이터 층(substrate). (2장)</p>
+</li>
+<li><strong>Isaac Sim / Cosmos</strong>: 시뮬레이션과 데이터 생성. (3·5·7장)</li>
+<li><strong>Isaac Lab / Newton</strong>: 로봇 학습 프레임워크. (4장)</li>
+<li><strong>GR00T / COMPASS 등 정책</strong>: foundation model과 워크플로우. (8·9장)</li>
+<li><strong>Jetson Thor / DRIVE Thor</strong>: 배치 실리콘. (12장)</li>
+</ul>
+<p>이 수직 통합(vertical integration)의 강점은 명확하다. 한 회사가 학습·시뮬·배치를 하나의 데이터 포맷(OpenUSD)과 하나의 런타임(CUDA)으로 묶으면, 층 사이의 마찰이 사라진다. 시뮬에서 만든 asset이 그대로 학습에 쓰이고, 학습한 정책이 그대로 Jetson에 내려간다. 경쟁사가 개별 층에서 아무리 좋은 조각을 만들어도 이 '이음매 없는 파이프'를 이기기 어렵다.</p>
+<p>동시에 이것은 <strong>lock-in(락인)</strong> 이기도 하다. 스택 전체를 채택할수록 특정 층만 다른 회사 제품으로 갈아끼우기가 어려워진다. NVIDIA가 Isaac Sim·Cosmos·Newton을 상당 부분 오픈소스로 푸는 것도 이 긴장과 무관하지 않다 — 생태계를 키워 표준을 선점하되, 성능의 정점(RTX·Blackwell·Thor)은 자사 하드웨어에서만 최대로 나오게 설계한다.</p>
+<p>면접 관점의 통찰: "왜 NVIDIA가 Physical AI에서 유리한가?"의 정답은 "GPU가 빨라서"가 아니라 <strong>"three computers를 하나의 포맷과 런타임으로 수직 통합해 sim-to-real 루프의 마찰을 없앴기 때문"</strong> 이다. 그리고 그 대가가 lock-in이라는 점까지 말할 수 있어야 균형 잡힌 답이다.</p></div><div class="sb-block"><h2>1.5 이 코스의 지형 — 스택을 따라 내려가기</h2><p>이 코스는 무작위 토픽 나열이 아니라 스택을 한 층씩 훑는 지도다. 관통하는 순서는 이렇다.</p>
+<p><strong>Omniverse(substrate) → Isaac Sim / Cosmos(data) → Isaac Lab(train) → policy(GR00T/COMPASS) → Jetson(deploy)</strong></p>
+<p>이 순서를 syllabus에 겹쳐 보면 전체 지형이 보인다.</p>
+<table>
+<thead>
+<tr>
+<th>구간</th>
+<th>챕터</th>
+<th>스택 층</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>기반</td>
+<td>2 Omniverse &amp; OpenUSD</td>
+<td>substrate</td>
+</tr>
+<tr>
+<td>시뮬·데이터</td>
+<td>3 Isaac Sim, 5 Cosmos, 7 합성데이터</td>
+<td>data</td>
+</tr>
+<tr>
+<td>학습</td>
+<td>4 Isaac Lab &amp; Newton</td>
+<td>train</td>
+</tr>
+<tr>
+<td>통합 지도</td>
+<td>6 네 기둥 관계성</td>
+<td>전 층</td>
+</tr>
+<tr>
+<td>정책</td>
+<td>8 GR00T, 9 R²D² 워크플로우</td>
+<td>policy</td>
+</tr>
+<tr>
+<td>응용</td>
+<td>10 AV 스택, 11 산업 트윈</td>
+<td>vertical</td>
+</tr>
+<tr>
+<td>배치</td>
+<td>12 Jetson Thor</td>
+<td>deploy</td>
+</tr>
+<tr>
+<td>종합</td>
+<td>13 2026 최전선</td>
+<td>전체</td>
+</tr>
+</tbody>
+</table>
+<p>읽는 법에 대한 조언: 각 챕터에서 새 제품 이름이 나올 때마다 "이건 three computers 중 어디에 속하고, sim-to-real 루프의 어느 단계를 담당하나?"를 스스로 물어라. 그러면 20개가 넘는 NVIDIA 제품 이름이 개별 암기 대상이 아니라 하나의 지도 위 좌표로 정렬된다.</p>
+<p>다음 챕터부터는 이 지도의 맨 아래층 — 모든 것이 그 위에 서는 공통 3D 데이터 층, Omniverse와 OpenUSD — 부터 파고든다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">파일럿 훈련: 지상 교육 · 풀모션 시뮬레이터 · 실제 조종석</div>
+      <div class="a-body"><p>항공사가 조종사를 길러내는 방식은 three computers와 놀랍도록 똑같다.</p>
+<p>먼저 <strong>지상 교육(ground school)</strong> 이 있다. 교실에서 항공역학·규정·시스템을 대규모로, 천천히, 깊게 배운다. 이게 학습 컴퓨터(DGX)다 — 느리지만 근본을 굽는 곳.</p>
+<p>그다음 <strong>풀모션 시뮬레이터(full-motion simulator)</strong> 다. 유압으로 흔들리는 진짜 같은 조종석에서 엔진 화재, 측풍 착륙, 계기 고장을 수백 번 겪는다. 실제 비행기와 승객을 위험에 빠뜨리지 않고도 위험한 상황을 무한히 반복할 수 있다. 이게 시뮬레이션 컴퓨터(Omniverse)다 — 값싸게, 안전하게, 대량으로 경험을 찍어내는 곳.</p>
+<p>마지막이 <strong>실제 조종석(real cockpit)</strong> 이다. 진짜 하늘에서 real-time으로, 되돌릴 수 없는 결정을 내린다. 이게 배치 컴퓨터(Jetson/DRIVE)다.</p>
+<p>그리고 모든 조종사가 아는 사실 하나 — <strong>시뮬레이터에서 완벽했는데 실제 착륙에서 예상 못 한 돌풍에 흔들린다.</strong> 이게 정확히 sim-to-real gap이다. 시뮬레이터를 아무리 정교하게 만들어도(RTX·Newton·Cosmos) 실물과의 미세한 차이는 남고, 훈련의 목표는 그 gap을 줄이는 동시에 gap이 있어도 무너지지 않는 조종사를 만드는 것이다. Physical AI 엔지니어가 하는 일이 바로 이것이다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>three computers를 개념 dataclass로 모델링하고, sim-to-real 루프에서 시뮬레이션이 유효 데이터를 어떻게 증폭하는지 개념적으로 보여준다. 실행 자체보다 '어느 컴퓨터가 무엇을 담당하는가'의 매핑을 읽는 것이 목적이다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">from dataclasses import dataclass
+
+@dataclass
+class Computer:
+    name: str        # 제품/브랜드
+    hardware: str    # 실물 실리콘
+    software: str    # 그 위에서 도는 스택
+    role: str        # sim-to-real 루프에서의 역할
+
+THREE_COMPUTERS = {
+    &quot;train&quot;: Computer(
+        &quot;NVIDIA DGX&quot;, &quot;Blackwell/Hopper cluster&quot;,
+        &quot;PyTorch · Isaac Lab · GR00T&quot;, &quot;foundation model·policy 학습&quot;),
+    &quot;simulate&quot;: Computer(
+        &quot;Omniverse (+OVX)&quot;, &quot;RTX / OVX server&quot;,
+        &quot;OpenUSD · Isaac Sim · Cosmos&quot;, &quot;synthetic data·test·digital twin&quot;),
+    &quot;deploy&quot;: Computer(
+        &quot;Jetson Thor / DRIVE Thor&quot;, &quot;Blackwell edge SoC&quot;,
+        &quot;TensorRT · Isaac ROS&quot;, &quot;real-time 추론·물리 행동&quot;),
+}
+
+def sim_to_real_loop(real_hours: float, sim_multiplier: int) -&gt; dict:
+    # real 데이터는 비싸고 희소 → sim이 물리적으로 증폭한다
+    effective_hours = real_hours * sim_multiplier
+    return {
+        &quot;seed_data_from&quot;: &quot;real teleoperation&quot;,
+        &quot;amplified_in&quot;:   THREE_COMPUTERS[&quot;simulate&quot;].name,
+        &quot;effective_hours&quot;: effective_hours,   # D_eff = D_real x k_sim
+        &quot;trained_on&quot;:     THREE_COMPUTERS[&quot;train&quot;].name,
+        &quot;deployed_to&quot;:    THREE_COMPUTERS[&quot;deploy&quot;].name,
+        &quot;must_manage&quot;:    &quot;sim-to-real gap&quot;,
+    }
+
+print(sim_to_real_loop(real_hours=10, sim_multiplier=5000))</code></pre>
+      <div class="c-walk"><p>Computer dataclass는 각 컴퓨터를 (name, hardware, software, role) 4-튜플로 본다 — three computers를 암기하는 대신 이 4축으로 어떤 NVIDIA 제품이든 좌표화할 수 있다. THREE_COMPUTERS 딕셔너리가 train·simulate·deploy 세 꼭짓점을 채운다. sim_to_real_loop는 루프의 핵심 산술 하나만 보여준다: 실제 10시간의 씨앗 데이터가 시뮬레이션 배수 5000을 만나 5만 시간의 유효 데이터가 된다는 것 — 이것이 왜 시뮬레이션이 Physical AI의 심장인지의 정량적 이유다. 마지막 must_manage 필드가 이 증폭의 대가, 즉 sim-to-real gap을 상기시킨다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">빅테크 AI/robotics 면접에서 이 주제는 &#x27;버즈워드를 넘어 프레임을 그릴 수 있는가&#x27;를 본다. Physical AI를 embodiment 제약으로 정의하고, three computers와 sim-to-real 루프를 화이트보드에 그리며, NVIDIA의 수직 통합을 강점과 lock-in 양면으로 평가할 수 있으면 합격선이다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>Physical AI와 digital AI의 차이를 embodiment(물리·실시간·안전·데이터 희소)로 구조화해 설명</li><li>three computers(train·simulate·deploy)를 하드웨어·소프트웨어·역할로 매핑</li><li>sim-to-real 루프에서 시뮬레이션이 데이터 병목을 우회하는 메커니즘과 그 대가(gap)를 함께 설명</li><li>NVIDIA 강점을 &#x27;GPU 성능&#x27;이 아니라 &#x27;수직 통합에 의한 파이프 마찰 제거&#x27;로 규정</li><li>lock-in 리스크와 오픈소스 전략의 긴장을 균형 있게 언급</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>Physical AI를 그냥 &#x27;로봇에 쓰는 AI&#x27;로만 말하고 embodiment 제약을 못 짚음</li><li>three computers를 셋 다 데이터센터 GPU로 뭉뚱그림 (deploy가 edge라는 점 누락)</li><li>sim-to-real gap의 존재를 인지하지 못하고 &#x27;시뮬로 학습하면 끝&#x27;이라고 단정</li><li>NVIDIA 우위를 &#x27;하드웨어가 빨라서&#x27;로만 환원</li><li>lock-in을 전혀 언급하지 않는 무비판적 찬양</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>Q1. digital AI에서 잘 통하던 &#x27;데이터 스케일링&#x27;이 Physical AI에서 곧바로 안 되는 이유를 embodiment 관점에서 설명하라.</li><li>Q2. three computers 각각을 하드웨어·소프트웨어·역할로 매핑하고, 셋을 잇는 데이터가 어떻게 순환하는지 sim-to-real 루프로 그려라.</li><li>Q3. NVIDIA의 수직 통합이 경쟁 우위인 이유와, 동시에 그것이 왜 lock-in 리스크인지 한 문장씩으로 정리하라.</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> Familiar: Physical AI는 로봇/자율주행에 쓰는 AI이고, NVIDIA가 three computers라는 걸 밀고 있다. Mastery: Physical AI의 난이도는 모델이 아니라 embodiment 제약(물리·실시간·안전·데이터 희소)에서 나오며, 그래서 병목이 &#x27;데이터 수집&#x27;에서 &#x27;시뮬레이션 충실도&#x27;로 이동한다. three computers는 train(DGX)·simulate(Omniverse)·deploy(Jetson/DRIVE)를 하나의 OpenUSD 포맷과 CUDA 런타임으로 묶어 sim-to-real 루프의 마찰을 없앤 것이고, 유효 데이터가 시뮬 배수에 비례해 폭발하는 대신 sim-to-real gap을 관리해야 한다. NVIDIA 우위는 이 수직 통합의 파이프 마찰 제거이며, 그 이면이 lock-in이다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>Physical AI = 물리 세계로 나온 AI</h3><p>센서로 지각하고 물리 법칙 아래 추론하며 액추에이터로 행동하는 AI. 로봇·자율주행·휴머노이드가 대표 도메인이며, digital AI와의 본질적 차이는 모델이 아니라 embodiment다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>embodiment이 네 제약을 동시에 켠다</h3><p>몸을 가지면 물리 법칙·실시간(control loop)·안전(비가역 오류)·데이터 희소가 한꺼번에 작동한다. 이 제약들이 문제의 형태를 digital AI와 근본적으로 다르게 만든다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>병목은 모델이 아니라 데이터·물리다</h3><p>인터넷에는 로봇 행동 데이터가 없다. 그래서 Physical AI의 핵심 질문은 &#x27;더 똑똑한 모델&#x27;이 아니라 &#x27;데이터를 어디서 구하고 물리를 어떻게 값싸게 겪게 하느냐&#x27;이며, 그 답이 시뮬레이션이다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>three computers: train · simulate · deploy</h3><p>학습 컴퓨터(DGX), 시뮬레이션 컴퓨터(Omniverse+OVX), 배치 컴퓨터(Jetson/DRIVE)의 세 꼭짓점. 특히 배치 컴퓨터는 데이터센터가 아니라 로봇/차 안의 저전력 edge라는 점이 핵심이다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>sim-to-real 루프가 심장이다</h3><p>소량의 real 씨앗 → sim에서 대량 증폭 → train → deploy → gap 측정 → 다시 real. 유효 데이터가 시뮬 배수에 비례해 폭발하는 대신, 대가로 sim-to-real gap을 관리해야 한다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>sim-to-real gap이 남는 과제다</h3><p>물리 근사·렌더링·센서 노이즈의 불일치로 시뮬에서 학습한 정책이 실세계에서 성능이 떨어진다. 코스의 거의 모든 기술(RTX·Newton·Cosmos·합성데이터)이 이 gap을 겨냥한다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>NVIDIA는 GPU가 아니라 OS를 판다</h3><p>CUDA→Omniverse→Isaac→Cosmos→Jetson까지 모든 층을 수직 통합해 sim-to-real 루프의 마찰을 제거한다. 우위의 원천은 성능보다 &#x27;이음매 없는 파이프&#x27;다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>수직 통합의 이면은 lock-in</h3><p>스택을 채택할수록 특정 층만 교체하기 어려워진다. NVIDIA의 오픈소스 전략(Isaac Sim·Cosmos·Newton)은 표준 선점과 lock-in 사이의 긴장을 관리하는 수단이다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <span></span>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-02.html">Omniverse &amp; OpenUSD — The Substrate →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

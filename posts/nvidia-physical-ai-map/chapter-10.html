@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch10: The Autonomous Driving Stack — NVIDIA Physical AI Map — direcf</title>
+  <meta name="description" content="로봇과 쌍둥이 문제인 자율주행 — DRIVE·Alpamayo·Cosmos for AV·Halos(safety)가 same three-computer 구조로 어떻게 굴러가는지 본다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;height:22px;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><linearGradient id="direcf-nav-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs></svg>
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg></span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg></span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.25 15a4.5 4.5 0 0 0 4.5 4.5H18a3.75 3.75 0 0 0 1.332-7.257 3 3 0 0 0-3.758-3.848 5.25 5.25 0 0 0-10.233 2.33A4.502 4.502 0 0 0 2.25 15Z"/></svg></span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"/></svg></span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg></span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/physical-ai">NVIDIA Physical AI Map</a><span class="sep">›</span>
+        <strong>Ch10 The Autonomous Driving Stack</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 10 <span style="opacity:.3">·</span> 13 chapters
+      </div>
+      <div class="chapter-emoji">🚗</div>
+      <h1 class="chapter-title">The Autonomous Driving Stack</h1>
+      <div class="chapter-title-kr">Autonomous Driving 스택</div>
+      <div class="chapter-tldr">로봇과 쌍둥이 문제인 자율주행 — DRIVE·Alpamayo·Cosmos for AV·Halos(safety)가 same three-computer 구조로 어떻게 굴러가는지 본다.</div>
+
+      <div class="cs-wrap">
+        <div style="padding:40px;background:var(--bg-soft);border-radius:12px;color:var(--muted);text-align:center;border:1px dashed var(--border);">🍌 이미지 준비 중</div>
+        <div class="cs-label">🍌 Nano Banana — Chapter 10 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>자율주행이 Physical AI의 한 갈래인 이유를 설명한다</li><li>DRIVE 스택과 Alpamayo(AV foundation model)의 관계를 안다</li><li>Cosmos가 AV 시뮬/데이터에 쓰이는 방식을 이해한다</li><li>Halos 등 safety 프레임의 위치를 파악한다</li><li>AV와 로봇이 스택을 공유하는 지점을 비교한다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>지난 챕터들에서 우리는 휴머노이드와 mobile robot을 관통하는 하나의 구조 — three computers(DGX 학습 / Omniverse·Cosmos 시뮬 / Jetson 배치) — 를 반복해서 만났다. 이 챕터의 핵심 주장은 단순하지만 강력하다. <strong>자율주행차(AV)는 로봇과 쌍둥이 문제</strong>이며, 정확히 같은 구조로 풀린다는 것이다.</p>
+<p>Jensen Huang은 이를 명시적으로 말했다 — "자율주행차도 로봇이다. 여기에도 3대의 컴퓨터가 필요하다: 모델을 학습시키는 DGX, test drive와 synthetic data를 생성하는 Omniverse, 그리고 차 안에 들어가는 슈퍼컴 DRIVE AGX." 즉 로봇에서 배운 three-computer 렌즈를 그대로 도로 위로 옮기면 AV 스택이 보인다.</p>
+<p>이 챕터는 그 매핑을 네 개의 이름으로 채운다 — 차량 내 컴퓨터 <strong>DRIVE AGX Thor</strong>, AV foundation model <strong>Alpamayo</strong>, 시뮬·데이터를 강화하는 <strong>Cosmos for AV</strong>, 그리고 안전을 책임지는 <strong>Halos</strong>. 이들은 각각 배치·정책·데이터·안전이라는 자리를 차지하며, 앞 챕터의 로봇 스택과 놀랍도록 대응된다.</p>
+<p>동시에 이 챕터는 '완전히 같지는 않다'는 지점도 분명히 한다. AV는 로봇과 스택을 공유하지만, <strong>안전·규제 제약이 훨씬 크고 open-road diversity(공공도로의 무한한 상황 다양성)가 문제의 본질</strong>이다. 그래서 로봇에는 없는 Halos 같은 safety 프레임이 스택의 정식 구성원으로 등장한다. 이 챕터의 목표는 AV를 Physical AI의 한 갈래로 자리매김하고, 공유하는 부분과 갈라지는 부분을 동시에 그려내는 것이다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>10.1 자율주행은 왜 &#x27;로봇 문제&#x27;인가 — three computers의 재등장</h2><p>자율주행을 별개의 산업으로 보는 습관을 먼저 버려야 한다. Physical AI의 관점에서 AV는 '바퀴 넷 달린 로봇'일 뿐이다.</p>
+<p>로봇의 정의를 떠올려 보자 — 센서로 세계를 인식하고(perception), 무엇을 할지 결정하며(policy), 물리적으로 행동하는(actuation) 몸을 가진 기계. 자율주행차는 카메라·radar·lidar로 도로를 보고, 주행 정책으로 판단하며, 조향·가감속으로 움직인다. 정의가 그대로 들어맞는다.</p>
+<p>그래서 로봇에서 쓴 도구가 그대로 재사용된다. <strong>three computers 프레임</strong> = DGX(모델 학습) / Omniverse+Cosmos(시뮬레이션·synthetic data 생성) / Jetson·DRIVE AGX(실물 배치)라는 세 컴퓨터로 Physical AI 시스템을 만드는 NVIDIA의 공통 아키텍처.</p>
+<p>Jensen Huang의 정식화가 이 대응을 못박는다.</p>
+<ul>
+<li>
+<p><strong>DGX</strong> — 방대한 주행 데이터로 AV 모델을 <strong>학습</strong>한다(로봇의 policy 학습과 동일한 자리).</p>
+</li>
+<li>
+<p><strong>Omniverse(+Cosmos)</strong> — 가상 도로에서 <strong>test drive</strong>를 돌리고 <strong>synthetic sensor data</strong>를 생성한다(로봇의 Isaac Sim 시뮬과 동일한 자리).</p>
+</li>
+<li>
+<p><strong>DRIVE AGX</strong> — 학습된 모델을 담아 <strong>차 안에서 실시간 추론</strong>한다(로봇의 Jetson 배치와 동일한 자리).</p>
+</li>
+</ul>
+<p>왜 이 통합이 중요한가? NVIDIA는 로봇과 AV를 위해 두 벌의 스택을 만들지 않는다. 하나의 Physical AI 스택 — Omniverse에서 시뮬하고, Cosmos로 데이터를 늘리고, AGX 계열 칩에 배치 — 을 로봇에도 자동차에도 똑같이 판다. 이것이 이 코스가 로봇과 AV를 한 지도 안에 놓는 이유다. 학습·시뮬·배치라는 세 자리는 대상이 팔이든 바퀴든 변하지 않는다.</p></div><div class="sb-block"><h2>10.2 배치의 자리 — NVIDIA DRIVE와 DRIVE AGX Thor</h2><p>three computers 중 '차 안의 슈퍼컴'을 담당하는 것이 DRIVE다. 로봇에서 Jetson이 앉던 자리에, AV에서는 DRIVE가 앉는다.</p>
+<p><strong>NVIDIA DRIVE</strong> = 자율주행(AV)을 위한 NVIDIA의 end-to-end 플랫폼. 차량 내 컴퓨터 하드웨어부터 그 위에서 도는 AV 소프트웨어 스택까지를 아우르는 이름이다.</p>
+<p><strong>DRIVE AGX Thor</strong> = 차량에 실제로 탑재되는 차량 내 컴퓨터(in-vehicle computer)로, NVIDIA의 <strong>Blackwell 아키텍처 기반</strong>이다. 자율주행에 필요한 대규모 신경망 추론을 차 안에서 실시간으로 감당하는 것이 임무다.</p>
+<p>왜 차 '안'에 이만한 컴퓨터가 필요한가? 자율주행의 인식·판단은 클라우드에 맡길 수 없다. 시속 100km로 달리는 차가 판단을 클라우드에 왕복 요청하면, 그 지연(latency)이 곧 사고다. 그래서 무거운 foundation model 추론을 <strong>차량 안에서(on-vehicle) 밀리초 단위로</strong> 끝내야 하고, 이것이 DRIVE AGX Thor 같은 전용 슈퍼컴을 요구한다. 로봇에서 Jetson이 'edge에서의 실시간 추론'을 맡던 논리와 정확히 같되, 요구되는 연산 규모와 안전 등급이 더 높다.</p>
+<p>이름 'Thor'가 세대를 표시한다는 점도 알아두면 좋다. NVIDIA DRIVE의 차량 컴퓨터는 세대를 거치며 이름을 바꿔 왔고, Thor는 Blackwell 세대의 최신 차량 컴퓨터다. 로봇 쪽 최신 배치 칩인 <strong>Jetson Thor</strong>(Chapter 12)와 이름이 같은 것은 우연이 아니다 — 둘 다 같은 Blackwell 세대의 edge 추론 칩 계열로, 로봇과 AV가 하드웨어 레벨에서도 형제임을 보여준다. 정리하면 DRIVE는 AV 스택의 '배치(deploy)' 꼭짓점이며, three computers의 세 번째 컴퓨터를 물리적으로 구현한다.</p></div><div class="sb-block"><h2>10.3 정책의 자리 — Alpamayo, AV foundation model</h2><p>차 안의 컴퓨터(DRIVE AGX)가 하드웨어라면, 그 위에서 '무엇을 어떻게 운전할지'를 결정하는 두뇌가 필요하다. 그 두뇌가 Alpamayo다.</p>
+<p><strong>Alpamayo(알파마요)</strong> = NVIDIA의 AV foundation model(GTC 2026 기준 버전 1.5). 주행에 대한 추론(driving reasoning)과 정책(policy)을 담당하는, 자율주행판 foundation model이다.</p>
+<p>AV foundation model이라는 개념 자체가 최근 흐름의 핵심이다. 과거 자율주행은 detection·prediction·planning을 각각 손으로 만든 여러 모듈로 쪼개 붙였다. foundation model 접근은 대신 방대한 주행 데이터로 학습한 하나의 큰 모델이 '주행을 통째로 추론'하게 한다 — 로봇에서 GR00T(Chapter 8)가 manipulation의 foundation model이었던 것과 정확히 대응된다. Alpamayo는 AV 스택에서 GR00T가 서던 '정책(policy)' 자리에 앉는다.</p>
+<p>'reasoning(추론)'이 강조되는 이유를 짚어야 한다. 도로 위 상황은 규칙표로 다 못 담는다 — 공을 쫓아 튀어나올 것 같은 아이, 애매하게 걸친 공사 표지, 눈짓으로 양보를 주고받는 교차로. 이런 상황을 다루려면 단순 반응이 아니라 '저 상황이 무엇을 의미하고 어떻게 전개될지'를 추론하는 능력이 필요하다. Alpamayo가 driving reasoning을 내세우는 것은, AV의 어려움이 결국 open-road의 무한한 long-tail(희귀하지만 치명적인 상황)에 있기 때문이다.</p>
+<p>스택 안에서의 위치로 정리하자. Alpamayo는 <strong>DGX에서 학습</strong>되고, <strong>DRIVE AGX에 배치</strong>되어 차 안에서 돈다. 즉 three computers의 학습 꼭짓점(DGX)과 배치 꼭짓점(DRIVE)을 잇는 '정책'이 바로 Alpamayo다. 그리고 이 정책을 학습·검증할 데이터를 대는 것이 다음 절의 Cosmos다.</p></div><div class="sb-block"><h2>10.4 데이터·시뮬의 자리 — Cosmos for AV</h2><p>foundation model은 데이터를 먹고 자란다. 그런데 AV에서 '실제 도로 데이터'만으로는 결코 충분하지 않다 — 사고 직전의 위험 상황을 실물로 수집할 수는 없기 때문이다. 이 간극을 메우는 것이 Cosmos for AV다.</p>
+<p><strong>Cosmos for AV</strong> = CES 2025에서 강조된, AV의 three-computer 워크플로우를 강화하기 위한 Cosmos WFM(world foundation model)의 활용. 고품질·다양한 센서 데이터를 생성하고 AV 소프트웨어 스택을 검증하는 데 쓰인다.</p>
+<p>작동 방식의 핵심은 <strong>Omniverse 물리 라이브러리에 conditioning(조건 부여)</strong>하는 것이다. 순수 생성 모델은 그럴듯하지만 물리적으로 틀린 장면을 만들 수 있다. 그래서 Omniverse로 만든 물리적으로 정확한 3D 장면(도로 기하·차량 배치·조명 등)을 조건으로 주고, 그 위에서 Cosmos WFM이 <strong>고충실도(high-fidelity) 센서 데이터와 현실적인 행동(realistic behavior)</strong>을 생성한다. 물리적 정합성은 Omniverse가 보장하고, 다양성·사실성은 Cosmos가 채우는 분업이다.</p>
+<p>이것이 왜 결정적인가? 두 가지 문제를 동시에 푼다.</p>
+<ul>
+<li>
+<p><strong>다양성(diversity)</strong> — 밤·비·눈·역광, 흔치 않은 도로 구조 등을 실제로 몇 년간 주행해 모으는 대신, 시뮬에서 조건만 바꿔 대량 생성한다. open-road의 long-tail을 데이터로 채우는 유일하게 현실적인 방법이다.</p>
+</li>
+<li>
+<p><strong>검증(validation)</strong> — 실제로 위험한 시나리오(끼어들기, 무단횡단)를 반복 재현해 AV 소프트웨어 스택이 올바로 반응하는지 안전하게 검증한다.</p>
+</li>
+</ul>
+<p>로봇 스택과의 대응도 명확하다. 로봇에서 Cosmos·synthetic data(Chapter 5·7)가 정책 학습의 데이터 갈증을 풀었듯, AV에서도 같은 Cosmos가 센서 데이터 생성과 스택 검증을 맡는다. three computers의 '시뮬레이션' 꼭짓점(Omniverse+Cosmos)이 AV에서 하는 일이 바로 이것이다 — 실물 test drive로는 불가능한 규모와 위험도의 상황을 가상에서 무한히 만들어 Alpamayo를 먹이고 시험한다.</p></div><div class="sb-block"><h2>10.5 안전의 자리 — Halos, 그리고 AV가 로봇과 갈라지는 지점</h2><p>여기서 AV 스택은 로봇 스택과 결정적으로 갈라진다. 로봇에는 없던 새로운 정식 구성원 — 안전(safety) — 이 등장한다.</p>
+<p><strong>Halos(할로스)</strong> = NVIDIA의 AV safety 시스템/프레임워크. 자율주행 시스템의 안전을 검증(safety validation)하는 것을 목적으로 하는, 스택 전반을 아우르는 안전 체계다.</p>
+<p>왜 AV에는 안전이 별도의 스택 구성원이 되어야 하는가? 창고 로봇이 실수하면 상자를 떨어뜨리지만, 자율주행차가 실수하면 사람이 다친다. 게다가 AV는 <strong>규제(regulation)</strong> 아래 있다 — 안전을 '잘 되면 좋은 것'이 아니라 '증명해야 하는 것'으로 요구받는다. 그래서 안전은 개발이 끝난 뒤 붙이는 검사가 아니라, 학습·시뮬·배치 전 과정에 스며드는 프레임이 되어야 하고, 그 자리를 Halos가 채운다.</p>
+<p>Halos가 앞의 조각들과 어떻게 맞물리는지 보면 스택이 완성된다 — Cosmos for AV가 위험 시나리오를 대량 생성하면, Halos는 그 시나리오들에 대해 AV 소프트웨어(Alpamayo 포함)가 안전하게 반응하는지 체계적으로 검증한다. 즉 데이터 생성(Cosmos)과 안전 검증(Halos)이 짝을 이뤄, open-road의 long-tail을 '만들어내고 → 그에 맞서 안전을 증명'하는 루프를 돈다.</p>
+<p>이제 AV와 로봇의 <strong>공유와 분기</strong>를 정리하자.</p>
+<table>
+<thead>
+<tr>
+<th>관점</th>
+<th>공유하는 것</th>
+<th>AV가 다른 것</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>아키텍처</td>
+<td>three computers(DGX/Omniverse·Cosmos/AGX) 동일</td>
+<td>—</td>
+</tr>
+<tr>
+<td>시뮬</td>
+<td>Omniverse 물리 + Cosmos 데이터 생성 공유</td>
+<td>open-road diversity가 문제의 본질</td>
+</tr>
+<tr>
+<td>배치</td>
+<td>AGX 계열 edge 칩(Thor) 공유</td>
+<td>실시간·안전 등급 요구가 더 높음</td>
+</tr>
+<tr>
+<td>안전</td>
+<td>—</td>
+<td>Halos 같은 safety 프레임이 정식 구성원, 규제 제약 큼</td>
+</tr>
+</tbody>
+</table>
+<p>이 표가 이 챕터의 결론이다. AV와 로봇은 스택(Omniverse 시뮬·Cosmos 데이터·AGX 배치)을 공유하는 쌍둥이지만, AV 쪽이 안전·규제·도로 다양성이라는 무게를 훨씬 더 진다. 그래서 로봇 스택에 Halos라는 안전 축을 더한 것이 AV 스택이라고 이해하면 된다. 실제로 유럽의 여러 로봇·AV 제조사들이 Isaac·Omniverse와 함께 Halos를 채택하고 있다는 점은, 이 공유 스택이 산업 표준으로 굳어지고 있음을 보여준다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">같은 비행 훈련, 더 엄격한 항공 규제</div>
+      <div class="a-body"><p>AV와 로봇의 관계를 이해하려면, 드론 조종사와 여객기 조종사를 같은 학교에서 길러내는 상황을 떠올리면 된다. 두 조종사 모두 같은 커리큘럼으로 배운다 — 계기 읽는 법(perception), 상황 판단(policy), 조종간 다루기(actuation). NVIDIA의 three computers가 바로 이 공용 훈련 커리큘럼이다. 교실에서 이론을 배우고(DGX 학습), 위험 없는 시뮬레이터에서 무한히 연습하며(Omniverse+Cosmos), 실전에서 실시간으로 조종한다(DRIVE AGX). 드론이든 여객기든 이 세 단계는 변하지 않는다.</p>
+<p>연습용 시뮬레이터가 특히 중요한 이유는, 실제로는 겪게 하고 싶지 않은 상황을 안전하게 만들어낼 수 있기 때문이다. 엔진 하나가 꺼지는 순간, 폭풍 속 착륙, 활주로에 뛰어든 물체 — 실제 비행으로 이걸 연습시킬 수는 없다. Cosmos for AV가 하는 일이 정확히 이것이다. Omniverse가 물리적으로 정확한 무대(공항·기상)를 세우고, 그 위에서 Cosmos가 온갖 위험 시나리오를 사실적으로 생성해 무한히 연습시킨다. 실제 도로의 희귀하고 치명적인 long-tail을 가상에서 만들어 조종사(Alpamayo)를 단련하는 것이다.</p>
+<p>하지만 여기서 여객기 조종사에게는 드론 조종사에게 없는 것이 하나 더 붙는다 — 항공 당국의 엄격한 안전 인증(certification)이다. 드론이 추락하면 장비가 부서지지만, 여객기가 추락하면 승객이 죽는다. 그래서 여객기 조종사는 '잘 날 수 있다'로 끝나지 않고 '안전을 증명해야' 한다. Halos가 바로 이 항공 안전 인증 체계에 해당한다 — 시뮬레이터가 만든 모든 위기 상황에 대해 조종사가 안전하게 대응함을 체계적으로 검증한다.</p>
+<p>결국 로봇(드론)과 AV(여객기)는 같은 학교, 같은 시뮬레이터, 같은 조종 훈련을 공유하는 형제다. 다만 여객기 쪽에 안전 인증이라는 무거운 관문이 하나 더 있을 뿐이다. NVIDIA는 두 개의 학교를 짓지 않았다 — 하나의 훈련 체계에 안전 관문(Halos)을 더해 여객기 과정을 만들었다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>AV 스택을 three computers에 매핑하는 개념 코드다. 실제 API가 아니며, 요점은 'AV가 로봇과 같은 DGX(학습)→Omniverse·Cosmos(시뮬·데이터)→DRIVE AGX(배치) 흐름을 따르되, Halos라는 safety 검증 단계가 정식으로 끼어든다'는 점이다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python"># AV 스택 = three computers + safety. 로봇 스택과 같되 Halos가 추가된다.
+
+# --- Computer 2: Omniverse + Cosmos for AV (시뮬·데이터 생성) ---
+def generate_av_sensor_data(scenarios):
+    stage = omniverse.build_physical_scene()      # 물리적으로 정확한 3D 도로
+    data = []
+    for sc in scenarios:                          # e.g. 비/야간/무단횡단 long-tail
+        # Omniverse 물리에 conditioning해 고충실 센서 데이터 생성
+        frames = cosmos_wfm.generate(condition=stage, scenario=sc)
+        data.append(frames)                       # camera/radar/lidar 합성
+    return data
+
+# --- Computer 1: DGX (Alpamayo 학습) ---
+def train_av_model(real_logs, synthetic_data):
+    dataset = real_logs + synthetic_data          # 실주행 + 합성으로 다양성 확보
+    alpamayo = dgx.train(dataset, task=&quot;driving_reasoning+policy&quot;)
+    return alpamayo                               # AV foundation model
+
+# --- Safety: Halos (로봇 스택엔 없는 AV 전용 관문) ---
+def validate_safety(alpamayo, hazard_scenarios):
+    report = halos.verify(alpamayo, hazard_scenarios)  # 규제 대응 안전 검증
+    assert report.passes, &quot;safety not proven — 배치 불가&quot;
+    return report
+
+# --- Computer 3: DRIVE AGX Thor (차량 내 배치) ---
+synthetic = generate_av_sensor_data(long_tail_scenarios)
+alpamayo  = train_av_model(real_logs, synthetic)
+validate_safety(alpamayo, hazard_scenarios)       # 통과해야만
+drive_agx_thor.deploy(alpamayo)                   # 차 안 실시간 추론</code></pre>
+      <div class="c-walk"><p>이 코드는 AV 스택이 로봇 스택의 three computers를 그대로 따른다는 것을 보여준다. <strong>generate_av_sensor_data</strong>는 Computer 2(Omniverse+Cosmos)로, Omniverse가 물리적으로 정확한 무대를 세우고 그에 conditioning해 Cosmos가 long-tail 시나리오의 고충실 센서 데이터를 생성한다 — 실주행으로 못 모으는 위험 상황을 채운다. <strong>train_av_model</strong>은 Computer 1(DGX)로, 실주행 로그와 합성 데이터를 합쳐 Alpamayo(driving reasoning+policy)를 학습한다 — 로봇의 GR00T 학습과 같은 자리다. 결정적 차이는 <strong>validate_safety</strong>다. 로봇 스택에는 없던 Halos가 배치 직전 관문으로 끼어들어, 안전이 증명되지 않으면(assert 실패) 배치를 막는다 — AV의 규제·안전 제약이 코드 흐름에 정식으로 박혀 있음을 드러낸다. 마지막 <strong>drive_agx_thor.deploy</strong>가 Computer 3, 즉 Jetson 자리를 대신하는 차량 내 배치다. 요컨대 'AV 스택 = 로봇 스택(학습·시뮬·배치) + Halos(safety gate)'라는 이 챕터의 결론이 코드 한 장에 담긴다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">이 챕터는 &#x27;자율주행을 Physical AI의 한 갈래로, 로봇과 같은 three-computer 스택 위에서 설명할 수 있는가&#x27;를 재는 주제다. 면접관은 DRIVE·Alpamayo·Cosmos·Halos 이름 암기보다, 이들을 배치·정책·데이터·안전 자리에 배치하고 로봇 스택과의 공유·분기를 구조적으로 설명하는지를 본다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>AV를 &#x27;바퀴 달린 로봇&#x27;으로 규정하고, three computers(DGX 학습 / Omniverse·Cosmos 시뮬·데이터 / DRIVE AGX 배치)에 정확히 매핑하며 Jensen의 정식화를 이해하는가</li><li>Alpamayo를 AV foundation model(driving reasoning+policy)로 규정하고, 로봇의 GR00T와 같은 &#x27;정책&#x27; 자리임을 대응시키며 왜 reasoning이 open-road long-tail 때문에 중요한지 설명하는가</li><li>Cosmos for AV가 Omniverse 물리에 conditioning해 고충실 센서 데이터를 생성한다는 메커니즘과, 그것이 다양성(long-tail 데이터)과 검증 두 문제를 동시에 푸는 이유를 이해하는가</li><li>Halos를 safety 검증 프레임으로 규정하고, AV에 안전이 별도 구성원이 되어야 하는 이유(사고=인명·규제)와 Cosmos(위험 생성)와 짝을 이루는 루프를 설명하는가</li><li>AV와 로봇이 스택을 공유하되 AV는 안전·규제·open-road diversity가 훨씬 크다는 분기점을 구분하고, Thor가 Jetson과 같은 Blackwell 세대 edge 칩임을 아는가</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>자율주행을 로봇과 무관한 별개 산업으로 보고 three computers 프레임에 매핑하지 못하는 경우</li><li>Alpamayo를 단순 &#x27;NVIDIA 자율주행 소프트웨어&#x27;로만 보고 AV foundation model(정책·추론)이자 GR00T와 대응되는 자리임을 놓치는 경우</li><li>Cosmos for AV를 그냥 그래픽 생성으로 보고, Omniverse 물리에 conditioning한다는 점과 long-tail 데이터·검증이라는 목적을 설명하지 못하는 경우</li><li>Halos·safety를 스택의 부수적 요소로 치부하고, AV가 로봇과 갈라지는 핵심(안전·규제 제약)이 여기임을 인식하지 못하는 경우</li><li>DRIVE AGX Thor를 Jetson과 무관한 칩으로 보거나, AV와 로봇이 하드웨어·스택을 공유한다는 큰 그림을 그리지 못하는 경우</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>Q1 (구조): 자율주행차가 왜 &#x27;로봇 문제&#x27;인지, three computers(DGX/Omniverse·Cosmos/DRIVE AGX)로 설명하라. 각 컴퓨터가 AV에서 무엇을 담당하며 로봇 스택의 어느 자리와 대응되는가?</li><li>Q2 (데이터·정책): Alpamayo가 AV foundation model로서 하는 일과, Cosmos for AV가 그 학습·검증 데이터를 어떻게 대는지 설명하라. Cosmos가 Omniverse 물리에 conditioning하는 이유와, 이것이 open-road long-tail을 어떻게 다루는가?</li><li>Q3 (분기): AV와 로봇이 스택을 공유하는 지점과 갈라지는 지점을 대비하라. Halos 같은 safety 프레임이 왜 AV에는 정식 구성원이어야 하며, Cosmos와 어떻게 짝을 이루는가?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> Familiar 수준은 &#x27;NVIDIA가 DRIVE로 자율주행을 한다&#x27;를 아는 정도다. Mastery 수준은 (1) AV를 Physical AI의 한 갈래로 규정하고 three computers(DGX 학습/Omniverse·Cosmos 시뮬·데이터/DRIVE AGX 배치)에 정확히 매핑하며 Jensen의 정식화를 재현하고, (2) DRIVE AGX Thor를 Blackwell 기반 차량 내 컴퓨터이자 Jetson Thor와 같은 세대 edge 칩으로 위치시키고, (3) Alpamayo를 AV foundation model(driving reasoning+policy)로 규정해 로봇의 GR00T와 대응시키며 reasoning이 long-tail 때문에 중요함을 논하고, (4) Cosmos for AV가 Omniverse 물리에 conditioning해 고충실 센서 데이터를 생성하며 다양성·검증을 동시에 푸는 메커니즘을 설명하고, (5) Halos를 safety 검증 프레임으로 자리매김해 Cosmos(위험 생성)와 짝을 이루는 루프와, AV가 로봇과 갈라지는 핵심이 안전·규제·open-road diversity임을 정리한다. 유럽 제조사의 Isaac·Omniverse·Halos 채택까지 큰 그림으로 연결한다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>자율주행차는 로봇과 쌍둥이 문제다</h3><p>AV는 센서로 세계를 인식하고 정책으로 판단하며 물리적으로 움직이는 &#x27;바퀴 달린 로봇&#x27;이다. 그래서 로봇과 정확히 같은 three computers 구조로 풀린다 — NVIDIA는 로봇과 AV를 위해 두 벌의 스택을 만들지 않고 하나의 Physical AI 스택을 공유한다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>three computers 매핑 — DGX / Omniverse·Cosmos / DRIVE AGX</h3><p>Jensen의 정식화: 모델 학습은 DGX, test drive와 synthetic data 생성은 Omniverse, 차 안 실시간 추론은 DRIVE AGX가 맡는다. 로봇의 DGX·Isaac Sim·Jetson 자리에 그대로 대응된다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>DRIVE와 DRIVE AGX Thor — 배치의 자리</h3><p>NVIDIA DRIVE는 하드웨어부터 AV 소프트웨어까지 아우르는 AV 플랫폼이고, DRIVE AGX Thor는 Blackwell 기반 차량 내 컴퓨터다. 지연이 곧 사고이므로 무거운 추론을 차 안에서 실시간 처리한다. 로봇의 Jetson Thor와 같은 Blackwell 세대 edge 칩이다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>Alpamayo — AV foundation model(정책의 자리)</h3><p>GTC 2026 기준 1.5 버전으로, driving reasoning과 policy를 담당한다. 모듈을 손으로 붙이던 과거와 달리 하나의 큰 모델이 주행을 통째로 추론한다. 로봇의 GR00T와 같은 &#x27;정책&#x27; 자리이며, open-road long-tail 때문에 reasoning이 핵심이다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>Cosmos for AV — 데이터·시뮬의 자리</h3><p>CES 2025에서 강조된 활용으로, Omniverse 물리 라이브러리에 conditioning해 고충실 센서 데이터와 현실적 행동을 생성한다. 실주행으로 못 모으는 long-tail 다양성을 채우고, 위험 시나리오로 AV 소프트웨어 스택을 안전하게 검증한다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>Halos — 안전의 자리, AV가 로봇과 갈라지는 지점</h3><p>NVIDIA의 AV safety 시스템/프레임으로 자율주행의 안전을 검증한다. 로봇과 달리 AV는 사고가 인명·규제와 직결되므로 안전이 스택의 정식 구성원이다. Cosmos가 위험을 생성하면 Halos가 그에 맞선 안전을 증명하는 루프를 돈다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>공유하되 갈라진다 — 스택은 같고 안전·규제는 다르다</h3><p>AV와 로봇은 three computers 아키텍처, Omniverse 시뮬, Cosmos 데이터, AGX 배치를 공유한다. 다만 AV는 안전·규제 제약이 훨씬 크고 open-road diversity가 문제의 본질이라, 로봇 스택에 Halos라는 safety 축을 더한 것이 AV 스택이다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>산업 표준으로 굳는 공유 스택</h3><p>유럽의 여러 로봇·AV 제조사들이 Isaac·Omniverse와 함께 Halos를 채택하고 있다. 이는 로봇과 AV가 하드웨어(Thor)·시뮬(Omniverse·Cosmos)·안전(Halos)을 공유하는 하나의 Physical AI 스택이 산업 표준으로 자리 잡고 있음을 보여준다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-09.html">← Robot Policy Workflows — The R²D² Catalog</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-11.html">Industrial Digital Twins &amp; Robot Fleets →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

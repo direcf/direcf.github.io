@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch9: Robot Policy Workflows — The R²D² Catalog — NVIDIA Physical AI Map — direcf</title>
+  <meta name="description" content="NVIDIA Research의 R²D² 워크플로우(X-Mobility·COMPASS·HOVER·ReMEmbR)를 관통하는 IL+RL+distillation 패턴과, mobility·whole-body·memory 축을 정리한다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;height:22px;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><linearGradient id="direcf-nav-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs></svg>
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg></span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg></span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.25 15a4.5 4.5 0 0 0 4.5 4.5H18a3.75 3.75 0 0 0 1.332-7.257 3 3 0 0 0-3.758-3.848 5.25 5.25 0 0 0-10.233 2.33A4.502 4.502 0 0 0 2.25 15Z"/></svg></span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"/></svg></span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg></span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/physical-ai">NVIDIA Physical AI Map</a><span class="sep">›</span>
+        <strong>Ch09 Robot Policy Workflows — The R²D² Catalog</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 09 <span style="opacity:.3">·</span> 13 chapters
+      </div>
+      <div class="chapter-emoji">🦾</div>
+      <h1 class="chapter-title">Robot Policy Workflows — The R²D² Catalog</h1>
+      <div class="chapter-title-kr">로봇 정책 워크플로우 — R²D² 카탈로그</div>
+      <div class="chapter-tldr">NVIDIA Research의 R²D² 워크플로우(X-Mobility·COMPASS·HOVER·ReMEmbR)를 관통하는 IL+RL+distillation 패턴과, mobility·whole-body·memory 축을 정리한다.</div>
+
+      <div class="cs-wrap">
+        <div style="padding:40px;background:var(--bg-soft);border-radius:12px;color:var(--muted);text-align:center;border:1px dashed var(--border);">🍌 이미지 준비 중</div>
+        <div class="cs-label">🍌 Nano Banana — Chapter 9 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>R²D²가 무엇이고 어떤 워크플로우를 담는지 안다</li><li>COMPASS(mobility)와 HOVER(whole-body)의 역할 분담을 설명한다</li><li>IL+residual RL+distillation이 반복되는 공통 레시피를 인식한다</li><li>ReMEmbR의 VLM+RAG 기반 long-horizon memory를 이해한다</li><li>이 워크플로우들이 GR00T·Isaac Lab과 맞물리는 지점을 그린다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>지난 챕터의 GR00T가 '하나의 거대 foundation model'이었다면, 이 챕터는 그 반대편 — NVIDIA Research가 구체적인 로봇 능력들을 어떻게 개별 워크플로우로 조립하는가 — 를 본다. 그 창구가 <strong>R²D²</strong>다.</p>
+<p><strong>R²D²(NVIDIA Robotics Research &amp; Development Digest)</strong> = NVIDIA 로보틱스 연구 성과를 정리해 공개하는 기술 블로그 시리즈. 1st edition은 2025년 3월 27일 'robot mobility &amp; whole-body control'을 주제로 나왔다. 스타워즈의 그 로봇 이름을 딴 말장난이자, 최신 연구 워크플로우의 '카탈로그' 역할을 한다.</p>
+<p>이 카탈로그에는 네 개의 대표 워크플로우가 담긴다 — 이동을 담당하는 <strong>X-Mobility</strong>와 <strong>COMPASS</strong>(mobility), 전신 제어를 담당하는 <strong>HOVER</strong>(whole-body), 그리고 넓은 공간·긴 시간의 기억을 담당하는 <strong>ReMEmbR</strong>(memory/reasoning). 언뜻 제각각으로 보이는 이 넷을 이 챕터는 하나의 렌즈로 꿰뚫는다.</p>
+<p>그 렌즈가 <strong>공통 레시피 — IL + (residual) RL + distillation</strong>이다. 모방학습(IL)으로 사전 지식을 확보하고, 강화학습(RL)으로 특정 몸체에 적응시키며, distillation으로 여러 전문가(specialist)를 하나의 만능 정책(generalist)으로 통합한다. 이 세 박자가 mobility에서도(COMPASS), whole-body에서도(HOVER) 똑같이 반복된다는 것을 알아채는 순간, 흩어진 논문들이 하나의 방법론으로 정렬된다. 이 챕터는 그 정렬을 목표로, 각 워크플로우를 mobility·whole-body·memory라는 세 축 위에 배치하고, 이들이 GR00T·Isaac Lab과 어떻게 맞물리는지로 마무리한다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>9.1 R²D²란 무엇인가 — 연구를 워크플로우로 배포하다</h2><p>GR00T가 NVIDIA의 '제품형 foundation model'이라면, R²D²는 그 뿌리인 <strong>연구실의 창구</strong>다.</p>
+<p><strong>R²D²(알투디투, NVIDIA Robotics Research &amp; Development Digest)</strong> = NVIDIA Research의 로보틱스 연구 성과를 워크플로우 단위로 정리해 정기적으로 공개하는 기술 블로그 시리즈. 개별 논문을 '재현 가능한 워크플로우'로 포장해 개발자에게 전달하는 것이 목적이다.</p>
+<p>1st edition은 <strong>2025년 3월 27일</strong> 'robot mobility &amp; whole-body control'을 주제로 발간됐다. 즉 첫 호의 초점은 로봇이 '어떻게 이동하고(mobility)', '어떻게 온몸을 제어하는가(whole-body control)'였다.</p>
+<p>왜 '워크플로우'라는 단위가 중요한가? 학술 논문은 보통 'method + 실험 결과'로 끝나, 실제 개발자가 자기 로봇에 적용하기까지 큰 간극이 있다. R²D²는 이 간극을 좁히려 각 연구를 '어떤 데이터로, 어떤 시뮬에서, 어떻게 학습하고, 어디에 배치하는가'라는 실전 파이프라인으로 재구성한다. 논문을 '읽는 것'에서 '돌리는 것'으로 바꾸는 셈이다.</p>
+<p>R²D²에 담긴 네 워크플로우를 세 축으로 미리 지도화하면 다음과 같다.</p>
+<table>
+<thead>
+<tr>
+<th>축</th>
+<th>워크플로우</th>
+<th>담당 능력</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>mobility(이동)</td>
+<td>X-Mobility, COMPASS</td>
+<td>환경을 인식하고 목적지로 이동</td>
+</tr>
+<tr>
+<td>whole-body(전신)</td>
+<td>HOVER</td>
+<td>걷기·조작을 아우르는 온몸 제어</td>
+</tr>
+<tr>
+<td>memory/reasoning(기억·추론)</td>
+<td>ReMEmbR</td>
+<td>넓은 공간·긴 시간의 기억 기반 질의·내비게이션</td>
+</tr>
+</tbody>
+</table>
+<p>이 세 축은 서로를 배제하지 않고 <strong>보완</strong>한다 — 로봇이 쓸모 있으려면 이동할 줄 알고(mobility), 온몸을 조율하며(whole-body), 어디서 무엇을 봤는지 기억해야(memory) 하기 때문이다. R²D² 카탈로그는 이 세 능력의 조각들을 하나씩 채워 넣는 프로젝트다. 그리고 이 조각들을 만드는 방법에는 놀랍도록 일관된 패턴이 있는데, 그것이 9.4절의 공통 레시피다.</p><div class="fig-row"><figure class="fig-item"><img src="figures/four-workflows.png" alt="R²D²의 네 워크플로우(MobilityGen·COMPASS·HOVER·ReMEmbR)가 어떻게 하나로 맞물리는가. (출처: NVIDIA R²D² Technical Blog, 2025.03)" loading="lazy"><figcaption>R²D²의 네 워크플로우(MobilityGen·COMPASS·HOVER·ReMEmbR)가 어떻게 하나로 맞물리는가. (출처: NVIDIA R²D² Technical Blog, 2025.03)</figcaption></figure></div></div><div class="sb-block"><h2>9.2 Mobility 축 — X-Mobility와 COMPASS</h2><p>첫 번째 축은 이동(mobility)이다. 여기 두 워크플로우가 계층을 이룬다 — 토대인 X-Mobility와, 그 위에 세워진 COMPASS.</p>
+<p><strong>X-Mobility(엑스모빌리티)</strong>(<a href="https://arxiv.org/abs/2410.17491">arXiv:2410.17491</a>) = 비전 기반 end-to-end 모방학습(IL) mobility foundation. 카메라 입력에서 곧장 이동 행동을 내는 구조로, 환경 상식(world dynamics·obstacle avoidance·path planning)을 학습한다.</p>
+<p>X-Mobility의 핵심은 '환경에 대한 상식'을 통째로 배운다는 점이다 — 세계가 어떻게 움직이는지(world dynamics), 장애물을 어떻게 피하는지(obstacle avoidance), 목적지까지 경로를 어떻게 잡는지(path planning)를 vision에서 end-to-end로 익힌다. 이렇게 학습된 X-Mobility가 다음 단계인 COMPASS의 <strong>토대(base)</strong>가 된다.</p>
+<p><strong>COMPASS(컴패스)</strong>(<a href="https://arxiv.org/abs/2502.16372">arXiv:2502.16372</a>) = cross-embodiment mobility 워크플로우. X-Mobility(IL)를 base로 삼아, residual RL(Isaac Lab에서)로 각 몸체에 적응시키고, policy distillation으로 하나의 정책에 통합한다.</p>
+<p>COMPASS가 mobility 축의 핵심인 이유는 <strong>cross-embodiment</strong>에 있다. 하나의 mobility 정책이 서로 다른 이동 방식의 로봇들을 아우른다.</p>
+<ul>
+<li><strong>Nova Carter</strong>: 바퀴로 굴러가는 wheeled 로봇</li>
+<li><strong>H1·G1</strong>: 두 발로 걷는 humanoid</li>
+<li><strong>Spot</strong>: 네 발로 걷는 quadruped</li>
+</ul>
+<p>바퀴·두 발·네 발은 이동 물리가 근본적으로 다른데, COMPASS는 이들을 하나의 워크플로우로 다룬다. 그 결과 성능도 극적이어서, 이전 대비 <strong>성공률 5배(5x success rate)</strong>를 달성했고, 최종 정책은 <strong>Jetson에 배치</strong>된다. 즉 COMPASS는 이 코스의 스택(학습 Isaac Lab → 배치 Jetson)을 그대로 따르는 mobility의 모범 사례다.</p>
+<p>중요한 안내 — COMPASS는 이미 별도의 심화 코스로 다뤄진다. cross-embodiment 학습의 세부(IL·residual RL·distillation의 구체적 조립, Cosmos-Transfer로 rendering gap 메우기 등)가 궁금하다면 <a href="/posts/compass-cross-embodiment/">COMPASS 코스</a>를 참고하라. 이 챕터는 COMPASS를 'R²D² 카탈로그의 mobility 대표'라는 지도상 위치로만 다룬다.</p><div class="fig-row"><figure class="fig-item"><img src="figures/compass-workflow.png" alt="COMPASS 워크플로우 — imitation learning(X-Mobility) + residual RL + policy distillation의 3단계 cross-embodiment mobility. (출처: NVIDIA R²D² Technical Blog, 2025.03)" loading="lazy"><figcaption>COMPASS 워크플로우 — imitation learning(X-Mobility) + residual RL + policy distillation의 3단계 cross-embodiment mobility. (출처: NVIDIA R²D² Technical Blog, 2025.03)</figcaption></figure></div></div><div class="sb-block"><h2>9.3 Whole-body 축 — HOVER, 하나의 정책으로 온몸을 제어</h2><p>두 번째 축은 전신 제어(whole-body control)다. 걷는 것과 손으로 조작하는 것은 전혀 다른 문제처럼 보이지만, 실제 휴머노이드는 이 둘을 하나의 몸으로 동시에 해내야 한다. 그 통합을 담당하는 워크플로우가 HOVER다.</p>
+<p><strong>HOVER(호버, Humanoid Versatile Controller)</strong> = 휴머노이드의 whole-body control을 담당하는 워크플로우. 여러 제어 모드를 단일 신경 정책(single neural policy)으로 통합한다.</p>
+<p>HOVER의 핵심은 서로 다른 두 제어 모드를 하나로 합쳤다는 데 있다.</p>
+<ul>
+<li>
+<p><strong>velocity tracking(속도 추종)</strong>: 원하는 이동 속도를 따라가는 모드 — 내비게이션(navigation), 즉 걸어서 어딘가로 가는 데 쓴다.</p>
+</li>
+<li>
+<p><strong>joint tracking(관절 추종)</strong>: 원하는 관절 자세를 정밀하게 따라가는 모드 — manipulation, 즉 손으로 물체를 다루는 데 쓴다.</p>
+</li>
+</ul>
+<p>이 둘을 왜 하나의 정책으로 합쳐야 하는가? 걷다가 멈춰 물건을 집고 다시 걷는 자연스러운 동작을 하려면, '이동 모드'와 '조작 모드' 사이를 매끄럽게 전환할 수 있어야 하기 때문이다. 두 개의 분리된 컨트롤러를 스위치로 바꾸면, 전환 순간에 <strong>균형을 잃기</strong> 쉽다. HOVER는 multi-mode policy distillation으로 두 모드를 단일 정책에 녹여, 모드 전환 시에도 균형을 유지한다.</p>
+<p>학습 방식이 이 챕터의 공통 레시피를 예고한다. HOVER는 먼저 <strong>human motion(인간 동작 데이터)으로 oracle을 학습</strong>한다 — 사람의 자연스러운 전신 동작을 잘 흉내 내는, 각 모드에 특화된 '스승(oracle)' 정책을 만드는 것이다. 그다음 이 여러 oracle의 능력을 하나의 <strong>generalist(범용 정책)로 distill(증류)</strong>한다. 즉 '특화된 여러 전문가 → 하나의 만능 정책'이라는 흐름이다.</p>
+<p>배치 경로도 스택을 따른다 — <strong>Isaac Lab에서 학습</strong>하고, <strong>MuJoCo에서 테스트</strong>(sim-to-sim 검증)한 뒤, <strong>Jetson에 배치</strong>한다. Isaac Lab에서 배운 정책을 다른 물리 엔진(MuJoCo)에서 한 번 더 검증하는 것은, 특정 시뮬에 과적합하지 않았는지 확인하는 견고성 점검이다. 정리하면 HOVER는 whole-body 축에서 'human motion oracle → generalist distillation → Jetson 배치'라는, mobility의 COMPASS와 놀랍도록 닮은 골격을 보여준다.</p></div><div class="sb-block"><h2>9.4 공통 레시피 — IL + (residual) RL + distillation</h2><p>이제 이 챕터의 핵심 통찰에 도달한다. X-Mobility·COMPASS·HOVER를 각각 보면 별개의 연구지만, 한 걸음 물러서면 <strong>동일한 세 박자 레시피</strong>가 반복된다.</p>
+<p><strong>공통 레시피</strong> = ① IL로 사전 지식(prior) 확보 → ② (residual) RL로 특정 embodiment에 적응 → ③ distillation으로 여러 specialist를 하나의 generalist로 통합.</p>
+<p>각 단계가 왜 필요한지 그 논리를 뜯어보자.</p>
+<p><strong>① IL(Imitation Learning, 모방학습)로 prior 확보</strong> — 아무것도 모르는 상태에서 RL을 처음부터 돌리면 탐색이 비효율적이고 위험하다. 그래서 먼저 시연(demonstration)이나 human motion을 모방해 '대충 그럴듯한' 기본기를 심는다. COMPASS의 X-Mobility base, HOVER의 human motion oracle이 모두 이 IL 단계다. 세상에 대한 상식적 prior를 값싸게 확보하는 출발점이다.</p>
+<p><strong>② (residual) RL로 embodiment 적응</strong> — IL로 얻은 prior는 특정 로봇의 몸에 완벽히 맞지 않는다. 여기서 강화학습이 그 간극을 메운다. 특히 <strong>residual RL</strong>은 IL 정책을 통째로 다시 배우는 게 아니라, 그 위에 '보정치(residual)'만 RL로 학습한다 — 이미 좋은 base가 있으니 차이만 학습하는 것이 훨씬 효율적이고 안정적이다. 이 RL은 대량 병렬 시뮬이 가능한 <strong>Isaac Lab</strong>에서 이뤄진다(Chapter 4).</p>
+<p><strong>③ distillation으로 specialist → generalist 통합</strong> — 각 embodiment나 각 모드마다 특화된 정책(specialist)이 여럿 생긴다. distillation은 이 여러 전문가의 능력을 하나의 신경망(generalist)에 압축해 담는다. COMPASS는 여러 몸체의 mobility를, HOVER는 velocity·joint tracking 두 모드를 각각 하나로 distill한다.</p>
+<p>이 레시피가 강력한 이유는 <strong>모듈성</strong>이다. 새로운 로봇이나 새로운 능력이 필요하면, prior(IL)를 재활용하고 → RL로 그 몸에만 적응시키고 → 기존 generalist에 distill해 넣으면 된다. 처음부터 다시 학습할 필요가 없다. 그리고 세 축이 서로 보완한다 — mobility(COMPASS)·whole-body(HOVER)·memory(ReMEmbR)가 같은 레시피로 만들어지므로, 언젠가 하나의 로봇 안에서 조립될 수 있는 호환 가능한 부품들이 된다. 서로 다른 논문이 아니라, 하나의 방법론이 낳은 형제들인 셈이다.</p></div><div class="sb-block"><h2>9.5 Memory 축 — ReMEmbR, 그리고 GR00T·WFM으로의 연결</h2><p>세 번째 축은 기억과 추론(memory/reasoning)이다. mobility와 whole-body가 '지금 이 순간'의 제어라면, ReMEmbR은 '넓은 공간과 긴 시간'을 다룬다.</p>
+<p><strong>ReMEmbR(리멤버, Retrieval-augmented Memory for Embodied Robots)</strong> = LLM + VLM + RAG(Retrieval-Augmented Generation)를 결합해, 로봇이 넓은 공간·긴 시간에 걸친 기억을 바탕으로 추론·질의응답·내비게이션을 하도록 하는 워크플로우.</p>
+<p>ReMEmbR의 작동은 두 단계로 나뉜다.</p>
+<ul>
+<li>
+<p><strong>memory-building(기억 구축)</strong>: 로봇이 돌아다니며 본 것을 embedding으로 변환해 저장한다. 시각적 관찰이 검색 가능한 기억 은행에 차곡차곡 쌓인다.</p>
+</li>
+<li>
+<p><strong>querying(질의)</strong>: 사람이 자연어로 '아까 부엌에서 본 빨간 가방 어디 있었지?' 같은 질문을 하면, RAG가 관련 기억을 검색해 오고 LLM이 그를 바탕으로 답을 생성하거나 목적지로 안내한다.</p>
+</li>
+</ul>
+<p>왜 RAG인가? 로봇이 몇 시간을 돌아다니면 관찰이 방대해져, 모든 것을 LLM의 context에 넣을 수 없다. RAG는 '필요할 때 관련 기억만 검색해 온다'는 방식으로 이 long-horizon 문제를 푼다 — LLM 세계에서 방대한 문서를 다루는 바로 그 기법을, 로봇의 시공간 기억에 적용한 것이다. 이 능력을 평가하기 위해 <strong>NaVQA(Navigation VQA)</strong> 데이터셋도 함께 제시됐다 — 내비게이션 맥락의 시각 질의응답 벤치마크다.</p>
+<p>ReMEmbR이 세 축을 완성하는 이유는 명확하다. 아무리 잘 이동하고(mobility) 온몸을 제어해도(whole-body), '어디서 무엇을 봤는지' 기억하지 못하면 로봇은 매 순간 백지 상태다. memory 축이 있어야 로봇이 오래 일하며 맥락을 쌓는 존재가 된다.</p>
+<p>마지막으로 이 R²D² 카탈로그가 어디로 이어지는지 짚자. 1st edition이 mobility·whole-body였다면, <strong>2nd R²D²는 'Training Generalist Robots with World Foundation Models'</strong>를 주제로, GR00T-Dreams/Mimic 중심의 데이터 생성으로 옮겨간다. 즉 R²D²의 서사는 '개별 능력 워크플로우(1st)'에서 '그 워크플로우들을 먹여 키울 데이터를 WFM으로 대량 생성(2nd)'으로 자연스럽게 진화한다. 여기서 이 코스의 챕터들이 하나로 수렴한다 — R²D²의 공통 레시피(IL+RL+distill)로 만든 정책들이, GR00T(Chapter 8)라는 foundation model로 흡수되고, 그 학습 데이터는 Cosmos·GR00T-Dreams(Chapter 5·7)가 대고, 학습은 Isaac Lab(Chapter 4)에서, 배치는 Jetson(Chapter 12)에서 이뤄진다. R²D²는 이 거대한 스택을 '연구 워크플로우'라는 관점에서 다시 보여주는 카탈로그다.</p><div class="fig-row"><figure class="fig-item"><img src="figures/remembr-workflow.png" alt="ReMEmbR 워크플로우 — LLM+VLM+RAG로 긴 시간·넓은 공간의 memory를 쌓고(querying) 질의응답·navigation에 쓴다. (출처: NVIDIA R²D² Technical Blog, 2025.03)" loading="lazy"><figcaption>ReMEmbR 워크플로우 — LLM+VLM+RAG로 긴 시간·넓은 공간의 memory를 쌓고(querying) 질의응답·navigation에 쓴다. (출처: NVIDIA R²D² Technical Blog, 2025.03)</figcaption></figure></div></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">여러 무술 사범을 한 명의 제자로 합치기</div>
+      <div class="a-body"><p>R²D²의 공통 레시피를 이해하려면, 만능 무도인 한 명을 키우는 과정을 떠올리면 된다. 처음부터 제자를 맨몸으로 실전에 던지면 다치기만 할 뿐 배우는 게 느리다. 그래서 먼저 <strong>기본 품새를 보고 따라 하게(IL, 모방학습)</strong> 한다 — 스승의 동작을 흉내 내며 '대충 그럴듯한' 기본기를 값싸게 익힌다. X-Mobility가 이동의 기본기를, human motion oracle이 전신 동작의 기본기를 심는 단계다.</p>
+<p>하지만 흉내만으로는 이 제자만의 몸(팔 길이, 다리 힘)에 딱 맞지 않는다. 그래서 <strong>실전 스파링으로 자기 몸에 맞게 미세 보정(residual RL)</strong>한다. 처음부터 다시 배우는 게 아니라, 기본기에서 벗어나는 '차이(residual)'만 시행착오로 다듬는다 — 이미 좋은 토대가 있으니 효율적이다. 이 스파링은 다칠 걱정 없는 가상 도장(Isaac Lab)에서 무한히 반복한다.</p>
+<p>그런데 이 제자에게는 각 분야의 전문 사범이 여럿 있다 — 발놀림 사범(mobility·velocity tracking), 손기술 사범(manipulation·joint tracking), 기억력 사범(ReMEmbR). 각자 자기 분야만 잘한다. 진짜 고수라면 이 모두를 한 몸에서 매끄럽게 써야 하고, 특히 발놀림에서 손기술로 넘어가는 순간 균형을 잃으면 안 된다(HOVER의 모드 전환). 그래서 마지막에 여러 사범의 기예를 <strong>한 명의 제자에게 증류(distillation)</strong>한다 — 여러 전문가를 하나의 만능 정책으로 압축하는 것이다.</p>
+<p>이 세 박자 — 따라 하기(IL) → 내 몸에 맞추기(RL) → 여럿을 하나로 합치기(distill) — 가 이동이든 전신 제어든 똑같이 반복된다. 그래서 COMPASS와 HOVER는 다른 논문이지만 형제처럼 닮았다. 그리고 이렇게 길러낸 만능 제자들이 훗날 GR00T라는 대사부의 몸에 흡수되고, 그 수련에 쓸 무한한 연습 상대는 Cosmos가 상상으로 만들어낸다. R²D²는 이 수련법 전체를 정리한 무술 교본인 셈이다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>R²D²를 관통하는 공통 레시피(IL → residual RL → distillation)를 개념 코드로 표현한다. 실제 API가 아니며, 요점은 'COMPASS(mobility)와 HOVER(whole-body)가 서로 다른 능력임에도 동일한 세 박자 함수로 조립된다'는 것이다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python"># R²D² 공통 레시피: 세 박자가 mobility에도 whole-body에도 똑같이 반복된다
+
+def make_generalist_policy(prior_source, embodiments, isaac_lab):
+    # 1) IL: 시연/human motion을 모방해 값싼 prior(기본기) 확보
+    base = il_pretrain(prior_source)          # e.g. X-Mobility, human-motion oracle
+
+    # 2) residual RL: 각 embodiment에 &#x27;차이(residual)&#x27;만 학습해 적응
+    specialists = []
+    for emb in embodiments:
+        expert = residual_rl(base, embodiment=emb, sim=isaac_lab)  # Isaac Lab에서
+        specialists.append(expert)            # 몸체(또는 모드)별 전문가
+
+    # 3) distillation: 여러 specialist를 하나의 generalist로 통합
+    generalist = distill(specialists)         # 처음부터 다시 안 배움
+    return generalist
+
+# --- 인스턴스 1: COMPASS (mobility 축) ---
+compass = make_generalist_policy(
+    prior_source=&quot;x-mobility&quot;,                # 비전 기반 IL foundation이 base
+    embodiments=[&quot;nova_carter&quot;, &quot;h1&quot;, &quot;g1&quot;, &quot;spot&quot;],  # wheeled/humanoid/quadruped
+    isaac_lab=IsaacLab())                     # -&gt; 5x success rate, Jetson 배치
+
+# --- 인스턴스 2: HOVER (whole-body 축) ---
+hover = make_generalist_policy(
+    prior_source=&quot;human_motion&quot;,              # human motion oracle이 base
+    embodiments=[&quot;velocity_tracking&quot;, &quot;joint_tracking&quot;],  # nav vs manipulation 모드
+    isaac_lab=IsaacLab())                     # -&gt; 단일 정책, MuJoCo 검증 후 Jetson
+
+deploy_to_jetson([compass, hover])            # 스택: Isaac Lab 학습 -&gt; Jetson 배치</code></pre>
+      <div class="c-walk"><p>핵심은 <strong>make_generalist_policy 하나가 COMPASS와 HOVER 둘 다를 만든다</strong>는 점이다 — 서로 다른 능력이 같은 레시피의 인스턴스임을 코드가 드러낸다. (1) <strong>il_pretrain</strong>은 시연/human motion을 모방해 값싼 prior를 심는다(COMPASS는 x-mobility, HOVER는 human_motion oracle). (2) <strong>residual_rl</strong>은 각 embodiment(또는 모드)에 대해 base 위의 '차이'만 학습한다 — 통째로 재학습하지 않으므로 효율적이고, 대량 병렬이 가능한 Isaac Lab에서 돈다. embodiments 리스트만 바꾸면 COMPASS는 wheeled·humanoid·quadruped를, HOVER는 velocity·joint tracking 모드를 다룬다. (3) <strong>distill</strong>이 이 여러 specialist를 하나의 generalist로 압축한다. 맨 아래 deploy_to_jetson이 '학습(Isaac Lab)→배치(Jetson)'라는 스택을 그대로 보여준다. 같은 함수가 mobility와 whole-body를 낳는다는 사실이, R²D²의 흩어진 워크플로우들이 실은 하나의 방법론임을 증명한다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">이 챕터는 &#x27;흩어진 로봇 연구 워크플로우들을 하나의 방법론으로 꿰뚫어 보는가&#x27;를 재는 주제다. 면접관은 X-Mobility·COMPASS·HOVER·ReMEmbR의 이름 나열보다, 이들을 mobility·whole-body·memory 축으로 배치하고 IL+RL+distillation 공통 레시피를 인식하는 구조적 사고를 본다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>R²D²를 &#x27;NVIDIA Research의 워크플로우 카탈로그&#x27;로 규정하고, 담긴 연구들을 mobility(X-Mobility·COMPASS)·whole-body(HOVER)·memory(ReMEmbR) 세 축으로 배치하는가</li><li>공통 레시피 IL(prior 확보) → residual RL(embodiment 적응, Isaac Lab) → distillation(specialist를 generalist로 통합)을 인식하고, 왜 각 단계가 필요한지(RL을 처음부터 안 돌리는 이유, residual의 효율성) 설명하는가</li><li>COMPASS의 cross-embodiment(wheeled/humanoid/quadruped를 한 정책, X-Mobility base, 5x success rate)와 HOVER의 multi-mode 통합(velocity vs joint tracking을 단일 정책, 모드 전환 시 균형 유지)의 역할 분담을 구분하는가</li><li>ReMEmbR의 VLM+LLM+RAG 기반 long-horizon memory — memory-building(embedding 저장)·querying(자연어 생성) 2단계 — 가 왜 RAG로 풀리는지 이해하는가</li><li>이 워크플로우들이 GR00T·Isaac Lab·Jetson 스택과 맞물리고, 2nd R²D²가 WFM 기반 데이터 생성(GR00T-Dreams)으로 이어짐을 그리는가</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>네 워크플로우를 개별 논문으로만 나열하고, IL+RL+distillation이라는 공통 레시피로 꿰뚫지 못하는 경우</li><li>COMPASS(mobility, cross-embodiment)와 HOVER(whole-body, multi-mode)의 역할을 혼동하거나, HOVER가 velocity·joint tracking을 단일 정책으로 통합하는 이유(모드 전환 균형)를 놓치는 경우</li><li>residual RL을 일반 RL과 구분하지 못하거나, distillation이 specialist→generalist 통합임을 설명하지 못하는 경우</li><li>ReMEmbR을 단순 &#x27;로봇 챗봇&#x27;으로 보고, RAG가 long-horizon 관찰을 다루기 위한 검색 기법임을 놓치는 경우</li><li>COMPASS가 이미 별도 코스로 존재함을 모르거나, 이 워크플로우들이 GR00T·Isaac Lab 스택과 맞물리는 지점을 그리지 못하는 경우</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>Q1 (구조): R²D²가 무엇이며 어떤 워크플로우를 담는지 설명하라. X-Mobility·COMPASS·HOVER·ReMEmbR을 mobility·whole-body·memory 세 축에 배치하고 각 축이 왜 필요한지 논하라.</li><li>Q2 (레시피): COMPASS와 HOVER가 서로 다른 능력임에도 공유하는 공통 레시피(IL→residual RL→distillation)를 설명하라. 각 단계가 왜 필요한가? residual RL이 일반 RL과 다른 점과, distillation으로 여러 specialist를 하나로 합치는 이유는?</li><li>Q3 (memory): ReMEmbR이 long-horizon memory를 어떻게 다루는지 설명하라. memory-building과 querying 2단계는 무엇이며, 왜 RAG를 쓰는가? 이것이 mobility·whole-body 워크플로우를 어떻게 보완하는가?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> Familiar 수준은 &#x27;NVIDIA가 여러 로봇 정책 워크플로우를 R²D²로 공개한다&#x27;를 말하는 정도다. Mastery 수준은 (1) R²D²를 워크플로우 카탈로그로 규정하고 네 연구를 mobility(X-Mobility·COMPASS)·whole-body(HOVER)·memory(ReMEmbR) 축으로 정렬하며, (2) IL(prior)→residual RL(embodiment 적응, Isaac Lab)→distillation(specialist→generalist)의 공통 레시피를 인식하고 각 단계의 필요성(RL 초기화 위험, residual의 효율, 모듈성)을 논하고, (3) COMPASS의 cross-embodiment(wheeled/humanoid/quadruped, X-Mobility base, 5x)와 HOVER의 multi-mode 통합(velocity·joint tracking 단일 정책, 전환 균형, human motion oracle→generalist distill, MuJoCo 검증)의 역할 분담을 대비하고, (4) ReMEmbR의 VLM+LLM+RAG·2단계·NaVQA로 long-horizon memory를 설명하며, (5) 이 모두가 GR00T·Isaac Lab·Jetson 스택에 흡수되고 2nd R²D²의 WFM 데이터 생성으로 진화함까지 연결한다. COMPASS 세부는 별도 코스로 안내할 줄 안다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>R²D²는 NVIDIA Research의 워크플로우 카탈로그다</h3><p>NVIDIA Robotics Research &amp; Development Digest, 연구 성과를 재현 가능한 워크플로우로 포장해 공개하는 기술 블로그 시리즈다. 1st edition(2025.03.27)은 robot mobility·whole-body control을 주제로, 논문을 &#x27;읽는 것&#x27;에서 &#x27;돌리는 것&#x27;으로 바꾼다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>세 축 — mobility·whole-body·memory</h3><p>X-Mobility·COMPASS가 이동(mobility), HOVER가 전신 제어(whole-body), ReMEmbR이 기억·추론(memory)을 담당한다. 세 능력은 서로를 배제하지 않고 보완한다 — 쓸모 있는 로봇은 이동하고, 온몸을 조율하며, 본 것을 기억해야 한다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>COMPASS — cross-embodiment mobility</h3><p>X-Mobility(비전 IL foundation)를 base로, residual RL(Isaac Lab)과 policy distillation으로 Nova Carter(wheeled)·H1·G1(humanoid)·Spot(quadruped)을 한 정책에 통합해 5x success rate를 달성, Jetson에 배치한다. 세부는 별도 [COMPASS 코스](/posts/compass-cross-embodiment/) 참조.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>HOVER — 하나의 정책으로 온몸을 제어</h3><p>Humanoid Versatile Controller. velocity tracking(navigation)과 joint tracking(manipulation)을 단일 신경 정책으로 통합해, 모드 전환 시에도 균형을 유지한다. human motion으로 oracle을 학습한 뒤 generalist로 distill하고, Isaac Lab 학습·MuJoCo 검증·Jetson 배치를 거친다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>공통 레시피 — IL + residual RL + distillation</h3><p>① IL로 값싼 prior 확보 → ② residual RL로 embodiment에 &#x27;차이&#x27;만 적응(Isaac Lab) → ③ distillation으로 여러 specialist를 하나의 generalist로 통합. 이 세 박자가 COMPASS(mobility)에도 HOVER(whole-body)에도 똑같이 반복된다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>왜 세 박자인가 — 효율과 모듈성</h3><p>RL을 맨바닥에서 돌리면 위험·비효율적이라 IL prior로 출발하고, residual RL은 base를 재학습하지 않고 차이만 배워 효율적이며, distillation은 전문가들을 재사용 가능한 하나의 정책으로 압축한다. 새 로봇·능력은 prior 재활용→적응→distill로 처음부터 다시 안 배운다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>ReMEmbR — RAG로 long-horizon memory를 풀다</h3><p>LLM+VLM+RAG로, memory-building(관찰을 embedding으로 저장)과 querying(자연어 질의·생성) 2단계로 넓은 공간·긴 시간의 기억 기반 추론·내비게이션을 한다. 방대한 관찰을 context에 다 못 넣으니 필요한 기억만 검색하는 RAG가 핵심이다. NaVQA 데이터셋으로 평가한다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>R²D²는 GR00T·WFM으로 수렴한다</h3><p>공통 레시피로 만든 정책들은 GR00T foundation model에 흡수되고, 데이터는 Cosmos·GR00T-Dreams가, 학습은 Isaac Lab이, 배치는 Jetson이 맡는다. 2nd R²D²는 &#x27;Training Generalist Robots with WFMs&#x27;로 옮겨가, 개별 능력에서 WFM 기반 데이터 생성으로 서사가 진화한다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-08.html">← GR00T — The Humanoid Foundation Model</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-10.html">The Autonomous Driving Stack →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

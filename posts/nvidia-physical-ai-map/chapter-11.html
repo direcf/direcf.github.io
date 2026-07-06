@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch11: Industrial Digital Twins &amp; Robot Fleets — NVIDIA Physical AI Map — direcf</title>
+  <meta name="description" content="공장·창고의 digital twin과 로봇 플릿 시뮬레이션(Mega)에서, Omniverse가 산업 Physical AI의 운영 체계로 확장되는 방식과 파트너 생태계를 정리한다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;height:22px;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><linearGradient id="direcf-nav-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs></svg>
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg></span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg></span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.25 15a4.5 4.5 0 0 0 4.5 4.5H18a3.75 3.75 0 0 0 1.332-7.257 3 3 0 0 0-3.758-3.848 5.25 5.25 0 0 0-10.233 2.33A4.502 4.502 0 0 0 2.25 15Z"/></svg></span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"/></svg></span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg></span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/physical-ai">NVIDIA Physical AI Map</a><span class="sep">›</span>
+        <strong>Ch11 Industrial Digital Twins &amp; Robot Fleets</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 11 <span style="opacity:.3">·</span> 13 chapters
+      </div>
+      <div class="chapter-emoji">🏗️</div>
+      <h1 class="chapter-title">Industrial Digital Twins &amp; Robot Fleets</h1>
+      <div class="chapter-title-kr">산업 디지털 트윈 &amp; 로봇 플릿</div>
+      <div class="chapter-tldr">공장·창고의 digital twin과 로봇 플릿 시뮬레이션(Mega)에서, Omniverse가 산업 Physical AI의 운영 체계로 확장되는 방식과 파트너 생태계를 정리한다.</div>
+
+      <div class="cs-wrap">
+        <div style="padding:40px;background:var(--bg-soft);border-radius:12px;color:var(--muted);text-align:center;border:1px dashed var(--border);">🍌 이미지 준비 중</div>
+        <div class="cs-label">🍌 Nano Banana — Chapter 11 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>산업 digital twin이 로봇 개발과 다른 스케일 문제를 안다</li><li>Mega 등 로봇 플릿 시뮬레이션의 목적을 이해한다</li><li>AMR·창고 자동화가 mobility 스택과 연결되는 지점을 본다</li><li>Siemens 등 파트너 통합이 왜 전략적인지 설명한다</li><li>Omniverse가 &#x27;산업 OS&#x27;로 확장되는 논리를 안다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>지금까지의 챕터는 대체로 '하나의 로봇'을 잘 만드는 이야기였다 — 하나의 팔, 하나의 휴머노이드, 하나의 자율주행차를 학습·시뮬·배치하는 스택. 이 챕터는 관점을 한 단계 끌어올린다. 산업 현장의 진짜 문제는 로봇 한 대가 아니라 <strong>'수백 대의 로봇 + 시설 + 프로세스'가 함께 돌아가는 스케일</strong>이기 때문이다.</p>
+<p>공장과 창고를 떠올려 보자. 그곳엔 로봇 팔, AMR(자율 이동 로봇), 컨베이어, 작업자, 재고, 물류 동선이 얽혀 있다. 로봇 하나의 정책이 아무리 완벽해도, 수백 대가 좁은 공간에서 서로 부딪히지 않고 효율적으로 협업하게 만드는 것은 전혀 다른 차원의 문제다. 이 챕터의 핵심 통찰은 여기서 나온다 — <strong>산업 Physical AI는 단일 로봇 문제가 아니라 스케일(fleet·facility·process) 문제이며, 그래서 digital twin이 단순 시뮬 도구를 넘어 운영 체계(OS)가 된다.</strong></p>
+<p>이 확장을 세 겹으로 본다. 먼저 시설 자체의 <strong>factory/warehouse digital twin</strong> — 공장을 짓기 전에 가상에서 layout·로봇 배치·물류를 시뮬·최적화한다. 그 위에서 다수 로봇을 동시에 검증하는 <strong>Mega(fleet simulation)</strong>. 그리고 이 가상 시설과 실제 mobility 스택(AMR·COMPASS)이 만나는 지점.</p>
+<p>마지막으로 이 챕터는 왜 NVIDIA가 이 판을 혼자 다 짓지 않는지를 본다. Siemens·Ansys·SAP·Schneider Electric 등 산업계 거인들이 Omniverse를 자사 솔루션에 통합하는 <strong>파트너 생태계</strong>가 핵심이다. NVIDIA는 이를 통해 Omniverse를 개별 제품이 아니라 <strong>'산업 Physical AI의 OS'</strong>로 포지셔닝한다. 그 논리를 끝까지 따라가는 것이 이 챕터의 목표다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>11.1 스케일이 문제다 — 로봇 한 대에서 시설 전체로</h2><p>이 챕터를 관통하는 첫 번째 인식은 '문제의 단위가 바뀐다'는 것이다.</p>
+<p>지금까지의 스택(Omniverse→Isaac Sim→Isaac Lab→policy→Jetson)은 본질적으로 '<strong>하나의 로봇을 똑똑하게 만드는</strong>' 파이프라인이었다. 하나의 정책을 학습시키고, 하나의 몸에 배치한다. 하지만 실제 공장·창고에 발을 들이면 질문이 달라진다 — 이 로봇 한 대가 아니라, 수백 대가 한 건물 안에서 동시에 움직일 때 전체가 잘 굴러가는가?</p>
+<p><strong>산업 Physical AI의 스케일 문제</strong> = 개별 로봇의 지능이 아니라, 다수 로봇(fleet)·시설(facility)·프로세스(process)가 함께 작동하는 시스템 전체를 설계·검증·운영하는 문제.</p>
+<p>왜 이것이 근본적으로 다른 문제인가? 로봇 한 대의 성능은 개체의 정책 품질로 결정되지만, 100대의 협업 성능은 개체가 아니라 <strong>상호작용</strong>에서 결정된다 — 교차로에서 누가 양보하는가, 병목 구간에서 어떻게 줄을 서는가, 한 대가 고장 나면 나머지가 어떻게 재배치되는가. 이것은 로봇 지능의 문제가 아니라 시스템·오케스트레이션의 문제다.</p>
+<p>게다가 산업 현장에는 로봇만 있는 게 아니다. layout(설비 배치), 컨베이어, 작업 동선, 재고 흐름, 인간 작업자가 로봇과 얽힌다. 이 모든 것을 실물로 지어놓고 시행착오하기엔 비용과 위험이 너무 크다 — 잘못된 layout으로 공장을 짓고 나면 되돌릴 수 없다.</p>
+<p>그래서 해법의 무게중심이 이동한다. '로봇을 학습시키는 시뮬레이터'였던 Omniverse가, 여기서는 '<strong>시설 전체를 통째로 복제한 digital twin</strong>'으로 확장된다. 다음 절부터 이 확장을 시설(11.2)·플릿(11.3)·mobility 연결(11.4)의 세 겹으로 뜯어본다.</p></div><div class="sb-block"><h2>11.2 Factory/Warehouse Digital Twin — 짓기 전에 시뮬한다</h2><p>첫 번째 겹은 시설 그 자체다. 로봇을 넣기 전에, 공장·창고라는 무대를 통째로 가상에 짓는다.</p>
+<p><strong>Omniverse for factories</strong> = 공장·창고 전체를 digital twin(디지털 트윈)으로 복제해, layout(설비 배치)·로봇 배치·물류(logistics)를 <strong>실물을 짓기 전에</strong> 가상에서 시뮬레이션하고 최적화하는 활용.</p>
+<p>핵심 가치는 '순서를 뒤집는다'는 데 있다. 전통적으로는 공장을 먼저 짓고, 돌려보고, 문제가 생기면 고쳤다. digital twin은 이 순서를 뒤집는다 — 가상에서 먼저 지어 온갖 layout을 실험하고, 물류 병목을 찾아내고, 로봇을 어디에 몇 대 둘지 최적화한 <strong>뒤에</strong> 실물을 짓는다. 콘크리트를 붓기 전에 실수를 발견하는 것이다.</p>
+<p>무엇을 시뮬하는가를 구체적으로 보면.</p>
+<ul>
+<li>
+<p><strong>layout 최적화</strong> — 설비·랙·통로를 어떻게 배치해야 동선이 짧고 병목이 없는가.</p>
+</li>
+<li>
+<p><strong>로봇 배치(placement)</strong> — 로봇 팔·AMR을 어디에 몇 대 두어야 처리량이 최대인가.</p>
+</li>
+<li>
+<p><strong>물류(logistics) 흐름</strong> — 자재가 입고에서 출고까지 흐르는 경로가 효율적인가, 어디서 막히는가.</p>
+</li>
+</ul>
+<p>이것을 가능하게 하는 기술 토대가 <strong>OpenUSD</strong>와 <strong>SimReady</strong>다. OpenUSD는 서로 다른 도구(CAD·PLM·로봇 SW)에서 온 방대한 산업 데이터를 하나의 장면으로 조립하는 공통 언어이고, SimReady는 그 3D 자산들이 '단지 보기 좋은 모델'이 아니라 물리·센서 시뮬에 바로 쓸 수 있도록 물성·의미 정보를 갖춘 상태를 뜻한다. 즉 digital twin이 진짜 시뮬로 작동하려면, 시각적 복제를 넘어 물리적으로 정확해야 하고, 그 기준을 OpenUSD·SimReady가 만든다.</p>
+<p>결국 factory digital twin은 이 챕터의 스케일 문제를 푸는 '무대'다. 개별 로봇 정책이 아니라 시설 전체의 배치·흐름을 다루며, 실물 리스크 없이 무한히 실험할 수 있는 공간을 연다. 이 무대 위에 이제 '수백 대의 로봇'을 올려 검증하는 것이 다음 절의 Mega다.</p></div><div class="sb-block"><h2>11.3 Mega — 로봇 플릿을 통째로 시뮬한다</h2><p>무대(digital twin)가 섰으면, 이제 그 위에서 배우들(로봇 플릿)이 함께 연기하는지 봐야 한다. 그 리허설을 담당하는 것이 Mega다.</p>
+<p><strong>Mega(메가)</strong> = 로봇 <strong>플릿 시뮬레이션(fleet simulation)</strong>을 위한 Omniverse Blueprint. 창고·공장의 digital twin 안에서 다수의 로봇·AMR을 <strong>동시에</strong> 돌려, 그들의 정책(policy)과 스케줄(schedule)을 실물 배치 전에 검증한다.</p>
+<p>11.2가 '시설'을 시뮬했다면 Mega는 '그 시설 안의 로봇 무리'를 시뮬한다. 둘의 관계는 무대와 리허설이다 — digital twin이 정적인 무대를 세우면, Mega는 그 위에서 수십·수백 대가 실제로 함께 움직이는 동적 시나리오를 돌린다.</p>
+<p>Mega가 검증하는 것이 무엇인지가 핵심이다. 개별 로봇의 정책이 아니라 <strong>플릿 수준의 상호작용</strong>이다.</p>
+<ul>
+<li>
+<p><strong>정책(policy) 검증</strong> — 여러 로봇이 같은 공간에서 각자의 정책대로 움직일 때 충돌·교착 없이 협업하는가.</p>
+</li>
+<li>
+<p><strong>스케줄(schedule) 검증</strong> — 어떤 로봇에 어떤 작업을 언제 배정해야 전체 처리량이 최대인가, 병목은 어디서 생기는가.</p>
+</li>
+</ul>
+<p>왜 이것을 실물 대신 시뮬로 하는가? 이유는 11.1의 스케일 문제와 직결된다. 100대 로봇의 상호작용은 조합적으로 폭발해, 실물로 모든 시나리오를 시험하는 것은 불가능하고 위험하다(로봇끼리 충돌하면 손해다). 반면 digital twin 안에서는 layout·로봇 수·스케줄 정책을 파라미터처럼 바꿔가며 수천 번 리허설할 수 있다. 물류 병목이나 교착(deadlock)을 실물 창고가 아니라 가상에서 미리 잡아내는 것이다.</p>
+<p>'Blueprint'라는 형식도 짚어야 한다. <strong>Omniverse Blueprint</strong> = 특정 산업 워크플로우를 곧바로 시작할 수 있게 조립해 놓은 참조 구현(reference workflow). 즉 Mega는 개발자가 맨바닥부터 플릿 시뮬을 짜지 않고, 검증된 틀 위에서 자기 창고를 얹어 시작하도록 돕는 패키지다. 이는 앞선 GR00T-Dreams나 Cosmos 워크플로우들처럼 NVIDIA가 '연구·능력을 재현 가능한 청사진으로 배포'하는 일관된 방식의 산업 버전이다. 정리하면 Mega는 digital twin이라는 무대를 '단일 로봇 검증'에서 '플릿·시설·프로세스 검증'으로 끌어올리는 열쇠다.</p></div><div class="sb-block"><h2>11.4 AMR·창고 자동화 — mobility 스택과 만나는 지점</h2><p>플릿 시뮬에서 가장 자주 등장하는 로봇이 AMR이다. 여기서 이 챕터는 앞선 mobility 스택(Chapter 9)과 다시 연결된다.</p>
+<p><strong>AMR(Autonomous Mobile Robot, 자율 이동 로봇)</strong> = 창고·공장 안을 스스로 돌아다니며 자재를 운반하는 이동 로봇. 정해진 레일을 따르는 구형 AGV와 달리, 환경을 인식해 경로를 스스로 정한다.</p>
+<p>창고 자동화의 핵심에 AMR이 있는 이유는 명확하다 — 창고 노동의 상당 부분이 '물건을 A에서 B로 옮기는 이동'이고, 이 이동을 무리 지어 자율화하는 것이 AMR이다. 그리고 AMR이 '스스로 경로를 정해 안전하게 이동한다'는 능력은, 바로 이 코스가 앞서 다룬 <strong>mobility 스택</strong>이 푸는 문제 그 자체다.</p>
+<p>그 연결 고리가 <strong>COMPASS</strong>(Chapter 9)다. COMPASS는 cross-embodiment mobility 워크플로우로, 다양한 몸체의 로봇에게 '환경을 인식하고 목적지로 이동하는' 능력을 학습시킨다. 창고의 AMR은 이 mobility 능력을 실제 산업 현장에서 쓰는 대표적 사례다 — 개별 AMR의 '어떻게 이동할까'는 COMPASS 같은 mobility 정책이 풀고, 'AMR 무리 전체가 어떻게 협업할까'는 Mega의 플릿 시뮬이 푼다.</p>
+<p>이 분업 구조가 이 코스 전체를 하나로 엮는 지점이다.</p>
+<ul>
+<li>
+<p><strong>개체 지능(single-robot)</strong> — 한 대의 AMR이 잘 이동하는가: mobility 정책(COMPASS), Isaac Lab 학습, Jetson 배치.</p>
+</li>
+<li>
+<p><strong>집단 오케스트레이션(fleet)</strong> — 수백 대의 AMR이 시설 안에서 함께 잘 도는가: factory digital twin + Mega 플릿 시뮬.</p>
+</li>
+</ul>
+<p>즉 창고 자동화는 앞 챕터들의 mobility 스택(개체)과 이 챕터의 digital twin·Mega(집단)가 만나는 접점이다. 하나의 AMR을 똑똑하게 만드는 능력과, 그 똑똑한 AMR을 수백 대 묶어 시설을 운영하는 능력이 여기서 합쳐진다. 이 합류가 다음 절에서 볼 '산업 OS'라는 더 큰 그림의 실질적 내용을 이룬다.</p></div><div class="sb-block"><h2>11.5 파트너 생태계와 &#x27;산업 Physical AI OS&#x27;</h2><p>마지막 겹은 이 모든 것을 관통하는 전략적 질문이다 — 왜 NVIDIA는 이 판을 혼자 다 만들지 않는가?</p>
+<p>답은 산업 현장의 데이터와 소프트웨어가 이미 특정 회사들의 손에 있기 때문이다. 공장 설계는 Siemens, 물리 해석은 Ansys, 자원 관리(ERP)는 SAP, 전력·설비는 Schneider Electric, 데이터는 Databricks가 이미 장악하고 있다. NVIDIA가 이들을 대체하려 들면 아무도 쓰지 않는다. 대신 <strong>자기들의 digital twin 층으로 이들을 흡수</strong>하는 전략을 택한다.</p>
+<p><strong>파트너 생태계(partner ecosystem)</strong> = Siemens·Ansys·SAP·Schneider Electric·Databricks·Omron·Dematic 등 산업계 주요 기업들이 Omniverse를 자사 솔루션에 통합해, 각자의 데이터·도구를 공통 digital twin 위에서 함께 쓰게 되는 연합.</p>
+<p>왜 이 통합이 전략적으로 결정적인가? OpenUSD라는 공통 언어(11.2) 덕분에, 이 파트너들의 이질적인 데이터 — CAD 모델, 물리 해석 결과, ERP 재고, 전력 설비 정보 — 가 하나의 digital twin 장면으로 모인다. 즉 Omniverse는 '또 하나의 산업 소프트웨어'가 아니라, 기존 산업 소프트웨어들이 <strong>그 위에서 만나는 공통 기반</strong>이 된다. 파트너가 늘수록 그 기반의 가치가 커지는 네트워크 효과가 작동한다.</p>
+<p>이 지점에서 이 챕터의 궁극적 통찰이 나온다.</p>
+<p><strong>산업 Physical AI OS</strong> = 개별 로봇·도구가 아니라 '수백 로봇 + 시설 + 프로세스'라는 스케일 문제를 다루는 운영 체계로서의 digital twin. NVIDIA는 Omniverse를 이 자리에 포지셔닝한다.</p>
+<p>OS라는 비유가 정확한 이유가 있다. 컴퓨터의 OS가 CPU·메모리·주변장치를 추상화해 그 위에서 온갖 앱이 돌게 하듯, 산업 digital twin은 로봇·설비·물류·파트너 소프트웨어를 하나의 가상 시설로 추상화해 그 위에서 설계·시뮬(Mega)·최적화·운영이 돌게 한다. 산업 Physical AI의 문제가 개체가 아니라 스케일이므로, 필요한 것은 더 똑똑한 로봇 한 대가 아니라 그 무리를 얹어 돌릴 운영 체계다.</p>
+<p>그리고 이 확장은 공장·창고에서 멈추지 않는다. <strong>Omniverse DSX Blueprint</strong>(2025~2026) = gigawatt급 AI factory(즉 대형 데이터센터) 자체를 digital twin으로 구축·운영하는 청사진으로, 역시 OpenUSD·SimReady를 토대로 한다. AI를 학습시키는 데이터센터마저 digital twin으로 설계·운영한다는 것은, '시설을 가상으로 짓고 돌린다'는 이 챕터의 논리가 산업 전반으로 번지고 있음을 보여준다. 요컨대 NVIDIA는 로봇 회사도, 시뮬 회사도 아닌 '산업 Physical AI의 OS 제공자'로 스스로를 세우고 있으며, 파트너 생태계가 그 OS 위의 앱 마켓 역할을 한다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">도시를 짓기 전에 SimCity로 먼저 돌려본다</div>
+      <div class="a-body"><p>산업 digital twin과 로봇 플릿을 이해하려면, 도시 계획가가 실제로 콘크리트를 붓기 전에 SimCity 같은 시뮬레이션 안에서 도시를 통째로 먼저 돌려보는 장면을 떠올리면 된다. 도로를 어디에 깔고, 발전소를 어디에 두고, 교통 흐름이 어디서 막히는지 — 이 모든 걸 가상에서 수백 번 실험한 뒤에야 실제 도시를 짓는다. factory/warehouse digital twin이 바로 이 SimCity다. 공장을 짓기 전에 layout·로봇 배치·물류를 가상에서 최적화하는 것이다.</p>
+<p>하지만 도시가 진짜 살아 있으려면 건물만으로는 안 된다. 그 안을 오가는 수만 명의 시민, 버스, 택시가 서로 부딪히지 않고 흘러야 한다. 도시 계획가가 정작 알고 싶은 건 '이 도로망에 이만큼의 교통량을 흘리면 어디서 정체가 터지는가'다. Mega의 플릿 시뮬레이션이 이 교통 시뮬레이션에 해당한다 — digital twin이라는 무대(도시) 위에 수백 대의 AMR(시민·차량)을 풀어놓고, 그들의 정책과 스케줄이 충돌·교착 없이 굴러가는지 본다. 도시 계획의 핵심이 건물 하나가 아니라 '전체 흐름'인 것처럼, 산업 Physical AI의 핵심도 로봇 한 대가 아니라 플릿 전체의 흐름이다.</p>
+<p>그런데 도시를 계획가 한 명이 다 만들 수는 없다. 전력망은 전력 회사가, 상하수도는 수도 회사가, 건축은 건설사가, 물류는 물류 회사가 안다. 훌륭한 계획가는 이들을 대체하려 하지 않고, 모두가 같은 도시 지도(공통 좌표계) 위에서 각자의 전문성을 얹게 만든다. OpenUSD가 이 공통 도시 지도이고, Siemens·Ansys·SAP·Schneider가 각 분야 전문 회사다. 모두가 하나의 지도 위에서 만나니, 그 지도 자체가 도시의 운영 체계(OS)가 된다.</p>
+<p>결국 NVIDIA는 개별 로봇(건물 하나)을 파는 회사가 아니라, 도시 전체를 가상으로 짓고 돌리는 '운영 체계(SimCity 엔진)'를 제공하는 회사로 스스로를 세운다. 로봇은 그 도시의 시민 하나일 뿐이고, 진짜 가치는 수백 시민과 온갖 시설·파트너를 한 지도 위에서 함께 돌리는 OS에 있다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>Mega 플릿 시뮬레이션의 개념 config다. 실제 API가 아니며, 요점은 '개별 로봇 정책이 아니라 warehouse digital twin 위에 N대의 AMR을 올려 정책·스케줄을 플릿 수준에서 검증한다'는 것이다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python"># Mega (Omniverse Blueprint): warehouse digital twin 위 로봇 플릿 시뮬
+
+fleet_sim = MegaBlueprint(
+    # 1) 시설: 실물을 짓기 전 가상 창고 (OpenUSD + SimReady)
+    facility=WarehouseDigitalTwin(
+        usd=&quot;warehouse_layoutA.usd&quot;,   # layout 자체가 실험 대상
+        sim_ready=True),               # 물리·센서 시뮬 가능한 자산
+
+    # 2) 플릿: 단일 로봇이 아니라 N대의 AMR을 동시에
+    fleet=[
+        AMR(id=i, policy=&quot;compass_mobility&quot;)  # 개체 이동은 mobility 정책이
+        for i in range(120)                   # 수백 대 스케일
+    ],
+
+    # 3) 검증 대상: 개체 성능이 아니라 플릿 상호작용
+    validate=[
+        &quot;collision_free&quot;,   # 서로 안 부딪히는가
+        &quot;deadlock_free&quot;,    # 병목/교착이 없는가
+        &quot;throughput&quot;,       # 전체 처리량
+    ],
+
+    # 4) 스케줄 정책: 누구에게 어떤 작업을 언제
+    scheduler=TaskScheduler(strategy=&quot;balanced&quot;),
+)
+
+# layout·로봇 수·스케줄을 파라미터처럼 바꿔 수천 번 리허설
+for layout in [&quot;layoutA.usd&quot;, &quot;layoutB.usd&quot;]:
+    for n in [80, 120, 160]:
+        report = fleet_sim.run(layout=layout, fleet_size=n)
+        print(layout, n, report.throughput, report.bottlenecks)
+# 실물 창고를 짓기 전에 최적 layout·플릿 규모·스케줄을 찾는다</code></pre>
+      <div class="c-walk"><p>이 config의 핵심은 검증의 단위가 '개체'가 아니라 '플릿'이라는 점이다. <strong>facility</strong>는 11.2의 factory digital twin으로, OpenUSD·SimReady 기반의 가상 창고이며 layout(.usd) 자체가 바꿔가며 실험할 파라미터다. <strong>fleet</strong>은 단일 로봇이 아니라 120대의 AMR로, 각 AMR의 '어떻게 이동할까'는 COMPASS mobility 정책(policy="compass_mobility")이 맡는다 — 11.4의 '개체는 mobility 스택, 집단은 Mega'라는 분업이 코드에 드러난다. <strong>validate</strong>가 이 챕터의 스케일 문제를 그대로 담는다 — collision_free·deadlock_free·throughput은 개별 로봇의 성능이 아니라 무리의 상호작용 지표다. <strong>scheduler</strong>는 플릿 수준의 작업 배정 정책을 검증한다. 마지막 이중 루프가 결정적이다 — layout과 플릿 규모를 바꿔가며 수천 번 리허설해, 실물 창고에 콘크리트를 붓기 전에 최적 배치·규모·스케줄을 찾는다. 실물로는 조합 폭발과 충돌 위험 때문에 불가능한 이 탐색이, digital twin 위에서는 안전하게 반복된다 — 이것이 digital twin이 '시뮬 도구'를 넘어 '운영 체계'가 되는 실질적 이유다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">이 챕터는 &#x27;산업 Physical AI를 단일 로봇이 아니라 스케일(fleet·facility·process) 문제로 보고, digital twin이 왜 운영 체계가 되는지 설명할 수 있는가&#x27;를 재는 주제다. 면접관은 Mega·Omniverse 이름 암기보다, 개체 지능과 집단 오케스트레이션을 구분하고 파트너 생태계·OS 포지셔닝의 전략을 읽어내는지를 본다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>산업 Physical AI의 문제가 개별 로봇 지능이 아니라 다수 로봇·시설·프로세스의 스케일 문제임을 규정하고, 개체 성능과 플릿 상호작용(충돌·교착·처리량)이 다른 차원임을 구분하는가</li><li>factory/warehouse digital twin이 &#x27;짓기 전에 layout·로봇 배치·물류를 시뮬·최적화&#x27;하는 순서 역전이며, OpenUSD·SimReady가 그 물리적 정확성의 토대임을 이해하는가</li><li>Mega를 로봇 플릿 시뮬레이션 Blueprint로 규정하고, digital twin(무대)과 Mega(리허설)의 관계 및 정책·스케줄을 플릿 수준에서 검증하는 목적을 설명하는가</li><li>AMR·창고 자동화에서 개체 이동은 mobility 스택(COMPASS)이, 집단 협업은 Mega가 푼다는 분업을 그리며 앞 챕터와 연결하는가</li><li>Siemens·Ansys·SAP·Schneider 등 파트너 통합이 OpenUSD 공통 기반 위의 네트워크 효과이며, NVIDIA가 Omniverse를 &#x27;산업 Physical AI OS&#x27;로 포지셔닝하는 전략임을 읽는가</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>산업 자동화를 여전히 &#x27;더 똑똑한 로봇 한 대&#x27; 문제로 보고, 스케일(fleet·facility) 문제로의 전환을 인식하지 못하는 경우</li><li>digital twin을 단순 3D 시각화로만 보고, layout·물류를 짓기 전에 최적화하는 목적과 OpenUSD·SimReady의 물리적 정확성 역할을 놓치는 경우</li><li>Mega를 개별 로봇 시뮬로 오해하고, 플릿 수준의 상호작용(충돌·교착·스케줄) 검증이 핵심임을 설명하지 못하는 경우</li><li>AMR을 mobility 스택(COMPASS)·개체 지능과, Mega의 집단 오케스트레이션을 뭉뚱그려 분업 구조를 그리지 못하는 경우</li><li>파트너 통합을 단순 마케팅 제휴로 보고, OpenUSD 공통 기반·네트워크 효과·OS 포지셔닝이라는 전략적 논리를 읽지 못하는 경우</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>Q1 (스케일): 산업 Physical AI가 왜 단일 로봇 문제가 아니라 스케일 문제인지 설명하라. factory digital twin과 Mega 플릿 시뮬레이션이 각각 무엇을 다루며, 개체 성능과 플릿 상호작용은 어떻게 다른가?</li><li>Q2 (연결): 창고의 AMR에서 개체 이동과 집단 협업이 각각 어떤 스택으로 풀리는지 설명하라(COMPASS mobility vs Mega). digital twin이 왜 실물 대신 시뮬로 layout·스케줄을 최적화하는가?</li><li>Q3 (전략): NVIDIA가 Siemens·SAP 등을 대체하지 않고 Omniverse에 통합하는 이유를 설명하라. OpenUSD 공통 기반과 파트너 생태계가 어떻게 Omniverse를 &#x27;산업 Physical AI OS&#x27;로 만드는가?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> Familiar 수준은 &#x27;NVIDIA가 Omniverse로 공장 digital twin을 만든다&#x27;를 아는 정도다. Mastery 수준은 (1) 산업 Physical AI를 개체가 아닌 스케일(fleet·facility·process) 문제로 규정하고 개체 지능과 플릿 오케스트레이션을 구분하며, (2) factory/warehouse digital twin이 짓기 전 layout·로봇 배치·물류를 최적화하는 순서 역전이고 OpenUSD·SimReady가 물리적 정확성의 토대임을 설명하고, (3) Mega를 플릿 시뮬 Blueprint로 규정해 digital twin(무대)-Mega(리허설) 관계와 정책·스케줄·충돌·교착 검증을 논하고, (4) AMR에서 개체 이동(COMPASS mobility)과 집단 협업(Mega)의 분업으로 앞 챕터와 연결하며, (5) Siemens·Ansys·SAP·Schneider·Databricks·Omron·Dematic 통합이 OpenUSD 공통 기반의 네트워크 효과이자 &#x27;산업 Physical AI OS&#x27; 포지셔닝 전략임을 읽고, Omniverse DSX Blueprint(gigawatt AI factory digital twin)로 이 논리가 데이터센터까지 확장됨까지 연결한다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>산업 Physical AI는 스케일 문제다</h3><p>핵심은 로봇 한 대의 지능이 아니라 &#x27;수백 로봇 + 시설 + 프로세스&#x27;가 함께 도는 시스템 전체다. 개체 성능은 정책 품질로 결정되지만, 플릿 성능은 상호작용(충돌·교착·스케줄)에서 결정된다 — 근본적으로 다른 차원의 문제다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>Factory/Warehouse Digital Twin — 짓기 전에 시뮬한다</h3><p>Omniverse for factories는 공장·창고를 digital twin으로 복제해 layout·로봇 배치·물류를 실물을 짓기 전에 최적화한다. 순서를 뒤집어 콘크리트를 붓기 전에 실수를 발견한다. OpenUSD·SimReady가 시각적 복제를 넘어 물리적 정확성을 보장한다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>Mega — 로봇 플릿을 통째로 시뮬한다</h3><p>Omniverse Blueprint로, digital twin(무대) 안에서 다수 로봇·AMR을 동시에 돌려 정책·스케줄을 실물 배치 전에 검증한다. 개체 성능이 아니라 플릿 상호작용(충돌·교착·처리량)을 본다. 100대의 조합 폭발을 실물 대신 가상에서 수천 번 리허설한다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>AMR·창고 자동화 — mobility 스택과의 접점</h3><p>AMR은 창고를 스스로 돌며 자재를 옮기는 이동 로봇이다. 개체의 &#x27;어떻게 이동할까&#x27;는 mobility 정책(COMPASS)이, &#x27;무리가 어떻게 협업할까&#x27;는 Mega 플릿 시뮬이 푼다. 창고 자동화는 개체 지능(앞 챕터)과 집단 오케스트레이션(이 챕터)이 만나는 접점이다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>개체 지능 vs 집단 오케스트레이션</h3><p>single-robot(한 대가 잘 이동하는가)은 mobility 정책·Isaac Lab·Jetson이 풀고, fleet(수백 대가 시설 안에서 함께 잘 도는가)은 factory digital twin + Mega가 푼다. 이 분업이 산업 자동화의 두 층위이며, 둘이 합쳐져야 실제 시설이 돌아간다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>파트너 생태계 — OpenUSD 위의 네트워크 효과</h3><p>Siemens·Ansys·SAP·Schneider Electric·Databricks·Omron·Dematic가 Omniverse를 자사 솔루션에 통합한다. NVIDIA는 이들을 대체하지 않고 OpenUSD 공통 기반 위로 흡수한다 — 파트너가 늘수록 기반의 가치가 커지는 네트워크 효과가 작동하는 전략적 통합이다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>Omniverse = 산업 Physical AI OS</h3><p>컴퓨터 OS가 하드웨어를 추상화해 앱을 돌리듯, 산업 digital twin은 로봇·설비·물류·파트너 SW를 하나의 가상 시설로 추상화해 설계·시뮬·운영을 돌린다. 스케일 문제에 필요한 건 더 똑똑한 로봇이 아니라 무리를 얹어 돌릴 운영 체계다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>DSX Blueprint — 데이터센터까지 번지는 논리</h3><p>Omniverse DSX Blueprint(2025~2026)는 gigawatt급 AI factory(대형 데이터센터)를 digital twin으로 구축·운영한다. OpenUSD·SimReady 토대 위에서 AI를 학습시키는 시설마저 가상으로 짓고 돌린다는 것은, &#x27;시설을 digital twin으로 운영한다&#x27;는 논리가 산업 전반으로 확장됨을 보여준다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-10.html">← The Autonomous Driving Stack</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-12.html">Deployment Hardware — Jetson Thor &amp; the Robot Computer →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

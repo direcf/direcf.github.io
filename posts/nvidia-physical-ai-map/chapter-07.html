@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch7: The Synthetic Data Problem — The Real Bottleneck — NVIDIA Physical AI Map — direcf</title>
+  <meta name="description" content="Physical AI의 진짜 병목인 data scarcity·domain gap을, MobilityGen·GR00T-Mimic/Dreams(neural trajectory)·Cosmos 증강·Data Factory Blueprint가 어떻게 푸는지 본다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;height:22px;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><linearGradient id="direcf-nav-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs></svg>
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg></span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg></span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.25 15a4.5 4.5 0 0 0 4.5 4.5H18a3.75 3.75 0 0 0 1.332-7.257 3 3 0 0 0-3.758-3.848 5.25 5.25 0 0 0-10.233 2.33A4.502 4.502 0 0 0 2.25 15Z"/></svg></span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"/></svg></span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg></span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/physical-ai">NVIDIA Physical AI Map</a><span class="sep">›</span>
+        <strong>Ch07 The Synthetic Data Problem — The Real Bottleneck</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 07 <span style="opacity:.3">·</span> 13 chapters
+      </div>
+      <div class="chapter-emoji">🏭</div>
+      <h1 class="chapter-title">The Synthetic Data Problem — The Real Bottleneck</h1>
+      <div class="chapter-title-kr">합성 데이터 문제 — Physical AI의 진짜 병목</div>
+      <div class="chapter-tldr">Physical AI의 진짜 병목인 data scarcity·domain gap을, MobilityGen·GR00T-Mimic/Dreams(neural trajectory)·Cosmos 증강·Data Factory Blueprint가 어떻게 푸는지 본다.</div>
+
+      <div class="cs-wrap">
+        <div style="padding:40px;background:var(--bg-soft);border-radius:12px;color:var(--muted);text-align:center;border:1px dashed var(--border);">🍌 이미지 준비 중</div>
+        <div class="cs-label">🍌 Nano Banana — Chapter 7 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>Physical AI에서 데이터가 병목인 근본 이유를 설명한다</li><li>sim SDG(MobilityGen)와 WFM 기반 생성의 차이를 안다</li><li>GR00T-Dreams의 neural trajectory 생성(780K/11h)을 이해한다</li><li>real-to-real·real-to-sim 데이터 워크플로우를 구분한다</li><li>Data Factory Blueprint가 이 병목을 산업화하는 방식을 안다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>지난 여섯 챕터가 'Physical AI를 만드는 도구'였다면, 이 챕터는 그 모든 도구가 결국 무엇을 위해 존재하는지를 정면으로 다룬다. LLM 혁명이 인터넷이라는 방대한 텍스트 데이터 위에서 일어났듯, Physical AI 혁명도 데이터를 먹고 자란다. 그런데 로봇에게는 '인터넷'이 없다. 여기서 Physical AI의 진짜 병목이 드러난다 — <strong>데이터 부족(data scarcity)과 domain gap</strong>.</p>
+<p>로봇 데이터는 왜 이토록 비싼가? 텍스트는 웹을 크롤링하면 공짜에 가깝지만, 로봇이 물건을 집는 시연 데이터는 실제 로봇·실제 사람·실제 시간이 있어야 모인다. 사람이 로봇 팔을 원격조종(teleop)해 시연 하나를 모으는 데 수십 초가 걸리고, 수만 개가 필요하니 수천 시간의 노동이 든다. 게다가 시뮬에서 값싸게 모은 데이터는 실세계와 미묘하게 달라(domain gap) 그대로 옮기면 정책이 실패한다. 이 두 문제가 Physical AI 확장의 근본 장벽이다.</p>
+<p>이 챕터는 NVIDIA가 이 병목을 푸는 해법의 스펙트럼을 훑는다 — 한쪽 끝의 <strong>sim 기반 SDG(MobilityGen)</strong>, 다른 쪽 끝의 <strong>WFM 기반 생성(GR00T-Mimic·GR00T-Dreams)</strong>, 그리고 이 둘을 잇는 <strong>Cosmos 증강 파이프라인</strong>. 특히 GR00T-Dreams가 단일 이미지에서 로봇의 행동 궤적을 상상해내는 'neural trajectory' 개념과, 780K 궤적을 11시간에 생성해 6.5K시간의 인간 시연에 맞먹는 충격적 수치를 파고든다. 마지막으로 이 모든 것을 산업화하는 GTC 2026의 Physical AI Data Factory Blueprint까지, '데이터를 어떻게 공장처럼 찍어내는가'를 지도로 그린다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>7.1 왜 데이터가 진짜 병목인가 — scarcity와 domain gap</h2><p>Physical AI의 발전을 가로막는 것은 모델 아키텍처도, 연산도 아니다 — <strong>데이터</strong>다. 이 병목은 두 얼굴을 가진다.</p>
+<p><strong>Data scarcity(데이터 희소성)</strong> = 로봇이 배울 실세계 행동 데이터가 절대적으로 부족한 문제. 언어 모델은 인터넷 텍스트로 학습하지만, '로봇이 물건을 집고 문을 여는' 물리적 행동에는 그런 방대한 공개 데이터셋이 없다.</p>
+<p>왜 없는가? 로봇 데이터는 <strong>수집 비용이 근본적으로 높기</strong> 때문이다. 시연 하나를 모으려면 실제 로봇 하드웨어, 그것을 조종할 사람(teleoperation), 물리적 시간, 그리고 안전한 환경이 모두 있어야 한다. 사람이 로봇을 원격조종해 'pick and place' 한 번을 시연하는 데 수십 초가 걸리고, 견고한 정책 학습에는 수만~수십만 개의 다양한 시연이 필요하다. 산술적으로 수천 시간의 인간 노동이 필요하다는 뜻이다. 텍스트 크롤링과는 비교가 안 되는 비용 구조다.</p>
+<p>두 번째 얼굴이 domain gap이다.</p>
+<p><strong>Domain gap(도메인 갭)</strong> = 시뮬레이션(또는 생성된 데이터)과 실세계 사이의 분포 차이. 조명·재질·물리 파라미터·센서 노이즈가 미묘하게 달라, sim에서 완벽했던 정책이 real에서 무너지는 현상.</p>
+<p>domain gap 때문에 '그냥 시뮬에서 값싸게 대량 생성하면 되지 않나'라는 순진한 해법이 통하지 않는다. 시뮬 데이터가 아무리 많아도 실세계와 다르면 정책은 실세계에서 실패한다. 그래서 Physical AI의 데이터 문제는 단순히 '양을 늘리는 문제'가 아니라 <strong>'실세계와 부합하는 양을 값싸게 늘리는 문제'</strong>다. 이 챕터의 모든 해법은 결국 이 두 축 — scarcity(양)와 domain gap(질/부합성) — 을 동시에 공략하는 시도로 읽어야 한다. NVIDIA의 전략은 명확하다: 실데이터를 조금만 수집하고, 시뮬과 생성형 AI로 물리 타당성을 지키며 대량 증폭한다.</p></div><div class="sb-block"><h2>7.2 해법 스펙트럼 ① — sim 기반 SDG와 MobilityGen</h2><p>데이터 병목을 푸는 첫 번째 접근은 정통 <strong>SDG(Synthetic Data Generation, 합성 데이터 생성)</strong>다 — 손으로 만든 물리 시뮬레이터(Isaac Sim)를 돌려 라벨이 완벽하게 붙은 데이터를 대량으로 뽑는 것이다. 시뮬 안에서는 물체의 정확한 위치·속도·분할 마스크를 공짜로 알 수 있으니, 실세계에서는 값비싼 라벨링이 자동으로 해결된다.</p>
+<p>이 접근의 대표 도구가 <strong>MobilityGen(모빌리티젠)</strong>이다.</p>
+<p><strong>MobilityGen(모빌리티젠)</strong> = Isaac Sim 기반의 합성 모션 데이터 생성 도구. 여러 embodiment(로봇 몸체)와 환경에서 대량의 이동·행동 데이터셋을 자동 생성한다.</p>
+<p>MobilityGen이 한 번의 실행으로 뽑아내는 데이터는 로봇 학습에 필요한 거의 모든 modality를 아우른다.</p>
+<ul>
+<li><strong>occupancy map(점유 격자 지도)</strong>: 환경의 어디가 막혀 있고 어디가 비었는지</li>
+<li><strong>pose / velocity</strong>: 로봇의 위치·자세·속도의 정확한 ground truth</li>
+<li><strong>RGB / depth / segmentation</strong>: 카메라·깊이·분할 센서 데이터</li>
+<li><strong>action</strong>: 각 시점에 로봇이 취한 행동</li>
+</ul>
+<p>데이터를 어떻게 수집하는가도 세 방식으로 유연하다.</p>
+<ul>
+<li><strong>teleop(원격조종)</strong>: 사람이 시뮬 속 로봇을 직접 조종해 자연스러운 궤적 수집</li>
+<li><strong>random(무작위)</strong>: 무작위 행동으로 넓은 상태 공간 탐색</li>
+<li><strong>path-planning(경로 계획)</strong>: 계획된 경로를 따라 목적 지향 궤적 생성</li>
+</ul>
+<p>MobilityGen의 힘은 <strong>embodiment·환경의 조합 폭발</strong>을 값싸게 커버한다는 데 있다. 실세계라면 로봇 종류마다, 환경마다 따로 데이터를 모아야 하지만, 시뮬에서는 같은 파이프라인에 다른 로봇 asset과 다른 환경을 얹어 자동으로 대량 생성한다. 이것이 Chapter 6에서 본 '새 로봇을 embodiment asset·task로 얹는' 스택 원리의 데이터 층 구현이다. 다만 이 접근의 태생적 한계가 domain gap이다 — 시뮬이 아무리 정밀해도 실세계와의 미세한 차이는 남는다. 그래서 SDG만으로는 부족하고, 다음 절의 WFM 기반 생성이 그 간극을 메우러 등장한다.</p><div class="fig-row"><figure class="fig-item"><img src="figures/sdg-four-steps.png" alt="로봇 mobility를 위한 synthetic data generation(SDG)의 4단계. Isaac Sim 기반 MobilityGen 파이프라인. (출처: NVIDIA R²D² Technical Blog, 2025.03)" loading="lazy"><figcaption>로봇 mobility를 위한 synthetic data generation(SDG)의 4단계. Isaac Sim 기반 MobilityGen 파이프라인. (출처: NVIDIA R²D² Technical Blog, 2025.03)</figcaption></figure></div></div><div class="sb-block"><h2>7.3 해법 스펙트럼 ② — WFM 기반 생성과 neural trajectory</h2><p>두 번째 접근은 손으로 만든 시뮬을 넘어, 생성형 world model이 데이터를 '상상'하게 하는 것이다. 여기 두 개의 GR00T 도구가 있다.</p>
+<p><strong>GR00T-Mimic(그루트 미믹)</strong> = 소수의 인간 시연(human demo)을 Isaac Lab에서 대량의 궤적으로 증강(augmentation)하는 도구. 몇 개의 시연을 물리적으로 타당한 수천 개의 변형 궤적으로 불린다(Cosmos로 기존 데이터를 증강). '조금 시연하고 많이 불리기'의 전형이다.</p>
+<p>그리고 이 챕터의 하이라이트인 GR00T-Dreams다.</p>
+<p><strong>GR00T-Dreams(그루트 드림스)</strong> = Cosmos Predict WFM을 post-training한 뒤, 단일 이미지 하나를 입력받아 '로봇이 새로운 task를 새로운 환경에서 수행하는 영상'을 생성하고, 그 영상에서 행동을 추출해내는 데이터 생성 도구.</p>
+<p>작동 원리가 놀랍다. (1) 로봇과 환경이 담긴 이미지 한 장과 원하는 task를 준다. (2) post-training된 Cosmos Predict가 그 task를 수행하는 미래 영상을 상상해 생성한다. (3) 그 생성된 영상에서 로봇이 취해야 할 행동을 <strong>action token</strong>으로 추출한다. 이렇게 뽑아낸 행동 궤적을 <strong>neural trajectory(뉴럴 궤적)</strong>라 부른다.</p>
+<p><strong>Neural trajectory(뉴럴 궤적)</strong> = 실제 로봇이나 물리 시뮬이 아니라, world model이 상상한 영상에서 추출한 로봇 행동 궤적. 물리 엔진이 아니라 신경망의 학습된 세계 지식이 궤적을 만들어낸다.</p>
+<p>이것이 왜 혁명적인가? SDG(MobilityGen)는 여전히 물리 시뮬레이터를 돌려야 하고, 새 환경마다 3D 씬을 만들어야 한다. 반면 GR00T-Dreams는 <strong>이미지 한 장에서</strong> 새 환경·새 task의 데이터를 생성한다 — 3D 씬 구축 없이, world model이 학습한 물리 상식으로 곧장 궤적을 뽑는다. 시뮬 제작의 병목마저 건너뛰는 셈이다.</p>
+<p>수치가 이 접근의 위력을 증언한다. GR00T-Dreams는 <strong>780K개의 궤적을 단 11시간에 생성</strong>했는데, 이는 사람이 직접 모으면 <strong>6,500시간(6.5K시간)의 인간 시연</strong>에 맞먹는 양이다. 11시간 대 6,500시간 — 약 590배의 시간 압축이다. 그리고 결정적으로, 이렇게 생성한 데이터를 실제 데이터와 결합해 학습하면 <strong>GR00T N1 정책의 성능이 +40%</strong> 향상됐다. neural trajectory가 단순히 '많은' 데이터가 아니라 '쓸모 있는' 데이터임을 보여주는 증거다.</p></div><div class="sb-block"><h2>7.4 real-to-real 워크플로우와 Cosmos 4단 파이프라인</h2><p>GR00T-Dreams의 진짜 함의는 데이터 워크플로우의 방향을 바꾼다는 데 있다. 전통적 접근이 'sim-to-real'(시뮬에서 학습해 실세계로)이라면, GR00T-Dreams는 <strong>'real-to-real'</strong>을 연다.</p>
+<p><strong>Real-to-real(리얼투리얼) 워크플로우</strong> = 소량의 실데이터에서 출발해 → world model로 대량의 합성 궤적을 생성하고 → 그 합성 데이터로 실로봇을 학습시키는 흐름. 실세계에서 출발해 실세계로 돌아오되, 중간의 증폭을 시뮬 씬이 아니라 신경망 상상으로 채운다.</p>
+<p>앞 챕터의 개념들과 구분해두자. <strong>Real-to-sim</strong>은 실세계 관찰을 시뮬로 되가져와 재현하는 방향이고(Chapter 6의 피드백 루프), <strong>real-to-real</strong>은 그 중간 단계에서 명시적 3D 시뮬 없이 world model이 곧장 궤적을 생성한다는 점이 다르다. sim이라는 중간 표현을 건너뛰는 것이 real-to-real의 핵심이다.</p>
+<p>이 생성이 신뢰할 만한 데이터가 되려면, 상상을 검증·정제하는 파이프라인이 필요하다. Cosmos의 세 축(Chapter 5)이 여기서 4단 데이터 파이프라인으로 조립된다.</p>
+<ol>
+<li><strong>Isaac Sim (sim)</strong>: 물리 정확한 base 장면·데이터 제공</li>
+<li><strong>Cosmos Predict</strong>: 그 장면에서 미래 rollout(가능한 전개)을 생성</li>
+<li><strong>Cosmos Transfer</strong>: 생성된 장면에 domain randomization 적용 — 조명·재질·날씨를 바꿔 다양성 확보</li>
+<li><strong>Cosmos Reason</strong>: 각 결과의 물리 타당성을 검증하고, 저품질을 필터링하며 태깅</li>
+</ol>
+<p>이 파이프라인의 산출물이 '고품질·물리 타당·다양한' 데이터셋이고, 이것이 GR00T나 인식 모델(perception model) 학습으로 투입된다. NVIDIA의 표현을 빌리면, '수개월 걸릴 IL(모방학습) 데이터를 수십 시간으로' 압축하는 엔진이다.</p>
+<p>주목할 지점은 <strong>Reason의 역할</strong>이다. 생성형 모델은 필연적으로 물리적으로 말이 안 되는 결과(물체가 공중에 뜨는 등)를 뱉는다. Reason이 이를 걸러내지 않으면, 대량 생성은 대량의 쓰레기를 만들 뿐이다. 양(Predict·Transfer)과 질(Reason)이 짝을 이뤄야 비로소 domain gap을 줄인 쓸모 있는 데이터가 나온다. 이것이 왜 Cosmos가 '생성'만이 아니라 '검증'까지 한 플랫폼에 묶여 있는지에 대한 답이다.</p><div class="fig-row"><figure class="fig-item"><img src="figures/groot-dreams-pipeline.png" alt="GR00T-Dreams 워크플로우 — 단일 이미지에서 Cosmos Predict WFM으로 로봇 수행 영상을 생성하고 action token(neural trajectory)을 추출한다. (출처: NVIDIA Technical Blog, 2025.06)" loading="lazy"><figcaption>GR00T-Dreams 워크플로우 — 단일 이미지에서 Cosmos Predict WFM으로 로봇 수행 영상을 생성하고 action token(neural trajectory)을 추출한다. (출처: NVIDIA Technical Blog, 2025.06)</figcaption></figure></div></div><div class="sb-block"><h2>7.5 Physical AI Data Factory — 데이터 생성의 산업화</h2><p>개별 도구(MobilityGen·GR00T-Dreams·Cosmos 파이프라인)를 넘어, NVIDIA의 야심은 이 모든 것을 하나의 반복 가능한 '공장'으로 묶는 것이다. 그 청사진이 GTC 2026에서 제시된 <strong>Physical AI Data Factory Blueprint</strong>다.</p>
+<p><strong>Physical AI Data Factory Blueprint(피지컬 AI 데이터 팩토리 블루프린트)</strong> = world modeling, humanoid skill, AV(자율주행) 데이터 생성을 표준화·산업화하는 참조 설계(blueprint). 데이터 생성을 일회성 실험이 아니라 반복 가능한 생산 공정으로 만든다.</p>
+<p>'blueprint'라는 단어가 핵심이다. NVIDIA는 완성품 하나를 파는 게 아니라, 기업이 자사 로봇·도메인에 맞춰 데이터 공장을 세울 수 있는 <strong>참조 아키텍처</strong>를 제공한다. 이 안에는 앞서 본 요소들 — SDG(MobilityGen), WFM 생성(GR00T-Dreams), Cosmos 4단 파이프라인 — 이 표준화된 부품으로 조립되어 있다. 목표는 명확하다: <strong>domain gap 완화를 대규모로, 반복적으로 수행</strong>하는 것.</p>
+<p>왜 '공장'이라는 은유가 적절한가? 초기 연구에서 합성 데이터 생성은 장인의 수작업에 가까웠다 — 연구자가 씬을 만들고, 파라미터를 조율하고, 결과를 손으로 검수했다. Data Factory는 이를 산업혁명처럼 표준화·자동화한다. 입력(소량 실데이터·목표 task)을 넣으면, 정해진 공정을 거쳐 학습 가능한 고품질 데이터셋이 나오는 조립 라인이다. 이 산업화가 있어야 GR00T 같은 foundation model을 여러 embodiment·도메인으로 확장하는 데 필요한 데이터 규모를 감당할 수 있다.</p>
+<p>마지막으로 이 흐름이 우리 이전 학습과 어떻게 연결되는지 짚자. 이전 COMPASS 코스에서 다룬, Cosmos-Transfer로 rendering gap을 메우는 사례(<a href="/posts/compass-cross-embodiment/">COMPASS Cross-Embodiment</a>)가 바로 이 Data Factory 사고의 한 단면이다 — 시뮬 렌더링과 실세계 사이의 시각적 간극을 Transfer의 domain randomization으로 좁히는 것. Data Factory Blueprint는 그런 개별 기법들을 world modeling·humanoid·AV 전 영역으로 확장한 산업적 종합판이다. 정리하면, 이 챕터의 여정은 '데이터가 병목이다'라는 문제 제기에서 출발해, SDG·WFM 생성·검증 파이프라인을 거쳐, 그 모두를 반복 가능한 공장으로 산업화하는 데서 닫힌다. 다음 챕터의 GR00T는 바로 이 공장이 먹여 키운 모델이다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">요리사의 딜레마 — 손님을 부를까, 레시피를 상상할까</div>
+      <div class="a-body"><p>새 로봇 셰프에게 수만 가지 요리를 가르쳐야 한다고 상상하자. 가장 정직한 방법은 실제 손님 수만 명을 불러 매번 요리를 시키고 그 과정을 녹화하는 것이다(실데이터 수집). 하지만 손님 한 명 한 명이 시간·비용이고, 수만 번을 반복하려면 수천 시간이 든다. 이것이 data scarcity다.</p>
+<p>첫 번째 대안 — <strong>가상 주방(Isaac Sim SDG, MobilityGen)</strong>을 짓는다. 컴퓨터 속 완벽한 주방에서 로봇이 무한히 요리를 연습하고, 모든 재료의 무게·온도가 자동으로 기록된다(완벽한 라벨). 값싸고 대량이다. 하지만 가상 주방의 불 세기가 실제와 미묘하게 달라(domain gap), 진짜 주방에 서면 요리가 어긋난다.</p>
+<p>두 번째 대안이 더 놀랍다 — <strong>상상하는 요리사(GR00T-Dreams)</strong>다. 재료 사진 한 장만 보여주면, 이 요리사는 '이 재료로 새 요리를 만드는 전 과정'을 머릿속 영상으로 그려내고, 그 영상에서 손동작(action)을 그대로 뽑아낸다. 가상 주방조차 지을 필요가 없다 — 사진 한 장에서 요리 궤적(neural trajectory)이 나온다. 게다가 이 상상 요리사는 11시간 만에 780,000개의 요리 시연을 뽑는데, 진짜 사람이 하면 6,500시간이 걸릴 양이다.</p>
+<p>다만 상상은 때로 틀린다 — 국자가 공중에 뜨거나 물리 법칙을 어긴 장면을 그릴 수 있다. 그래서 옆에 <strong>까다로운 심사위원(Cosmos Reason)</strong>을 둔다. 말이 안 되는 상상은 버리고, 그럴듯한 것만 레시피북에 넣는다. 그리고 이 전체 과정 — 사진 넣기, 상상하기, 다양하게 변주하기(Transfer), 심사하기 — 을 버튼 하나로 돌아가는 <strong>자동 레시피 공장(Data Factory Blueprint)</strong>으로 만든다. 손님을 부르는 대신, 검증된 상상을 공장에서 찍어내는 것 — 이것이 Physical AI가 데이터 병목을 푸는 방식이다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>GR00T-Dreams 스타일의 데이터 생성 루프를 개념 코드로 표현한다. 실제 API가 아니며, 요점은 '단일 이미지 → world model이 미래를 상상 → 그 영상에서 action token(neural trajectory) 추출 → 물리 검증 필터'라는 흐름이다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python"># GR00T-Dreams 개념: 이미지 한 장에서 neural trajectory를 뽑는다.
+
+cosmos_predict = load(&quot;cosmos-predict&quot;, post_trained=&quot;groot-dreams&quot;)
+cosmos_transfer = load(&quot;cosmos-transfer&quot;)
+cosmos_reason  = load(&quot;cosmos-reason&quot;)   # 물리 타당성 심사관
+
+def dream_trajectories(image, task, n_variants=8):
+    &quot;&quot;&quot;단일 이미지 + task -&gt; 검증된 로봇 행동 궤적들(real-to-real)&quot;&quot;&quot;
+    dataset = []
+
+    # 1) DREAM: 이미지 한 장에서 &#x27;task 수행 미래 영상&#x27;을 상상 생성
+    dream_video = cosmos_predict.imagine(image=image, task=task)
+
+    # 2) DIVERSIFY: 조명/재질/날씨를 바꿔 domain gap 대비 다양화
+    for cond in sample_conditions(n_variants):
+        varied = cosmos_transfer.randomize(dream_video,
+                                           light=cond.light, material=cond.mat)
+
+        # 3) EXTRACT: 상상한 영상에서 행동을 action token으로 추출
+        neural_traj = extract_action_tokens(varied)   # &lt;- neural trajectory
+
+        # 4) VERIFY: 물리적으로 말이 되는 궤적만 통과 (뜨는 물체 등 제거)
+        if cosmos_reason.is_physically_plausible(varied):
+            dataset.append({&quot;trajectory&quot;: neural_traj, &quot;task&quot;: task,
+                            &quot;domain&quot;: cond.name})
+
+    return dataset
+
+# real 데이터 소량 + dream 데이터 대량을 결합 -&gt; GR00T N1 성능 +40%
+real = load_teleop_demos(n=200)              # 값비싼 실데이터 소량
+dreamed = []
+for img, task in seed_images:                # 이미지 몇 장이 씨앗
+    dreamed += dream_trajectories(img, task) # 11h에 ~780K 규모까지 확장
+
+train_policy(&quot;groot-n1&quot;, data=real + dreamed)  # real+synthetic 결합 학습</code></pre>
+      <div class="c-walk"><p>핵심은 '시뮬 씬 없이 이미지에서 곧장 궤적을 뽑는다'는 점이다. (1) <strong>cosmos_predict.imagine</strong>은 이미지 한 장과 task만으로 그 task를 수행하는 미래 영상을 상상한다 — 3D 씬 구축을 건너뛰는 real-to-real의 출발점이다. (2) <strong>cosmos_transfer.randomize</strong>가 조명·재질을 바꿔 domain gap에 강인하도록 다양화한다. (3) <strong>extract_action_tokens</strong>가 상상 영상에서 로봇 행동을 뽑는데, 이 산출물이 바로 neural trajectory다 — 물리 엔진이 아니라 신경망의 세계 지식이 만든 궤적. (4) <strong>cosmos_reason.is_physically_plausible</strong>가 물리 위반 결과를 걸러, 대량 생성이 대량 쓰레기가 되지 않게 막는다. 맨 아래를 보면 값비싼 real 시연 200개와 이미지 씨앗에서 상상한 대량 dreamed 데이터를 결합해 학습한다 — 이 결합이 GR00T N1 성능 +40%의 실제 레시피다. 소량 real + 대량 검증된 상상, 이것이 데이터 병목을 푸는 공식이다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">이 챕터는 &#x27;Physical AI의 진짜 병목이 무엇이며, 왜 그것이 모델이 아니라 데이터인가&#x27;를 이해하는지 재는 주제다. 면접관은 도구 이름 암기보다, data scarcity·domain gap을 문제로 정의하고 sim SDG와 WFM 생성을 트레이드오프로 비교하는 사고를 본다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>Physical AI의 병목을 &#x27;데이터&#x27;로 정확히 짚고, data scarcity(수집 비용)와 domain gap(sim↔real 분포 차이)이라는 두 축으로 분해하는가</li><li>sim 기반 SDG(MobilityGen: 완벽한 라벨·조합 확장 vs domain gap 한계)와 WFM 기반 생성(GR00T-Dreams: 씬 없이 이미지에서 생성)의 차이·트레이드오프를 설명하는가</li><li>neural trajectory 개념 — world model이 상상한 영상에서 action을 추출한 궤적 — 과 780K/11h(≈6.5K 인간시연), real 결합 시 +40%의 의미를 이해하는가</li><li>생성(Predict·Transfer)과 검증(Reason)이 짝을 이뤄야 하는 이유, 즉 Reason이 없으면 대량 생성이 대량 쓰레기가 됨을 아는가</li><li>real-to-real·real-to-sim 워크플로우를 구분하고, Data Factory Blueprint가 데이터 생성을 반복 가능한 산업 공정으로 표준화함을 설명하는가</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>병목을 모델·연산으로 오인하고 데이터임을 놓치거나, domain gap을 무시한 채 &#x27;시뮬에서 많이 뽑으면 된다&#x27;고 단순화하는 경우</li><li>MobilityGen(sim SDG)과 GR00T-Dreams(WFM 생성)의 근본 차이(물리 시뮬 필요 vs 이미지에서 직접 생성)를 구분하지 못하는 경우</li><li>neural trajectory를 물리 시뮬 궤적과 혼동하거나, 780K/11h 같은 수치의 의미(시간 압축·인간시연 등가)를 설명하지 못하는 경우</li><li>생성만 강조하고 Cosmos Reason의 물리 검증·필터링이 왜 필수인지 놓치는 경우</li><li>Data Factory Blueprint를 완성 제품으로 오해하고, 참조 아키텍처로 데이터 생성을 산업화한다는 점을 모르는 경우</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>Q1 (문제 정의): Physical AI에서 데이터가 병목인 이유를 LLM과 대비해 설명하라. data scarcity와 domain gap은 각각 무엇이며, 왜 &#x27;시뮬에서 대량 생성&#x27;만으로는 해결되지 않는가?</li><li>Q2 (해법 비교): MobilityGen 같은 sim 기반 SDG와 GR00T-Dreams 같은 WFM 기반 생성의 차이를 설명하라. neural trajectory란 무엇이며, GR00T-Dreams가 3D 씬 구축을 건너뛸 수 있는 이유는? 780K/11h 수치가 뜻하는 바를 해석하라.</li><li>Q3 (파이프라인·검증): 소량의 실데이터로 로봇 조작 정책을 학습시켜야 한다. Cosmos의 Isaac Sim→Predict→Transfer→Reason 4단 파이프라인을 어떻게 구성하겠는가? 이 과정에서 Reason(물리 검증)이 빠지면 무슨 일이 벌어지는가?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> Familiar 수준은 &#x27;NVIDIA가 합성 데이터로 로봇 데이터 부족을 푼다&#x27;를 말하는 정도다. Mastery 수준은 (1) 병목을 data scarcity(수집 비용 구조)와 domain gap(분포 차이)으로 분해하고 왜 양만 늘리면 안 되는지 논하며, (2) sim SDG(MobilityGen: 완벽 라벨·embodiment 확장, 그러나 domain gap)와 WFM 생성(GR00T-Mimic 증강·GR00T-Dreams 이미지→궤적)의 트레이드오프를 대비하고, (3) neural trajectory를 &#x27;world model 상상 영상에서 추출한 궤적&#x27;으로 정의하며 780K/11h≈6.5K시간·real결합 +40%의 함의를 해석하고, (4) Predict·Transfer(생성)와 Reason(검증)이 짝을 이뤄 domain gap을 줄이는 4단 파이프라인을 그리며, (5) real-to-real 워크플로우와 Data Factory Blueprint의 산업화(참조 아키텍처로 world modeling·humanoid·AV 데이터 생성 표준화)까지 연결한다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>Physical AI의 진짜 병목은 데이터다</h3><p>모델·연산이 아니라 데이터가 병목이다. 로봇에는 인터넷 같은 방대한 공개 데이터가 없고, 실세계 시연은 로봇·사람·시간이 드는 data scarcity와, sim↔real 분포 차이인 domain gap이라는 두 얼굴을 가진다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>domain gap 때문에 &#x27;양만 늘리기&#x27;는 통하지 않는다</h3><p>시뮬에서 값싸게 대량 생성해도 실세계와 미묘하게 달라 정책이 실패한다. 문제는 &#x27;양을 늘리기&#x27;가 아니라 &#x27;실세계와 부합하는 양을 값싸게 늘리기&#x27;다. 모든 해법이 scarcity(양)와 domain gap(부합성)을 동시에 공략한다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>MobilityGen — sim 기반 SDG의 대표</h3><p>Isaac Sim 기반으로 여러 embodiment·환경에서 occupancy map·pose/velocity·RGB/depth/segmentation·action을 자동 생성한다. teleop·random·path-planning으로 수집하며, 완벽한 라벨과 조합 확장이 강점이지만 domain gap이 태생적 한계다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>GR00T-Dreams — 이미지 한 장에서 궤적을 상상한다</h3><p>Cosmos Predict를 post-training해, 단일 이미지+task로 로봇이 새 task를 새 환경에서 수행하는 영상을 생성하고 action token을 추출한다. 3D 씬 구축조차 건너뛴다. GR00T-Mimic은 소수 시연을 Isaac Lab에서 대량 증강하는 짝 도구다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>Neural trajectory와 충격적 수치</h3><p>neural trajectory는 물리 엔진이 아니라 world model이 상상한 영상에서 추출한 궤적이다. GR00T-Dreams는 780K 궤적을 11시간에 생성(≈6,500시간 인간 시연 상당)했고, real 데이터와 결합 시 GR00T N1 성능이 +40% 올랐다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>Cosmos 4단 파이프라인 — 생성과 검증의 짝</h3><p>Isaac Sim(base)→Cosmos Predict(미래 rollout)→Cosmos Transfer(domain randomization)→Cosmos Reason(물리 검증·필터·태깅). Reason이 없으면 대량 생성은 대량 쓰레기가 된다. 수개월 IL 데이터를 수십 시간으로 압축한다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>real-to-real 워크플로우</h3><p>실데이터→합성 궤적→실로봇 학습으로, 실세계에서 출발해 실세계로 돌아오되 중간 증폭을 명시적 3D 시뮬 없이 world model 상상으로 채운다. 실관찰을 시뮬로 되가져오는 real-to-sim과 구분된다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>Physical AI Data Factory Blueprint — 데이터의 산업화</h3><p>GTC 2026의 청사진으로, world modeling·humanoid skill·AV 데이터 생성을 표준화·자동화하는 참조 아키텍처다. 장인의 수작업이던 합성 데이터 생성을 반복 가능한 조립 라인으로 만들어 domain gap 완화를 대규모로 수행한다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-06.html">← How the Four Pillars Connect — The Stack Map</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-08.html">GR00T — The Humanoid Foundation Model →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>
