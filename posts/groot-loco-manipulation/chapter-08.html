@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch8: Navigation: What Got Absorbed, What Didn&#x27;t — GR00T &amp; NVIDIA Physical AI 2026 — direcf</title>
+  <meta name="description" content="GR00T는 고수준 navigation 의사결정은 흡수했지만 metric localization은 여전히 geometric 스택(cuVSLAM·nvblox·Nav2)에 의존한다 — 학습이 삼킨 층과 엔지니어링이 지탱하는 층의 경계선을 정확히 긋는다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;height:22px;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><linearGradient id="direcf-nav-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs></svg>
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg></span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg></span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.25 15a4.5 4.5 0 0 0 4.5 4.5H18a3.75 3.75 0 0 0 1.332-7.257 3 3 0 0 0-3.758-3.848 5.25 5.25 0 0 0-10.233 2.33A4.502 4.502 0 0 0 2.25 15Z"/></svg></span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"/></svg></span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg></span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/physical-ai">GR00T &amp; NVIDIA Physical AI 2026</a><span class="sep">›</span>
+        <strong>Ch08 Navigation: What Got Absorbed, What Didn&#x27;t</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 08 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🗺️</div>
+      <h1 class="chapter-title">Navigation: What Got Absorbed, What Didn&#x27;t</h1>
+      <div class="chapter-title-kr">navigation, 흡수된 것과 아닌 것 — 통합의 경계선</div>
+      <div class="chapter-tldr">GR00T는 고수준 navigation 의사결정은 흡수했지만 metric localization은 여전히 geometric 스택(cuVSLAM·nvblox·Nav2)에 의존한다 — 학습이 삼킨 층과 엔지니어링이 지탱하는 층의 경계선을 정확히 긋는다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-08.png" alt="Chapter 8 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 8 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>navigation을 &#x27;뇌(의사결정)&#x27;와 &#x27;감각·평형(localization)&#x27;으로 분해할 수 있다</li><li>GR00T가 point-to-point navigation을 흡수한 범위와 원문 근거를 안다</li><li>metric localization이 왜 여전히 geometric 방식인지 설명할 수 있다</li><li>cuVSLAM·nvblox·Nav2의 역할 분담을 안다</li><li>상용 AMR 트랙과 학습 트랙이 어떻게 공존하는지 안다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>이 코스는 계속해서 하나의 질문을 밀고 왔다 — 학습이 어디까지 삼켰고, 어디서 멈췄나. navigation은 이 질문이 가장 선명하게 갈라지는 지점이다. 겉보기에 GR00T는 '알아서 목적지까지 간다'. 하지만 그 매끄러운 표면 아래에는 두 개의 완전히 다른 층이 포개져 있다. 위층 — '어디로 갈지, 어떤 궤적으로 갈지' 같은 고수준 의사결정 — 은 학습 모델(COMPASS/GR00T)이 흡수했다. 아래층 — '내가 지금 정확히 어느 좌표에 있나' 같은 metric localization — 은 여전히 손으로 짠 geometric 스택이 지탱한다. 이 챕터는 그 경계선을 정확히 긋는다.</p>
+<p>핵심 논제는 도발적일 만큼 단순하다. <strong>GR00T조차 pose는 geometric이다.</strong> N1.6은 COMPASS가 Isaac Lab에서 대량 생성한 합성데이터로 point-to-point navigation을 학습해 '어디로 어떻게'를 policy 안에 녹였지만, 그 policy가 뱉는 waypoint가 실제 세계의 어느 좌표를 가리키는지는 스스로 알지 못한다. waypoint가 real coordinate에 대응하려면 로봇의 위치를 정확히 아는 별도의 추정기가 필요하고, 그 일은 학습이 아니라 cuVSLAM 같은 geometric SLAM이 한다. 학습이 삼킨 층과 여전히 엔지니어링인 층이 여기서 물리적으로 분리된다.</p>
+<p>그래서 이 챕터는 navigation을 두 층으로 분해하는 것에서 출발한다. 먼저 고수준(무엇을·어떤 궤적으로)과 저수준(정확히 어디에)을 나누고, GR00T가 흡수한 고수준을 COMPASS 합성데이터 파이프라인과 함께 못 박는다. 다음으로 왜 metric localization이 여전히 geometric인지를 NVIDIA의 명시적 문장으로 확인하고, 그 geometric 트랙을 구성하는 cuVSLAM·nvblox·Nav2의 역할분담을 해부한다. 마지막으로 상용 AMR(geometric SLAM)과 학습 mobility(COMPASS/GR00T)라는 두 트랙이 왜 대체 관계가 아니라 공존 관계인지를 본다. 결론을 미리 말하면 — 고수준 결정은 학습으로 수렴하지만, 저수준 위치와 costmap은 여전히 검증된 geometry가 떠받친다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>navigation을 두 층으로 분해하기</h2><p>navigation을 하나의 덩어리로 보면 이 챕터의 논제가 보이지 않는다. 먼저 두 층으로 갈라야 한다.</p>
+<p><strong>고수준(high-level) 층</strong>은 '무엇을·어디로·어떤 궤적으로'를 정한다. 목적지를 고르고, 막힌 통로를 피해 우회할지 결정하고, 출발점에서 목표점까지 대략의 경로(point-to-point 궤적)를 그린다. 이 층은 의미론적이다 — '주방으로 가라', '저 사람을 피해 가라' 같은 지시와 장면 이해에 반응한다. 정밀한 좌표보다 '방향과 의도'가 중요하다.</p>
+<p><strong>저수준(low-level) 층</strong>은 '내가 지금 정확히 어디 있나'를 답한다. metric localization이다. 로봇이 세계 좌표계에서 자신의 6-DoF pose <span class="math-inline">\(T_{wr} \in SE(3)\)</span> 를 센티미터 단위로 추정하는 문제다. 이 층은 기하학적이다 — 카메라·IMU가 관측한 feature의 삼각측량, 프레임 간 pose 누적, drift 보정 같은 순수 geometry가 지배한다. 의미론이 아니라 정밀도가 전부다.</p>
+<p>왜 이 분해가 결정적인가. 두 층은 요구하는 것이 근본적으로 다르기 때문이다. 고수준은 '그럴듯한 일반화'를 원한다 — 처음 보는 방에서도 대충 맞는 방향으로 가야 하고, 이건 대규모 데이터로 학습한 policy가 잘하는 일이다. 저수준은 '검증 가능한 정밀도'를 원한다 — waypoint가 1미터 어긋나면 로봇은 벽에 부딪힌다. 이건 오차 한계가 수학적으로 보장되는 geometric 추정이 잘하는 일이다. 일반화를 원하는 층과 정밀도를 원하는 층은 서로 다른 도구를 부른다.</p>
+<p>이 챕터의 전체 논증은 이 분해 위에 서 있다. 학습(COMPASS/GR00T)은 위층을 삼켰고, geometry(cuVSLAM 계열)는 아래층을 지킨다. 다음 두 섹션이 이 두 층을 각각 못 박는다.</p></div><div class="sb-block"><h2>GR00T가 흡수한 고수준 navigation</h2><p>고수준 층에서 일어난 일은 명확하다. 학습이 삼켰다. NVIDIA는 이를 다음과 같이 명시한다.</p>
+<blockquote>
+<p>GR00T N1.6 is finetuned for point-to-point navigation using large-scale synthetic datasets generated by COMPASS in Isaac Lab.</p>
+</blockquote>
+<p>풀이하면: GR00T N1.6은 <strong>Isaac Lab에서 COMPASS가 생성한 대규모 합성데이터로 point-to-point navigation을 finetune</strong>했다. 여기서 흡수된 것의 정체가 드러난다 — 출발점에서 목표점까지 이어지는 궤적을 뽑아내는 능력, 그리고 그 과정의 고수준 의사결정(어느 방향으로, 무엇을 피해)이 policy의 weight 안으로 들어갔다.</p>
+<p>결정적인 것은 이 능력이 어디서 왔느냐다. 실제 로봇을 수만 번 굴려 얻은 게 아니라, COMPASS가 Isaac Lab 시뮬레이터 안에서 대량 생성한 synthetic dataset에서 왔다. 이 코스 앞부분에서 본 COMPASS의 cross-embodiment mobility 파이프라인 — 다양한 embodiment와 장면에서 point-to-point 궤적을 대량으로 찍어내는 그 파이프라인 — 이 바로 GR00T의 고수준 navigation을 먹인 데이터 공장이다. 시뮬레이션이 고수준 층의 학습 연료를 공급한다.</p>
+<p>이 층이 '흡수됐다'는 말의 의미를 정확히 하자. 예전에는 고수준 경로계획도 상당 부분 손으로 짠 planner(A*, Dijkstra, 그래프 탐색)의 몫이었다. GR00T N1.6에서는 point-to-point navigation의 이 부분이 학습 policy로 넘어갔다. 의미론적 지시를 궤적으로 옮기는 일, 장면을 보고 어디로 갈지 정하는 일 — 이 '판단'의 층이 학습으로 수렴한 것이다.</p>
+<p>하지만 여기서 반드시 선을 그어야 한다. policy가 '어디로 어떤 궤적으로'를 알아도, 그 궤적의 각 점이 실제 세계의 어느 좌표인지는 별개의 문제다. policy는 '3미터 앞 문으로'라는 상대적 의도를 내지만, 그 '3미터 앞'이 세계 좌표계의 어디인지는 로봇의 현재 pose를 알아야만 결정된다. 흡수는 고수준에서 멈췄다. 다음 섹션이 그 멈춘 지점 — metric localization — 을 다룬다.</p></div><div class="sb-block"><h2>여전히 geometric인 metric localization</h2><p>고수준이 학습으로 넘어갔다면, 자연스러운 질문은 이것이다 — 그럼 위치 추정도 학습이 삼켰나? 답은 명확한 아니오다. NVIDIA는 흡수되지 않은 층을 이렇게 못 박는다.</p>
+<blockquote>
+<p>the system still requires an accurate estimate of the robot's location so commands and waypoints correspond to real coordinates.</p>
+</blockquote>
+<p>풀이: 시스템은 <strong>여전히 로봇 위치의 정확한 추정을 필요로 하며, 그래야 command와 waypoint가 real coordinate에 대응</strong>한다. 문장 안의 'still'과 'real coordinates'가 이 챕터의 무게중심이다. GR00T가 아무리 고수준을 삼켜도, waypoint를 실제 좌표에 못 박는 일 — metric localization — 은 여전히(still) 별도로 필요하다.</p>
+<p>왜 이게 학습으로 흡수되지 않았는가. 두 가지 이유가 겹친다. 첫째, 정밀도 요구다. localization은 센티미터 단위 정확도와 검증 가능한 오차 한계를 요구하는데, 학습 policy의 확률적 출력은 이런 보장을 주기 어렵다. 둘째, drift 문제다. 위치 추정은 프레임 간 pose를 누적하는 과정이라 작은 오차가 시간에 따라 쌓인다(compounding). 이 drift를 억제하려면 loop closure, bundle adjustment 같은 명시적 geometric 최적화가 필요하고, 이건 수십 년간 다듬어진 SLAM의 정밀 기계다.</p>
+<p>그래서 GR00T의 실제 배치에서 metric localization은 vision-centric mapping/localization 스택이 담당한다. 구체적으로는 prebuilt map(미리 만들어 둔 지도)과 onboard camera를 결합해 low-drift pose를 산출한다. 미리 지어둔 지도가 절대 기준(anchor)을 주고, 카메라가 실시간으로 그 지도 안에서 자신을 맞춰(localize) drift를 억누른다. 이 전체가 학습이 아니라 geometry다.</p>
+<p>이 지점이 이 코스 전체에서 가장 반직관적인 사실 중 하나다. 로봇의 '뇌'는 world model이고 '다리'는 RL policy이며 navigation의 '판단'은 학습인데 — 정작 '내가 어디 있나'라는 가장 기초적인 질문의 답은 여전히 손으로 짠 SLAM이 낸다. 학습이 위와 아래를 삼키는 동안, 정밀 localization이라는 층은 검증된 engineering으로 남았다. 다음 섹션에서 그 engineering의 실체 — cuVSLAM·nvblox·Nav2 — 를 연다.</p></div><div class="sb-block"><h2>cuVSLAM·nvblox·Nav2의 역할분담</h2><p>흡수되지 않은 geometric 층은 추상적인 개념이 아니라 구체적인 제품 스택이다. NVIDIA의 상용 AMR(Autonomous Mobile Robot) 스택 — Isaac ROS / Isaac Perceptor(구 AMR) — 가 그것이다. 이 스택은 학습을 쓰지 않는 순수 geometric 파이프라인이고, 세 개의 컴포넌트가 명확히 역할을 나눈다.</p>
+<p><strong>cuVSLAM</strong> — 위치추정을 맡는다. CUDA로 가속된 stereo visual-inertial SLAM으로, stereo 카메라와 IMU를 결합해 로봇의 pose를 실시간으로 추정한다(visual-inertial = 시각 feature + 관성 측정의 융합). 이것이 앞 섹션에서 말한 '정확한 위치 추정'의 실제 엔진이다. drift를 억제한 저지연 pose가 이 컴포넌트의 산출물이다.</p>
+<p><strong>nvblox</strong> — 주변 3D 구조와 장애물을 맡는다. CUDA 기반 3D 재구성으로, depth 관측을 누적해 로봇 주변의 3D 표현을 실시간으로 짓고, 여기서 local obstacle costmap을 뽑는다. 대략 5미터 반경의 근거리 장애물을 커버한다 — '지금 당장 부딪힐 것'을 감지하는 근접 안전 층이다. localization이 '어디 있나'라면 nvblox는 '내 주변에 뭐가 있나'다.</p>
+<p><strong>Nav2</strong> — 경로계획을 맡는다. ROS 2의 표준 navigation 스택으로, cuVSLAM의 pose와 nvblox의 costmap을 받아 실제로 갈 경로를 계획하고 로봇을 몬다. 주목할 점은 lidar-free 비전 옵션을 포함한다는 것 — 전통적으로 lidar에 의존하던 계획을 카메라 기반으로도 돌릴 수 있다.</p>
+<p>세 컴포넌트의 역할을 한 줄씩 정리하면 이렇다.</p>
+<table>
+<thead>
+<tr>
+<th>컴포넌트</th>
+<th>담당</th>
+<th>방식</th>
+<th>산출물</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>cuVSLAM</td>
+<td>metric localization (어디 있나)</td>
+<td>CUDA stereo visual-inertial SLAM</td>
+<td>low-drift 6-DoF pose</td>
+</tr>
+<tr>
+<td>nvblox</td>
+<td>local mapping/장애물 (주변에 뭐가)</td>
+<td>CUDA 3D 재구성, ~5m 근거리</td>
+<td>local obstacle costmap</td>
+</tr>
+<tr>
+<td>Nav2</td>
+<td>경로계획/실행 (어떻게 갈까)</td>
+<td>pose+costmap 기반 planner, lidar-free 옵션</td>
+<td>실행 경로/속도 명령</td>
+</tr>
+</tbody>
+</table>
+<p>이 스택이 도는 하드웨어도 못 박아 두자. 레퍼런스 센서/컴퓨트는 Nova Orin이고, 검증용 레퍼런스 로봇은 Nova Carter(Jetson AGX Orin 탑재)다. 즉 이 geometric 파이프라인은 특정 엣지 컴퓨트 위에서 실시간으로 도는, 실제 배치된 제품이다.</p>
+<p>핵심은 이 세 컴포넌트 어디에도 학습 policy가 없다는 점이다. cuVSLAM의 삼각측량, nvblox의 voxel 누적, Nav2의 그래프 계획 — 전부 검증 가능한 geometry와 최적화다. GR00T의 학습 고수준 navigation이 '어디로'를 정하면, 그 아래에서 이 geometric 스택이 '정확히 어디서, 무엇을 피해, 어떻게'를 실시간으로 떠받친다.</p></div><div class="sb-block"><h2>두 트랙의 공존</h2><p>지금까지의 논의는 하나의 큰 그림으로 모인다. 2026년 현재 로봇 navigation에는 두 개의 트랙이 나란히 존재하며, 이 둘은 경쟁이 아니라 공존한다.</p>
+<p><strong>트랙 A — 상용 AMR (geometric SLAM 스택).</strong> cuVSLAM·nvblox·Nav2로 구성된 Isaac ROS/Perceptor 파이프라인이다. 학습을 쓰지 않고, 대신 안정성과 검증 가능성을 준다. 창고·공장에서 지금 당장 돌아야 하는 AMR은 확률적으로 흔들리는 policy가 아니라 오차 한계가 보장되는 geometry를 원한다. 이 트랙의 강점은 신뢰성이다.</p>
+<p><strong>트랙 B — 학습 mobility (COMPASS/GR00T).</strong> COMPASS 합성데이터로 학습한 point-to-point navigation policy와 GR00T의 고수준 의사결정이다. 처음 보는 환경, 다양한 embodiment, 의미론적 지시에 대한 일반화를 준다. 이 트랙의 강점은 유연성과 확장성이다.</p>
+<p>두 트랙이 어떻게 나뉘어 일하는지를 흡수 여부로 못 박으면 이렇다. 이것이 이 챕터의 핵심 표다.</p>
+<table>
+<thead>
+<tr>
+<th>navigation의 층</th>
+<th>흡수 상태</th>
+<th>담당 트랙</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>고수준 의사결정 (어디로 갈지, 우회할지)</td>
+<td>흡수됨</td>
+<td>B — GR00T/COMPASS 학습 policy</td>
+</tr>
+<tr>
+<td>point-to-point 궤적 생성</td>
+<td>흡수됨</td>
+<td>B — COMPASS 합성데이터로 finetune</td>
+</tr>
+<tr>
+<td>metric localization (정확히 어디 있나)</td>
+<td>흡수 안 됨</td>
+<td>A — cuVSLAM (geometric SLAM)</td>
+</tr>
+<tr>
+<td>local 장애물 costmap (주변에 뭐가)</td>
+<td>흡수 안 됨</td>
+<td>A — nvblox (geometric 재구성)</td>
+</tr>
+<tr>
+<td>저수준 경로계획/실행</td>
+<td>흡수 안 됨 (대체로)</td>
+<td>A — Nav2 (geometric planner)</td>
+</tr>
+</tbody>
+</table>
+<p>표가 말하는 바는 분명하다. 흡수의 경계선은 '의미론적 판단'과 '기하학적 정밀도' 사이를 지난다. 판단(무엇을·어디로)은 트랙 B로 수렴했지만, 정밀도(정확히 어디서·무엇을 피해)는 트랙 A가 지탱한다.</p>
+<p>왜 대체가 아니라 공존인가. 두 트랙이 서로 다른 것을 잘하고, 실제 로봇은 둘 다 필요하기 때문이다. GR00T가 '주방으로 가라'를 궤적으로 옮겨도, 그 궤적을 real coordinate에 못 박고 5미터 앞 사람을 피하려면 cuVSLAM의 pose와 nvblox의 costmap이 있어야 한다. 반대로 geometric 스택만으로는 '저 사람을 정중히 피해 돌아가라' 같은 의미론적 유연성을 내기 어렵다. 고수준 결정은 B로 수렴하지만 저수준 위치·costmap은 A가 지탱한다 — 이 분업이 현재 배치의 실제 모습이다.</p>
+<p>이 챕터의 결론이자 이 코스 전체의 축소판이 여기 있다. 학습은 로봇 스택을 위(뇌)와 아래(다리, 고수준 navigation)에서 삼켰지만, 그 사이의 정밀 metric localization 층은 검증된 geometry로 남았다. GR00T조차 pose는 geometric이다. 통합의 경계선은 아직, '무엇을 할지'와 '정확히 어디 있는지' 사이를 지나고 있다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">GPS는 목적지를 정하고, 전정기관은 균형을 잡는다</div>
+      <div class="a-body"><p>navigation의 두 층을 몸으로 느끼려면 사람이 걸어서 카페에 가는 장면을 떠올리면 된다. 이 단순한 행위 안에 완전히 다른 두 시스템이 동시에 돌고 있다.</p>
+<p>하나는 <strong>머릿속 GPS</strong>다. '카페에 가야지', '저 공사장은 막혔으니 왼쪽 골목으로 돌자', '대략 저 방향으로 3분쯤 걸으면 나온다' — 이것이 고수준 층이다. 목적지를 정하고 경로를 그리는 의미론적 판단이다. 정확한 좌표는 필요 없다. '저쪽으로, 저 건물을 피해'라는 방향과 의도면 충분하다. 이 층이 바로 GR00T/COMPASS가 학습으로 흡수한 부분이다 — 처음 가보는 동네에서도 대충 맞는 방향으로 걸을 수 있는, 일반화된 판단.</p>
+<p>다른 하나는 <strong>전정기관(vestibular system)</strong>과 발바닥 감각이다. 걷는 매 순간 당신의 몸은 '지금 내 무게중심이 정확히 어디에 있고, 바닥이 얼마나 기울었고, 발을 어디에 딛어야 안 넘어지나'를 센티미터·밀리초 단위로 추정한다. 이건 판단이 아니라 정밀 측정이다. 눈을 감고 걸어보면 이 층이 얼마나 정밀한 기하학인지 안다 — 관성(귀 속 전정기관)과 시각을 융합해 몸의 자세를 추정하는 것, 정확히 cuVSLAM의 visual-inertial 추정과 같은 일이다. 그리고 발끝으로 앞을 더듬어 장애물을 감지하는 것이 nvblox의 근거리 costmap이다.</p>
+<p>결정적 통찰: <strong>이 두 시스템은 서로를 대체하지 않는다.</strong> 아무리 GPS가 완벽하게 '카페는 저쪽'이라고 말해도, 전정기관이 무게중심을 못 잡으면 당신은 첫걸음에 넘어진다. 반대로 전정기관이 아무리 균형을 잘 잡아도, GPS가 없으면 어디로 갈지 모른다. 판단하는 층과 균형 잡는 층은 다른 뇌 영역이 담당하고, 둘 다 있어야 걷는다.</p>
+<p>로봇도 똑같다. GR00T의 학습 policy는 머릿속 GPS다 — 어디로 갈지 판단한다. cuVSLAM·nvblox·Nav2는 전정기관이다 — 정확히 어디 있고 뭘 피할지 측정한다. 흥미로운 사실은, 로봇에서 '머릿속 GPS'는 학습으로 만들어졌지만 '전정기관'은 여전히 손으로 짠 정밀 geometry라는 점이다. 판단은 배울 수 있어도, 균형의 정밀도는 아직 측정 기계의 몫이다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>두 층이 하나의 제어 루프 안에서 어떻게 결합되는지를 스케치한다. 핵심은 세 컴포넌트의 역할분담이 코드 구조로 그대로 드러난다는 것이다 — geometric_localizer가 '정확히 어디 있나'(<span class="math-inline">\(T_{wr}\)</span>, cuVSLAM 역할)를, vla가 '어디로 갈까'(waypoint 시퀀스, GR00T 고수준 역할)를, costmap이 '부딪힐 것은 없나'(nvblox 역할)를 맡는다. 결정적 포인트: VLA가 낸 상대적 waypoint를 실제 세계 좌표에 못 박으려면 반드시 localizer의 pose가 있어야 한다 — verbatim 'so commands and waypoints correspond to real coordinates'가 코드에서 pose_to_world 변환 한 줄로 나타난다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import numpy as np
+
+def navigation_step(geometric_localizer, vla, costmap, planner,
+                    obs, goal):
+    &quot;&quot;&quot;흡수된 고수준(vla)과 흡수 안 된 geometric 층(localizer/costmap)을
+    한 루프에서 결합. 각 호출이 cuVSLAM/GR00T/nvblox/Nav2 역할에 대응.
+    &quot;&quot;&quot;
+    # (A) 흡수 안 됨 — metric localization: 정확히 어디 있나
+    #     cuVSLAM 역할. 세계 좌표계 6-DoF pose T_wr (low-drift).
+    T_wr = geometric_localizer.estimate_pose(obs.stereo, obs.imu)
+
+    # (B) 흡수됨 — 고수준 navigation: 어디로, 어떤 궤적으로
+    #     GR00T/COMPASS 역할. 장면+목표를 상대적 waypoint 시퀀스로.
+    rel_waypoints = vla.plan_waypoints(obs.rgb, goal)   # 로봇 기준 좌표
+
+    # (C) waypoint를 실제 세계 좌표에 못 박는다 (verbatim: correspond
+    #     to real coordinates). pose 없이는 불가능한 단계.
+    world_waypoints = [T_wr @ to_homog(wp) for wp in rel_waypoints]
+
+    # (D) 흡수 안 됨 — local costmap으로 근거리(~5m) 충돌 검사
+    #     nvblox 역할. 상상이 아니라 실측 3D 재구성.
+    safe_waypoints = [wp for wp in world_waypoints
+                      if costmap.check(wp) == &quot;free&quot;]
+    if not safe_waypoints:
+        return planner.stop()   # 안전한 경로 없음 -&gt; 정지
+
+    # (E) 흡수 안 됨 — Nav2가 pose+costmap 위에서 실제 경로/속도 산출
+    return planner.follow(T_wr, safe_waypoints, costmap)
+
+
+def to_homog(p):
+    return np.array([p[0], p[1], p[2], 1.0])
+
+# 경계선 요약:
+#   vla.plan_waypoints  -&gt; 학습이 삼킨 층 (무엇을/어디로)
+#   estimate_pose/costmap.check/planner -&gt; 여전히 geometric (어디서/어떻게)</code></pre>
+      <div class="c-walk"><p>이 루프의 구조가 곧 이 챕터의 논제다. (B)의 <code>vla.plan_waypoints</code>만이 학습 policy이고 — 장면과 목표를 받아 '어디로'를 판단하는 GR00T 고수준 층 — 나머지 (A)·(D)·(E)는 전부 geometric이다. (A)의 <code>estimate_pose</code>는 stereo와 IMU를 융합해 세계 좌표계 pose <span class="math-inline">\(T_{wr}\)</span> 를 내는 cuVSLAM 역할이고, 여기에는 학습이 없다. 가장 중요한 줄은 (C)다. VLA는 '3미터 앞으로' 같은 로봇 기준(상대) waypoint만 낼 뿐, 그것이 세계의 어느 좌표인지 모른다. <code>T_wr @ to_homog(wp)</code> 한 줄, 즉 pose를 곱해 상대 waypoint를 세계 좌표로 변환하는 이 단계가 바로 verbatim 'commands and waypoints correspond to real coordinates'의 코드 구현이다. pose(<span class="math-inline">\(T_{wr}\)</span>)가 없으면 이 곱셈이 성립하지 않고, 그래서 아무리 고수준이 학습으로 흡수돼도 localization은 여전히 필요하다. (D)의 <code>costmap.check</code>는 nvblox가 실측 3D 재구성으로 만든 근거리 costmap에 waypoint를 대조하는 것 — 5장에서 본 world-model의 '상상' rollout과 달리 여기서는 실제로 관측된 장애물을 검사한다. (E)의 <code>planner.follow</code>는 Nav2가 pose와 costmap 위에서 실제 속도 명령을 내는 부분이다. 맨 아래 주석이 경계선을 압축한다: 함수 하나 안에서 학습이 삼킨 층과 여전히 geometry인 층이 나란히 호출되며, 그 접합부가 pose 변환이라는 단 한 줄이다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">navigation 스택의 층 분해는 2026년 로봇 엔지니어링 면접에서 &#x27;학습이 어디까지 왔나&#x27;를 묻는 가장 실전적인 렌즈다. 자율주행·AMR·humanoid 전반에서 회사들은 end-to-end 학습으로 전부 대체하려다 metric localization과 근거리 안전에서 좌초한 경험을 공유한다. 그래서 senior 이상에서는 &#x27;무엇을 학습으로, 무엇을 geometry로 남길 것인가&#x27;라는 아키텍처 판단이 반복적으로 검증된다. GR00T가 고수준을 흡수하고도 cuVSLAM에 pose를 맡긴 이유를 정밀도·drift·검증 가능성으로 설명할 수 있으면 강한 시그널이다. 반대로 &#x27;학습이 다 삼켰다&#x27;고 뭉뚱그리면 배치 경험 부재로 읽힌다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>navigation을 고수준 의사결정(무엇을/어디로)과 저수준 metric localization(정확히 어디)으로 분해하고, 각각의 요구(일반화 vs 검증 가능한 정밀도)를 구분</li><li>GR00T N1.6이 COMPASS 합성데이터로 흡수한 것이 고수준 point-to-point navigation임을, 그리고 pose는 여전히 별도임을 정확히 지목</li><li>cuVSLAM(localization)·nvblox(local costmap)·Nav2(planning)의 역할분담과, 이 스택에 학습 policy가 없다는 사실을 설명</li><li>waypoint를 real coordinate에 못 박으려면 pose 추정이 필수임을 좌표 변환 관점(상대 -&gt; 세계)에서 논증</li><li>상용 geometric 트랙과 학습 mobility 트랙이 대체가 아니라 공존이며, 경계선이 &#x27;의미론적 판단 vs 기하학적 정밀도&#x27;를 지난다는 통찰</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>&#x27;GR00T가 navigation을 전부 end-to-end로 학습했다&#x27;며 metric localization이 여전히 geometric임을 놓침</li><li>localization과 고수준 경로계획을 한 덩어리로 뭉뚱그려 두 층의 서로 다른 요구를 구분 못 함</li><li>cuVSLAM/nvblox/Nav2의 역할을 섞어서 말하거나, 이 스택을 학습 기반으로 오해</li><li>waypoint가 pose 없이도 실제 좌표에 대응한다고 착각(상대 좌표와 세계 좌표를 혼동)</li><li>geometric SLAM 스택을 &#x27;구식이라 곧 학습이 대체할 것&#x27;으로 치부하고 정밀도·drift·검증 가능성 요구를 무시</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>GR00T N1.6은 COMPASS 합성데이터로 point-to-point navigation을 학습했다. 그럼에도 metric localization이 여전히 필요한 이유를 정밀도와 drift, 검증 가능성 관점에서 설명하라. 왜 이 층은 학습으로 흡수되지 않았는가?</li><li>cuVSLAM, nvblox, Nav2의 역할을 각각 한 문장으로 구분하고, 학습 policy가 낸 상대 waypoint가 이 스택과 결합해 실제 세계 좌표에 대응하는 과정을 좌표 변환 수준에서 기술하라.</li><li>상용 AMR의 geometric 스택과 GR00T/COMPASS의 학습 mobility가 대체 관계가 아니라 공존이라는 주장을 옹호하라. 어느 층이 어느 트랙으로 수렴하며, 경계선은 무엇을 기준으로 그어지는가?</li><li>만약 metric localization까지 학습으로 대체하려 한다면 어떤 실패 모드를 예상하는가? drift 누적과 검증 가능성 관점에서, 그리고 prebuilt map이 어떤 역할을 하는지 논하라.</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> Familiar: GR00T가 navigation을 한다, cuVSLAM/Nav2 같은 이름을 안다. Mastery: navigation을 고수준(의미론적 판단)과 저수준(기하학적 정밀 localization)으로 분해하고, GR00T N1.6이 COMPASS 합성데이터로 흡수한 것은 전자뿐이며 pose는 여전히 cuVSLAM이 낸다는 경계선을 verbatim 근거와 함께 설명한다. cuVSLAM(위치)·nvblox(근거리 costmap)·Nav2(계획)의 역할분담을 구분하고, 학습 policy의 상대 waypoint가 pose 변환을 거쳐야 real coordinate에 대응한다는 것을 좌표 수준에서 논증한다. 상용 geometric 트랙과 학습 mobility 트랙이 왜 공존하는지 — 검증 가능한 정밀도 vs 일반화 — 를 대비하고, &#x27;GR00T조차 pose는 geometric&#x27;이라는 명제가 이 코스의 통합 경계선 논제를 어떻게 요약하는지 설명할 수 있다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>navigation은 두 층으로 갈라진다</h3><p>고수준(무엇을·어디로·어떤 궤적으로 — 의미론적 판단)과 저수준 metric localization(정확히 어느 좌표에 있나 — 기하학적 정밀도)은 근본적으로 다른 것을 요구한다. 전자는 일반화를, 후자는 검증 가능한 정밀도를 원한다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>고수준은 학습이 흡수했다</h3><p>GR00T N1.6은 COMPASS가 Isaac Lab에서 생성한 대규모 합성데이터로 point-to-point navigation을 finetune했다. &#x27;어디로 어떤 궤적으로&#x27;라는 고수준 의사결정이 policy weight 안으로 들어갔다. 데이터 공장은 시뮬레이션(COMPASS)이다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>metric localization은 여전히 geometric이다</h3><p>verbatim: 시스템은 여전히 로봇 위치의 정확한 추정을 필요로 하며, 그래야 command와 waypoint가 real coordinate에 대응한다. GR00T조차 pose는 학습이 아니라 손으로 짠 SLAM이 낸다 — 이 코스에서 가장 반직관적인 사실.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>cuVSLAM·nvblox·Nav2가 geometric 층을 지탱한다</h3><p>cuVSLAM은 CUDA stereo visual-inertial SLAM으로 위치추정, nvblox는 CUDA 3D 재구성으로 근거리(~5m) local obstacle costmap, Nav2는 경로계획(lidar-free 비전 옵션 포함). Isaac ROS/Perceptor 스택이며 학습 policy가 없다. 하드웨어는 Nova Orin/Nova Carter.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>waypoint를 실제 좌표에 못 박으려면 pose가 필수다</h3><p>학습 policy는 &#x27;3미터 앞으로&#x27; 같은 상대 waypoint만 낸다. 그것이 세계의 어느 좌표인지는 로봇 pose를 곱해야 결정된다. 이 pose 변환 한 단계가 고수준 흡수와 무관하게 localization을 필수로 만든다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>두 트랙은 대체가 아니라 공존한다</h3><p>상용 AMR(geometric SLAM 스택)은 안정·검증을, 학습 mobility(COMPASS/GR00T)는 일반화·유연성을 준다. 고수준 결정은 학습 트랙으로 수렴하지만 저수준 위치·costmap은 geometric 트랙이 지탱한다. 실제 로봇은 둘 다 필요하다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>통합의 경계선은 판단과 정밀도 사이를 지난다</h3><p>학습이 삼킨 층은 &#x27;의미론적 판단&#x27;(무엇을·어디로)이고, 여전히 engineering인 층은 &#x27;기하학적 정밀도&#x27;(정확히 어디서·무엇을 피해)다. GR00T조차 pose는 geometric이라는 명제가 이 경계선을 요약한다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-07.html">← The Synthetic Data Factory</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-09.html">The Counter-Argument →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

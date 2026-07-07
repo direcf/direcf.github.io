@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch6: Whole-Body Control &amp; SONIC — GR00T &amp; NVIDIA Physical AI 2026 — direcf</title>
+  <meta name="description" content="HOVER에서 SONIC으로 이어지는 whole-body behavior foundation model 계보를 따라가며, motion tracking을 스케일러블 학습과제로 삼아 하나의 통합 정책이 locomotion·manipulation·multi-contact를 모두 내는 원리를 배운다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;height:22px;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><linearGradient id="direcf-nav-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs></svg>
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg></span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg></span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.25 15a4.5 4.5 0 0 0 4.5 4.5H18a3.75 3.75 0 0 0 1.332-7.257 3 3 0 0 0-3.758-3.848 5.25 5.25 0 0 0-10.233 2.33A4.502 4.502 0 0 0 2.25 15Z"/></svg></span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"/></svg></span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg></span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/physical-ai">GR00T &amp; NVIDIA Physical AI 2026</a><span class="sep">›</span>
+        <strong>Ch06 Whole-Body Control &amp; SONIC</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 06 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🦿</div>
+      <h1 class="chapter-title">Whole-Body Control &amp; SONIC</h1>
+      <div class="chapter-title-kr">전신 제어와 SONIC — HOVER의 후계자</div>
+      <div class="chapter-tldr">HOVER에서 SONIC으로 이어지는 whole-body behavior foundation model 계보를 따라가며, motion tracking을 스케일러블 학습과제로 삼아 하나의 통합 정책이 locomotion·manipulation·multi-contact를 모두 내는 원리를 배운다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-06.png" alt="Chapter 6 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 6 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>whole-body control이 locomotion과 manipulation을 왜 하나의 coupled 문제로 다루는지 안다</li><li>SONIC이 motion tracking을 학습과제로 삼는 이유를 안다</li><li>behavior foundation model이 단일 정책으로 다양한 행동을 내는 방식을 설명할 수 있다</li><li>whole-body RL controller가 GR00T VLA에 어떻게 연결되는지 안다</li><li>human motion 데이터가 humanoid 제어에 retarget되는 과정의 난점을 안다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>앞 챕터에서 GR00T의 상단 층 — world model 뇌 — 을 파고들었다. 이제 스택의 맨 아래로 내려간다. 뇌가 '무엇을 어떤 순서로'를 정했다면, 실제로 그것을 물리적인 몸으로 실현하는 층이 있어야 한다. 그 층이 whole-body control이고, 2026년 그 최전선 제품이 SONIC이다. 이 챕터의 논제는 이렇다: <strong>저수준 모터 지능은 별도로 학습되어야 하며, 그 학습의 열쇠는 'motion tracking을 스케일러블한 학습과제로 삼는 것'이다.</strong></p>
+<p>왜 whole-body인가. 로봇이 무거운 상자를 들어 올리는 순간, 상체의 무게가 전체 무게중심(CoM)을 앞으로 밀고, 그러면 하체가 균형을 잃지 않도록 자세를 다시 잡아야 한다. 즉 팔로 물체를 조작하는 manipulation과 다리로 균형·이동을 담당하는 locomotion은 물리적으로 결합(coupled)되어 있어, 둘을 따로 제어하면 로봇이 넘어진다. loco-manipulation은 이 둘을 하나의 coupled whole-body task로 다루자는 관점이고, whole-body control은 그것을 실현하는 정책이다.</p>
+<p>그래서 이 챕터는 다섯 갈래로 나아간다. 먼저 왜 loco와 manip이 물리적으로 coupled인지(CoM과 균형), 다음으로 통합 whole-body 정책의 계보 HOVER에서 behavior foundation model SONIC으로의 전환, 그다음 방대한 human motion 데이터를 supervision으로 바꾸는 'motion tracking as task'의 핵심 아이디어, 이어서 인간과 로봇의 morphology 차이에서 오는 retarget의 난점, 마지막으로 이 저수준 controller가 상단의 VLA·world model 뇌와 어떻게 연결되는지를 본다. tracking reward 코드로 그 학습의 뼈대를 직접 만져본다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>whole-body control: 왜 loco와 manip이 coupled인가</h2><p>먼저 못을 박자. locomotion(이동·균형)과 manipulation(물체 조작)은 독립적인 두 문제가 아니라 하나의 물리적으로 결합된 문제다. 이 결합의 정체는 무게중심(CoM, Center of Mass)에 있다.</p>
+<p>로봇이 두 발로 서 있을 때 균형의 조건은 대략 이렇다: CoM을 지면에 수직 투영한 점이 두 발이 만드는 지지 다각형(support polygon) 안에 있어야 한다. 이 투영점이 다각형 밖으로 나가면 로봇은 넘어진다. 그런데 상체가 무거운 물체를 들어 올리면 전체 CoM이 물체 쪽으로 이동한다 — 팔을 앞으로 뻗어 상자를 들면 CoM이 앞으로 쏠리고, 투영점이 앞발 끝을 넘어가려 한다. 그러면 하체는 발목·무릎·엉덩이 관절을 써서 자세를 뒤로 기울이거나 한 발을 내디뎌 지지 다각형을 옮겨야 한다. 즉 상체의 manipulation 동작이 하체의 locomotion 문제를 즉시 유발한다.</p>
+<p>반대 방향의 결합도 있다. 로봇이 걸어가는 도중(locomotion)에 팔로 물건을 든 채라면, 걸음마다 생기는 관성과 흔들림이 손끝의 위치를 흔들어 manipulation 정밀도를 떨어뜨린다. 걸으면서 물잔을 흘리지 않으려면 다리의 리듬과 팔의 보상 동작이 하나로 조율되어야 한다. 이 양방향 결합 때문에 '팔 정책'과 '다리 정책'을 따로 학습해 붙이면 경계에서 무너진다.</p>
+<p>NVIDIA는 이 저수준 층의 역할을 다음과 같이 명시한다.</p>
+<blockquote>
+<p>Whole-body RL training in simulation provides the low-level motor intelligence that GR00T N1.6 uses and coordinates through its higher-level VLA policy.</p>
+</blockquote>
+<p>풀이하면: 시뮬레이션에서의 whole-body RL 학습이 <strong>저수준 모터 지능(low-level motor intelligence)</strong> 을 제공하고, GR00T N1.6은 이것을 사용하며 상위의 VLA 정책을 통해 조율한다. 핵심 단어는 coordinate(조율)다 — 저수준 층은 팔과 다리를 따로 굴리는 게 아니라 하나의 전신 조율(whole-body coordination)로 움직인다. 그리고 이 층이 생성하는 것은 controller 원문 표현으로 '인간처럼 동적으로 안정적인 motion primitives, 즉 locomotion, manipulation, 그리고 조율된 multi-contact 행동을 아우르는' 동작들이다.</p>
+<p>왜 하필 RL(강화학습)인가. CoM 균형은 관절 수십 개가 얽힌 고차원 비선형 동역학이고, 접촉(발-지면, 손-물체)이 매 순간 켜지고 꺼지는 hybrid dynamics다. 이런 문제를 손으로 짠 컨트롤러로 전부 커버하기는 어렵다. 대신 시뮬레이션에서 넘어지고 다시 서기를 수억 번 반복하며, 균형을 유지하는 전신 조율을 데이터로 배우게 하는 것이 whole-body RL이다.</p></div><div class="sb-block"><h2>HOVER에서 SONIC으로</h2><p>이 저수준 층에도 계보가 있다. 2025년 3월, NVIDIA의 R2D2 시리즈 1편에서 공개된 HOVER는 humanoid whole-body control을 위한 하나의 통합 정책(unified policy)이었다. 그 이전까지 humanoid 제어는 걷기 컨트롤러, 손 뻗기 컨트롤러, 자세 유지 컨트롤러가 제각각인 파편화된 풍경이었다. HOVER의 주장은 이 여러 모드를 하나의 신경망 정책이 통합해 담당할 수 있다는 것이었다.</p>
+<p>2026년, 그 실질적 후계자가 SONIC이다. SONIC은 단순히 HOVER를 키운 버전이 아니라 프레이밍 자체를 바꾼다 — SONIC은 humanoid <strong>behavior foundation model</strong>이다. 'foundation model'이라는 단어가 여기서 결정적이다. Language foundation model이 next-token 예측이라는 단일 과제를 대규모로 학습해 번역·요약·코딩 등 무수한 downstream 능력을 창발시키듯, SONIC은 <strong>대규모 human motion 데이터로 motion tracking을 스케일러블한 학습과제로 삼아</strong>, 하나의 통합 정책이 걷기·기기(crawling)·teleoperation·multi-modal control 등 다양한 whole-body 행동을 생성하게 한다.</p>
+<p>두 접근의 성격 차이를 표로 정리하면 이렇다.</p>
+<table>
+<thead>
+<tr>
+<th>구분</th>
+<th>HOVER (2025.03)</th>
+<th>SONIC (2026)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>프레이밍</td>
+<td>whole-body control 통합 정책</td>
+<td>humanoid behavior foundation model</td>
+</tr>
+<tr>
+<td>학습 신호</td>
+<td>다중 제어 모드 통합</td>
+<td>대규모 human motion tracking</td>
+</tr>
+<tr>
+<td>커버 행동</td>
+<td>통합된 whole-body control</td>
+<td>걷기·crawling·teleop·multi-modal</td>
+</tr>
+<tr>
+<td>스케일 논리</td>
+<td>여러 모드를 하나로</td>
+<td>데이터·과제를 스케일해 행동을 창발</td>
+</tr>
+<tr>
+<td>공개</td>
+<td>R2D2 1편에서 소개</td>
+<td>GEAR-SONIC로 오픈소스</td>
+</tr>
+</tbody>
+</table>
+<p>SONIC이 오픈소스라는 점도 실무적으로 중요하다. NVlabs/GR00T-WholeBodyControl 레포에 GEAR-SONIC라는 이름으로 공개되어 있고, pretrained checkpoints, C++ inference(실시간 제어를 위한), 그리고 VR teleop 스택까지 포함한다. 즉 개념이 아니라 내려받아 로봇에 올릴 수 있는 실물 stack이다. C++ inference가 들어간 이유는 명확하다 — 균형 제어는 수백 Hz 수준의 실시간 루프라 Python으로는 지연이 커, 배포 단계에서는 컴파일된 저지연 경로가 필요하다.</p>
+<p>프레이밍 전환의 무게를 한 번 더 짚자. '통합 정책'에서 'foundation model'로의 이동은 곧 whole-body control을 language·vision과 같은 종류의 문제 — 대규모 데이터와 단일 과제로 일반 능력을 키우는 문제 — 로 재정의했다는 뜻이다. 그 단일 과제가 바로 다음 섹션의 motion tracking이다.</p></div><div class="sb-block"><h2>motion tracking을 학습과제로 삼기</h2><p>SONIC의 심장은 하나의 아이디어다: <strong>motion tracking을 학습과제로 삼는다.</strong> 정의부터 명확히 하자. motion tracking이란 주어진 reference 인간 동작(mocap이나 video에서 추출한 관절 궤적)을 로봇이 최대한 똑같이 따라 하도록 학습시키는 것이다. 즉 '이 시점에 인간의 각 관절이 이런 각도였다'는 참조 궤적 <span class="math-inline">\(\hat{q}_t\)</span> 를 주고, 로봇의 실제 관절 <span class="math-inline">\(q_t\)</span> 가 그것을 추종하게 만든다.</p>
+<p>왜 이 프레이밍이 강력한가. 그 순간 세상에 존재하는 방대한 mocap·video motion 데이터가 전부 supervision(학습 신호)으로 전환되기 때문이다. 인간의 걷기, 물건 집기, 계단 오르기, 춤추기 영상 수천 시간이 '따라 해야 할 정답 궤적'의 무한한 창고가 된다. 로봇 행동을 일일이 손으로 설계하거나 보상 함수를 과제마다 새로 짜는 대신, '인간처럼 움직여라'라는 단일 목표 아래 데이터를 스케일하는 문제로 바뀐다. 이것이 language model이 next-token 예측 하나로 인터넷 텍스트 전체를 supervision으로 삼은 것과 정확히 같은 논리다.</p>
+<p>기술적으로 이 목표는 tracking reward로 표현된다. 가장 흔한 형태는 참조와 실제의 관절 오차를 지수 함수로 감싼 것이다.</p>
+<p><span class="math-display">\[r_t = \exp\!\left(-\alpha \lVert q_t - \hat{q}_t \rVert^2\right)\]</span></p>
+<p>여기서 <span class="math-inline">\(q_t\)</span> 는 시점 <span class="math-inline">\(t\)</span> 의 로봇 관절 상태, <span class="math-inline">\(\hat{q}_t\)</span> 는 같은 시점 reference 인간 동작의 관절 상태, <span class="math-inline">\(\alpha\)</span> 는 오차 민감도를 정하는 계수다. 오차 <span class="math-inline">\(\lVert q_t - \hat{q}_t \rVert\)</span> 가 0이면 보상은 1로 최대, 오차가 커질수록 지수적으로 0에 수렴한다. 지수 형태를 쓰는 이유는 '거의 맞을 때' 미세한 개선에 큰 보상을 줘 정밀 추종을 유도하기 위해서다. 실제로는 관절 각도만이 아니라 관절 속도, 손·발 end-effector 위치, CoM 위치, 몸통 방향 등 여러 항의 tracking reward를 가중합한다.</p>
+<p>결정적 포인트: 이 tracking reward 하나가 걷기·기기·teleop을 따로 배우게 하지 않는다. reference 데이터에 걷는 동작이 있으면 걷기를, 기는 동작이 있으면 기기를 배운다. 즉 행동의 다양성은 보상 설계가 아니라 데이터의 다양성에서 나온다. 그래서 'foundation model'이다 — 과제는 하나(추종)인데, 데이터를 스케일하면 행동 레퍼토리가 창발한다.</p>
+<p>한 가지 함정을 짚자. 로봇이 reference를 완벽히 추종하려다 오히려 넘어질 수 있다. 인간 궤적이 물리적으로 로봇에게 불안정할 수 있기 때문이다. 그래서 순수 tracking reward에 균형·에너지·부드러움 같은 regularization 항을 더해, '인간처럼 움직이되 넘어지지 않게' 균형을 잡는다. 이 긴장이 다음 섹션 retarget 난점의 뿌리다.</p></div><div class="sb-block"><h2>human motion retarget의 난점</h2><p>motion tracking이 그토록 강력하다면, 왜 humanoid whole-body control이 아직도 어려운가. 병목은 retarget에 있다. retarget이란 인간의 동작 데이터를 로봇의 몸에 맞게 옮기는 변환이다. 그리고 이 변환은 결코 단순 복사가 아니다 — 인간과 로봇의 morphology(형태 구조)가 다르기 때문이다.</p>
+<p>morphology 차이는 크게 세 축이다. 첫째, <strong>관절 수와 자유도</strong>가 다르다. 인간의 척추·어깨·손목은 수많은 미세 관절로 이뤄져 매끄럽게 휘지만, 로봇은 몇 개의 회전 관절로 근사한다. 인간이 어깨를 으쓱하는 동작을 로봇의 3자유도 어깨로 그대로 옮기면 도달 불가능한 자세가 나온다. 둘째, <strong>링크 길이</strong>가 다르다. 인간과 로봇의 팔·다리 길이 비율이 다르면, 인간이 손을 특정 위치에 놓은 궤적을 관절 각도만 복사해 재생했을 때 로봇의 손끝은 전혀 다른 곳에 간다. 셋째, <strong>질량 분포</strong>가 다르다. 인간의 살과 뼈 분포와 로봇의 모터·배터리 분포가 다르므로, 같은 관절 궤적이라도 CoM의 위치와 관성이 달라 균형 결과가 달라진다.</p>
+<p>이 세 차이가 결합해 만드는 핵심 문제를 리스트로 정리하면 이렇다.</p>
+<ul>
+<li>
+<p>도달 불가능성: 인간 궤적의 어떤 자세는 로봇의 관절 한계(joint limit)를 넘어 물리적으로 만들 수 없다.</p>
+</li>
+<li>
+<p>end-effector 불일치: 관절 각도를 복사하면 링크 길이 차이 때문에 손·발의 실제 위치가 어긋난다 — 그래서 관절 각도가 아니라 end-effector 위치를 맞추는 retarget이 필요할 때가 많다.</p>
+</li>
+<li>
+<p>균형 파괴: 질량 분포가 다르므로 인간에게 안정적인 동작이 로봇에게는 CoM을 지지 다각형 밖으로 밀어 넘어뜨린다.</p>
+</li>
+<li>
+<p>발 미끄러짐(foot skating): 시간·스케일 정합이 어긋나면 지면에 붙어 있어야 할 발이 미끄러지듯 떠 물리적으로 불가능한 접촉이 생긴다.</p>
+</li>
+</ul>
+<p>그래서 실무의 retarget은 관절 각도, end-effector 위치, 접촉 제약(발이 언제 지면에 붙어야 하는지)을 동시에 만족시키는 최적화 문제로 푼다. 그리고 완벽한 retarget은 애초에 불가능하기에, SONIC은 retarget된 궤적을 '정확히 복사할 정답'이 아니라 '따라가되 물리적으로 실현 가능하게 조정할 참조'로 다룬다. 앞 섹션의 tracking reward에 균형·접촉 regularization을 더하는 이유가 바로 이것이다 — RL이 시뮬레이션 안에서 인간 궤적과 로봇 물리 사이의 남은 간극을 스스로 메운다.</p>
+<p>정리하면, motion tracking은 데이터를 supervision으로 바꾸는 열쇠지만, 그 데이터를 로봇 몸에 이식하는 retarget이 morphology gap이라는 세금을 매긴다. 이 세금을 낮추는 것 — 더 나은 retarget과, 남은 gap을 흡수하는 RL — 이 humanoid whole-body control의 현재 최전선이다.</p></div><div class="sb-block"><h2>controller와 VLA의 연결</h2><p>마지막으로 이 저수준 controller가 스택 전체와 어떻게 맞물리는지를 조립하자. 다시 원문을 보자 — whole-body RL이 저수준 모터 지능을 제공하고, GR00T N1.6이 그것을 '사용하며 상위 VLA 정책을 통해 조율한다(coordinates through its higher-level VLA policy)'. 여기 계층 분리의 핵심이 있다.</p>
+<p>역할 분담을 명확히 하자. 상위 VLA 정책(그리고 그 위 world model 뇌)은 <strong>무엇을 할지</strong>를 정한다 — '저 상자를 집어 선반에 올려라' 같은 목표와 대략적인 상체 궤적. 저수준 whole-body controller(SONIC)는 <strong>그것을 넘어지지 않고 어떻게 몸으로</strong>를 담당한다 — 상체가 상자를 들 때 이동하는 CoM을 하체가 실시간으로 보상해 균형을 유지한다. VLA는 '상자를 든다'는 의도만 내면 되고, 그로 인한 균형 붕괴를 막는 전신 조율은 controller가 알아서 처리한다.</p>
+<p>왜 이렇게 나누는가. 두 층의 시간 스케일이 근본적으로 다르기 때문이다. VLA·world model의 계획은 느리고 드물게(초 단위 목표 갱신) 돌아도 되지만, 균형 제어는 수백 Hz의 촘촘한 실시간 루프여야 한다 — 넘어지는 데는 100밀리초면 충분하다. 이 둘을 하나의 정책으로 섞으면 느린 추론이 빠른 균형 루프의 발목을 잡는다. 그래서 SONIC이 C++ inference로 저지연 실시간 경로를 갖는 것이다. 앞 챕터에서 본 'planning은 위에서 드물게, reaction은 아래에서 촘촘하게'라는 원칙이, 여기서는 'VLA는 의도, controller는 실시간 균형'으로 다시 나타난다.</p>
+<p>인터페이스의 관점에서 보면, VLA는 controller에게 목표 상체 자세나 end-effector 궤적, 이동 명령 같은 상위 명령을 넘기고, controller는 그것을 전신 관절 토크로 번역한다. 이 인터페이스 덕분에 두 층은 독립적으로 발전할 수 있다 — VLA는 더 똑똑한 계획을, SONIC은 더 안정적인 모터 지능을 각자 스케일하며, 정해진 명령 규약으로 만난다.</p>
+<p>이 코스 전체의 하이브리드 통합 논제 안에서 이 챕터의 자리를 못 박자. world model 뇌(추론·계획), VLA 정책(vision-language-action 매핑), whole-body controller(모터 지능) — 이 셋은 하나의 거대 모델로 뭉뚱그려진 게 아니라, 서로 다른 시간 스케일과 학습 방식(뇌는 world model, controller는 RL+motion tracking)을 가진 층으로 통합된다. SONIC은 그 스택의 발을 땅에 붙이는 층이다. 아무리 똑똑한 계획도 로봇이 넘어지면 무의미하기에, 이 저수준 층이 전체 하이브리드 시스템의 물리적 신뢰성을 떠받친다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">쟁반을 들고 걷는 웨이터, 그리고 음악 없이 훈련하는 댄서</div>
+      <div class="a-body"><p>whole-body control의 두 얼굴 — coupling과 behavior foundation model — 을 각각 하나의 일상 장면으로 잡아 보자.</p>
+<p>먼저 coupling. 물이 가득 찬 쟁반을 들고 붐비는 홀을 가로지르는 웨이터를 떠올리자. 손(manipulation)은 쟁반을 수평으로 유지해야 하고, 발(locomotion)은 사람을 피하며 걸어야 한다. 그런데 이 둘은 분리될 수 없다. 갑자기 방향을 틀면(발) 관성이 쟁반을 기울이고(손), 그래서 팔은 미리 반대로 보상해야 한다. 무거운 접시를 쟁반 한쪽에 올리면(상체 하중) 몸 전체의 무게중심이 그쪽으로 쏠려, 웨이터는 반대쪽으로 살짝 기울여 균형을 잡는다. 능숙한 웨이터는 손과 발을 따로 생각하지 않는다 — 온몸이 하나의 균형 시스템으로 조율된다. 이것이 바로 CoM 결합이고, 상체 하중이 하체 균형을 흔드는 loco-manipulation coupling이다. 초보 웨이터가 물을 흘리는 이유는 팔과 다리를 따로 제어하기 때문이다.</p>
+<p>다음으로 behavior foundation model. 음악을 틀지 않고도 온갖 장르를 소화하는 프로 댄서를 떠올리자. 이 댄서는 왈츠·힙합·발레를 각각 따로 '암기'한 게 아니다. 대신 수천 개의 인간 동작을 몸으로 따라 하며(motion tracking) 몸의 균형·리듬·조율이라는 core를 훈련했다. 그 core 위에서 어떤 참조 동작을 주든 즉석에서 재현한다 — 걷기를 주면 걷고, 구르기를 주면 구른다. SONIC이 정확히 이렇다. 걷기 정책, 기기 정책을 따로 만드는 게 아니라 '인간 동작을 따라 하라'는 단일 과제로 core motor intelligence를 키우고, 그 위에서 다양한 행동이 창발한다.</p>
+<p>두 장면을 겹치면 이 챕터의 전체 그림이 된다. 댄서의 core 훈련(motion tracking as task)이 웨이터의 전신 균형(whole-body coupling)을 가능하게 한다. 그리고 인간 안무를 몸집이 다른 로봇에게 옮길 때 팔다리 길이가 안 맞아 그대로는 재현 못 하는 것 — 그것이 retarget의 morphology gap이다. 안무가 아무리 좋아도 무용수의 몸에 맞게 고쳐줘야 실제로 출 수 있다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>SONIC식 whole-body control 학습의 뼈대를 tracking reward + PPO 스타일 업데이트로 스케치한다. 핵심 아이디어: retarget된 reference 인간 동작 <span class="math-inline">\(\hat{q}_t\)</span> 를 로봇 관절 <span class="math-inline">\(q_t\)</span> 가 추종하도록 tracking reward <span class="math-inline">\(r_t = \exp(-\alpha\lVert q_t - \hat{q}_t\rVert^2)\)</span> 를 주고, 여기에 균형(CoM) regularization을 더한 뒤, 그 보상으로 정책을 강화학습한다. '행동의 다양성은 보상이 아니라 reference 데이터에서 나온다'는 foundation-model 논리가 코드에서 드러난다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import numpy as np
+
+def whole_body_reward(q, qd, ref_q, ref_ee, robot_ee, com_xy, support_poly,
+                      alpha=10.0, w_ee=1.0, w_bal=0.5):
+    &quot;&quot;&quot;whole-body motion tracking reward.
+    q, qd     : 로봇 관절 각도/속도
+    ref_q     : retarget된 reference 인간 관절 각도 (hat q_t)
+    ref_ee    : reference end-effector 위치, robot_ee: 로봇 실제 손/발 위치
+    com_xy    : 현재 CoM의 지면 투영, support_poly: 지지 다각형 중심
+    &quot;&quot;&quot;
+    # 1) 관절 추종: 오차가 0이면 1, 커지면 지수적으로 0
+    r_track = np.exp(-alpha * np.sum((q - ref_q) ** 2))
+
+    # 2) end-effector 추종: morphology 차이 때문에 관절만으론 부족
+    r_ee = np.exp(-np.sum((robot_ee - ref_ee) ** 2))
+
+    # 3) 균형 regularization: CoM 투영이 지지 다각형에서 멀어지면 벌점
+    #    -&gt; 인간 궤적이 로봇에게 불안정해도 넘어지지 않게 잡아줌
+    r_bal = np.exp(-np.sum((com_xy - support_poly) ** 2))
+
+    return r_track + w_ee * r_ee + w_bal * r_bal
+
+
+def ppo_update(policy, value, rollouts, clip=0.2, lr=3e-4):
+    &quot;&quot;&quot;PPO 스타일 정책 업데이트 (개념 스케치).&quot;&quot;&quot;
+    obs, act, old_logp, ret, adv = rollouts
+    logp = policy.log_prob(obs, act)          # 새 정책의 로그확률
+    ratio = np.exp(logp - old_logp)           # 확률비 r = pi_new / pi_old
+    # clipped surrogate: advantage가 좋아도 과한 갱신은 잘라냄
+    unclipped = ratio * adv
+    clipped = np.clip(ratio, 1 - clip, 1 + clip) * adv
+    policy_loss = -np.mean(np.minimum(unclipped, clipped))
+    value_loss = np.mean((value(obs) - ret) ** 2)
+    policy.step(policy_loss, lr)               # gradient ascent on reward
+    value.step(value_loss, lr)
+    return policy_loss, value_loss
+
+# 학습 루프 골격:
+#   for episode:
+#     ref = sample_reference_motion()      # 걷기/기기/teleop ... 데이터에서
+#     rollouts = collect(policy, ref, reward_fn=whole_body_reward)
+#     ppo_update(policy, value, rollouts)  # 시뮬에서 넘어지며 반복 학습
+#   -&gt; 행동 다양성은 sample_reference_motion 의 데이터 분포에서 창발</code></pre>
+      <div class="c-walk"><p>이 스케치가 곧 'motion tracking as task'의 정의다. <code>whole_body_reward</code>의 (1) <code>r_track</code>이 챕터의 핵심 수식 <span class="math-inline">\(r_t=\exp(-\alpha\lVert q_t-\hat q_t\rVert^2)\)</span> 그대로다 — reference 관절 <code>ref_q</code>(<span class="math-inline">\(\hat q_t\)</span>)와 로봇 관절 <code>q</code>의 제곱오차를 지수로 감싸, 거의 맞을 때 큰 보상으로 정밀 추종을 유도한다. (2) <code>r_ee</code>가 retarget 난점에 대한 응답이다: morphology 차이로 관절 각도만 맞추면 손끝 위치가 어긋나므로 end-effector 위치를 따로 추종한다. (3) <code>r_bal</code>이 loco-manip coupling을 보상에 새긴다 — CoM 투영이 지지 다각형을 벗어나려 하면 벌점을 줘, 인간 궤적이 로봇에게 불안정해도 넘어지지 않게 하체가 보상하도록 학습된다. <code>ppo_update</code>는 이 보상을 실제 정책 개선으로 바꾸는 RL 엔진으로, clipped surrogate로 한 번에 과하게 갱신되는 것을 막아 안정적으로 reward를 올린다. 결정적 부분은 맨 아래 루프 주석이다 — 매 에피소드 <code>sample_reference_motion</code>으로 걷기/기기/teleop 중 하나를 뽑아 같은 reward·같은 정책으로 학습한다. 걷기 전용 보상도, 기기 전용 정책도 없다. <strong>행동의 다양성은 보상 설계가 아니라 reference 데이터의 분포에서 창발한다</strong> — 이것이 SONIC이 behavior foundation model인 코드 수준의 이유다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">Humanoid whole-body control은 2026년 Physical AI에서 상단의 VLA·world model만큼 뜨거운, 그러나 훨씬 물리적으로 냉혹한 축이다. NVIDIA(SONIC/HOVER), Unitree, Boston Dynamics(Atlas), Figure, Tesla Optimus 등이 전부 이 저수준 층에 사활을 건다 — 계획이 아무리 똑똑해도 로봇이 넘어지면 끝이기 때문이다. 면접에서는 &#x27;loco와 manip이 왜 coupled인가&#x27;, &#x27;motion tracking을 왜 학습과제로 삼는가&#x27;, &#x27;retarget의 morphology gap을 어떻게 다루는가&#x27;, &#x27;저수준 controller와 상위 정책을 왜/어떻게 분리하는가&#x27;가 로보틱스·RL 직군에서 반복적으로 나온다. SONIC을 &#x27;behavior foundation model&#x27;로, 그 학습을 &#x27;motion tracking as scalable task&#x27;로 한 문장에 꿸 수 있으면 강한 시그널이다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>loco-manipulation coupling을 CoM과 지지 다각형(support polygon) 균형 조건으로 물리적으로 설명 (상체 하중 -&gt; CoM 이동 -&gt; 하체 보상)</li><li>motion tracking을 학습과제로 삼는 것이 왜 방대한 mocap/video를 supervision으로 전환하는지, 그리고 행동 다양성이 데이터 분포에서 창발함을 이해</li><li>tracking reward의 지수 형태와 균형·end-effector regularization을 함께 설계할 줄 앎</li><li>retarget의 morphology gap을 관절 수·링크 길이·질량 분포 세 축으로 분해하고, 도달 불가능성·발 미끄러짐·균형 파괴 같은 구체적 실패를 지목</li><li>저수준 controller와 상위 VLA를 시간 스케일(수백 Hz 균형 vs 초 단위 계획)로 분리하는 계층 설계와 C++ 실시간 inference의 필요성을 논증</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>locomotion과 manipulation을 독립 문제로 보고 팔 정책·다리 정책을 따로 붙이면 된다고 생각</li><li>motion tracking을 단순 모방으로만 보고, 그것이 데이터를 supervision으로 바꾸는 &#x27;스케일러블 과제&#x27;라는 프레이밍을 놓침</li><li>retarget을 관절 각도 복사로 오해하고 morphology gap(링크 길이·질량 분포·joint limit)을 무시</li><li>인간 궤적을 &#x27;완벽히 복사할 정답&#x27;으로 취급하고 균형 regularization·RL 보정의 필요성을 모름</li><li>저수준 균형 제어를 상위 VLA/LLM에 통째로 맡기려 하고 실시간 루프의 시간 스케일 제약을 인지 못 함</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>humanoid가 무거운 상자를 앞으로 들 때 왜 하체 제어가 개입해야 하는가? CoM과 지지 다각형으로 loco-manipulation coupling을 설명하고, 팔·다리 정책을 따로 학습하면 왜 경계에서 무너지는지 논하라.</li><li>&#x27;motion tracking을 학습과제로 삼는다&#x27;가 왜 whole-body control을 foundation model 문제로 바꾸는가? tracking reward를 쓰되 행동 다양성을 데이터에서 창발시키는 학습 루프를 설계하라.</li><li>인간 mocap을 로봇에 retarget할 때 발생하는 morphology gap을 관절 수·링크 길이·질량 분포로 분해하고, 각각이 유발하는 구체적 실패(도달 불가·end-effector 불일치·균형 파괴·발 미끄러짐)와 완화책을 답하라.</li><li>SONIC 같은 저수준 controller와 상위 VLA 정책을 왜 하나로 합치지 않고 층으로 나누는가? 두 층의 시간 스케일, 인터페이스(상위 명령 -&gt; 관절 토크), 그리고 C++ 실시간 inference가 필요한 이유를 설명하라.</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> Familiar: HOVER, SONIC, whole-body control, motion tracking 같은 용어를 안다. Mastery: loco-manipulation coupling을 CoM-지지다각형 균형으로 정량적으로 설명하고, SONIC을 &#x27;motion tracking을 스케일러블 과제로 삼아 데이터에서 행동을 창발시키는 behavior foundation model&#x27;로 정의한다. tracking reward에 end-effector·균형 regularization을 더해 retarget의 morphology gap을 RL이 흡수하도록 설계할 줄 알고, morphology gap을 관절 수·링크 길이·질량 분포로 분해해 구체적 실패 모드를 짚는다. 저수준 controller와 상위 VLA를 시간 스케일·인터페이스로 분리하는 계층 설계가 왜 하이브리드 통합의 물리적 신뢰성을 떠받치는지 논증할 수 있다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>loco와 manip은 CoM으로 물리적으로 결합돼 있다</h3><p>상체가 무거운 물체를 들면 무게중심(CoM)이 이동해 하체 균형이 흔들린다. locomotion과 manipulation을 따로 제어하면 경계에서 넘어지므로, 하나의 coupled whole-body task로 다뤄야 한다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>whole-body RL이 저수준 모터 지능을 제공한다</h3><p>시뮬레이션의 whole-body RL이 인간처럼 동적으로 안정적인 motion primitives(locomotion·manipulation·multi-contact)를 만들고, GR00T N1.6이 이를 상위 VLA 정책으로 조율한다. 팔·다리가 아니라 전신이 하나로 움직인다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>HOVER에서 SONIC으로: 통합 정책에서 behavior foundation model로</h3><p>HOVER(2025.03)가 whole-body control 통합 정책이었다면, SONIC(2026)은 그 실질적 후계자이자 humanoid behavior foundation model이다. GEAR-SONIC로 오픈소스(checkpoints·C++ inference·VR teleop).</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>motion tracking을 학습과제로 삼으면 데이터가 supervision이 된다</h3><p>reference 인간 동작을 추종하게 학습시키면 방대한 mocap/video motion이 전부 학습 신호로 전환된다. tracking reward는 exp(-alpha||q_t - q_hat_t||^2) 형태로, 오차가 작을수록 지수적으로 큰 보상.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>행동 다양성은 보상이 아니라 데이터에서 창발한다</h3><p>과제는 하나(추종)인데, reference 데이터에 걷기·기기·teleop이 있으면 그 행동들이 창발한다. 이것이 SONIC을 걷기 정책·기기 정책의 합이 아니라 foundation model로 만든다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>retarget의 병목은 morphology gap이다</h3><p>인간과 로봇의 관절 수·링크 길이·질량 분포 차이 때문에 인간 동작을 그대로 복사할 수 없다. 도달 불가능성·end-effector 불일치·균형 파괴·발 미끄러짐이 생기므로, retarget은 관절·end-effector·접촉 제약을 함께 푸는 최적화다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>인간 궤적은 정답이 아니라 참조다, 남은 gap은 RL이 메운다</h3><p>완벽한 retarget은 불가능하므로 SONIC은 retarget 궤적을 &#x27;따라가되 물리적으로 실현 가능하게 조정할 참조&#x27;로 다룬다. tracking reward에 균형·접촉 regularization을 더해 RL이 morphology gap을 시뮬레이션에서 흡수한다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>controller와 VLA는 시간 스케일로 분리된다</h3><p>VLA/world model은 &#x27;무엇을&#x27;을 초 단위로 느리게 정하고, SONIC은 &#x27;넘어지지 않게 어떻게&#x27;를 수백 Hz 실시간으로 담당한다(그래서 C++ inference). 이 계층 분리가 하이브리드 스택의 발을 땅에 붙여 물리적 신뢰성을 떠받친다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-05.html">← World Models as the Brain: Cosmos</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-07.html">The Synthetic Data Factory →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

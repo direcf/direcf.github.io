@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch3: VLA Foundations — GR00T &amp; NVIDIA Physical AI 2026 — direcf</title>
+  <meta name="description" content="RT-2 to OpenVLA to π0로 이어지는 VLA 계보와 action tokenization, unified policy representation을 정리하고, 왜 VLA가 로봇 generalist의 기본 문법이 됐는지 이해한다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;height:22px;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><linearGradient id="direcf-nav-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs></svg>
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg></span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg></span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.25 15a4.5 4.5 0 0 0 4.5 4.5H18a3.75 3.75 0 0 0 1.332-7.257 3 3 0 0 0-3.758-3.848 5.25 5.25 0 0 0-10.233 2.33A4.502 4.502 0 0 0 2.25 15Z"/></svg></span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"/></svg></span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg></span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/physical-ai">GR00T &amp; NVIDIA Physical AI 2026</a><span class="sep">›</span>
+        <strong>Ch03 VLA Foundations</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 03 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🗣️</div>
+      <h1 class="chapter-title">VLA Foundations</h1>
+      <div class="chapter-title-kr">Vision-Language-Action 모델의 기초</div>
+      <div class="chapter-tldr">RT-2 to OpenVLA to π0로 이어지는 VLA 계보와 action tokenization, unified policy representation을 정리하고, 왜 VLA가 로봇 generalist의 기본 문법이 됐는지 이해한다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-03.png" alt="Chapter 3 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 3 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>VLA가 vision·language·action을 하나의 시퀀스 모델로 묶는 방식을 설명할 수 있다</li><li>action tokenization(discretization vs flow-based)의 트레이드오프를 안다</li><li>RT-2·OpenVLA·π0의 핵심 차이를 표로 비교할 수 있다</li><li>VLM backbone을 action에 재사용하는 것의 이점과 한계를 안다</li><li>GR00T N1이 이 계보의 어디에 위치하는지 안다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>지난 두 챕터에서 우리는 NVIDIA가 navigation과 manipulation을 하나로 합치려 한다는 서사(Ch1)와, mobility 특화였던 COMPASS가 데이터 엔진으로 재배치되는 경로(Ch2)를 봤다. 그런데 '하나로 합친다'는 말의 실체는 무엇인가? 두 과제를 잇는 접착제는 정책의 표현(representation) 그 자체다. GR00T가 채택한 그 표현이 바로 VLA(Vision-Language-Action) 모델이다. 이 챕터는 VLA를 '왜 이게 로봇 generalist의 기본 문법이 됐는가'라는 각도에서 해부한다.</p>
+<p>VLA의 핵심 아이디어는 한 문장으로 요약된다: vision 관측, 언어 지시, 그리고 로봇 상태(state)를 하나의 policy representation으로 묶어 action을 출력하되, 이미 web-scale로 사전학습된 VLM(Vision-Language Model) backbone을 action 예측에 재사용한다. 로봇 데이터는 인터넷 텍스트·이미지에 비해 몇 자릿수 적다. 그래서 '로봇 정책을 처음부터 학습'하는 대신, VLM이 이미 획득한 semantic·spatial prior 위에 action head만 얹는 전략이 지배적 문법이 됐다. RT-2가 이 전략의 원형을 제시했고, OpenVLA가 오픈소스로 대중화했으며, π0가 continuous action으로 고주파·정밀 제어의 문을 열었다.</p>
+<p>이 챕터에서 반드시 넘어야 할 개념의 고비는 action tokenization이다. 언어 모델은 이산(discrete) 토큰을 뱉는 기계인데, 로봇의 action은 본질적으로 연속(continuous)값이다. 이 간극을 어떻게 메우는가 — action을 텍스트 토큰처럼 이산화(discretize)하느냐, 아니면 flow-matching/diffusion으로 연속 분포를 직접 생성하느냐 — 가 VLA 설계의 분기점이며, GR00T N1이 dual-system으로 이 트레이드오프를 어떻게 우회하는지가 이 챕터의 종착점이다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>VLA란 무엇인가: 세 modality를 하나로</h2><p>VLA는 세 가지 입력 modality를 하나의 policy로 융합한다. Vision(카메라 관측 o_t), Language(자연어 지시 ℓ, 예: 'pick up the red cup'), 그리고 로봇 자신의 proprioceptive state(관절 각도·속도 q_t). 출력은 action a_t — 관절 토크, end-effector 변위, 또는 base velocity 같은 제어 명령이다. 목표는 정책 분포 π(a_t | o_t, ℓ, q_t)를 학습하는 것이다.</p>
+<p>왜 이 셋을 굳이 '하나의' 모델로 묶는가? 전통적 로봇 스택은 perception(무엇이 보이는가), planning(무엇을 할까), control(어떻게 움직일까)을 분리된 모듈로 두었다. 이 분리는 각 모듈을 독립 최적화하기엔 좋지만, 모듈 경계에서 정보가 손실된다. 'red cup'이라는 언어 개념이 perception의 detection 박스로 압축되고, 다시 planning의 waypoint로 압축되면서 'cup의 미끄러운 표면'이나 '옆에 놓인 유리잔' 같은 맥락은 증발한다. VLA는 이 경계를 없애고, 언어의 semantic이 raw action까지 end-to-end로 흐르게 한다.</p>
+<p>핵심 트릭은 backbone의 재사용이다. VLM(예: PaLI, SigLIP+Llama, Eagle 계열)은 이미 수십억 장의 이미지-텍스트 쌍으로 학습돼 'red', 'cup', 'left of' 같은 개념의 grounding을 획득했다. VLA는 이 pretrained VLM을 그대로 가져와, 마지막에 action을 뽑는 경로만 새로 붙인다. 그 결과 로봇 데이터가 적어도 '빨간 물체가 무엇인지'를 다시 배울 필요가 없다 — VLM이 이미 안다. 이것이 VLA가 emergent generalization(학습 때 본 적 없는 물체·지시에 대한 일반화)을 보이는 근본 이유다.</p>
+<p>형식적으로 VLA는 조건부 시퀀스 모델이다. 이미지는 vision encoder를 거쳐 토큰열이 되고, 지시는 텍스트 토큰이 되며, 이 둘(때로는 state 토큰까지)이 하나의 시퀀스로 concat되어 transformer에 들어간다. 그 위에서 action을 '어떻게 읽어낼 것인가'가 다음 절의 주제다. 즉 VLA의 정체성은 '입력을 묶는 방식'보다 '출력 action을 표현하는 방식'에서 갈린다.</p></div><div class="sb-block"><h2>action을 어떻게 표현하나: tokenization vs flow</h2><p>여기가 VLA 설계의 진짜 분기점이다. Transformer 기반 언어 모델은 이산 vocabulary 위에서 next-token을 예측하도록 설계됐다. 그런데 로봇 action a_t ∈ ℝ^d 는 연속값이다(예: 7-DoF arm이면 7차원 실수 벡터). 이 임피던스 불일치(impedance mismatch)를 해소하는 두 갈래 접근이 있다.</p>
+<p>첫째, discretization(이산화) 접근. 각 action 차원을 예컨대 256개 bin으로 균등 분할해, 연속값을 정수 토큰으로 매핑한다. 그러면 action은 그냥 '또 하나의 언어'가 되어 VLM이 이미 가진 텍스트 head를 거의 그대로 재사용할 수 있다. RT-2는 실제로 action을 텍스트 문자열 토큰으로 취급해, action 예측을 translation 문제처럼 다뤘다. OpenVLA도 discretized action token(차원당 256 bin)을 쓴다. 장점은 명료하다 — VLM 재사용이 극도로 쉽고, 학습이 표준 cross-entropy로 단순하며, autoregressive 생성 인프라를 그대로 쓴다. 단점도 명료하다: bin 경계가 정밀도의 상한을 만들고(quantization error), 고차원 action을 토큰으로 펼치면 시퀀스가 길어져 고주파 제어(수백 Hz)에 불리하다.</p>
+<p>둘째, flow/diffusion 기반 continuous 접근. action을 이산화하지 않고, 연속 분포를 직접 생성한다. π0(Physical Intelligence)는 flow-matching을 써서 VLM backbone 위에 'action expert'를 붙이고, noise에서 action chunk로 흐르는 vector field를 학습한다. Diffusion policy 계열도 같은 철학이다 — 목표 action에 노이즈를 씌웠다 제거하는 denoising 과정으로 연속 action을 복원한다. 장점: quantization 손실이 없어 정밀하고, action chunk(여러 timestep을 한 번에)를 뽑아 50 Hz 이상 고주파 제어에 유리하며, multimodal 분포(여러 그럴듯한 동작)를 자연스럽게 표현한다. 단점: 학습이 복잡하고(flow matching loss, 여러 denoising step), VLM의 이산 토큰 인프라와 이질적이라 backbone 통합에 별도 설계가 필요하다.</p>
+<p>트레이드오프를 좌표계로 정리하면 이렇다. discretization은 'VLM 재사용의 용이성'과 'reasoning과의 자연스러운 통합'을 사고, 그 대가로 '정밀도·제어 주파수'를 지불한다. flow는 정반대다. 실무의 결론은 대부분 하이브리드로 수렴한다 — 느리게 도는 reasoning/semantic 경로는 이산 토큰으로, 빠르게 도는 저수준 motor 경로는 continuous head로. GR00T N1의 dual-system이 정확히 이 하이브리드의 구체화이며, 다음 절에서 다룬다.</p></div><div class="sb-block"><h2>계보: RT-2 → OpenVLA → π0</h2><p>VLA는 갑자기 등장한 게 아니라 세 번의 도약으로 형성된 계보다. 각 단계는 앞 단계의 한계를 정확히 겨냥한다.</p>
+<p>RT-2(Google DeepMind, 2023)는 원형을 제시했다. 핵심 통찰은 'VLM을 action에 co-fine-tune한다'였다 — web-scale VLM(PaLI-X, PaLM-E)을 로봇 궤적 데이터와 인터넷 VQA 데이터에 동시에 학습시켜, action을 텍스트 토큰으로 뱉게 했다. 그 결과 인터넷 지식이 로봇 행동으로 전이되는 emergent capability(예: '가장 작은 물체를 집어라' 같은 추론적 지시 수행)를 처음으로 보였다. 한계: closed-source였고, action을 텍스트로 다루니 정밀도·주파수가 낮았다.</p>
+<p>OpenVLA(Stanford/Google 등, 2024, arXiv:2406.09246)는 이 패러다임을 오픈소스 7B 모델로 대중화했다. SigLIP+DINOv2 vision encoder와 Llama2 backbone 위에 discretized action token을 얹어, Open X-Embodiment 데이터로 학습했다. 기여는 '접근성'과 '재현성'이다 — 누구나 fine-tune·확장할 수 있는 표준 baseline이 생겼다. 여전히 discretization 기반이라 정밀·고주파 한계는 상속했다.</p>
+<p>π0(Physical Intelligence, 2024)는 표현 방식 자체를 바꿨다. VLM backbone은 유지하되, action을 이산 토큰이 아니라 flow-matching으로 생성하는 action expert를 도입했다. 이로써 50 Hz급 고주파, dexterous(정밀 손동작) 제어가 가능해졌고, 다양한 로봇 embodiment를 아우르는 generalist를 지향했다. 대가는 학습·아키텍처 복잡도다.</p>
+<p>이 계보의 벡터는 분명하다: (1) VLM을 action에 붙인다(RT-2) → (2) 열고 표준화한다(OpenVLA) → (3) action 표현을 연속화해 정밀·고주파를 얻는다(π0). GR00T N1은 이 셋을 종합하되 humanoid라는 새 embodiment와 dual-system이라는 구조를 더한다. 아래 표가 네 모델의 좌표를 정리한다.</p>
+<table>
+<thead>
+<tr>
+<th>모델</th>
+<th>소속·연도</th>
+<th>action 표현</th>
+<th>backbone 재사용</th>
+<th>대상 embodiment</th>
+<th>핵심 기여</th>
+<th>주된 한계</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>RT-2</td>
+<td>Google DeepMind, 2023</td>
+<td>discretized (텍스트 토큰)</td>
+<td>VLM co-fine-tune (PaLI-X/PaLM-E)</td>
+<td>단일 로봇 arm</td>
+<td>web 지식의 action 전이, emergent 추론</td>
+<td>closed, 저정밀·저주파</td>
+</tr>
+<tr>
+<td>OpenVLA</td>
+<td>Stanford 등, 2024</td>
+<td>discretized (차원당 256 bin)</td>
+<td>SigLIP+DINOv2 + Llama2 (7B)</td>
+<td>다양한 arm (OXE)</td>
+<td>오픈소스 표준 baseline, 재현성</td>
+<td>discretization 정밀·주파수 한계</td>
+</tr>
+<tr>
+<td>π0</td>
+<td>Physical Intelligence, 2024</td>
+<td>continuous (flow-matching)</td>
+<td>VLM + action expert</td>
+<td>다양한 로봇, dexterous</td>
+<td>고주파(≈50 Hz)·정밀·multimodal action</td>
+<td>학습·아키텍처 복잡도</td>
+</tr>
+<tr>
+<td>GR00T N1</td>
+<td>NVIDIA, 2025</td>
+<td>hybrid (dual-system: reasoning 토큰 + continuous motor)</td>
+<td>Eagle VLM + diffusion action</td>
+<td>humanoid (전신)</td>
+<td>navigation+manipulation 통합 지향, 합성데이터 스케일</td>
+<td>통합의 검증·평가 난이도</td>
+</tr>
+</tbody>
+</table>
+<p>참고: <a href="https://arxiv.org/abs/2406.09246">OpenVLA</a>, <a href="https://arxiv.org/abs/2503.14734">GR00T N1</a>.</p></div><div class="sb-block"><h2>GR00T N1의 위치: humanoid dual-system</h2><p>GR00T N1(NVIDIA, 2025, arXiv:2503.14734)은 앞 계보 위에서 두 가지를 새로 얹는다. 첫째, embodiment가 arm이 아니라 humanoid — 두 다리로 이동하면서 두 팔로 조작하는 전신(whole-body) 시스템이다. 이는 곧 navigation과 manipulation이 같은 정책 안에서 만난다는 뜻이며, 이 코스의 중심 질문과 직결된다. 둘째, dual-system 아키텍처 — 인지과학의 System 1(빠르고 직관적) / System 2(느리고 숙고적) 비유를 정책 구조로 구현한다.</p>
+<p>dual-system의 요지는 이렇다. System 2(느린 경로)는 VLM backbone이 담당한다. vision과 언어 지시를 받아 '무엇을 해야 하는가'라는 semantic·spatial reasoning을 저주파로 수행한다 — 이 경로는 이산 토큰과 reasoning에 강한 VLM의 본성을 그대로 쓴다. System 1(빠른 경로)은 diffusion 기반 action module이 담당한다. System 2가 내놓은 latent 계획을 조건으로 받아, 고주파로 연속 motor action을 생성한다. 즉 앞 절에서 본 'discretization vs flow'의 트레이드오프를 둘 중 하나로 결정하지 않고, 역할을 분리해 둘 다 취한다.</p>
+<p>왜 이 분리가 자연스러운가? reasoning은 초당 몇 번이면 충분하다('컵을 집어 왼쪽으로 옮긴다'는 계획은 매 밀리초 바뀔 필요가 없다). 반면 balance·contact·force 제어는 수십~수백 Hz로 돌아야 한다. 하나의 무거운 VLM을 고주파로 돌리는 것은 계산적으로 불가능에 가깝고, 반대로 가벼운 controller만으로는 언어 이해가 안 된다. dual-system은 각 요구를 맞는 주파수와 표현으로 분리한다 — 이것이 이 코스가 반복해서 강조하는 '하이브리드 통합'의 아키텍처적 뿌리다.</p>
+<p>GR00T N1의 학습을 떠받치는 또 한 축은 데이터다. humanoid 실제 로봇 데이터는 극히 희소하므로, NVIDIA는 실제 텔레오퍼레이션 데이터, 인간 비디오, 그리고 Isaac 기반 합성 데이터를 계층적으로 섞는 data pyramid로 이를 메운다(이후 챕터에서 심화). 요컨대 GR00T N1의 위치는 이렇게 요약된다: RT-2가 연 'VLM=정책' 발상, OpenVLA가 세운 오픈 표준, π0가 증명한 continuous action을 계승하되, humanoid 전신 loco-manipulation을 위해 dual-system 하이브리드와 합성데이터 스케일링을 결합한 지점. N1.6(2026)은 여기에 Cosmos Reason이라는 명시적 reasoning을 더 얹는데, 그것이 다음 챕터의 주제다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">눈·귀·손을 잇는 동시통역사</div>
+      <div class="a-body"><p>VLA를 이해하는 가장 좋은 비유는 국제회의장의 동시통역사다. 통역사에게는 세 개의 입력 채널이 동시에 들어온다 — 화면에 뜬 슬라이드(vision), 연사의 말(language), 그리고 자기 앞의 마이크·부스 상황(state, 즉 자기 자신의 상태). 통역사는 이 셋을 머릿속 하나의 표현으로 융합한 뒤, 손과 입으로 즉시 출력(action)을 내보낸다. 세 채널을 따로 처리하는 세 사람에게 나눠 맡기면 타이밍이 어긋난다. 한 사람 머릿속에서 통합돼야 '지금 저 슬라이드의 저 단어를 저 억양으로' 옮길 수 있다. 이것이 VLA가 perception·planning·control을 하나로 묶는 이유다.</p>
+<p>동시통역사가 아무 준비 없이 부스에 앉지 않는다는 점이 backbone 재사용의 비유다. 그는 이미 두 언어를 수십 년간 익혔다(web-scale VLM 사전학습). 회의 직전에 그가 새로 하는 일은 '이 분야의 전문 용어 목록'을 빠르게 훑는 것뿐이다(로봇 데이터로의 fine-tune). 언어 자체를 회의장에서 처음 배우지 않듯, VLA도 '빨간 컵이 무엇인지'를 로봇 데이터에서 처음 배우지 않는다.</p>
+<p>tokenization vs flow의 차이는 통역의 출력 방식에 대응한다. discretization은 통역사가 '미리 준비된 표준 문장 카드' 중에서 가장 가까운 것을 골라 내미는 것과 같다 — 빠르고 관리하기 쉽지만, 딱 맞는 카드가 없으면 뉘앙스가 뭉개진다. flow 방식은 통역사가 매번 문장을 처음부터 유려하게 지어내는 것과 같다 — 정밀하고 자연스럽지만 훈련이 훨씬 어렵다. 그리고 GR00T의 dual-system은 노련한 통역팀의 분업이다: 한 사람은 발언의 큰 논지를 저속으로 파악해 방향을 잡고(System 2), 다른 한 사람은 그 방향을 받아 단어를 실시간 고속으로 쏟아낸다(System 1). 큰 뜻은 자주 바뀔 필요가 없고, 실제 발화는 끊임없이 흘러야 한다 — 로봇의 reasoning과 motor 제어의 관계가 정확히 이렇다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>최소 VLA forward 스케치. 이미지와 언어 지시를 하나의 시퀀스로 묶어 shared transformer(VLM backbone의 stand-in)에 통과시킨 뒤, 두 가지 action head를 대비해 보여준다 — (1) discretized action token head(RT-2/OpenVLA 스타일)와 (2) continuous flow/diffusion head(π0 스타일). 핵심은 backbone은 공유하되 '출력 표현'만 갈린다는 점이다. action a ∈ ℝ^d 를 discretize할 때는 각 차원을 K개 bin으로 나눠 정수 토큰으로, flow head는 노이즈에서 action으로 흐르는 vector field v_θ 를 학습한다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import torch
+import torch.nn as nn
+
+class MiniVLA(nn.Module):
+    def __init__(self, d_model=512, action_dim=7,
+                 num_bins=256, mode=&quot;discrete&quot;):
+        super().__init__()
+        self.mode = mode
+        # --- shared backbone (pretrained VLM의 stand-in) ---
+        self.vision_proj = nn.Linear(1024, d_model)   # image tokens
+        self.text_embed = nn.Embedding(32000, d_model) # instruction tokens
+        self.state_proj = nn.Linear(action_dim, d_model)  # proprioception
+        self.backbone = nn.TransformerEncoder(
+            nn.TransformerEncoderLayer(d_model, nhead=8,
+                                       batch_first=True),
+            num_layers=6)
+        # --- (1) discretized action head: 차원별 K-way 분류 ---
+        self.token_head = nn.Linear(d_model, action_dim * num_bins)
+        self.action_dim, self.num_bins = action_dim, num_bins
+        # --- (2) continuous flow head: (a_noisy, t) -&gt; velocity ---
+        self.flow_head = nn.Sequential(
+            nn.Linear(d_model + action_dim + 1, d_model), nn.SiLU(),
+            nn.Linear(d_model, action_dim))
+
+    def encode(self, img_tokens, text_ids, state):
+        v = self.vision_proj(img_tokens)          # (B, Nv, d)
+        t = self.text_embed(text_ids)             # (B, Nt, d)
+        s = self.state_proj(state).unsqueeze(1)   # (B, 1,  d)
+        seq = torch.cat([v, t, s], dim=1)         # 세 modality를 하나로
+        h = self.backbone(seq)
+        return h[:, -1]                           # state 위치의 요약 토큰
+
+    def forward(self, img_tokens, text_ids, state,
+                a_noisy=None, t=None):
+        h = self.encode(img_tokens, text_ids, state)  # (B, d)
+        if self.mode == &quot;discrete&quot;:
+            logits = self.token_head(h)
+            return logits.view(-1, self.action_dim, self.num_bins)
+        else:  # flow-matching: v_theta(a_t, t | context)
+            x = torch.cat([h, a_noisy, t], dim=-1)
+            return self.flow_head(x)  # 예측된 velocity
+
+# discrete: standard cross-entropy over bins
+# flow:     ||v_theta - (a_target - a_noise)||^2  (flow matching loss)</code></pre>
+      <div class="c-walk"><p>encode()가 VLA의 심장이다. vision token, text token, state를 각각 d_model 차원으로 사영한 뒤 하나의 시퀀스로 concat해 공유 backbone에 넣는다 — 이 '세 modality를 한 시퀀스로 묶는' 부분이 세 모델(RT-2·OpenVLA·π0) 모두 공통이다. 갈라지는 곳은 forward()의 두 분기다. mode='discrete'면 token_head가 각 action 차원마다 num_bins-way 분류 logits을 낸다. action a ∈ ℝ^d 를 K개 bin으로 이산화했으니 손실은 표준 cross-entropy이고, VLM의 기존 텍스트 head 인프라를 거의 그대로 재사용한다 — 단순하지만 bin 폭이 정밀도의 하한을 만든다. mode='flow'면 flow_head가 (a_noisy, t)와 context h를 받아 velocity v_θ 를 예측한다. 학습 시 목표는 노이즈 a_noise에서 실제 action a_target으로 향하는 벡터장을 맞추는 것(flow matching loss ||v_θ − (a_target − a_noise)||²)이고, 추론 시 노이즈에서 시작해 이 벡터장을 여러 step 적분해 연속 action을 복원한다. 정밀·고주파에 유리한 대신 여러 step 적분과 별도 학습 목표가 필요하다. GR00T N1의 dual-system은 이 스케치에서 backbone(System 2)과 flow_head(System 1)를 서로 다른 주파수로 돌리는 것에 해당한다 — backbone은 저주파 reasoning을, flow_head는 고주파 motor 생성을 담당한다. 실무 코드에는 여기서 생략한 action chunking, latency-aware inference, embodiment별 normalization이 반드시 붙는다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">VLA는 2024-2026년 로봇 학습 채용에서 사실상의 공용어다. Physical Intelligence, NVIDIA GEAR, Google DeepMind Robotics, Figure, 그리고 다수 humanoid 스타트업의 면접은 &#x27;VLA 계보와 action 표현의 트레이드오프를 정확히 말할 수 있는가&#x27;를 첫 관문으로 삼는다. 여기서 걸러지는 이유는 명확하다 — 이 트레이드오프를 모르면 어떤 정책 아키텍처 결정도 근거 없이 내리게 되기 때문이다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>VLA를 &#x27;VLM backbone 재사용 + action head&#x27;로 정확히 분해하고, 왜 로봇 데이터 희소성이 이 재사용을 강제하는지 설명함</li><li>discretization과 flow-based를 정밀도·제어 주파수·학습 복잡도·backbone 통합 난이도의 축으로 즉시 비교함</li><li>RT-2 to OpenVLA to π0의 계보를 &#x27;각 단계가 앞 단계의 어떤 한계를 겨냥했는가&#x27;로 서사화함</li><li>dual-system을 &#x27;주파수 분리&#x27;로 이해 — reasoning은 저주파, motor는 고주파라는 근본 이유를 말함</li><li>action chunking, embodiment normalization 같은 실전 디테일을 자연스럽게 언급함</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>VLA를 &#x27;그냥 큰 로봇 모델&#x27;로 뭉뚱그리고 backbone 재사용의 핵심을 놓침</li><li>discretization vs flow를 &#x27;둘 중 뭐가 더 좋다&#x27;는 우열 문제로 환원 — 트레이드오프임을 못 봄</li><li>action이 연속값인데 언어 모델은 이산 토큰을 뱉는다는 impedance mismatch를 인지하지 못함</li><li>dual-system을 단순히 &#x27;모델 두 개&#x27;로만 이해하고 주파수·표현 분리의 필연성을 설명하지 못함</li><li>RT-2·OpenVLA·π0를 이름만 알고 어떤 것이 continuous action인지 구분하지 못함</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>action이 연속값인데 VLM은 이산 토큰을 예측한다. 이 간극을 메우는 두 가지 접근과 각각의 트레이드오프를 정밀도·제어 주파수 축에서 설명하라.</li><li>50 Hz dexterous manipulation이 목표라면 discretized action token과 flow-matching 중 무엇을 택하고, 그 선택이 backbone 통합과 학습에 어떤 부담을 지우는지 논하라.</li><li>GR00T N1의 dual-system이 왜 하나의 monolithic VLA보다 humanoid loco-manipulation에 적합한가? System 1/System 2의 주파수 요구로 논증하라.</li><li>OpenVLA를 새로운 로봇 embodiment로 fine-tune할 때 action space 정규화와 discretization bin 설계에서 무엇을 조심해야 하는가?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> Familiar 수준은 VLA가 vision·language·action을 합친 모델이고 RT-2/OpenVLA/π0라는 이름이 있다는 것을 안다. Mastery 수준은 backbone 재사용이 로봇 데이터 희소성에 대한 답임을 꿰뚫고, discretization과 flow-based를 정밀도·주파수·학습 복잡도의 정량적 트레이드오프로 비교하며, 계보의 각 도약이 겨냥한 한계를 서사화하고, dual-system을 &#x27;주파수·표현의 분리&#x27;라는 아키텍처 필연으로 설명한다. 나아가 action chunking·embodiment normalization 같은 실전 실패 지점을 먼저 짚는다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>VLA = VLM backbone 재사용 + action head</h3><p>vision·language·state를 한 시퀀스로 묶어 정책을 만들되, web-scale로 사전학습된 VLM을 재사용한다. 로봇 데이터 희소성에 대한 근본 대응책이다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>핵심 분기점은 입력이 아니라 출력 표현</h3><p>세 modality를 묶는 방식은 대부분 공통이다. VLA의 정체성은 연속 action을 어떻게 뽑느냐에서 갈린다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>Impedance mismatch: 연속 action vs 이산 토큰</h3><p>언어 모델은 이산 토큰을 뱉지만 로봇 action은 연속값이다. 이 간극을 메우는 방식이 tokenization vs flow의 분기다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>Discretization = 단순·재사용, 대가는 정밀·주파수</h3><p>action을 bin 토큰으로 이산화하면 VLM 인프라를 그대로 쓰지만 quantization 오차와 저주파 한계를 상속한다. RT-2·OpenVLA의 길.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>Flow/diffusion = 정밀·고주파, 대가는 복잡도</h3><p>연속 분포를 직접 생성해 고주파 dexterous 제어와 multimodal action을 얻지만 학습·아키텍처가 복잡하다. π0의 길.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>계보의 벡터: 붙인다 → 연다 → 연속화한다</h3><p>RT-2가 VLM을 action에 co-fine-tune했고, OpenVLA가 오픈 표준을 세웠으며, π0가 continuous action으로 정밀·고주파를 열었다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>GR00T N1 = humanoid + dual-system 하이브리드</h3><p>reasoning은 저주파 VLM(System 2), motor는 고주파 diffusion(System 1)으로 분리해 discretization vs flow 트레이드오프를 우회한다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>주파수 분리가 통합의 아키텍처적 뿌리</h3><p>reasoning은 초당 몇 번이면 되고 balance·contact 제어는 수십~수백 Hz가 필요하다. 이 요구 차이가 dual-system을 필연으로 만든다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-02.html">← COMPASS as a Data Engine</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-04.html">Inside GR00T N1.6 →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

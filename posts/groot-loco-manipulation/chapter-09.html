@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch9: The Counter-Argument — GR00T &amp; NVIDIA Physical AI 2026 — direcf</title>
+  <meta name="description" content="2026년 &#x27;Robots Need More than VLA and World Models&#x27;는 로봇 학습을 정책 스케일링 문제로 보는 통념을 반박한다 — 진짜 병목은 비정형 데이터를 grounded supervision으로 바꾸는 네 인터페이스의 부재라는 주장을 데이터 스케일링 극점(NavFoM)과 구조 극점(COMPASS)에 대비한다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;height:22px;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><linearGradient id="direcf-nav-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs></svg>
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg></span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg></span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.25 15a4.5 4.5 0 0 0 4.5 4.5H18a3.75 3.75 0 0 0 1.332-7.257 3 3 0 0 0-3.758-3.848 5.25 5.25 0 0 0-10.233 2.33A4.502 4.502 0 0 0 2.25 15Z"/></svg></span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"/></svg></span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg></span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/physical-ai">GR00T &amp; NVIDIA Physical AI 2026</a><span class="sep">›</span>
+        <strong>Ch09 The Counter-Argument</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 09 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">⚖️</div>
+      <h1 class="chapter-title">The Counter-Argument</h1>
+      <div class="chapter-title-kr">반론 — VLA와 월드 모델만으론 부족하다</div>
+      <div class="chapter-tldr">2026년 &#x27;Robots Need More than VLA and World Models&#x27;는 로봇 학습을 정책 스케일링 문제로 보는 통념을 반박한다 — 진짜 병목은 비정형 데이터를 grounded supervision으로 바꾸는 네 인터페이스의 부재라는 주장을 데이터 스케일링 극점(NavFoM)과 구조 극점(COMPASS)에 대비한다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-09.png" alt="Chapter 9 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 9 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>&#x27;더 큰 VLA + 더 많은 데이터&#x27;가 왜 병목이 아닐 수 있는지 논증을 재구성할 수 있다</li><li>네 가지 missing interface를 각각 설명할 수 있다</li><li>NavFoM(802만 샘플)의 데이터 스케일링 접근과 COMPASS의 구조적 접근을 대비할 수 있다</li><li>GR00T의 하이브리드 설계가 이 반론과 어떻게 맞닿는지 안다</li><li>연구 프런티어로서 supervision 변환 문제의 중요성을 안다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>지금까지 이 코스는 GR00T를 '하이브리드'로 읽어왔다 — world model(뇌)과 policy(정책), 데이터 스케일과 구조적 분리 사이의 절충. 이 챕터는 잠시 그 논제 밖으로 나가, GR00T를 포함한 대형 VLA 진영 전체를 겨냥한 학계의 정면 반론을 다룬다. 반론의 표적은 지난 2년간 로봇 학습을 지배해 온 통념 하나다: <strong>'더 큰 VLA를 더 많은 시연으로 학습하면 로봇은 결국 풀린다'</strong>는 정책 스케일링(policy scaling) 신념.</p>
+<p>반론의 출처는 2026년 6월 arXiv에 올라온 논문 「Robots Need More than VLA and World Models」다. 저자진에는 Mac Schwager, Arash Ajoudani, Cesar Cadena, Jan Peters, Marco Hutter 등 로보틱스 학계의 무게추가 대거 이름을 올렸다. 이들의 주장은 도발적이면서 정밀하다 — 진짜 병목은 모델 크기가 아니다. 병목은 세상에 넘쳐나는 비정형 행동 데이터를 로봇이 쓸 수 있는 supervision으로 변환하는 '인터페이스'의 부재다. 인간 동작, 인터넷 비디오, 시뮬레이션 rollout, 인터랙티브 시연은 task·목표·접촉·실패·물리적 제약에 관한 풍부한 정보를 담고 있지만, embodiment별 action label도 task semantics도 reward 구조도 없어서 로봇 정책이 직접 소화하지 못한다.</p>
+<p>그래서 이 챕터는 다섯 갈래로 나아간다. 먼저 정책 스케일링 통념이 정확히 무엇을 약속하는지, 다음으로 반론이 지목하는 진짜 병목('데이터→supervision 변환')이 왜 모델 크기와 다른 문제인지, 그다음 논문이 제시하는 네 가지 missing interface(data·embodiment·world-model·reward)를 하나씩 해부한다. 이어 이 논쟁을 두 극점으로 좌표화한다 — 데이터 극점의 NavFoM(802만 샘플 cross-embodiment navigation FM)과 구조 극점의 COMPASS(구조적 분리). 마지막으로, 반론이 겨냥한 전장이 사실 GR00T가 이미 하고 있는 일(autolabel/retarget 파이프라인)과 정확히 같은 곳임을 보이며, GR00T의 하이브리드 설계가 왜 우연이 아닌지로 챕터를 닫는다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>통념: 더 큰 VLA + 더 많은 데이터</h2><p>먼저 반론이 무엇을 때리는지부터 명확히 하자. 표적은 지난 2년간 로봇 학습을 사실상 지배해 온 하나의 서사다 — 로봇 문제는 결국 스케일링 문제라는 믿음이다. 이 믿음을 한 문장으로 압축하면 이렇다: <strong>충분히 큰 Vision-Language-Action(VLA) 모델을 충분히 많은 로봇 시연으로 학습하면, LLM이 언어를 풀었듯 로봇도 풀린다.</strong></p>
+<p>이 서사가 강력했던 이유는 명백하다. Language와 vision에서 scaling law가 반복적으로 작동했기 때문이다. 파라미터를 키우고 데이터를 늘리면 성능이 예측 가능하게 좋아졌고, 창발적 능력까지 튀어나왔다. 그래서 로보틱스 진영은 자연스러운 유추를 했다 — VLA도 같은 곡선을 탈 것이다. 남은 일은 (1) 모델을 키우고 (2) 시연 데이터를 더 모으는 것뿐이라는 결론이다. 실제로 대형 텔레오퍼레이션 데이터 수집, 로봇 데이터 pooling, 수십억 파라미터 VLA가 이 논리 위에서 추진되었다.</p>
+<p>이 관점에서 로봇 학습은 본질적으로 <strong>정책 스케일링(policy scaling) 문제</strong>로 프레이밍된다. 즉 '어떻게 하면 더 큰 정책을, 더 많은 (관측, 행동) 쌍으로 학습시킬까'가 중심 질문이 된다. 병목은 모델 용량과 데이터 양이고, 해법은 둘 다 늘리는 것이다. 이 프레임 안에서 데이터의 '종류'는 부차적이다 — 결국 (obs, action) 쌍으로 환원되면 되니까.</p>
+<p>반론의 핵심은 바로 이 프레이밍이 틀렸다는 것이다. 논문의 제목 「Robots Need More than VLA and World Models」자체가 선언이다 — 로봇에게는 VLA와 world model '이상'의 무언가가 필요하다. 더 큰 정책도, 심지어 더 나은 world model도, 그 자체로는 로봇을 풀지 못한다. 왜냐하면 병목이 애초에 정책 쪽에 있지 않기 때문이다. 다음 섹션에서 반론이 지목하는 진짜 병목으로 넘어간다.</p></div><div class="sb-block"><h2>진짜 병목: 데이터를 supervision으로</h2><p>반론의 심장은 한 문장에 응축되어 있다. 논문은 로봇 학습의 진짜 병목을 이렇게 규정한다.</p>
+<blockquote>
+<p>the absence of mechanisms that convert the world's abundant unstructured behavioural data into grounded robot supervision.</p>
+</blockquote>
+<p>풀이하면: 진짜 병목은 <strong>세상에 넘쳐나는 비정형 행동 데이터(unstructured behavioural data)를 접지된 로봇 supervision(grounded robot supervision)으로 변환하는 메커니즘의 부재</strong>다. 문장을 뜯어보면 방점이 세 곳에 찍힌다 — abundant(데이터는 이미 넘쳐난다), unstructured(그런데 비정형이다), absence of mechanisms(그것을 supervision으로 바꾸는 장치가 없다).</p>
+<p>이 진단이 통념을 정확히 뒤집는 방식을 보자. 통념은 '데이터가 부족하다 → 더 모으자'였다. 반론은 '데이터는 이미 넘친다 → 다만 쓸 수 있는 형태가 아니다'라고 말한다. 문제는 양(quantity)이 아니라 변환(conversion)이다. 인간 동작, 인터넷 비디오, 시뮬레이션 rollout에는 로봇이 배워야 할 거의 모든 것이 들어 있다. 부족한 건 정보가 아니라, 그 정보를 로봇 정책이 소화할 수 있는 형태로 옮기는 파이프라인이다.</p>
+<p>논문은 왜 이 데이터들이 '직접 쓸 수 없는지'를 구체적으로 짚는다.</p>
+<blockquote>
+<p>Human motion, internet video, simulation rollouts, and interactive demonstrations contain rich information about tasks, goals, contacts, failures, and physical constraints, yet most of this information is not directly usable by robot policies because it lacks embodiment-specific action labels, task semantics, and reward structure.</p>
+</blockquote>
+<p>풀이: 인간 동작·인터넷 비디오·시뮬레이션 rollout·인터랙티브 시연은 task·목표·접촉(contact)·실패(failure)·물리적 제약에 관한 풍부한 정보를 담고 있지만, 이 정보의 대부분은 로봇 정책이 직접 쓸 수 없다 — 왜냐하면 <strong>embodiment별 action label, task semantics, reward 구조</strong>가 빠져 있기 때문이다. 세 가지 결핍이 정확히 지목된다. (1) 이 비디오 속 손은 로봇 관절이 아니므로 로봇의 action label이 없다. (2) '무엇을 하는 중인지'라는 task 의미가 붙어 있지 않다. (3) '잘하고 있는지'를 알려주는 reward 신호가 없다.</p>
+<p>결론은 프레임 전환이다. 로봇 학습을 '더 큰 정책 학습' 문제가 아니라 <strong>'비정형 데이터를 supervision으로 변환하는' 인터페이스 문제</strong>로 다시 정의해야 한다. 정책을 아무리 키워도, 먹일 supervision이 없으면 굶는다. 병목은 모델의 입이 아니라, 세상의 음식을 소화 가능한 형태로 조리하는 주방에 있다. 다음 섹션에서 그 주방을 구성하는 네 개의 인터페이스를 본다.</p></div><div class="sb-block"><h2>네 가지 missing interface</h2><p>논문은 '변환 메커니즘의 부재'를 추상적 구호로 남기지 않고, 정확히 네 개의 빠진 인터페이스(missing interface)로 분해한다. 각 인터페이스는 앞 섹션에서 지목한 세 결핍(action label·task semantics·reward)을 서로 다른 각도에서 메운다. 네 개를 나란히 놓으면 반론이 요구하는 '주방'의 설계도가 드러난다.</p>
+<p><strong>(1) Data interface — 비정형 행동을 autolabel한다.</strong> 인터넷 비디오나 인간 동작 같은 raw·unstructured 데이터에 로봇이 쓸 수 있는 구조(무엇을 하는 중인지, 어떤 객체·접촉이 관여하는지)를 자동으로 붙이는 층이다. 핵심 동사는 autolabel — 사람이 일일이 라벨링하는 게 아니라, 넘쳐나는 데이터를 자동으로 구조화해 supervision 후보로 만든다. 통념이 '데이터를 더 모으자'였다면, data interface는 '이미 있는 데이터를 라벨로 바꾸자'다.</p>
+<p><strong>(2) Embodiment interface — human motion을 robot action으로 retarget한다.</strong> 비디오 속 사람의 손·팔 궤적은 로봇의 관절·그리퍼와 물리적으로 다르다. embodiment interface는 human motion을 특정 로봇의 action space로 옮기는(retarget) 변환기다. 이것이 앞서 말한 'embodiment-specific action label이 없다'는 결핍을 정면으로 메운다. 인간의 동작을 로봇의 몸으로 번역하는 층이다.</p>
+<p><strong>(3) World-model interface — physics-grounded 3D reasoning을 제공한다.</strong> 비디오는 2D 픽셀의 흐름일 뿐, 그 안의 물리(무게·접촉력·안정성·3D 기하)는 명시되어 있지 않다. world-model interface는 관측을 physics-grounded 3D 표현으로 끌어올려, '이렇게 하면 물리적으로 무슨 일이 벌어지는지'를 추론 가능하게 만든다. 데이터 속에 암묵적으로 담긴 물리적 제약(physical constraint)을 명시적 신호로 승격시키는 층이다.</p>
+<p><strong>(4) Reward interface — video·language에서 task progress를 추론한다.</strong> raw 데이터에는 '얼마나 잘했는가'라는 reward가 붙어 있지 않다. reward interface는 비디오와 언어로부터 task progress(과제 진행도)를 추론해, 라벨 없는 시연에서도 학습 신호를 뽑아낸다. '컵이 손에 잡혔다', '물이 쏟아졌다(실패)' 같은 진행·실패 신호를 영상·언어에서 읽어내 reward 구조를 복원한다.</p>
+<p>네 인터페이스의 공통 구조를 놓치지 말자. 모두 <strong>'비정형 입력 → 로봇이 쓸 수 있는 supervision'</strong> 이라는 같은 변환을 서로 다른 축에서 수행한다. data는 구조/라벨을, embodiment는 action을, world-model은 물리/3D를, reward는 학습 신호를 채운다. 이 넷이 갖춰져야 비로소 넘쳐나는 데이터가 정책을 먹일 supervision이 된다. 반론이 말하는 'VLA와 world model 이상의 것'이 바로 이 네 인터페이스다 — 정책도 world model도 이 변환의 소비자일 뿐, 변환 그 자체는 아니다.</p></div><div class="sb-block"><h2>두 극점: NavFoM(데이터) vs COMPASS(구조)</h2><p>이 논쟁을 지도 위에 놓으면 하나의 스펙트럼이 그려진다. 한쪽 끝에는 '데이터와 스케일이 답'이라는 극점이, 반대쪽 끝에는 '구조적 분리가 답'이라는 극점이 있다. 두 실제 시스템이 이 양 극단을 선명하게 대표한다 — 데이터 극점의 NavFoM과 구조 극점의 COMPASS다.</p>
+<p><strong>데이터 극점: NavFoM.</strong> 2025년 9월 PKU-EPIC이 공개한 NavFoM(Navigation Foundation Model)은 정책 스케일링 서사를 가장 순수하게 밀어붙인 사례다. 802만 샘플 규모의 cross-embodiment(quadruped·drone·wheeled·car) × cross-task(VLN, object search, target tracking, autonomous driving) navigation 데이터로 하나의 foundation model을 학습했다. 서로 다른 카메라 구성과 시간 지평은 identifier token으로 처리하고, task-specific finetuning 없이 여러 벤치마크에서 SOTA를 달성한다. 효율성도 실전적이다 — 1600-token 예산 안에서 8-waypoint 궤적을 0.5초에 뽑는다. NavFoM의 메시지는 명확하다: 충분히 다양하고 방대한 데이터를 하나의 큰 모델에 부으면, 별도 구조 없이도 cross-embodiment 일반화가 창발한다.</p>
+<p><strong>구조 극점: COMPASS.</strong> 반대편 끝에는 COMPASS가 있다. COMPASS는 cross-embodiment mobility를 하나의 거대 모델로 삼키는 대신, <strong>구조적 분리(structural separation)</strong> 로 접근한다 — 지각·계획·제어, 혹은 공통 표현과 embodiment별 어댑터를 명시적으로 분리하고, 각 층을 특화한다. 여기서 일반화는 데이터의 양이 아니라 아키텍처의 모듈성에서 나온다. COMPASS의 메시지는 NavFoM의 정반대다: 데이터를 무작정 붓는 대신 구조를 잘 나누면, 더 적은 데이터로도 새 embodiment에 옮겨갈 수 있다.</p>
+<p>두 극점을 나란히 놓으면 이 챕터의 논쟁 축이 표로 응축된다.</p>
+<table>
+<thead>
+<tr>
+<th>구분</th>
+<th>NavFoM (데이터 극점)</th>
+<th>COMPASS (구조 극점)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>핵심 베팅</td>
+<td>데이터 규모 + 단일 대형 FM</td>
+<td>구조적 분리 + 모듈 특화</td>
+</tr>
+<tr>
+<td>일반화의 원천</td>
+<td>802만 cross-embodiment 샘플</td>
+<td>아키텍처 모듈성</td>
+</tr>
+<tr>
+<td>cross-embodiment 처리</td>
+<td>identifier token으로 흡수</td>
+<td>embodiment별 어댑터로 분리</td>
+</tr>
+<tr>
+<td>finetuning</td>
+<td>task-specific finetuning 불필요</td>
+<td>층/어댑터 단위 특화</td>
+</tr>
+<tr>
+<td>통념과의 관계</td>
+<td>정책 스케일링 통념의 화신</td>
+<td>통념에 대한 구조적 반론</td>
+</tr>
+<tr>
+<td>약점</td>
+<td>방대한 데이터·연산 요구</td>
+<td>모듈 경계 설계의 부담</td>
+</tr>
+</tbody>
+</table>
+<p>여기서 반론 논문의 위치를 정확히 짚자. 논문은 COMPASS 극점에 서서 NavFoM 극점을 비판하는 것처럼 보이기 쉽지만, 실은 더 미묘하다. 논문은 '구조가 데이터를 이긴다'고 말하는 게 아니라, <strong>양쪽 다 빠뜨린 것이 있다</strong>고 말한다 — 바로 앞 섹션의 네 인터페이스다. NavFoM처럼 데이터를 부어도, COMPASS처럼 구조를 나눠도, 비정형 데이터를 supervision으로 변환하는 인터페이스가 없으면 세상의 abundant data를 여전히 못 쓴다. 즉 이 스펙트럼은 '데이터 vs 구조'의 양자택일이 아니라, 둘 다 그 위에 인터페이스 층을 필요로 하는 좌표계다. 이 관찰이 다음 섹션, GR00T의 위치로 곧장 이어진다.</p></div><div class="sb-block"><h2>GR00T는 왜 하이브리드인가</h2><p>이제 이 코스의 중심 논제로 반론을 되돌려 보자. 반론이 겨냥한 전장 — '비정형 데이터를 supervision으로 변환하는 인터페이스' — 은 놀랍게도 GR00T가 이미 실제로 하고 있는 일과 정확히 같은 곳이다. 이것이 이 챕터의 결정적 관찰이다.</p>
+<p>GR00T의 데이터 파이프라인을 앞 챕터들의 언어로 다시 읽어보자. GR00T는 인터넷 비디오와 인간 동작을 autolabel해 학습 데이터로 끌어들이고(→ data interface), human motion을 로봇 action space로 retarget하며(→ embodiment interface), Cosmos world model로 physics-grounded 장면을 다루고(→ world-model interface), 시연·영상에서 task 신호를 뽑아 정책을 학습시킨다(→ reward interface). 논문이 '빠져 있다'고 지목한 네 인터페이스가, GR00T 아키텍처에서는 파이프라인의 실제 구성요소로 존재한다. 반론이 그린 '주방'의 설계도와 GR00T가 지은 주방의 도면이 겹친다.</p>
+<p>여기서 GR00T가 왜 '하이브리드'로 설계되었는지가 새로운 각도에서 납득된다. NavFoM 극점(데이터·스케일)과 COMPASS 극점(구조적 분리) 사이에서, GR00T는 어느 한쪽을 택하지 않는다. 대신 <strong>비정형 데이터를 대규모로 supervision으로 변환하는 인터페이스 층</strong>을 파이프라인의 중심에 놓고, 그 위에 대형 VLA 정책(데이터 극점의 강점)과 world model 기반 계획·구조(구조 극점의 강점)를 함께 얹는다. GR00T의 하이브리드는 '데이터도 쓰고 구조도 쓴다'는 절충이 아니라, <strong>두 극점 모두가 필요로 하는 변환 인터페이스를 1급 시민으로 승격시킨</strong> 설계다.</p>
+<p>이 관점은 반론과 GR00T의 관계를 흥미롭게 재배치한다. 반론 논문은 표면적으로 대형 VLA 진영(GR00T 포함)을 때리는 것처럼 읽히지만, 정작 논문이 처방하는 네 인터페이스는 GR00T가 이미 구현 중인 것이다. 다시 말해, <strong>반론이 '있어야 한다'고 주장하는 것과 GR00T가 '하고 있는' 것이 같은 전장에서 만난다.</strong> GR00T의 하이브리드 설계가 우연이 아닌 이유가 여기 있다 — 정책 스케일링만으로도, 순수 구조적 분리만으로도 로봇이 풀리지 않는다면, 남는 답은 '데이터를 supervision으로 바꾸는 인터페이스를 중심에 둔 하이브리드'다. GR00T는 그 답을 아키텍처로 먼저 구현한 셈이다.</p>
+<p>물론 이것이 반론을 무력화하지는 않는다. 논문의 진짜 기여는 이 인터페이스들을 <strong>명시적 연구 어젠다로 못 박은</strong> 것이다. GR00T가 이들을 파이프라인에 녹여 넣었다면, 논문은 각 인터페이스를 독립된 과학적 문제로 분리해 '여기가 진짜 프런티어다'라고 선언한다. autolabel의 정확도, retarget의 embodiment gap, video-reward의 신뢰성 — 이 각각이 아직 풀리지 않은 문제다. GR00T의 하이브리드가 방향이 옳음을 보여준다면, 반론은 그 방향 위에 남은 구체적 난제들의 지도를 그린다. 통념(더 큰 VLA)과 하이브리드(GR00T) 사이의 진짜 논쟁은 '정책이냐 구조냐'가 아니라 '변환 인터페이스를 얼마나 잘 만드느냐'로 수렴한다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">정제소 없는 유전, 색인 없는 도서관</div>
+      <div class="a-body"><p>반론의 핵심을 몸으로 느끼려면 두 개의 그림을 겹쳐 보면 된다.</p>
+<p>첫째, <strong>정제소 없는 유전</strong>이다. 통념은 '원유(데이터)를 더 많이 퍼 올리면 부자가 된다'고 말한다. 하지만 원유는 땅에서 나온 그대로는 자동차에 넣을 수 없다 — 정제(refining)를 거쳐 휘발유·경유로 바꿔야 엔진이 돈다. 반론이 말하는 것이 정확히 이것이다. 세상에는 인간 동작·인터넷 비디오·시뮬레이션이라는 원유가 abundant하게 넘쳐난다. 그런데 로봇 정책이라는 엔진은 원유를 못 태운다. 필요한 건 유전을 더 파는 게 아니라 정제소를 짓는 것이다. 네 가지 missing interface가 바로 정제 공정의 네 단계다 — 불순물을 걸러 구조를 붙이고(data), 우리 엔진 규격에 맞게 옥탄가를 맞추고(embodiment), 연소 특성을 파악하고(world-model), 얼마나 잘 타는지 계량한다(reward).</p>
+<p>둘째, <strong>색인 없는 도서관</strong>이다. 세상에서 가장 큰 도서관에 수억 권의 책(비디오·시연)이 꽂혀 있다고 하자. 그 안에는 로봇이 배워야 할 모든 지식 — 어떻게 컵을 잡고, 어디서 실패하고, 물리가 어떻게 작동하는지 — 이 담겨 있다. 하지만 책들이 아무 순서 없이 쌓여 있고, 대부분 로봇이 못 읽는 외국어(인간의 몸)로 쓰여 있으며, '이 책이 무슨 주제인지', '어디가 정답이고 어디가 오답인지'를 알려주는 색인과 주석이 없다면? 장서량이 아무리 많아도 아무도 그 지식을 꺼내 쓰지 못한다. 통념은 '책을 더 사들이자'(<span class="math-inline">\(\text{성능} \propto \text{장서량}\)</span>)고 하지만, 반론은 '먼저 색인과 번역과 주석을 만들자'고 말한다 — 색인(data interface), 번역(embodiment interface), 물리 해설(world-model interface), 정오표(reward interface).</p>
+<p>두 그림의 공통 교훈은 하나다. <strong>자원의 가치는 그것을 쓸 수 있게 만드는 변환 장치가 결정한다.</strong> 원유의 가치는 정제소가, 장서의 가치는 색인이 만든다. 데이터의 가치는 그것을 supervision으로 바꾸는 인터페이스가 만든다. 그래서 '더 큰 정책 + 더 많은 데이터'라는 통념은, 정제소도 색인도 없이 유전과 도서관만 키우자는 말과 같다. GR00T가 하이브리드인 이유는, 유전을 파는 동시에 정제소를 짓기로 했기 때문이다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>반론이 말하는 '데이터→supervision 변환'을 코드로 만져보자. 아래는 라벨 없는 raw 비디오 한 편을, 로봇이 학습에 쓸 수 있는 (pseudo action label, reward) 시퀀스로 변환하는 인터페이스의 개념적 스케치다. 실제 시스템이 아니라, 네 인터페이스가 파이프라인에서 어떻게 협업하는지를 드러내는 illustrative 예제다. 핵심 대비: 통념은 이런 변환 없이 (obs, action)이 이미 주어졌다고 가정하지만(<span class="math-inline">\(\text{loss}=\|\pi(o)-a^*\|\)</span>의 <span class="math-inline">\(a^*\)</span>가 공짜라고 봄), 현실의 비정형 비디오에는 <span class="math-inline">\(a^*\)</span>도 reward도 붙어 있지 않다. 이 함수가 그 결핍을 메우는 변환기다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import numpy as np
+
+def video_to_robot_supervision(frames, instruction, robot):
+    &quot;&quot;&quot;라벨 없는 raw 비디오 -&gt; 로봇 학습용 (pseudo_action, reward) 시퀀스.
+    네 missing interface를 한 파이프라인으로 엮은 개념 스케치.
+    frames: 인간이 task를 수행하는 raw 비디오 (T x H x W x 3)
+    instruction: 자연어 task 설명 (예: &#x27;pour water into the cup&#x27;)
+    robot: 대상 embodiment (관절/그리퍼 규격)
+    &quot;&quot;&quot;
+    # (1) data interface: raw 프레임을 autolabel -&gt; 구조화된 장면 표현
+    #     무엇이 있고(객체), 어디에 접촉이 일어나는지 자동 태깅
+    scene = autolabel_objects_and_contacts(frames)      # per-frame struct
+
+    # (3) world-model interface: 2D 픽셀 -&gt; physics-grounded 3D 상태
+    #     사람 손/객체의 3D pose, 접촉력, 물리 제약을 복원
+    states3d = lift_to_physics_3d(frames, scene)          # T x state_dim
+
+    # (2) embodiment interface: human motion -&gt; robot action으로 retarget
+    #     사람 손 궤적을 대상 로봇의 action space로 번역
+    pseudo_actions = np.stack([
+        retarget_human_to_robot(states3d[t], robot)       # -&gt; robot.act_dim
+        for t in range(len(states3d))
+    ])
+
+    # (4) reward interface: video+language에서 task progress를 추론
+    #     매 프레임 &#x27;얼마나 목표에 가까워졌나&#x27;를 [0,1] progress로
+    progress = infer_task_progress(frames, instruction)   # T, in [0,1]
+    # progress의 증가분을 dense reward로, 실패 감지 시 페널티
+    reward = np.diff(progress, prepend=progress[0])
+    reward[detect_failures(states3d)] -= 1.0
+
+    # 이제서야 로봇 정책이 소비 가능한 supervision이 완성됨
+    return {&quot;actions&quot;: pseudo_actions, &quot;reward&quot;: reward, &quot;states&quot;: states3d}
+
+# 통념과의 대비:
+#   통념:  loss = ||policy(obs) - a_expert||   # a_expert가 이미 있다고 가정
+#   현실:  a_expert도 reward도 없음 -&gt; 위 변환기가 먼저 만들어야 함
+#          &#x27;더 큰 policy&#x27;는 이 변환 뒤에야 의미가 있다</code></pre>
+      <div class="c-walk"><p>이 스케치의 뼈대가 곧 반론의 논지다. 입력은 라벨 없는 raw 비디오 한 편 — 통념이 '데이터'라 부르지만 정작 로봇은 못 먹는 원유다. 함수는 이걸 네 단계로 정제한다. (1) <code>autolabel_objects_and_contacts</code>가 data interface로 raw 프레임에 구조(객체·접촉)를 붙이고, (3) <code>lift_to_physics_3d</code>가 world-model interface로 2D 픽셀을 physics-grounded 3D 상태로 끌어올린다. (2) <code>retarget_human_to_robot</code>이 embodiment interface의 핵심 — 사람 손 궤적을 대상 로봇의 <span class="math-inline">\(act\_dim\)</span> 차원 action으로 번역해, 비디오에 없던 embodiment-specific action label을 생성한다. (4) <code>infer_task_progress</code>가 reward interface로 영상·언어에서 task progress를 추론하고, 그 증가분을 dense reward로, 실패 감지 시 페널티를 준다 — 원본에 전혀 없던 reward 구조를 복원하는 것이다. 리턴값 <code>{actions, reward, states}</code>가 비로소 정책이 학습에 쓸 수 있는 grounded supervision이다. 맨 아래 주석이 이 챕터의 대비를 압축한다: 통념의 loss는 <span class="math-inline">\(a_{expert}\)</span>가 공짜로 주어졌다고 가정하지만, 현실의 비정형 비디오엔 <span class="math-inline">\(a_{expert}\)</span>도 reward도 없다. '더 큰 policy'는 이 변환기가 먼저 supervision을 만들어낸 뒤에야 의미를 가진다. 네 함수가 전부 <code>...</code>로 비어 있다는 사실 자체가 반론의 결론이다 — 이 각각이 아직 풀리지 않은 연구 프런티어다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">정책 스케일링 통념 vs 인터페이스 중심 관점의 논쟁은 2026년 로봇 학습에서 가장 성숙한 senior/staff급 토론 주제다. VLA를 &#x27;언어 모델처럼 스케일하면 된다&#x27;고만 이해하면 주니어 신호이고, 진짜 병목이 데이터를 supervision으로 변환하는 인터페이스에 있음을 논증하면 강한 시그널이다. NavFoM(데이터 극점)과 COMPASS(구조 극점)를 좌표로 놓고, GR00T의 하이브리드가 두 극점 모두가 필요로 하는 변환 인터페이스를 중심에 둔 설계임을 설명할 수 있으면 연구·아키텍처 판단력이 드러난다. 「Robots Need More than VLA and World Models」의 네 인터페이스는 면접에서 &#x27;로봇 데이터 병목이 뭐냐&#x27;는 질문의 모범 프레임이다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>로봇 학습의 병목을 &#x27;데이터 양&#x27;이 아니라 &#x27;비정형 데이터를 grounded supervision으로 변환하는 인터페이스의 부재&#x27;로 재정의</li><li>네 missing interface(data autolabel, embodiment retarget, world-model 3D reasoning, reward from video/language)를 각각 어떤 결핍(action label·task semantics·reward)을 메우는지와 함께 설명</li><li>NavFoM(데이터·스케일 극점)과 COMPASS(구조적 분리 극점)를 하나의 스펙트럼 위 좌표로 대비</li><li>GR00T의 autolabel/retarget 파이프라인이 논문이 지목한 네 인터페이스와 같은 전장임을 인지하고, 하이브리드 설계의 필연성을 논증</li><li>정책 스케일링만으로 로봇이 풀리지 않는 이유를 language scaling law와의 disanalogy(action label·reward 결핍)로 설명</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>VLA를 &#x27;LLM처럼 크게·데이터 많이 하면 풀린다&#x27;는 정책 스케일링 프레임으로만 이해</li><li>데이터 병목을 &#x27;양이 부족하다&#x27;로만 보고, 변환·supervision 결핍이라는 진짜 병목을 놓침</li><li>네 인터페이스를 뭉뚱그려 &#x27;world model이 다 해준다&#x27;로 얼버무리고 embodiment retarget·reward inference를 구분 못 함</li><li>NavFoM과 COMPASS를 단순 우열로만 보고 &#x27;데이터 vs 구조&#x27; 스펙트럼과 둘 다 인터페이스가 필요하다는 관찰을 놓침</li><li>반론 논문을 &#x27;GR00T 비판&#x27;으로만 읽고, 논문이 처방한 인터페이스가 GR00T가 이미 하는 일과 겹친다는 아이러니를 못 봄</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>&#x27;더 큰 VLA를 더 많은 시연으로 학습하면 로봇이 풀린다&#x27;는 통념을 비판하라. language scaling law가 로봇에 그대로 적용되지 않는 이유를 action label과 reward 결핍 관점에서 논증하라.</li><li>「Robots Need More than VLA and World Models」의 네 missing interface를 각각 설명하고, 인간 시연 비디오 한 편이 로봇 supervision이 되기까지 어떤 순서로 이 인터페이스들을 거치는지 파이프라인으로 그려라.</li><li>NavFoM(802만 샘플 cross-embodiment FM)과 COMPASS(구조적 분리)를 하나의 스펙트럼 양 극점으로 놓고 대비하라. 반론 논문은 이 스펙트럼의 어디에 서 있는가, 아니면 스펙트럼 자체를 재정의하는가?</li><li>GR00T의 autolabel/retarget 파이프라인이 반론이 지목한 인터페이스와 같은 전장이라면, GR00T의 하이브리드 설계는 반론을 반박하는가 아니면 입증하는가? 남는 프런티어는 무엇인가?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> Familiar: VLA·world model·scaling·NavFoM·COMPASS 같은 용어를 안다. Mastery: 로봇 학습의 병목을 정책 크기가 아니라 &#x27;비정형 데이터를 grounded supervision으로 변환하는 인터페이스의 부재&#x27;로 재정의하고, 네 missing interface가 각각 어떤 결핍을 메우는지 파이프라인으로 설명한다. NavFoM과 COMPASS를 데이터·구조 스펙트럼의 두 극점으로 좌표화하고, 반론이 두 극점 모두 인터페이스 층을 필요로 함을 지적하는 재정의임을 안다. 결정적으로, 논문이 처방한 인터페이스가 GR00T의 autolabel/retarget 파이프라인과 같은 전장임을 간파해 GR00T 하이브리드가 우연이 아닌 필연임을 논증하고, 각 인터페이스가 아직 풀리지 않은 연구 프런티어임을 구분한다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>통념은 로봇을 &#x27;정책 스케일링 문제&#x27;로 본다</h3><p>더 큰 VLA를 더 많은 시연으로 학습하면 LLM처럼 로봇도 풀린다는 서사. 병목을 모델 용량과 데이터 양으로 보고, 해법을 둘 다 늘리는 것으로 프레이밍한다. 「Robots Need More than VLA and World Models」가 정면으로 반박하는 대상이다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>진짜 병목은 데이터→supervision 변환의 부재</h3><p>논문 원문: &#x27;the absence of mechanisms that convert the world&#x27;s abundant unstructured behavioural data into grounded robot supervision.&#x27; 데이터는 이미 넘치지만(abundant) 비정형(unstructured)이라 로봇이 못 쓴다. 문제는 양이 아니라 변환이다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>비정형 데이터엔 세 가지가 빠져 있다</h3><p>인간 동작·인터넷 비디오·시뮬레이션 rollout은 task·목표·접촉·실패·물리 제약을 담지만 embodiment별 action label, task semantics, reward 구조가 없어 정책이 직접 소화하지 못한다. 이 세 결핍이 네 인터페이스의 존재 이유다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>네 가지 missing interface가 변환 주방을 이룬다</h3><p>data(비정형을 autolabel), embodiment(human motion을 robot action으로 retarget), world-model(physics-grounded 3D reasoning), reward(video·language에서 task progress 추론). 넷 모두 &#x27;비정형 입력을 로봇 supervision으로&#x27; 변환하는 같은 일을 다른 축에서 한다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>NavFoM과 COMPASS는 데이터·구조 두 극점</h3><p>NavFoM은 802만 cross-embodiment 샘플을 단일 FM에 부어 finetuning 없이 SOTA를 내는 데이터 극점의 화신. COMPASS는 구조적 분리로 모듈 특화하는 구조 극점. 반론은 둘 중 하나를 편드는 게 아니라 양쪽 다 인터페이스 층이 빠졌다고 지적한다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>반론의 전장 = GR00T가 이미 하는 일</h3><p>논문이 &#x27;있어야 한다&#x27;는 네 인터페이스는 GR00T의 autolabel/retarget 파이프라인과 정확히 같은 전장이다. GR00T는 데이터 극점과 구조 극점 사이에서 변환 인터페이스를 1급 시민으로 승격시킨 하이브리드다 — 이 설계는 우연이 아니다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>논쟁은 &#x27;정책이냐 구조냐&#x27;가 아니라 &#x27;인터페이스를 얼마나 잘 만드느냐&#x27;</h3><p>정책 스케일링만으로도, 순수 구조적 분리만으로도 로봇은 풀리지 않는다. 남는 답은 변환 인터페이스를 중심에 둔 하이브리드. 통념과 GR00T의 진짜 논쟁은 인터페이스의 품질로 수렴한다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>인터페이스 각각이 아직 풀리지 않은 프런티어</h3><p>GR00T가 방향이 옳음을 보인다면, 반론의 기여는 autolabel 정확도·retarget의 embodiment gap·video-reward 신뢰성 같은 각 인터페이스를 독립된 과학 문제로 못 박은 것이다. 하이브리드가 정답 방향이어도 그 위의 난제 지도는 여전히 열려 있다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-08.html">← Navigation: What Got Absorbed, What Didn&#x27;t</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-10.html">Evaluation, Deployment &amp; Open Frontiers →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

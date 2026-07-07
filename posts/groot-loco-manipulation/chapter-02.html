@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch2: COMPASS as a Data Engine — GR00T &amp; NVIDIA Physical AI 2026 — direcf</title>
+  <meta name="description" content="COMPASS의 3단계(IL + Residual RL + Policy Distillation)와 X-Mobility world model을 복습하고, 이 mobility 특화 정책이 2026년 GR00T의 point-to-point navigation finetune 데이터원으로 재배치된 경로를 추적한다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;height:22px;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><linearGradient id="direcf-nav-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs></svg>
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg></span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg></span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.25 15a4.5 4.5 0 0 0 4.5 4.5H18a3.75 3.75 0 0 0 1.332-7.257 3 3 0 0 0-3.758-3.848 5.25 5.25 0 0 0-10.233 2.33A4.502 4.502 0 0 0 2.25 15Z"/></svg></span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"/></svg></span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg></span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/physical-ai">GR00T &amp; NVIDIA Physical AI 2026</a><span class="sep">›</span>
+        <strong>Ch02 COMPASS as a Data Engine</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 02 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🔁</div>
+      <h1 class="chapter-title">COMPASS as a Data Engine</h1>
+      <div class="chapter-title-kr">데이터 엔진이 된 COMPASS — 죽지 않고 재배치되다</div>
+      <div class="chapter-tldr">COMPASS의 3단계(IL + Residual RL + Policy Distillation)와 X-Mobility world model을 복습하고, 이 mobility 특화 정책이 2026년 GR00T의 point-to-point navigation finetune 데이터원으로 재배치된 경로를 추적한다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-02.png" alt="Chapter 2 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 2 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>COMPASS의 IL to Residual RL to Distillation 3단계를 각각의 역할과 함께 설명할 수 있다</li><li>X-Mobility의 world-model IL이 왜 base policy로 freeze되는지 안다</li><li>residual RL이 covariate shift를 어떻게 완화하는지 수식으로 설명할 수 있다</li><li>COMPASS가 독립 제품에서 GR00T 데이터 엔진으로 재배치된 근거(원문)를 안다</li><li>specialist to generalist distillation 문법을 GR00T 맥락에서 재해석할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>1챕터에서 우리는 이 코스의 중심 좌표 — '데이터 스케일링 vs 구조적 분리' — 를 세웠고, 2026년 GR00T N1.6이 navigation과 manipulation을 하나의 reasoning VLA로 통합하되 그 내부는 여전히 하이브리드(합성데이터 공장 × 계층 아키텍처 × specialist distillation)라는 논지를 예고했다. 이번 챕터는 그 하이브리드의 첫 조각, 즉 <strong>navigation 쪽 공급망</strong>을 해부한다. 그리고 그 공급망의 심장에 바로 선행 코스의 주인공 <a href="https://arxiv.org/abs/2502.16372">COMPASS(arXiv:2502.16372)</a>가 있다.</p>
+<p>COMPASS는 2025년 2월 NVIDIA가 내놓은 'the next version of X-Mobility, an end-to-end generalizable mobility model'이다. 한 문장으로 요약하면 <strong>IL로 base를 깔고(freeze) → Residual RL로 각 embodiment를 보정하고 → Policy Distillation으로 하나의 generalist로 합치는</strong> 3단계 파이프라인이다. 이 세 단계는 각각 다른 병을 치료한다. IL은 world-model prior를 심고, Residual RL은 IL이 필연적으로 남기는 covariate shift를 <span class="math-inline">\(a = a_{\text{base}} + a_{\text{res}}\)</span>로 보정하며, Distillation은 여러 embodiment specialist를 KL로 녹여 cross-embodiment generalist를 만든다. 이 챕터의 전반부는 이 3단계를 각 단계가 '무슨 병을 치료하는가'의 관점에서 다시 못 박는다.</p>
+<p>하지만 이 챕터의 진짜 목표는 그다음에 있다. 2025년의 COMPASS는 Nova Carter·H1·G1·Spot을 모두 모는 <strong>독립 mobility 제품</strong>이었다. 그런데 2026년 GR00T 서사에서 COMPASS는 제품의 자리를 내려놓고 다른 역할로 재배치된다 — NVIDIA의 표현을 빌리면 <em>"GR00T N1.6 is finetuned for point-to-point navigation using large-scale synthetic datasets generated by COMPASS in Isaac Lab."</em> 즉 COMPASS는 이제 <strong>GR00T의 navigation을 finetune하기 위한 데이터를 찍어내는 엔진</strong>이다. 정책이 제품에서 데이터 공장으로 내려앉는 이 이동을, 우리는 3단계 파이프라인의 논리적 귀결로 읽어낼 것이다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>COMPASS 3단계 파이프라인 — 각 단계가 치료하는 병</h2><p>COMPASS의 3단계는 임의로 나눈 것이 아니라, <strong>cross-embodiment mobility가 겪는 세 가지 서로 다른 실패</strong>에 각각 대응한다. 단계를 '무엇을 하는가'가 아니라 '무슨 병을 치료하는가'로 읽어야 파이프라인이 왜 이 순서인지 이해된다.</p>
+<p><strong>1단계 — Imitation Learning(prior 심기).</strong> 먼저 X-Mobility world model을 대규모 시연 데이터로 IL 학습해, 환경 dynamics를 압축한 latent state와 그 위의 base velocity policy <span class="math-inline">\(\pi_{\text{base}}\)</span>를 얻는다. 이 단계가 치료하는 병은 <strong>cold-start</strong>다. RL을 맨땅에서 돌리면 navigation처럼 reward가 희소하고 지평이 긴 문제에서 탐색이 폭발해 수렴하지 못한다. IL은 '대충 맞는 행동의 분포'라는 강한 prior를 깔아 이후 RL의 탐색 공간을 좁힌다.</p>
+<p><strong>2단계 — Residual RL(covariate shift 보정).</strong> IL로 학습한 <span class="math-inline">\(\pi_{\text{base}}\)</span>를 <strong>얼려두고(freeze)</strong>, 그 위에 작은 residual policy <span class="math-inline">\(\pi_{\text{res}}\)</span>만 RL로 학습한다. 실제 실행 행동은 <span class="math-inline">\(a = a_{\text{base}} + a_{\text{res}}\)</span>다. 이 단계가 치료하는 병은 <strong>covariate shift</strong> — IL 정책이 자기 오차로 학습 분포 밖 상태에 진입하면서 점점 어긋나는 현상 — 이다. residual은 base가 놓인 궤적을 각 embodiment의 실제 dynamics에 맞게 국소적으로 밀어준다. 특히 base를 freeze하기 때문에 world-model이 준 prior를 훼손하지 않으면서 보정만 얹는다.</p>
+<p><strong>3단계 — Policy Distillation(파편화 봉합).</strong> 2단계가 끝나면 embodiment마다 하나씩 specialist가 생긴다(Nova Carter용, H1/G1용, Spot용). 3단계는 이 여러 specialist를 <strong>one-hot embodiment embedding</strong>으로 조건화된 하나의 student policy로 KL-distill한다. 목적함수는 대략 <span class="math-inline">\(\mathcal{L} = \sum_{e} \mathbb{E}\big[ D_{\text{KL}}(\pi_{e}^{\text{teacher}} \,\|\, \pi^{\text{student}}(\cdot\mid s, e)) \big]\)</span>로, embodiment 인덱스 <span class="math-inline">\(e\)</span>를 입력으로 받아 teacher별 행동 분포를 모사한다. 이 단계가 치료하는 병은 <strong>파편화(fragmentation)</strong>다. specialist를 따로 두면 배포·유지가 N배로 늘고 새 embodiment로의 전이가 안 되지만, 하나의 conditioned generalist는 embodiment embedding만 갈아끼워 재사용된다.</p>
+<p>세 단계를 한 줄로 잇는 표어: <strong>prior를 심고(IL) → 어긋남을 보정하고(Residual RL) → 파편을 봉합한다(Distillation).</strong> 논문이 보고하는 성과 — RL-from-scratch 대비 success rate 5~40배, 그리고 RL-from-scratch는 1000 episode에도 수렴 실패 — 는 이 세 병을 순서대로 치료했기에 나온 결과이지, 모델을 키워서 얻은 것이 아니다. 이것이 '구조가 데이터를 이긴다'는 선행 코스 결론의 압축이다.</p>
+<table>
+<thead>
+<tr>
+<th>단계</th>
+<th>이름</th>
+<th>치료하는 병</th>
+<th>핵심 메커니즘</th>
+<th>학습 대상</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Imitation Learning</td>
+<td>cold-start (탐색 폭발)</td>
+<td>X-Mobility world-model IL</td>
+<td>base policy 전체</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Residual RL</td>
+<td>covariate shift (IL 오차 누적)</td>
+<td>a = a_base + a_res, base freeze</td>
+<td>residual head만</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Policy Distillation</td>
+<td>파편화 (embodiment별 정책)</td>
+<td>one-hot embedding KL distill</td>
+<td>conditioned student</td>
+</tr>
+</tbody>
+</table></div><div class="sb-block"><h2>X-Mobility — freeze되는 world-model base</h2><p>COMPASS의 base policy는 처음부터 새로 만든 것이 아니라 선행 연구 <a href="https://arxiv.org/abs/2410.17491">X-Mobility(arXiv:2410.17491)</a>를 그대로 얼려서 가져온 것이다. X-Mobility의 핵심 설계는 <strong>auto-regressive world modeling으로 latent state space를 학습하고, world modeling과 action policy를 decouple</strong>하는 것이다. 이 두 성질(world model, decoupling)이 왜 COMPASS의 freeze 전략과 맞물리는지가 이 절의 요점이다.</p>
+<p><strong>왜 world model인가.</strong> navigation은 부분 관측(partial observability) 문제다. 한 프레임 RGB는 벽 뒤의 통로도, 방금 지나친 장애물도, 자신의 진행 관성도 담지 못한다. X-Mobility는 과거를 압축한 latent state <span class="math-inline">\(s_t \approx f(s_{t-1}, a_{t-1})\)</span>를 auto-regressive하게 유지해, '지금 안 보이지만 존재하는' 환경 구조를 기억한다. 정책은 한 장의 사진이 아니라 '흘러가는 세계의 요약'을 입력으로 받는다. 이 latent가 곧 cross-embodiment로 공유될 <strong>공통 표현(shared representation)</strong>의 후보가 된다 — 지형·장애물·자유공간의 구조는 바퀴로 굴러가든 두 발로 걷든 동일하기 때문이다.</p>
+<p><strong>왜 decouple인가.</strong> X-Mobility는 '세계가 어떻게 변하는가(world modeling)'와 '그래서 무엇을 할까(action policy)'를 분리해 학습한다. 이 분리 덕분에 COMPASS는 world modeling 부분을 embodiment-agnostic한 자산으로 얼려두고, action 쪽만 residual/distillation으로 갈아끼울 수 있다. 만약 둘이 한 덩어리로 엉켜 있었다면, 한 embodiment의 RL 신호가 world model까지 흔들어 다른 embodiment의 표현을 오염시키고, 3단계 distillation이 합칠 <strong>공통 기반 자체가 매번 달라졌을</strong> 것이다.</p>
+<p><strong>그래서 freeze한다.</strong> COMPASS에서 X-Mobility base는 학습 내내 gradient를 받지 않는다. freeze는 단순 연산 절약이 아니라 두 기능을 동시에 노린 설계 결정이다. (1) <strong>RL 수렴을 위한 action prior</strong> — base가 이미 '대충 맞는 행동'을 내주므로 residual RL의 탐색이 국소화되어 수렴한다. (2) <strong>distillation을 위한 공통 표현 보존</strong> — 모든 embodiment specialist가 같은 얼린 latent 위에 서 있어야 나중에 하나로 녹일 수 있다. 이 두 기능이 곧 선행 코스가 강조한 'RL-from-scratch는 실패한다(1000 episode 미수렴)'의 근본 원인이다. latent만 있고 얼린 prior가 없으면 world-model의 이점이 탐색 폭발에 삼켜진다.</p></div><div class="sb-block"><h2>Residual RL과 covariate shift — 왜 base 위에 얹는가</h2><p>Residual RL의 계보는 <strong>Johannink 2019</strong>로 거슬러 올라가고, 최근 <a href="https://arxiv.org/abs/2407.16677">Ankile 2024(arXiv:2407.16677)</a>로 manipulation·contact-rich 과제에서 부활했다. 아이디어는 한 줄이다: 잘 작동하지만 불완전한 base 정책이 있을 때, 그것을 버리고 새로 배우는 대신 <strong>차이(residual)만 학습</strong>한다.</p>
+<p><span class="math-display">\[a_t = a_t^{\text{base}} + a_t^{\text{res}}, \qquad a_t^{\text{base}} = \pi_{\text{base}}(s_t)\ \text{(frozen)},\quad a_t^{\text{res}} = \pi_{\theta}^{\text{res}}(s_t)\]</span></p>
+<p>학습은 오직 residual 파라미터 <span class="math-inline">\(\theta\)</span>에 대해서만 이루어진다. base는 상수처럼 취급되므로 정책 gradient는 <span class="math-inline">\(\nabla_{\theta} J = \mathbb{E}\big[ \nabla_{\theta}\log \pi_{\theta}^{\text{res}}(a_t^{\text{res}}\mid s_t)\, A_t \big]\)</span> 형태로 residual head에만 흐른다. residual을 0 근처에서 초기화하면 학습 초기의 정책은 곧 <span class="math-inline">\(\pi_{\text{base}}\)</span> 자체이므로, RL은 '검증된 정책'에서 출발해 안전하게 개선을 쌓는다. 이것이 cold-start 없이 sample-efficient한 이유다.</p>
+<p><strong>그런데 왜 굳이 residual이 covariate shift를 치료하는가.</strong> covariate shift는 IL의 고질병이다. IL 정책 <span class="math-inline">\(\pi_{\text{base}}\)</span>는 전문가 시연 분포 <span class="math-inline">\(d_{\text{expert}}(s)\)</span> 위에서만 학습됐는데, 배포 시에는 자기 자신이 만든 분포 <span class="math-inline">\(d_{\pi}(s)\)</span> 위를 굴러간다. 작은 오차가 학습에서 본 적 없는 상태로 정책을 밀어내고, 그곳에서 정책은 더 큰 오차를 내며, 오차가 시간에 따라 누적된다. 고전적 결과(DAgger 계열 분석)에 따르면 이 누적은 최악의 경우 지평 <span class="math-inline">\(T\)</span>에 대해 <span class="math-inline">\(O(T^2)\)</span>로 커진다 — 한 스텝의 오차가 이후 모든 스텝의 상태 분포를 오염시키기 때문이다.</p>
+<p>residual RL은 이 병을 정면으로 겨냥한다. RL은 IL과 달리 <strong>정책 자신이 방문하는 on-policy 분포 <span class="math-inline">\(d_{\pi}\)</span> 위에서</strong> reward로 학습한다. 즉 covariate shift가 실제로 발생하는 바로 그 상태들 위에서 보정을 배운다. base가 놓친 '학습 분포 밖' 영역에서 <span class="math-inline">\(a^{\text{res}}\)</span>가 궤적을 되돌려, IL이라면 <span class="math-inline">\(O(T^2)\)</span>로 발산했을 오차를 선형에 가깝게 억제한다. 요컨대 IL은 '평균적으로 맞는' 행동을, residual RL은 '내가 실제로 가는 곳에서 맞는' 행동을 담당한다. 각 embodiment의 dynamics(바퀴 vs 다리 vs 사족)가 base가 가정한 것과 다를 때, 그 차이가 정확히 <span class="math-inline">\(a^{\text{res}}\)</span>가 흡수해야 할 몫이다.</p>
+<p>마지막으로 이 설계는 3단계 distillation과 논리적으로 이어진다. residual만 embodiment별로 다르고 base(world model)는 공유되므로, distillation이 합쳐야 할 것은 '완전히 다른 N개 정책'이 아니라 '같은 base 위의 N개 보정'이다. 공통 base가 이미 정렬을 만들어 두었기에 KL distill이 잘 수렴한다.</p></div><div class="sb-block"><h2>COMPASS의 재배치 — 제품에서 데이터 엔진으로</h2><p>2025년의 COMPASS는 그 자체로 배포 가능한 mobility 정책이었다. Nova Carter(wheeled)·Unitree H1/G1(humanoid)·Spot(quadruped)을 하나의 generalist로 모는, NVIDIA Open Models License(상업 사용 가능) 하의 독립 제품. 그런데 2026년 GR00T 서사에서 COMPASS의 위치가 바뀐다. NVIDIA는 이렇게 쓴다:</p>
+<blockquote>
+<p>"GR00T N1.6 is finetuned for point-to-point navigation using large-scale synthetic datasets generated by COMPASS in Isaac Lab."</p>
+</blockquote>
+<p>(GR00T N1.6은 Isaac Lab에서 COMPASS가 생성한 대규모 합성 데이터셋을 사용해 point-to-point navigation용으로 finetune된다.)</p>
+<p>이 한 문장에 재배치의 전모가 담겨 있다. COMPASS는 더 이상 로봇에 올라가 실행되는 <strong>최종 정책</strong>이 아니다. 대신 Isaac Lab 시뮬레이션 안에서 무한히 굴러다니며 '이 상황에서는 이렇게 이동한다'는 <strong>navigation 궤적 데이터를 대량 생산하는 엔진</strong>이 되고, 그 데이터로 GR00T N1.6이라는 더 큰 VLA가 point-to-point navigation 능력을 흡수한다. 정책이 제품에서 데이터 공장으로 한 층 내려앉은 것이다.</p>
+<p><strong>왜 이 재배치가 자연스러운가.</strong> 세 가지 성질이 COMPASS를 이상적인 데이터 엔진으로 만든다. (1) <strong>cross-embodiment generalist</strong> — 이미 여러 로봇을 모니, 한 엔진이 다양한 embodiment의 navigation 데이터를 찍어낼 수 있다. (2) <strong>시뮬레이션 네이티브</strong> — COMPASS는 Isaac Lab에서 학습됐고 거기서 그대로 굴리면 domain randomization과 대규모 병렬로 데이터를 값싸게 스케일할 수 있다. (3) <strong>검증된 policy</strong> — 3단계로 다듬어진 정책이 만드는 궤적은 무작위 탐색보다 훨씬 높은 품질의 supervision이다. 요컨대 COMPASS의 산출물이 '실행되는 행동'에서 '학습시키는 라벨'로 재정의된 것이다.</p>
+<p><strong>이것이 코스 논지에 갖는 의미.</strong> GR00T N1.6은 겉보기엔 navigation을 '데이터로 흡수한' 통합 VLA처럼 보인다. 하지만 그 데이터의 출처를 파고들면, 흡수를 가능케 한 것은 <strong>구조적으로 설계된 COMPASS 파이프라인</strong>(freeze된 world model + residual + distillation)이 찍어낸 합성 데이터다. 즉 GR00T의 '데이터 스케일링'은 순수한 데이터 스케일링이 아니라 <strong>구조가 생산한 데이터의 스케일링</strong>이다. 데이터 스케일링과 구조적 분리는 대립이 아니라, 후자가 전자의 공급원이 되는 관계로 접합된다 — 이 챕터가 코스 전체 논지에 놓는 첫 번째 쐐기다.</p>
+<p>한 가지 경계도 분명히 하자. COMPASS가 공급하는 것은 point-to-point navigation, 즉 '어디로 갈까'의 고수준 이동 결정에 가깝다. metric localization(정확히 어디에 있는가)까지 이 데이터 엔진이 삼킨 것은 아니며, 그 경계선은 8챕터에서 geometric SLAM 스택과 함께 다시 다룬다. 지금은 'specialist가 죽지 않고 데이터 엔진으로 재배치된다'는 문법만 손에 쥐면 된다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">밴드의 베이스 트랙과 오버더빙, 그리고 세션 연주자</div>
+      <div class="a-body"><p>녹음 스튜디오를 상상하자. 먼저 실력 있는 세션 연주자가 곡의 <strong>베이스 트랙</strong>을 깔끔하게 깐다 — 곡 전체의 골격, 코드 진행, 리듬이 여기 담긴다. 이것이 IL로 학습한 얼린 base policy <span class="math-inline">\(\pi_{\text{base}}\)</span>다. 한 번 잘 깔아두면 이후로는 <strong>건드리지 않는다(freeze)</strong>. 골격을 매번 다시 녹음하면 그 위에 얹을 모든 것이 흔들리기 때문이다.</p>
+<p>이제 이 베이스 트랙을 여러 무대에 맞게 손봐야 한다. 재즈 클럽, 야외 페스티벌, 좁은 라이브 하우스 — 각 공간의 음향(각 embodiment의 dynamics)이 다르다. 이때 베이스를 다시 녹음하지 않는다. 대신 그 위에 얇은 <strong>오버더빙</strong>을 얹어 각 무대에서 어긋나는 부분만 보정한다. 실제로 나가는 소리는 <span class="math-inline">\(a = a_{\text{base}} + a_{\text{res}}\)</span> — 베이스 트랙 더하기 오버더빙이다. 오버더빙은 처음엔 거의 0(무음)에서 시작해, 실제 그 무대에서 소리가 붕 뜨는 지점만 골라 눌러준다. 이것이 residual RL이 on-policy 분포 위에서 covariate shift를 잡는 감각이다 — 스튜디오(전문가 분포)가 아니라 실제 공연장(정책이 방문하는 분포)에서 튜닝한다.</p>
+<p>무대마다 오버더빙이 하나씩 생겼다(specialist들). 이제 프로듀서는 이 버전들을 하나의 <strong>마스터 세션 연주자</strong>에게 몰아준다. 그는 '무대 이름(one-hot embodiment embedding)'만 들으면 그에 맞는 연주를 재현하도록 훈련된다 — 이것이 distillation이다. 한 명이 모든 무대를 커버하니 팀을 N배로 꾸릴 필요가 없다.</p>
+<p>마지막 반전이 이 챕터의 핵심이다. 이 마스터 연주자(COMPASS)는 처음엔 직접 무대에 서는 <strong>공연자(제품)</strong>였다. 그런데 이제 그를 무대에서 내려, 스튜디오에 앉혀 <strong>다른 신인 아티스트(GR00T)를 가르칠 교재 트랙을 무한히 찍어내게</strong> 한다. 그가 만든 연주는 이제 관객이 듣는 공연이 아니라, 신인이 따라 배우는 <strong>레퍼런스 데이터</strong>다. 연주자가 죽지 않고, 공연자에서 교재 제작자로 재배치된 것 — 그것이 'COMPASS가 제품에서 데이터 엔진이 된다'는 말의 감각이다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>Residual RL의 심장인 <span class="math-inline">\(a = a_{\text{base}} + a_{\text{res}}\)</span>를 PyTorch wrapper로 구현해보자. 핵심 세 가지: (1) base policy는 <code>eval()</code>+<code>requires_grad_(False)</code>로 완전히 <strong>얼린다</strong>, (2) residual head는 마지막 층 weight를 0으로 초기화해 학습 초기 행동이 정확히 <span class="math-inline">\(a_{\text{base}}\)</span>가 되게 한다, (3) <code>forward</code>가 돌려주는 것은 실행할 action과 gradient가 흐르는 residual 분포다. 이 한 클래스가 COMPASS 2단계의 최소 골격이다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import torch
+import torch.nn as nn
+import torch.distributions as D
+
+class ResidualPolicy(nn.Module):
+    def __init__(self, base_policy, obs_dim, act_dim, res_scale=0.3):
+        super().__init__()
+        # (1) base는 얼린다: gradient·BN/dropout 모두 정지
+        self.base = base_policy.eval().requires_grad_(False)
+        self.res_scale = res_scale  # residual이 base를 지배하지 못하게 제한
+
+        # (2) residual head: 마지막 층 weight=0 -&gt; 초기 a_res=0 -&gt; a=a_base
+        self.res_net = nn.Sequential(
+            nn.Linear(obs_dim, 256), nn.ELU(),
+            nn.Linear(256, act_dim),
+        )
+        nn.init.zeros_(self.res_net[-1].weight)
+        nn.init.zeros_(self.res_net[-1].bias)
+        self.log_std = nn.Parameter(torch.full((act_dim,), -1.0))
+
+    def forward(self, obs):
+        with torch.no_grad():                 # base 경로엔 gradient 없음
+            a_base = self.base(obs)
+        mean_res = self.res_scale * torch.tanh(self.res_net(obs))
+        dist = D.Independent(                 # residual만 stochastic
+            D.Normal(mean_res, self.log_std.exp()), 1)
+        a_res = dist.rsample()
+        action = a_base + a_res               # a = a_base + a_res
+        return action, dist, a_res
+
+    def update(self, obs, advantage, optimizer):
+        # policy gradient는 residual 파라미터에만 흐른다
+        _, dist, a_res = self.forward(obs)
+        logp = dist.log_prob(a_res.detach())
+        loss = -(logp * advantage.detach()).mean()
+        optimizer.zero_grad(); loss.backward(); optimizer.step()
+        return loss.item()</code></pre>
+      <div class="c-walk"><p><code>__init__</code>의 첫 결정이 전부를 규정한다. <code>base_policy.eval().requires_grad_(False)</code>는 X-Mobility world-model base를 상수로 못 박는다 — 이후 어떤 gradient도 base에 닿지 않으므로 공통 표현과 action prior가 보존된다. <code>forward</code>에서 base를 <code>torch.no_grad()</code>로 감싼 것도 같은 이유의 이중 안전장치다.</p>
+<p>residual head의 <strong>zero-init</strong>(<span class="math-inline">\(\text{weight}=0,\ \text{bias}=0\)</span>)이 실전에서 결정적이다. 마지막 층이 0이면 학습 시작 시 <span class="math-inline">\(a_{\text{res}}=0\)</span>이라 <span class="math-inline">\(a = a_{\text{base}} + 0 = a_{\text{base}}\)</span> — 즉 RL이 '검증된 IL 정책'에서 정확히 출발한다. cold-start 없이 안전하게 개선을 쌓는 residual RL의 성질이 이 한 줄에서 나온다. <code>res_scale</code>과 <code>tanh</code>는 residual이 base를 뒤엎지 못하게 크기를 <span class="math-inline">\([-0.3, 0.3]\)</span>으로 묶는 가드레일이다.</p>
+<p><code>forward</code>의 <code>action = a_base + a_res</code>가 이 챕터의 수식 <span class="math-inline">\(a = a_{\text{base}} + a_{\text{res}}\)</span> 그 자체다. 그리고 <code>update</code>에서 loss는 <span class="math-inline">\(-\mathbb{E}[\log \pi^{\text{res}}_\theta(a_{\text{res}}\mid s)\,A]\)</span> 형태이고, base가 이미 detach되어 있으므로 <code>loss.backward()</code>의 gradient는 <strong>오직 <code>res_net</code>과 <code>log_std</code>로만</strong> 흐른다. base 파라미터는 optimizer에 아예 등록조차 되지 않는다. 이것이 '<span class="math-inline">\(a_{\text{base}}\)</span>는 freeze, residual만 학습'을 코드로 못 박은 지점이다.</p>
+<p>이 wrapper 하나를 embodiment마다 인스턴스로 찍으면(같은 <code>base</code>, 다른 <code>res_net</code>) 2단계가 끝나고 N개의 specialist가 생긴다. 3단계 distillation은 이 N개를 one-hot embedding으로 조건화된 하나의 student로 KL-distill하는 것으로, 여기서는 base가 공유되므로 합칠 대상이 '같은 베이스 위의 residual들'이라는 점이 수렴을 돕는다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">COMPASS의 3단계 파이프라인은 2026년 NVIDIA·로보틱스 채용에서 &#x27;구조 vs 데이터&#x27; 논쟁을 실제 설계로 풀어낸 대표 사례다. 면접관은 지원자가 IL·Residual RL·Distillation을 절차로 나열하는지, 아니면 각 단계가 어떤 실패(cold-start·covariate shift·파편화)를 치료하는지 메커니즘으로 설명하고, 나아가 &#x27;COMPASS가 제품에서 데이터 엔진으로 재배치됐다&#x27;는 시스템 수준의 함의까지 읽어내는지를 본다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>IL·Residual RL·Distillation 각 단계를 &#x27;무슨 병을 치료하는가&#x27;(cold-start / covariate shift / 파편화)로 매핑해 설명하는가</li><li>residual RL이 covariate shift를 &#x27;완화&#x27;하는 이유를 on-policy 분포(d_pi)에서 학습한다는 점으로 정확히 짚는가</li><li>base를 freeze하는 이유를 &#x27;RL 수렴용 action prior&#x27;와 &#x27;distillation용 공통 표현 보존&#x27; 두 축으로 나눠 설명하는가</li><li>X-Mobility의 world-model/action decouple이 왜 freeze·재사용을 가능케 하는지 연결하는가</li><li>COMPASS가 최종 정책이 아니라 GR00T의 navigation finetune용 데이터 엔진으로 재배치됐다는 시스템적 이동을 이해하는가</li><li>&#x27;데이터 스케일링 vs 구조&#x27;가 대립이 아니라 구조가 데이터의 공급원이 되는 관계임을 논증하는가</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>residual RL을 그냥 &#x27;RL로 fine-tune하는 것&#x27;으로 이해하고 base freeze / a=a_base+a_res의 의미를 놓침</li><li>covariate shift를 IL의 문제로 인지하지 못하거나, residual이 이를 왜 완화하는지(on-policy 학습) 설명 못 함</li><li>freeze를 단순 연산 절약으로 오해하고 action prior·공통 표현 보존과 연결하지 못함</li><li>distillation의 one-hot embodiment embedding 조건화를 모르고 &#x27;그냥 앙상블&#x27;이라 오인</li><li>COMPASS를 여전히 최종 배포 정책으로만 이해하고 데이터 엔진 재배치를 모름</li><li>RL-from-scratch가 1000 episode에도 실패한다는 반례를 모른 채 &#x27;latent만 있으면 RL로 된다&#x27;고 단정</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>COMPASS의 3단계에서 각 단계가 치료하는 실패 모드를 하나씩 대응시키고, 왜 이 순서여야 하는지(순서를 바꾸면 무엇이 깨지는지) 논하라.</li><li>IL 정책은 covariate shift로 O(T^2) 오차 누적을 겪는다. residual RL이 이를 왜 완화하는지 학습 분포(d_expert vs d_pi) 관점에서 설명하고, 그럼에도 남는 한계를 말하라.</li><li>base policy를 freeze하지 않고 residual과 함께 fine-tune하면 무엇이 깨지는가? 특히 이후 distillation 단계와 연결해 논하라.</li><li>&#x27;GR00T N1.6 is finetuned for point-to-point navigation using synthetic datasets generated by COMPASS in Isaac Lab&#x27; — 이 문장이 &#x27;데이터 스케일링 vs 구조적 분리&#x27; 논쟁에 대해 무엇을 말하는지 해석하라.</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> Familiar: &quot;COMPASS는 IL, Residual RL, Policy Distillation의 3단계로 cross-embodiment navigation generalist를 만든다&quot;라고 절차를 나열한다. Mastery: 각 단계를 cold-start·covariate shift·파편화라는 세 실패의 치료로 재구성하고 → base freeze가 action prior와 공통 표현 보존을 동시에 수행함을 RL-from-scratch 실패(1000ep 미수렴)로 뒷받침하고 → residual이 on-policy 분포에서 O(T^2) 오차 누적을 억제함을 설명한 뒤 → COMPASS가 제품에서 GR00T의 navigation 데이터 엔진으로 재배치되며 &#x27;구조가 생산한 데이터의 스케일링&#x27;이라는 하이브리드 논지로 접합함을 인과적으로 논증한다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>3단계 = 세 병의 치료</h3><p>IL은 cold-start(탐색 폭발)를, Residual RL은 covariate shift(IL 오차 누적)를, Distillation은 파편화(embodiment별 정책)를 각각 치료한다. 순서에 이유가 있다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>a = a_base + a_res</h3><p>base policy를 얼려두고 residual head만 RL로 학습해 실행 행동을 base 더하기 보정으로 낸다. residual을 0에서 초기화하면 검증된 IL 정책에서 안전하게 출발한다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>residual은 on-policy에서 배운다</h3><p>covariate shift는 정책이 자기 분포(d_pi) 위를 굴러 O(T²)로 오차가 누적되는 IL의 병이다. residual RL은 바로 그 분포 위에서 reward로 보정을 배워 붕괴를 억제한다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>freeze는 두 기능을 한다</h3><p>얼린 X-Mobility base는 RL 수렴용 action prior를 주는 동시에, 모든 embodiment가 공유할 공통 표현을 보존해 이후 distillation을 가능케 한다. 연산 절약이 아니다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>world/action decouple이 재사용을 연다</h3><p>X-Mobility가 world modeling과 action policy를 분리 학습했기에, COMPASS는 world 부분을 embodiment-agnostic 자산으로 얼리고 action만 residual/distill로 갈아끼운다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>distillation은 공통 base 위의 봉합</h3><p>one-hot embodiment embedding으로 조건화해 여러 specialist를 하나의 student로 KL-distill한다. base가 공유되므로 합칠 대상이 &#x27;같은 베이스 위의 residual들&#x27;이라 수렴이 쉽다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>COMPASS는 제품에서 데이터 엔진으로 재배치</h3><p>GR00T N1.6은 Isaac Lab에서 COMPASS가 생성한 대규모 합성 데이터로 point-to-point navigation을 finetune한다. 정책이 실행 제품에서 라벨 공장으로 내려앉았다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>구조가 생산한 데이터의 스케일링</h3><p>GR00T의 navigation 흡수는 순수 데이터 스케일링이 아니라 구조적 COMPASS 파이프라인이 찍어낸 데이터의 스케일링이다. 데이터와 구조는 대립이 아니라 공급 관계다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-01.html">← The Integration Question</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-03.html">VLA Foundations →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

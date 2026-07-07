@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch10: Evaluation, Deployment &amp; Open Frontiers — GR00T &amp; NVIDIA Physical AI 2026 — direcf</title>
+  <meta name="description" content="sim-to-real gap 측정, Jetson Thor 온보드 배포, cross-embodiment 벤치마크, unseen embodiment zero-shot 같은 2026 프런티어를 정리하고, 연구자·빅테크 면접 관점에서 이 분야를 어떻게 논해야 하는지 종합한다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;height:22px;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><linearGradient id="direcf-nav-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs></svg>
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg></span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg></span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.25 15a4.5 4.5 0 0 0 4.5 4.5H18a3.75 3.75 0 0 0 1.332-7.257 3 3 0 0 0-3.758-3.848 5.25 5.25 0 0 0-10.233 2.33A4.502 4.502 0 0 0 2.25 15Z"/></svg></span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"/></svg></span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg></span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/physical-ai">GR00T &amp; NVIDIA Physical AI 2026</a><span class="sep">›</span>
+        <strong>Ch10 Evaluation, Deployment &amp; Open Frontiers</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 10 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🚀</div>
+      <h1 class="chapter-title">Evaluation, Deployment &amp; Open Frontiers</h1>
+      <div class="chapter-title-kr">평가·배포·열린 프런티어</div>
+      <div class="chapter-tldr">sim-to-real gap 측정, Jetson Thor 온보드 배포, cross-embodiment 벤치마크, unseen embodiment zero-shot 같은 2026 프런티어를 정리하고, 연구자·빅테크 면접 관점에서 이 분야를 어떻게 논해야 하는지 종합한다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-10.png" alt="Chapter 10 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 10 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>sim-to-real gap을 정량 평가하는 방법과 벤치마크를 안다</li><li>온보드(Jetson Thor) 배포의 지연·전력 제약을 안다</li><li>unseen embodiment zero-shot의 난점(morphology conditioning)을 안다</li><li>2026 미해결 프런티어를 4개 이상 제시할 수 있다</li><li>빅테크 Physical AI 면접에서 데이터-vs-구조 긴장을 논증할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>열 챕터를 걸어왔다. 우리는 하나의 질문에서 출발했다 — GR00T는 navigation과 manipulation을 데이터로 다 먹는가, 아니면 구조적 분리가 여전히 필요한가. 그 답은 매 챕터에서 조금씩 선명해졌고, 이제 그것을 '실제로 돌아가는가'와 '어디까지 왔고 무엇이 남았는가'라는 두 개의 마지막 렌즈로 검증할 차례다. 아무리 우아한 아키텍처도 sim에서만 성립하고 실제 로봇 위에서 무너진다면 논문일 뿐 시스템이 아니다. 이 챕터는 그 시스템이 현실에서 얼마나 견디는지를 묻는다.</p>
+<p>세 갈래를 통과한다. 첫째, 평가 — sim-to-real gap을 어떻게 종류별로(rendering/physics/latency) 분해하고, 여러 embodiment에서 success rate와 zero-shot transfer로 일반화를 어떻게 측정하는가. 둘째, 배포 — Jetson Thor라는 온보드 컴퓨트 예산 안에서 고주파 제어 루프, 전력·발열, 추론 지연이라는 물리적 벽에 계층 아키텍처가 어떻게 부딪히고 살아남는가. GR00T Reference Humanoid Robot(Unitree H2 + Sharpa 촉각손 + Jetson Thor, 2026 말)이 그 벽의 실물 좌표다. 셋째, 프런티어 — unseen embodiment zero-shot의 morphology conditioning 난제, vision sim2real의 rendering gap과 Real2Sim 반격, hierarchical route planner의 부재, 그리고 world model이 통합 substrate로 회귀하는 흐름까지.</p>
+<p>그리고 마지막으로, 코스 전체를 하나의 좌표계로 접는다. 두 패러다임 — 데이터 스케일링(NavFoM)과 구조적 분리(COMPASS) — 사이에서 GR00T가 택한 하이브리드의 정확한 좌표, navigation의 흡수 경계선, 9장의 반론(데이터를 supervision으로)이 왜 프런티어의 심장인지. 그리고 이 모든 것을 빅테크 Physical AI 면접에서 '데이터 vs 구조'의 긴장으로 어떻게 논증할지. 이 코스는 사실을 외우는 코스가 아니라 이 긴장을 논증하는 능력을 기르는 코스였다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>sim-to-real을 어떻게 평가하나</h2><p>합성데이터 공장(7장)이 아무리 많은 궤적을 찍어내도, 그 정책이 실제 로봇 위에서 성공하지 못하면 숫자는 허구다. 그래서 평가의 첫 단추는 sim-to-real gap을 하나의 뭉텅이가 아니라 종류별로 분해하는 것이다. gap은 최소 세 갈래다.</p>
+<p>첫째, <strong>rendering gap</strong>. 시뮬레이터의 카메라 영상이 실제 카메라 영상과 다르다 — 조명, 그림자, 질감, 센서 노이즈. sim에서 완벽히 학습한 vision 정책이 실제 픽셀 분포 앞에서 무너지는 이유다. Cosmos Transfer의 sim→photoreal 전이(5·7장)가 겨냥하는 게 바로 이 축이다. 둘째, <strong>physics gap</strong>. 마찰, 접촉 강성, 액추에이터 지연, 질량 분포가 sim과 실제에서 다르다. loco-manipulation처럼 접촉이 지배하는 과제에서 이 gap이 치명적이다 — 손끝 마찰 계수 하나가 grasp 성패를 가른다. 셋째, <strong>latency gap</strong>. sim에서는 관측→행동이 즉각적이지만, 실제 로봇에서는 센서 읽기, 추론, 액추에이터 명령 사이에 지연이 낀다. 고주파 제어 루프에서 이 지연은 정책을 불안정하게 만든다. 이 세 번째 축이 다음 섹션의 배포 제약과 직결된다.</p>
+<p>측정은 여러 embodiment에서의 success rate를 축으로 한다. 하나의 정책을 여러 로봇 형태(다른 팔 길이, 다른 손, 다른 다리 구성)에 올려 각각의 과제 성공률을 집계하고, 그 분산과 평균을 함께 본다. 여기서 세 가지 서로 다른 질문이 갈린다. (1) seen embodiment에서의 success rate — 학습에 본 로봇에서 얼마나 잘하나. (2) cross-embodiment 일반화 — 학습 분포 안의 여러 로봇에 걸쳐 얼마나 고르게 잘하나(분산이 작을수록 좋다). (3) zero-shot transfer — 학습에 전혀 없던 새 embodiment나 새 과제에 finetune 없이 얼마나 버티나. 이 세 번째가 가장 어렵고, 다음다음 섹션의 프런티어로 이어진다.</p>
+<p>평가에서 흔한 함정은 sim success rate를 real success rate의 대리 지표로 착각하는 것이다. sim-to-real gap이 존재하는 한, sim에서의 95%가 real에서의 95%를 보장하지 않는다. 그래서 진지한 평가는 반드시 real-world rollout을 포함하고, sim success와 real success의 격차 자체를 하나의 지표(sim2real gap = sim 성공률 − real 성공률)로 추적한다. 이 격차가 작아지는 방향으로 rendering·physics·latency를 각각 좁히는 게 평가 주도 개발의 골격이다. 코드 예제에서 이 집계와 격차 계산을 harness로 스케치한다.</p></div><div class="sb-block"><h2>온보드 배포: Jetson Thor의 제약</h2><p>아키텍처가 데이터센터 GPU 위에서 아무리 잘 돌아도, humanoid의 등에 실리는 건 하나의 온보드 컴퓨트다. NVIDIA의 좌표는 명확하다 — 차세대는 Jetson Thor, 현행·저전력 구간은 Jetson AGX Orin. 그리고 이 배포의 실물 기준점이 GR00T Reference Humanoid Robot이다: Unitree H2 바디에 Sharpa 촉각손을 얹고 Jetson Thor를 온보드 브레인으로 삼은 2026년 말 레퍼런스 플랫폼. 우리가 5개 챕터에 걸쳐 해부한 3층 구조가 결국 이 한 대의 로봇 위에서 실시간으로 돌아가야 한다.</p>
+<p>온보드 배포는 세 개의 물리적 벽을 세운다. 첫째, <strong>실시간 지연</strong>. whole-body control(6장)은 수백 Hz의 고주파 제어 루프를 요구한다. 관측에서 모터 명령까지의 지연이 이 주기를 넘으면 제어가 불안정해진다 — 넘어지는 로봇은 논문 각주가 아니라 부러진 하드웨어다. 둘째, <strong>전력·발열</strong>. 배터리로 움직이는 로봇에서 추론에 쓰는 와트는 곧 가동 시간과 열이다. 데이터센터라면 무시할 발열이 밀폐된 humanoid 몸통 안에서는 스로틀링을 부른다. 셋째, <strong>온보드 추론 예산</strong>. Jetson Thor의 메모리와 연산량은 유한하다. 수십억 파라미터 VLA를 통째로, 그것도 여러 번, 실시간에 돌릴 여유는 없다.</p>
+<p>여기서 계층 아키텍처(4장)가 왜 실용적 필연이었는지가 드러난다. 세 층은 서로 다른 주파수로 돈다. Cosmos Reason(뇌, 5장)의 planning은 느리고 무겁지만 드물게(초당 한두 번, 혹은 과제 단계가 바뀔 때만) 돌면 된다. VLA policy(정책)는 중간 주파수로 subgoal을 낸다. whole-body RL controller(모터)는 가장 가볍고 가장 빠르게(수백 Hz) 반사적으로 돈다. 만약 이 전부를 하나의 monolithic end-to-end 모델로 매 제어 스텝마다 돌리려 했다면, Jetson Thor의 추론 예산은 즉시 파산했을 것이다. <strong>planning은 위에서 드물게, reaction은 아래에서 촘촘하게</strong>(5장의 결론)라는 계층 분리가, 배포 단에서는 곧 '무거운 추론을 저주파로, 가벼운 추론을 고주파로' 라는 컴퓨트 예산 배분 전략이 된다.</p>
+<p>이것이 이 코스의 하이브리드 논제가 배포에서 회수되는 지점이다. specialist distillation(2장 COMPASS)으로 큰 정책을 작고 빠른 온보드 정책으로 증류하고, 계층 분리로 각 층의 실행 주파수를 컴퓨트 예산에 맞추고, geometric localization 스택(8장 cuVSLAM·nvblox·Nav2)을 학습 모델과 분리해 검증된 저지연 엔지니어링에 맡긴다. 이 모든 설계 결정이 '데이터로 다 때려넣기'가 아니라, 온보드 실시간이라는 물리적 제약을 존중한 하이브리드였다. 배포가 아키텍처를 강제한다 — 이것이 이 섹션의 요체다.</p></div><div class="sb-block"><h2>unseen embodiment zero-shot의 난점</h2><p>cross-embodiment의 성배는 zero-shot이다. 학습에 전혀 없던 새 로봇 몸을 가져와, finetune 한 줄 없이, 그 위에서 정책이 바로 작동하는 것. 이것이 되면 로봇마다 데이터를 새로 모으는 지옥에서 벗어난다. 하지만 여기가 2026년에도 가장 단단히 막힌 벽이다.</p>
+<p>핵심 난제는 <strong>morphology conditioning</strong> — 정책에게 '너는 지금 어떤 몸에 들어 있는가'를 어떻게 알려줄 것인가다. 두 갈래의 철학이 대립한다. 한쪽은 <strong>측정 가능한 물리량</strong>으로 조건화한다: 링크 길이, 관절 수와 축, 질량, 관절 한계 같은 kinematic·dynamic 파라미터를 명시적으로 넣는다. 해석 가능하고, 새 로봇의 스펙만 알면 즉시 조건 벡터를 만들 수 있다는 장점이 있다. 다른 쪽은 <strong>learned embodiment 벡터</strong>로 조건화한다: 각 embodiment를 데이터에서 학습된 latent 임베딩으로 표현한다. 표현력이 크지만, 학습에 없던 로봇의 벡터를 어떻게 얻을 것인가라는 순환 문제에 부딪힌다 — 바로 그 unseen 로봇의 데이터가 없어서 zero-shot을 하려는 것인데.</p>
+<p>왜 이게 근본적으로 어려운가. 새 morphology는 새 action space와 새 dynamics를 동시에 뜻한다. 팔이 하나 더 달리거나 다리 구성이 바뀌면 제어해야 할 자유도의 의미 자체가 달라진다. 언어 모델의 zero-shot은 '같은 토큰 공간'에서 새 조합을 다루지만, 로봇의 unseen embodiment는 토큰 공간(action space) 자체가 바뀌는 것에 가깝다. 그래서 단순히 데이터를 더 넣는다고 자동으로 해결되지 않는다 — 이것이 9장 반론('Robots Need More than VLA and World Models')의 embodiment interface 문제와 정확히 맞닿는 지점이다. 데이터 스케일링만으로는 넘지 못하는 구조적 간극이 여기 있다.</p>
+<p>실무의 타협은 zero-shot을 고집하기보다 few-shot 적응을 설계에 넣는 것이다. 새 로봇에서 소량의 궤적으로 빠르게 finetune하거나, whole-body RL controller(6장)를 그 하드웨어에 맞춰 재학습하되 상위 VLA·planning 층은 재사용한다. 여기서도 계층 분리가 값을 한다 — embodiment가 바뀔 때 가장 크게 바뀌는 건 하위 모터 층이고, 상위의 '무엇을 어떤 순서로'(planning)는 상대적으로 embodiment-invariant하다. 즉 계층 구조는 배포 예산뿐 아니라 cross-embodiment 적응의 관점에서도 어느 층을 갈아끼울지를 국소화해준다. zero-shot이 완전히 열리기 전까지, 이 '층별 적응'이 현실적 다리다.</p></div><div class="sb-block"><h2>2026 열린 프런티어</h2><p>이 분야가 어디까지 왔고 무엇이 남았는지를, 다섯 개의 열린 문제로 정리하자. 각각은 앞 챕터의 실마리가 미해결로 남은 지점이다.</p>
+<p><strong>(1) unseen embodiment zero-shot.</strong> 앞 섹션의 morphology conditioning 문제 — 측정 물리량이냐 learned 벡터냐의 긴장이 아직 풀리지 않았다. 새 action space·새 dynamics를 데이터 없이 다루는 일반 이론이 부재하다. cross-embodiment 일반화의 최종 관문.</p>
+<p><strong>(2) vision sim2real: rendering gap과 Real2Sim의 반격.</strong> Cosmos Transfer가 sim→real 방향으로 rendering gap을 좁혔다면, 반대 방향의 흐름이 부상한다 — 실제 장면을 시뮬레이터로 끌어올리는 Real2Sim이다. 예를 들어 VR-Robo(<a href="https://arxiv.org/abs/2502.01536">arXiv:2502.01536</a>)는 실제 환경을 photoreal·물리 상호작용 가능한 sim으로 재구성해, 학습·평가에 쓸 수 있는 digital twin을 만든다. sim→real 생성과 real→sim 재구성이 만나면, 학습·계획·평가가 같은 world를 공유하는 방향으로 수렴한다.</p>
+<p><strong>(3) hierarchical route planner의 부재.</strong> 8장에서 봤듯 GR00T는 고수준 navigation 의사결정을 흡수했지만, 긴 수평의 route planning — '건물 이쪽 끝에서 저쪽 끝까지 어떤 경로로'를 위상적으로 계획하는 층 — 은 학습 스택 안에 아직 매끈하게 통합돼 있지 않다. 여전히 Nav2 같은 geometric planner에 기댄다. 학습된 planning과 geometric planning 사이의 이 이음매가 열린 설계 문제다.</p>
+<p><strong>(4) world model이 통합 substrate로 회귀한다.</strong> 5장에서 본 Cosmos 3의 '생성·추론·행동 시뮬 통합' 흐름이 navigation으로도 번진다 — NavWAM/WAM-Nav류의 흐름은 navigation을 별도 스택이 아니라 world model 위에서 상상·계획하는 문제로 되돌린다. 즉 8장에서 '흡수 안 됐다'고 그은 경계선조차, world model이 통합 substrate가 되면 다시 그 안으로 빨려 들어갈 수 있다. 경계선은 고정된 게 아니라 substrate의 발전에 따라 이동한다.</p>
+<p><strong>(5) 데이터→supervision 변환 인터페이스.</strong> 9장 반론의 심장. 진짜 병목은 더 큰 VLA나 더 많은 raw 데이터가 아니라, 비정형 데이터를 grounded supervision으로 바꾸는 인터페이스(data·embodiment·world-model·reward)의 부재라는 주장이다. 위 네 프런티어가 모두 이 하나로 수렴한다 — zero-shot도, Real2Sim도, world model 통합도, 결국 '무엇을 정답 신호로 삼아 학습시킬 것인가'의 문제다. 2026년 이 분야의 무게중심은 정책 스케일링에서 supervision 설계로 이동하는 중이다.</p></div><div class="sb-block"><h2>종합: 데이터 vs 구조, 면접에서 어떻게 논할까</h2><p>이제 코스 전체를 하나의 좌표계로 접자. 1장에서 세운 축은 두 극점이었다.</p>
+<p>한 극점은 <strong>데이터 스케일링</strong>이다 — 충분히 큰 정책에 충분히 많은 데이터를 넣으면 navigation도 manipulation도 하나의 모델이 emergent하게 다 배운다. NavFoM(9장, 802만 샘플 규모)이 이 극점의 순수한 형태다. 다른 극점은 <strong>구조적 분리</strong>다 — 서로 다른 문제는 서로 다른 모듈로 명시적으로 나누고, 각 모듈을 특화 학습·특화 엔지니어링으로 푼다. COMPASS(2장)의 IL+Residual RL+Distillation 파이프라인이 이 극점이다.</p>
+<p>GR00T의 좌표는 정확히 그 사이의 <strong>하이브리드</strong>다. 표로 정리하면 이 코스의 뼈대가 한눈에 들어온다.</p>
+<table>
+<thead>
+<tr>
+<th>구성요소</th>
+<th>어느 극점에 가까운가</th>
+<th>코스 챕터</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>합성데이터 공장(Isaac + Cosmos Transfer)</td>
+<td>데이터 스케일링</td>
+<td>5·7</td>
+</tr>
+<tr>
+<td>계층 아키텍처(뇌-정책-모터)</td>
+<td>구조적 분리</td>
+<td>4·5·6</td>
+</tr>
+<tr>
+<td>specialist distillation(COMPASS 재배치)</td>
+<td>구조 → 데이터로 재배치</td>
+<td>2</td>
+</tr>
+<tr>
+<td>navigation 고수준 흡수</td>
+<td>데이터 스케일링</td>
+<td>8</td>
+</tr>
+<tr>
+<td>metric localization(cuVSLAM 등)</td>
+<td>구조적 분리(geometric)</td>
+<td>8</td>
+</tr>
+</tbody>
+</table>
+<p>이 표가 이 코스의 논제 전체다. GR00T는 어느 한 극점을 택하지 않았다. 데이터로 밀어붙일 수 있는 곳(합성데이터, 고수준 navigation, VLA 정책)은 데이터로 밀고, 구조가 필요한 곳(계층 분리, whole-body 제어, metric localization)은 구조로 지탱했다. COMPASS는 죽지 않고 데이터 엔진으로 재배치됐고, navigation은 고수준 의사결정만 흡수되고 geometric localization은 엔지니어링 스택에 남았다. 이것이 '통합의 경계선'이다.</p>
+<p>그리고 9장의 반론이 이 하이브리드조차 넘어선다 — 데이터든 구조든, 결국 비정형 데이터를 grounded supervision으로 바꾸는 인터페이스가 없으면 둘 다 병목에 걸린다는 것. 그래서 데이터 vs 구조는 이분법이 아니라, 'supervision을 어떻게 설계하는가'라는 제3의 축 위에서 재조명되어야 한다.</p>
+<p>면접 관점에서, 빅테크 Physical AI 직군이 평가하는 건 정확히 이 논증 능력이다. 'GR00T가 뭐예요'에 사실을 나열하는 후보와, '데이터 vs 구조의 긴장 위에서 GR00T는 이런 좌표를 택했고, 그 선택은 sim-to-real·온보드 배포·cross-embodiment 일반화라는 제약에서 이렇게 정당화된다'고 논증하는 후보는 신호가 다르다. sim-to-real gap을 rendering/physics/latency로 분해할 수 있는가. 계층 vs end-to-end 트레이드오프를 배포 예산과 연결해 논할 수 있는가. cross-embodiment 일반화가 왜 데이터만으로 안 열리는지 morphology conditioning으로 설명할 수 있는가. 어떤 것을 데이터로 밀고 어떤 것을 구조로 지탱할지, 그 경계선을 제약 조건으로부터 논증할 수 있는가. 이 네 질문에 답할 수 있으면 이 코스는 제 몫을 한 것이다. 사실은 시간이 지나면 낡지만, 이 긴장을 논증하는 프레임은 다음 모델, 다음 논쟁에서도 유효하다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">운전면허 시험장과 실제 도로</div>
+      <div class="a-body"><p>sim-to-real 평가와 배포의 전체 그림은 운전을 배우는 과정에 그대로 겹친다.</p>
+<p>시뮬레이터에서의 학습은 <strong>운전면허 시험장</strong>이다. 코스는 통제돼 있고, 조명은 일정하며, 갑자기 뛰어드는 아이도 없다. 여기서 90점을 받는 건 필요조건이지만 충분조건이 아니다. 시험장 만점이 곧 도로 위 안전을 뜻하지 않는다는 것 — 이것이 sim success rate ≠ real success rate이고, 그 격차가 곧 sim-to-real gap이다. 그리고 이 gap조차 종류가 다르다. 시험장과 도로의 '노면·표지판 겉모습' 차이가 rendering gap, '실제 차의 브레이크 감·타이어 접지력' 차이가 physics gap, '내가 판단하고 발이 페달에 닿기까지의 시간'이 latency gap이다.</p>
+<p>실제 도로로 나가는 것이 <strong>온보드 배포</strong>다. 여기서는 데이터센터의 무한한 계산이 아니라, 내 머리 하나로 실시간에 판단해야 한다(Jetson Thor의 추론 예산). 그래서 능숙한 운전자는 모든 판단을 같은 속도로 하지 않는다. '어느 길로 갈지'(route planning)는 출발 전에 드물게 정하고, '차선을 바꿀까'(정책)는 몇 초마다, '지금 핸들을 미세 조정'(반사적 제어)은 매 순간 한다. 이 주파수 분리가 바로 GR00T의 계층 아키텍처 — planning은 위에서 드물게, reaction은 아래에서 촘촘하게. 모든 걸 매 순간 처음부터 계산하는 운전자는 정보 과부하로 사고를 낸다. 유한한 뇌 예산 안에서 살아남으려면 계층이 필수다.</p>
+<p>그리고 <strong>unseen embodiment zero-shot</strong>은 승용차만 몰던 사람이 갑자기 대형 트럭이나 오토바이에 오르는 것이다. '어디로 갈지'(고수준 계획)는 그대로 옮겨가지만, '이 몸을 어떻게 다룰지'(하위 제어)는 완전히 새로 배워야 한다 — 트럭의 회전 반경, 오토바이의 균형. 그래서 노련한 운전자도 새 차종에는 몇 시간의 적응(few-shot finetune)이 필요하다. 상위 판단은 옮겨가고 하위 제어만 갈아끼우는 이 감각이, 왜 cross-embodiment 적응에서도 계층 분리가 값을 하는지를 정확히 설명한다. 면허 시험장에서 잘하는 것과 낯선 차로 낯선 도로를 실시간에 완주하는 것은 다른 능력이고, 이 코스는 후자를 평가하는 법을 다뤘다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>cross-embodiment 평가 harness를 스케치한다. 핵심은 두 가지다 — (1) 여러 embodiment에서 success rate를 집계해 seen 성능, cross-embodiment 일반화(분산), zero-shot을 분리해 보고, (2) 같은 정책을 sim과 real 양쪽에서 굴려 sim2real gap = sim 성공률 − real 성공률을 지표로 계산한다. sim에서의 높은 숫자를 real의 대리 지표로 착각하지 않는 것이 이 harness의 존재 이유다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import numpy as np
+from dataclasses import dataclass
+
+@dataclass
+class EvalResult:
+    embodiment: str
+    domain: str        # &quot;sim&quot; 또는 &quot;real&quot;
+    seen_in_train: bool
+    successes: int
+    trials: int
+
+    @property
+    def success_rate(self):
+        return self.successes / max(1, self.trials)
+
+def aggregate(results):
+    &quot;&quot;&quot;cross-embodiment 평가를 세 축으로 분해해 리포트.&quot;&quot;&quot;
+    by_key = {}
+    for r in results:
+        by_key.setdefault((r.embodiment, r.domain), []).append(r)
+
+    # 1) embodiment별 real success rate
+    real = {e: r[0].success_rate
+            for (e, d), r in by_key.items() if d == &quot;real&quot;}
+
+    # 2) seen embodiment 평균 vs cross-embodiment 분산(고를수록 일반화)
+    seen = [r.success_rate for r in results
+            if r.domain == &quot;real&quot; and r.seen_in_train]
+    seen_mean = float(np.mean(seen)) if seen else float(&quot;nan&quot;)
+    cross_std = float(np.std(list(real.values()))) if real else float(&quot;nan&quot;)
+
+    # 3) zero-shot: 학습에 없던 embodiment의 real success
+    zeroshot = {e: r[0].success_rate
+                for (e, d), r in by_key.items()
+                if d == &quot;real&quot; and not r[0].seen_in_train}
+
+    # 4) sim2real gap = sim 성공률 - real 성공률 (embodiment별)
+    sim = {e: r[0].success_rate
+           for (e, d), r in by_key.items() if d == &quot;sim&quot;}
+    sim2real_gap = {e: sim[e] - real[e]
+                    for e in real if e in sim}
+
+    return {
+        &quot;seen_mean&quot;: seen_mean,        # seen에서 얼마나 잘하나
+        &quot;cross_std&quot;: cross_std,        # 낮을수록 고른 일반화
+        &quot;zeroshot&quot;: zeroshot,          # unseen embodiment 성능
+        &quot;sim2real_gap&quot;: sim2real_gap,  # 클수록 sim이 현실을 과대평가
+    }
+
+# 함정 방지: sim success 하나만 보고 배포하지 않는다.
+#   sim2real_gap 이 크면 rendering/physics/latency 중 어디서
+#   새는지 분해해 좁혀야 한다.</code></pre>
+      <div class="c-walk"><p>이 harness의 설계가 곧 이 챕터의 평가 철학이다. <code>EvalResult</code>는 embodiment와 domain(sim/real)과 seen 여부를 함께 들고 있어, 하나의 success rate 숫자를 세 개의 서로 다른 질문으로 쪼갤 수 있다. (1) <code>seen_mean</code>은 학습에 본 로봇에서의 성능, (2) <code>cross_std</code>는 여러 embodiment에 걸친 성능의 분산 — 이 값이 작아야 진짜 cross-embodiment 일반화다(평균이 높아도 특정 로봇만 잘하면 분산이 크다), (3) <code>zeroshot</code>은 학습에 전혀 없던 embodiment의 real 성능으로, 앞 섹션의 morphology conditioning 난제가 숫자로 드러나는 곳이다. 핵심은 (4)의 <code>sim2real_gap = sim 성공률 − real 성공률</code>이다. 이 값이 크다는 건 sim이 현실을 과대평가하고 있다는 뜻이고, 그럴 때 우리는 그 gap을 rendering·physics·latency 중 어디서 새는지 다시 분해해 각각을 좁힌다. 맨 아래 주석이 경고하듯, sim success 하나만 보고 배포하는 것은 시험장 만점으로 고속도로에 나가는 것과 같다. 실제 GR00T 평가 스택은 이보다 훨씬 복잡하지만, '여러 embodiment × sim/real을 교차로 집계하고 gap 자체를 지표로 추적한다'는 뼈대는 동일하다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">이 챕터는 코스의 종합이자, 빅테크 Physical AI 면접의 관점 그 자체다. Google DeepMind, Tesla Optimus, Figure, 1X, NVIDIA, Amazon Robotics 등에서 senior 이상 Physical AI 직군은 사실 암기가 아니라 &#x27;데이터 vs 구조&#x27;의 긴장을 제약 조건으로부터 논증하는 능력을 본다. sim-to-real gap의 종류별 분해, 계층 vs end-to-end 트레이드오프를 배포 예산과 연결하는 사고, cross-embodiment 일반화가 왜 데이터만으론 안 열리는지에 대한 morphology conditioning 이해, 그리고 어떤 것을 데이터로 밀고 어떤 것을 구조로 지탱할지 경계선을 긋는 판단 — 이 네 가지가 반복적으로 평가된다. 이 코스 전체가 이 논증 프레임을 기르기 위한 것이었다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>sim-to-real gap을 rendering·physics·latency 세 종류로 분해하고, 각각을 좁히는 서로 다른 기법(Cosmos Transfer, domain randomization, 제어 주파수 설계)을 연결</li><li>sim success rate를 real의 대리 지표로 착각하지 않고, sim2real gap 자체를 추적 지표로 삼는 평가 규율</li><li>계층 아키텍처를 온보드 배포 제약(Jetson Thor의 지연·전력·추론 예산)과 연결해, 왜 planning은 저주파·reaction은 고주파인지 컴퓨트 예산으로 논증</li><li>cross-embodiment 일반화를 seen 성능·분산·zero-shot 세 축으로 분리하고, unseen embodiment가 왜 morphology conditioning 문제로 데이터만으론 안 열리는지 설명</li><li>코스 전체를 &#x27;데이터 스케일링(NavFoM) vs 구조적 분리(COMPASS)&#x27; 좌표계로 접고, GR00T의 하이브리드 좌표를 각 구성요소별로 배치</li><li>9장 반론(데이터를 supervision으로)을 프런티어의 심장으로 인식하고, 데이터 vs 구조를 supervision 설계라는 제3축에서 재조명</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>sim-to-real gap을 하나의 뭉텅이로 다루고 rendering/physics/latency로 분해하지 못함</li><li>sim success rate가 높다는 이유로 real 배포 성공을 단정 (시험장 만점=도로 안전 착각)</li><li>계층 아키텍처를 &#x27;그냥 설계 취향&#x27;으로 보고, 온보드 실시간·컴퓨트 예산이라는 물리적 강제와 연결하지 못함</li><li>cross-embodiment zero-shot을 &#x27;데이터 더 넣으면 된다&#x27;로 뭉개고 action space·dynamics가 바뀌는 구조적 간극을 못 봄</li><li>코스 사실을 나열만 하고 &#x27;데이터 vs 구조&#x27; 긴장으로 논증하지 못함 — GR00T의 각 선택이 어떤 제약에서 정당화되는지 설명 못 함</li><li>navigation의 흡수 경계선을 고정된 것으로 보고, world model이 통합 substrate로 회귀하며 경계선이 이동한다는 동역학을 놓침</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>sim에서 95% 성공하던 loco-manipulation 정책이 실제 humanoid에서 40%로 떨어졌다. gap을 rendering·physics·latency로 분해하고, 각각을 진단·완화할 실험을 설계하라. 어떤 지표로 진전을 추적하겠는가?</li><li>GR00T의 3층 구조 전부를 하나의 end-to-end 모델로 합쳐 Jetson Thor에 올리자는 제안이 왔다. 온보드 배포 제약(지연·전력·추론 예산)과 whole-body 고주파 제어 루프 관점에서 이 제안의 문제를 논증하라.</li><li>새 humanoid(학습에 없던 morphology)에 정책을 올려야 한다. zero-shot이 왜 어려운지 morphology conditioning(측정 물리량 vs learned 벡터)으로 설명하고, 계층 구조를 활용한 현실적 few-shot 적응 전략을 제시하라.</li><li>&#x27;로봇 학습은 결국 더 큰 VLA와 더 많은 데이터의 문제다&#x27;라는 주장에 반론하라. NavFoM(데이터 극점)과 COMPASS(구조 극점)를 대비하고, GR00T의 하이브리드 좌표와 9장의 supervision 인터페이스 논점을 엮어 답하라.</li><li>GR00T는 navigation의 고수준 의사결정은 흡수했지만 metric localization은 geometric 스택에 남겼다. 이 경계선을 어디에 긋는 게 옳은지, 그리고 world model이 통합 substrate로 발전하면 이 경계선이 어떻게 이동할지 논하라.</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> Familiar: sim-to-real, Jetson Thor, cross-embodiment, zero-shot 같은 용어를 안다. Mastery: sim-to-real gap을 rendering·physics·latency로 분해해 각각 다른 기법으로 좁히고, sim2real gap 자체를 지표로 추적한다. 계층 아키텍처가 온보드 배포 예산과 고주파 제어라는 물리적 제약에서 필연이었음을 컴퓨트 예산 배분으로 논증한다. cross-embodiment 일반화를 seen·분산·zero-shot 세 축으로 분리하고, unseen embodiment가 morphology conditioning(action space·dynamics 변화) 때문에 데이터만으론 안 열림을 설명한다. 그리고 코스 전체를 &#x27;데이터 스케일링 vs 구조적 분리&#x27; 좌표계로 접어, GR00T의 하이브리드 좌표를 구성요소별로 배치하고, 9장 반론(supervision 설계)을 제3축으로 세워 데이터 vs 구조 긴장을 제약 조건으로부터 논증한다. 이것이 빅테크 Physical AI 면접이 senior 이상에서 보는 신호다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>sim-to-real gap은 종류별로 분해해야 다룰 수 있다</h3><p>rendering gap(겉모습), physics gap(마찰·접촉·질량), latency gap(제어 지연) 셋으로 나눠야 각각을 다른 기법으로 좁힐 수 있다. sim success rate를 real의 대리 지표로 착각하지 말고, sim2real gap(=sim 성공률 − real 성공률) 자체를 추적 지표로 삼는다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>cross-embodiment 평가는 세 축으로 갈린다</h3><p>seen embodiment 성능, 여러 embodiment에 걸친 분산(작을수록 고른 일반화), 그리고 학습에 없던 embodiment의 zero-shot transfer. 평균이 높아도 특정 로봇만 잘하면 일반화가 아니다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>배포가 아키텍처를 강제한다 — Jetson Thor의 세 벽</h3><p>온보드 배포는 실시간 지연(고주파 제어 루프), 전력·발열, 추론 예산이라는 물리적 벽을 세운다. GR00T Reference Humanoid(Unitree H2 + Sharpa 촉각손 + Jetson Thor, 2026 말)이 그 실물 기준점. 계층 분리는 취향이 아니라 이 예산 안에서 살아남기 위한 필연이다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>계층 분리 = 주파수별 컴퓨트 예산 배분</h3><p>planning(Cosmos Reason)은 무겁지만 저주파로 드물게, VLA 정책은 중주파로, whole-body 제어는 가볍고 고주파로. monolithic end-to-end를 매 스텝 돌리면 온보드 예산이 파산한다. &#x27;위에서 드물게, 아래에서 촘촘하게&#x27;가 배포에서 회수되는 지점.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>unseen embodiment zero-shot은 morphology conditioning이 막고 있다</h3><p>정책에게 &#x27;어떤 몸인가&#x27;를 알리는 문제 — 측정 물리량(링크 길이·관절)이냐 learned 벡터냐의 긴장. 새 morphology는 새 action space·새 dynamics라 데이터만 늘려선 안 열린다. 현실 타협은 상위 planning은 재사용하고 하위 모터 층만 few-shot으로 갈아끼우는 층별 적응.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>2026 열린 프런티어 다섯</h3><p>(1) unseen embodiment zero-shot, (2) vision sim2real과 Real2Sim의 반격(VR-Robo류 digital twin), (3) hierarchical route planner의 부재(여전히 geometric), (4) world model이 통합 substrate로 회귀(NavWAM/WAM-Nav — 흡수 경계선마저 이동), (5) 데이터를 grounded supervision으로 바꾸는 인터페이스. 네 문제가 (5)로 수렴한다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>코스 종합: GR00T는 데이터와 구조 사이의 하이브리드 좌표</h3><p>합성데이터 공장·고수준 navigation·VLA는 데이터 스케일링(NavFoM 극점)으로, 계층 분리·whole-body 제어·metric localization은 구조적 분리(COMPASS 극점)로. COMPASS는 죽지 않고 데이터 엔진으로 재배치됐고, navigation은 고수준만 흡수되고 geometric localization은 엔지니어링에 남았다. 어느 한 극점이 아니라 제약이 경계선을 정한다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>면접에서 평가되는 건 사실이 아니라 논증 프레임</h3><p>빅테크 Physical AI 직군은 &#x27;데이터 vs 구조&#x27; 긴장, sim-to-real 분해, 계층 vs end-to-end 트레이드오프, cross-embodiment 일반화를 제약 조건으로부터 논증하는 능력을 본다. 9장 반론(supervision 설계)을 제3축으로 세워야 완성된다. 사실은 낡지만 이 프레임은 다음 모델·다음 논쟁에서도 유효하다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-09.html">← The Counter-Argument</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <span></span>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

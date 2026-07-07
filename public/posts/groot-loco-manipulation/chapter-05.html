@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch5: World Models as the Brain: Cosmos — GR00T &amp; NVIDIA Physical AI 2026 — direcf</title>
+  <meta name="description" content="Cosmos World Foundation Model과 Cosmos Reason이 어떻게 planning·reasoning substrate이자 동시에 synthetic data 생성기(Cosmos Transfer)로 이중 역할을 하는지 파헤친다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;height:22px;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><linearGradient id="direcf-nav-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs></svg>
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg></span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg></span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.25 15a4.5 4.5 0 0 0 4.5 4.5H18a3.75 3.75 0 0 0 1.332-7.257 3 3 0 0 0-3.758-3.848 5.25 5.25 0 0 0-10.233 2.33A4.502 4.502 0 0 0 2.25 15Z"/></svg></span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"/></svg></span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg></span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/physical-ai">GR00T &amp; NVIDIA Physical AI 2026</a><span class="sep">›</span>
+        <strong>Ch05 World Models as the Brain: Cosmos</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 05 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🌌</div>
+      <h1 class="chapter-title">World Models as the Brain: Cosmos</h1>
+      <div class="chapter-title-kr">뇌가 된 월드 모델 — Cosmos WFM와 Cosmos Reason</div>
+      <div class="chapter-tldr">Cosmos World Foundation Model과 Cosmos Reason이 어떻게 planning·reasoning substrate이자 동시에 synthetic data 생성기(Cosmos Transfer)로 이중 역할을 하는지 파헤친다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-05.png" alt="Chapter 5 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 5 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>World Foundation Model의 정의와 로봇에서의 역할을 설명할 수 있다</li><li>Cosmos Reason이 뇌(계획)와 데이터엔진(생성) 두 역할을 겸하는 구조를 안다</li><li>Cosmos Transfer가 sim-to-real gap을 어떻게 좁히는지 안다</li><li>world model 기반 planning이 reactive policy와 어떻게 다른지 안다</li><li>Cosmos 3가 생성·추론·행동 시뮬을 통합한 의미를 안다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>앞 챕터에서 GR00T N1.6을 Cosmos Reason(뇌) → VLA(정책) → whole-body RL(모터)의 3층 구조로 해부했다. 이 챕터는 그 맨 위층, 즉 '뇌'가 실제로 무엇으로 만들어졌는지를 파고든다. 답은 하나의 단어로 수렴한다 — world model. NVIDIA는 이것을 World Foundation Model(WFM)이라 부르고, 제품 이름은 Cosmos다. 핵심 주장은 단순하지만 급진적이다: <strong>세상이 어떻게 굴러가는지에 대한 학습된 내부 표현(latent dynamics) 하나가 로봇의 계획도 담당하고, 그 로봇을 학습시킬 데이터도 찍어낸다.</strong> 뇌와 공장이 같은 모델이라는 것이다.</p>
+<p>이 이중 역할이 이 챕터의 심장이다. Cosmos Reason은 high-level 지시를 scene understanding에 grounding된 stepwise action plan으로 분해하는 추론·계획 substrate이고(역할 A), Cosmos Transfer는 sim에서 만든 장면을 photoreal로 변환해 sim-to-real gap을 좁히는 합성데이터 생성기다(역할 B). 하나의 world model 계열이 로봇 학습의 두 병목 — '무엇을 할지 계획하기'와 '학습할 데이터 구하기' — 를 동시에 공략한다. 이것이 이 코스 전체를 관통하는 하이브리드 통합 논제의 가장 선명한 사례다.</p>
+<p>그래서 이 챕터는 네 갈래로 나아간다. 먼저 WFM이 정확히 무엇인지(reactive policy와 대비되는 latent dynamics substrate), 다음으로 Cosmos Reason이 뇌로서 지시를 계획으로 분해하는 방식, 그다음 Cosmos Transfer가 데이터를 찍어내는 방식, 그리고 world-model 기반 planning이 reactive policy와 어떻게 다른지를 imagination rollout 코드로 만져본다. 마지막으로 COMPUTEX 2026에서 공개된 Cosmos 3가 생성·추론·행동 시뮬을 하나로 묶으면서 이 이중 역할이 어떻게 단일 모델로 수렴하는지를 본다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>World Foundation Model이란 무엇인가</h2><p>World Foundation Model(WFM)의 정의부터 못을 박자. WFM은 <strong>세상이 어떻게 굴러가는지에 대한 학습된 내부 표현(latent dynamics)</strong> 이다. 픽셀을 그대로 저장하는 게 아니라, 관측을 압축한 latent state <span class="math-inline">\(s_t\)</span> 위에서 '지금 이 상태에서 이 행동을 하면 다음 상태가 어떻게 될까'를 예측하는 dynamics 함수 <span class="math-inline">\(s_{t+1}=f(s_t, a_t)\)</span> 를 학습한다. 이 학습된 dynamics 위에서 모델은 미래를 상상(rollout)하거나 물리를 추론할 수 있다. 그래서 WFM은 특정 task를 푸는 policy가 아니라, 여러 task가 그 위에 올라타는 substrate다.</p>
+<p>왜 'foundation'인가. Language foundation model이 '다음 토큰'을 예측하며 언어의 구조를 내재화하듯, WFM은 '다음 관측(또는 latent)'을 예측하며 물리 세계의 구조를 내재화한다. 결과적으로 하나의 모델이 새로운 장면, 새로운 물체, 새로운 embodiment에 대해서도 '그다음에 뭐가 일어날지'를 그럴듯하게 상상한다. 이 상상 능력이 planning과 data generation 두 곳 모두의 밑천이다.</p>
+<p>WFM의 계보는 Dreamer/RSSM(Recurrent State-Space Model)로 거슬러 올라간다. Dreamer는 encoder로 관측을 latent로 압축하고, latent 공간 안에서 상상만으로 policy를 학습했다(behavior learning in imagination). 즉 실제 환경과 상호작용하지 않고 '머릿속 시뮬레이터' 안에서 수천 번 rollout하며 배운다. Cosmos는 이 아이디어를 video 규모의 대형 generative model로 밀어올린 것으로 이해하면 된다 — RSSM이 소형 latent였다면, Cosmos는 photoreal video까지 상상하는 대형 WFM이다.</p>
+<p>중요한 구분: WFM 자체는 '무엇을 할지'를 직접 출력하지 않는다. WFM은 '이렇게 하면 이렇게 된다'는 예측 엔진일 뿐이다. 그 예측을 소비해 계획을 세우는 층(Cosmos Reason, planner)과, 그 예측으로 장면을 렌더링해 데이터를 만드는 층(Cosmos Transfer)이 그 위에 붙는다. 이 분리를 잡고 있어야 다음 두 섹션의 이중 역할이 자연스럽게 읽힌다.</p></div><div class="sb-block"><h2>Cosmos Reason: 지시를 계획으로 분해하는 뇌</h2><p>GR00T의 뇌는 Cosmos Reason이다. NVIDIA는 이 역할을 다음과 같이 명시한다.</p>
+<blockquote>
+<p>The model uses world models, such as NVIDIA Cosmos Reason, to decompose high-level instructions into stepwise action plans grounded in scene understanding to perform real-world tasks.</p>
+</blockquote>
+<p>풀이하면: GR00T는 Cosmos Reason 같은 world model을 사용해 <strong>high-level 지시를 scene understanding에 grounding된 stepwise action plan으로 분해</strong>하여 실제 task를 수행한다. 세 개의 키워드가 이 문장의 무게중심이다 — decompose(분해), stepwise action plan(단계별 행동 계획), grounded in scene understanding(장면 이해에 접지).</p>
+<p>'커피를 가져와'라는 지시를 생각해 보자. 이건 하나의 motor command로 환원되지 않는다. Cosmos Reason은 이걸 '주방으로 이동 → 컵을 찾음 → 컵을 집음 → 커피머신으로 이동 → 버튼 누름 → 사용자에게 복귀' 같은 단계열로 쪼갠다. 결정적으로, 이 분해는 진공에서 일어나지 않는다. 현재 장면 이해(컵이 어디 있는지, 통로가 막혔는지, 손이 비었는지)에 grounding되어 있다. 그래서 같은 지시라도 장면이 다르면 다른 계획이 나온다. 이것이 reactive policy와의 첫 번째 근본 차이다 — reactive policy는 '현재 관측 → 즉시 행동'이라 지시를 단계로 나누지 못한다.</p>
+<p>왜 뇌가 하필 world model이어야 하는가. 계획을 세운다는 건 곧 '이 단계를 하면 세상이 어떻게 바뀔지'를 내다보는 일이기 때문이다. '컵을 먼저 집어야 커피머신 앞에서 담을 수 있다'는 순서 제약은 dynamics에 대한 이해에서 나온다. 즉 stepwise plan을 만들려면 각 step의 결과를 예측하는 능력, 바로 WFM의 latent dynamics가 필요하다. 뇌가 world model인 이유는 계획 자체가 미래 예측 문제이기 때문이다.</p>
+<p>NVIDIA 로드맵에서 이 뇌는 Cosmos Reason 2로 발전한다. 추론 깊이, 장기 계획, multi-step task에서의 일관성이 강화되는 방향이다. 하지만 아키텍처상의 역할은 동일하다 — 3층 구조의 최상위에서, 아래의 VLA policy와 whole-body RL controller가 실행할 stepwise plan을 공급하는 계획자. 뇌는 '무엇을 어떤 순서로'를 정하고, 아래층은 '그것을 어떻게 몸으로'를 담당한다.</p></div><div class="sb-block"><h2>Cosmos Transfer: 뇌가 데이터도 찍어낸다</h2><p>여기서 이중 역할의 두 번째 얼굴이 등장한다. 같은 Cosmos 계열이 이번엔 데이터 공장으로 변신한다 — Cosmos Transfer다.</p>
+<p>Cosmos Transfer의 임무는 <strong>합성데이터 생성/증강</strong>, 구체적으로는 sim→photoreal 도메인 전이다. Isaac Sim에서 만든 장면은 물리적으로는 정확하지만 렌더링이 게임 그래픽처럼 '합성 티'가 난다. 이 rendering gap이 바로 sim-to-real gap의 큰 축이다 — sim에서 완벽히 학습한 정책이 실제 카메라 영상 앞에서 무너지는 이유. Cosmos Transfer는 이 합성 장면을 photoreal하게 변환해, 시뮬레이터가 뽑아낸 무한한 장면을 '실사처럼 보이는' 학습 데이터로 바꾼다.</p>
+<p>작동 방식의 직관: Isaac Sim이 장면의 구조(물체 배치, 로봇 자세, depth, segmentation 같은 ground-truth label)를 제공하면, Cosmos Transfer는 그 구조를 보존한 채 겉모습만 photoreal로 갈아끼운다. label은 시뮬레이터가 이미 정확히 알고 있으므로 공짜로 따라온다. 결과는 '정확한 정답이 붙은 실사급 데이터'의 대량 생산이다. domain randomization(조명·질감·배경을 무작위로 흔들기)과 결합하면 하나의 sim 장면에서 수많은 photoreal 변형이 쏟아진다.</p>
+<p>왜 이게 '뇌가 데이터를 찍어낸다'인가. Cosmos Transfer가 photoreal 장면을 생성할 수 있는 이유는 그 밑에 세상이 어떻게 보이고 굴러가는지에 대한 world model 표현이 깔려 있기 때문이다. 계획을 세우는 데 쓰는 바로 그 '세상에 대한 이해'가, 방향만 바꾸면 그럴듯한 세상을 렌더링하는 능력이 된다. 예측(추론)과 생성은 같은 dynamics의 앞면과 뒷면이다.</p>
+<p>이 지점에서 이중 역할의 전략적 무게를 짚자. 로봇 학습에는 두 개의 악명 높은 병목이 있다 — (1) 무엇을 할지 계획하기, (2) 학습할 데이터 구하기. 전통적으로 이 둘은 완전히 다른 팀, 다른 시스템의 문제였다. Cosmos의 논제는 <strong>하나의 world model이 두 병목을 동시에 공략한다</strong>는 것이다. Cosmos Reason이 (1)을, Cosmos Transfer가 (2)를 맡되, 둘은 같은 WFM substrate를 공유한다. 이것이 이 코스가 말하는 하이브리드 통합의 가장 응축된 형태다.</p></div><div class="sb-block"><h2>world-model planning vs reactive policy</h2><p>이제 뇌가 '계획'을 한다는 게 정책과 어떻게 다른지 기계적으로 짚자. 두 패러다임을 나란히 놓으면 차이가 선명하다.</p>
+<table>
+<thead>
+<tr>
+<th>구분</th>
+<th>reactive policy</th>
+<th>world-model planning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>동작</td>
+<td>현재 관측 → 즉시 행동</td>
+<td>미래를 latent로 rollout → 계획 선택</td>
+</tr>
+<tr>
+<td>함수 형태</td>
+<td><span class="math-inline">\(a_t = \pi(o_t)\)</span></td>
+<td><span class="math-inline">\(s_{t+1}=f(s_t,a_t)\)</span> 로 여러 미래를 상상 후 best 선택</td>
+</tr>
+<tr>
+<td>앞을 내다봄</td>
+<td>없음 (한 스텝)</td>
+<td>있음 (horizon <span class="math-inline">\(H\)</span> 스텝)</td>
+</tr>
+<tr>
+<td>새 목표 대응</td>
+<td>재학습 필요 경향</td>
+<td>같은 dynamics 위에서 목표만 바꿔 재계획</td>
+</tr>
+<tr>
+<td>계산 비용</td>
+<td>싸다 (1회 forward)</td>
+<td>비싸다 (다수 rollout)</td>
+</tr>
+<tr>
+<td>실패 모드</td>
+<td>근시안적, 함정에 빠짐</td>
+<td>상상이 부정확하면 계획도 틀림</td>
+</tr>
+</tbody>
+</table>
+<p>reactive policy는 반사신경이다. 현재 관측 <span class="math-inline">\(o_t\)</span> 를 넣으면 행동 <span class="math-inline">\(a_t=\pi(o_t)\)</span> 가 즉시 튀어나온다. 빠르고 안정적이지만 앞을 못 본다 — 지금 좋아 보이는 행동이 세 스텝 뒤에 막다른 길이어도 알 수 없다.</p>
+<p>world-model planning은 수읽기다. latent state <span class="math-inline">\(s_t\)</span> 에서 시작해 dynamics <span class="math-inline">\(s_{t+1}=f(s_t,a_t)\)</span> 로 여러 개의 후보 action sequence를 머릿속에서 끝까지(horizon <span class="math-inline">\(H\)</span>) 굴려본다. 각 상상된 궤적에 reward를 매기고, 가장 높은 궤적의 첫 행동만 실제로 실행한 뒤, 다음 스텝에서 다시 상상한다. 이것이 MPC(Model Predictive Control)의 골격이고, 후보 sequence를 확률적으로 뽑아 상위만 남겨 반복 개선하면 CEM(Cross-Entropy Method)이 된다. Dreamer가 '상상 속에서 policy를 학습'했다면, planning은 '상상 속에서 매 순간 계획을 다시 짠다'.</p>
+<p>결정적 트레이드오프는 계산 비용과 상상 품질이다. planning은 매 스텝 수십~수백 개의 rollout을 요구해 느리다. 그리고 dynamics <span class="math-inline">\(f\)</span> 가 부정확하면 상상한 미래가 틀리고, 틀린 미래 위에서 세운 계획도 틀린다(compounding error). 그래서 실무의 GR00T식 계층 구조가 영리하다 — Cosmos Reason이 느리지만 앞을 내다보는 high-level planning을 담당하고, 아래층의 VLA policy와 whole-body RL controller가 빠른 reactive 실행을 담당한다. <strong>planning은 위에서 드물게, reaction은 아래에서 촘촘하게.</strong> 이 둘을 하나로 섞으려 하지 않고 층으로 나눈 것이 하이브리드 통합의 실용적 핵심이다.</p></div><div class="sb-block"><h2>Cosmos 3: 생성·추론·시뮬의 통합</h2><p>COMPUTEX 2026에서 NVIDIA는 Cosmos 3를 공개하며 이 이중 역할이 어디로 수렴하는지를 못 박았다.</p>
+<blockquote>
+<p>the first world foundation model to unify synthetic world generation, physical AI reasoning and action simulation.</p>
+</blockquote>
+<p>풀이: 합성 세계 생성(synthetic world generation), 물리 AI 추론(physical AI reasoning), 그리고 행동 시뮬레이션(action simulation)을 하나로 통합한 <strong>최초의 world foundation model</strong>. 이 세 가지가 정확히 우리가 앞에서 따로 본 조각들이다 — 생성은 Cosmos Transfer의 데이터 공장, 추론은 Cosmos Reason의 뇌, 그리고 행동 시뮬은 '이 행동을 하면 세상이 어떻게 될지'를 굴려보는 rollout 능력이다.</p>
+<p>핵심 메시지는 '통합'이다. 지금까지 Reason(추론)과 Transfer(생성)를 별개 제품처럼 이야기했지만, Cosmos 3의 논제는 이들이 실은 하나의 WFM이 가진 서로 다른 출력 모드라는 것이다. 같은 latent dynamics를 (1) 계획을 위해 질의하면 reasoning, (2) 데이터를 위해 렌더링하면 generation, (3) 정책을 평가하려 굴리면 action simulation이 된다. 이중 역할이 사실은 삼중 역할의 단일 substrate로 수렴한 셈이다.</p>
+<p>이 통합이 왜 큰 사건인가. action simulation이 같은 모델 안에 들어오면, 데이터를 만드는 world와 정책이 실행되는 world와 계획이 상상되는 world가 물리적으로 일관된다. 예전에는 Isaac Sim(시뮬레이터), Cosmos Transfer(생성), Cosmos Reason(추론)이 각자의 world 가정을 갖는 별도 시스템이라 그 사이에서 gap이 샜다. 세 가지를 하나의 WFM으로 묶으면 '학습에 쓴 세계'와 '계획에 쓴 세계'와 '평가에 쓴 세계'가 같은 dynamics를 공유한다. 이는 sim-to-real gap을 근본에서 줄이는 방향이다.</p>
+<p>이 챕터의 결론으로 돌아오자. 뇌(계획)와 공장(데이터)이 같은 world model이라는 명제는 Cosmos Reason과 Cosmos Transfer라는 두 얼굴에서 출발해, Cosmos 3에서 생성·추론·시뮬의 단일 substrate로 완성된다. 하나의 world model이 로봇 학습의 두(혹은 세) 병목을 동시에 먹는다 — 이것이 GR00T의 상단 층을 떠받치는 가장 큰 베팅이다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">머릿속 시뮬레이터를 굴리는 영화감독</div>
+      <div class="a-body"><p>Cosmos의 이중 역할을 이해하는 가장 좋은 그림은 한 명의 영화감독이다. 이 감독은 머릿속에 세상이 어떻게 굴러가는지에 대한 완전한 모델 — 사람이 어떻게 움직이고, 물건이 어떻게 떨어지고, 빛이 어떻게 비치는지 — 을 갖고 있다. 이 내부 모델이 바로 world model이다.</p>
+<p>감독이 이 모델을 <strong>앞을 내다보는 데</strong> 쓰면 뇌(Cosmos Reason)가 된다. '이 배우가 저 문으로 들어가서 컵을 집고 돌아 나오려면, 카메라를 어디 두고 어떤 순서로 찍어야 하지?' 하고 머릿속에서 장면을 여러 버전으로 굴려본 뒤 가장 나은 순서를 고른다. 이것이 stepwise plan의 분해이자 world-model planning이다. 체스 기사가 수를 두기 전에 몇 수 앞을 읽는 것과 같다 — 현재 판만 보고 반사적으로 두는 게 아니라(<span class="math-inline">\(a=\pi(o)\)</span>), 미래를 <span class="math-inline">\(s_{t+1}=f(s_t,a_t)\)</span> 로 상상해 best line을 고른다.</p>
+<p>감독이 같은 모델을 <strong>세트를 짓는 데</strong> 쓰면 데이터 공장(Cosmos Transfer)이 된다. 촬영할 실제 로케이션이 부족하니, 머릿속 세계 모델로 photoreal한 세트를 무한히 지어낸다. 조명을 바꾸고 배경을 갈고 배우 위치를 흔들어(domain randomization) 같은 장면의 수천 가지 버전을 찍어낸다. 게다가 감독은 각 세트의 '정답'(무엇이 어디 있는지)을 처음부터 알고 있으니 label이 공짜로 따라온다.</p>
+<p>결정적 통찰: <strong>앞을 내다보는 능력과 세트를 짓는 능력은 같은 머릿속 세계 모델에서 나온다.</strong> 세상이 어떻게 굴러가는지 알아야 미래도 상상하고 그럴듯한 세트도 지을 수 있다. 그래서 하나의 감독(하나의 WFM)이 '무엇을 찍을지 계획'과 '어디서 찍을지 세트 제작'이라는 두 병목을 동시에 해결한다. Cosmos 3에 이르면 이 감독은 계획하고, 세트를 짓고, 심지어 배우의 연기(action simulation)까지 같은 머릿속에서 리허설한다 — 세 작업이 하나의 상상력 위에서 일관되게 돌아간다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>world-model planning의 골격을 CEM(Cross-Entropy Method) 스타일 MPC로 스케치한다. 핵심 아이디어: 학습된 dynamics <span class="math-inline">\(s_{t+1}=f(s_t,a_t)\)</span> 위에서 여러 action sequence를 latent 공간에서 rollout(상상)하고, reward가 높은 상위 궤적으로 행동 분포를 좁혀가며, 최종적으로 best plan의 첫 행동만 실행한다. Cosmos가 실제로 하는 일의 개념적 축소판이다 — reactive policy <span class="math-inline">\(a=\pi(o)\)</span> 와의 차이가 여기서 코드로 드러난다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import numpy as np
+
+def plan_with_world_model(world_model, reward_fn, s0,
+                          horizon=12, n_samples=256, elite_frac=0.1,
+                          n_iters=4, act_dim=7):
+    &quot;&quot;&quot;학습된 WFM 위에서 CEM-MPC로 best action의 첫 스텝을 반환.
+    world_model.step(s, a) -&gt; s_next  (latent dynamics f)
+    reward_fn(s, a)        -&gt; scalar  (goal-conditioned reward)
+    &quot;&quot;&quot;
+    n_elite = max(1, int(n_samples * elite_frac))
+    # 행동 시퀀스 분포를 Gaussian으로 초기화 (mean 0, std 1)
+    mean = np.zeros((horizon, act_dim))
+    std = np.ones((horizon, act_dim))
+
+    for _ in range(n_iters):
+        # 1) 여러 후보 action sequence를 샘플링
+        seqs = mean[None] + std[None] * np.random.randn(
+            n_samples, horizon, act_dim)
+        seqs = np.clip(seqs, -1.0, 1.0)
+
+        # 2) 각 후보를 latent dynamics로 &#x27;상상&#x27; rollout하고 reward 누적
+        returns = np.zeros(n_samples)
+        for i in range(n_samples):
+            s = s0
+            total = 0.0
+            for t in range(horizon):
+                a = seqs[i, t]
+                total += reward_fn(s, a)      # 상상 속 보상
+                s = world_model.step(s, a)    # s_{t+1} = f(s_t, a_t)
+            returns[i] = total
+
+        # 3) reward 상위 elite 궤적만 남겨 분포를 그쪽으로 좁힘
+        elite_idx = np.argsort(returns)[-n_elite:]
+        elite = seqs[elite_idx]
+        mean = elite.mean(axis=0)
+        std = elite.std(axis=0) + 1e-6
+
+    # 4) 최종 계획의 &#x27;첫 행동&#x27;만 실행 (다음 스텝에서 다시 계획)
+    return mean[0]
+
+# reactive policy와의 대비:
+#   reactive:      a = policy(obs)              # 앞을 안 봄, 1회 forward
+#   world-model:   a = plan_with_world_model(f) # H 스텝을 상상 후 선택</code></pre>
+      <div class="c-walk"><p>이 스케치의 뼈대가 곧 world-model planning의 정의다. <code>world_model.step</code>이 학습된 dynamics <span class="math-inline">\(s_{t+1}=f(s_t,a_t)\)</span> 이고, 우리는 실제 로봇을 움직이지 않고 latent 공간 안에서만 <code>horizon</code> 스텝을 굴린다 — 이것이 '상상(imagination) rollout'이다. (2)에서 각 후보 궤적의 reward를 누적하고, (3)에서 상위 <code>elite</code>만 남겨 다음 iteration의 샘플링 분포를 그쪽으로 좁히는 게 CEM의 핵심이다. <code>n_iters</code>번 반복하며 좋은 행동 분포로 수렴한다. 결정적 부분은 (4) — 12스텝짜리 계획을 다 세워놓고도 <strong>첫 행동만</strong> 실행하고, 다음 관측에서 처음부터 다시 계획한다(receding horizon). 이것이 MPC가 상상의 오차(compounding error)를 매 스텝 새 관측으로 교정하는 방식이다. 맨 아래 주석이 이 챕터의 대비를 압축한다: reactive는 <code>a=policy(obs)</code> 한 줄로 근시안적이고 싸며, world-model planning은 <span class="math-inline">\(H\)</span> 스텝을 내다보는 대신 매 스텝 수백 번의 rollout이라는 값을 치른다. GR00T가 이 값비싼 planning을 Cosmos Reason(뇌)에만 두고 아래층을 reactive하게 둔 이유가 여기서 코드 수준으로 납득된다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">World model은 2026년 Physical AI 연구·엔지니어링에서 가장 뜨거운 축이다. NVIDIA(Cosmos), Google DeepMind(Genie/Dreamer 계보), Wayve, 자율주행·humanoid 스타트업 전반이 WFM을 핵심 substrate로 놓는다. 면접에서는 &#x27;world model이 정확히 무엇을 사는가&#x27;, &#x27;planning과 policy를 어떻게 나눌 것인가&#x27;, &#x27;합성데이터의 sim-to-real gap을 어떻게 좁히는가&#x27;가 senior 이상에서 반복적으로 나온다. Cosmos의 이중 역할(뇌+데이터엔진)을 하나의 latent dynamics로 설명할 수 있으면 강한 시그널이다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>World model을 latent dynamics(s_{t+1}=f(s_t,a_t)) substrate로 정의하고, task-specific policy와 구분</li><li>world-model planning(미래 rollout 후 선택)과 reactive policy(관측 즉시 행동)의 트레이드오프를 정량적으로 대비</li><li>Cosmos Reason(계획)과 Cosmos Transfer(데이터 생성)가 같은 WFM의 두 얼굴임을 이해</li><li>sim-to-real gap을 rendering gap과 physics gap으로 분해하고, Cosmos Transfer/domain randomization의 역할을 설명</li><li>planning의 compounding error와 계산 비용을 인지하고, 계층 분리(느린 planning 위 + 빠른 reaction 아래)로 완화하는 설계를 논증</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>World model을 그냥 &#x27;video 생성 모델&#x27;로만 이해하고 planning substrate 역할을 놓침</li><li>planning과 policy를 같은 것으로 뭉뚱그려 reactive vs deliberative 차이를 설명 못 함</li><li>합성데이터를 &#x27;무한 공짜 데이터&#x27;로만 보고 rendering/physics gap과 label 정확성 이슈를 모름</li><li>dynamics가 부정확할 때 상상 위 계획이 무너지는 compounding error를 고려 안 함</li><li>MPC/CEM 없이 &#x27;world model이 알아서 행동을 낸다&#x27;는 식으로 planning 메커니즘을 얼버무림</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>World model 기반 planning과 end-to-end reactive policy의 차이를 함수 형태와 계산 비용, 실패 모드 관점에서 대비하라. GR00T는 왜 둘을 층으로 나눴는가?</li><li>Cosmos Reason과 Cosmos Transfer가 &#x27;같은 world model의 두 역할&#x27;이라는 주장을 latent dynamics 관점에서 정당화하라. 예측과 생성이 왜 같은 능력의 앞뒷면인가?</li><li>sim에서 완벽히 학습한 정책이 실제 카메라 앞에서 무너진다. 원인을 rendering gap과 physics gap으로 분해하고, Cosmos Transfer가 어느 쪽을 어떻게 공략하는지, 남는 gap은 무엇인지 답하라.</li><li>CEM-MPC로 world-model planning을 구현할 때 horizon과 sample 수를 늘리면 무엇이 좋아지고 무엇이 나빠지는가? dynamics 오차가 클 때 horizon을 어떻게 조정할 것인가?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> Familiar: Cosmos, world model, Dreamer, MPC 같은 용어를 안다. Mastery: world model을 latent dynamics substrate로 정의하고, 그 위에서 planning(rollout 후 선택)과 generation(장면 렌더링)이 같은 dynamics의 두 출력 모드임을 설명한다. reactive vs world-model planning의 트레이드오프를 함수 형태·비용·compounding error로 정량화하고, GR00T가 왜 planning을 상단 층(Cosmos Reason)에, reaction을 하단 층에 배치했는지를 이중 역할·계층 설계 관점에서 논증한다. Cosmos 3의 &#x27;생성·추론·행동 시뮬 통합&#x27;이 왜 sim-to-real gap을 근본에서 줄이는 방향인지 설명할 수 있다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>WFM은 학습된 latent dynamics substrate다</h3><p>세상이 어떻게 굴러가는지의 내부 표현(s_{t+1}=f(s_t,a_t))으로, 미래를 상상(rollout)하거나 물리를 추론하는 밑바탕. 특정 task를 푸는 policy가 아니라 여러 역할이 그 위에 올라타는 substrate다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>Cosmos Reason = GR00T의 뇌</h3><p>high-level 지시를 scene understanding에 grounding된 stepwise action plan으로 분해한다. 계획이 곧 미래 예측 문제이기 때문에 뇌가 하필 world model이어야 한다. Cosmos Reason 2로 발전 중.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>Cosmos Transfer = 뇌가 찍어내는 데이터 공장</h3><p>sim→photoreal 도메인 전이로 rendering gap을 좁혀 sim-to-real gap을 줄인다. 시뮬레이터가 구조와 label을 주면 겉모습만 실사로 갈아끼워, 정답이 붙은 실사급 데이터를 대량 생산한다. Isaac Sim과 결합.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>하나의 world model이 두 병목을 동시에 공략한다</h3><p>Cosmos는 (A) 추론·계획 substrate이자 (B) 합성데이터 생성기 — &#x27;무엇을 할지 계획&#x27;과 &#x27;학습할 데이터 구하기&#x27;라는 로봇 학습의 두 병목을 같은 WFM으로 먹는다. 이 코스 하이브리드 통합 논제의 가장 응축된 사례.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>planning vs reactive는 앞을 내다보느냐의 차이</h3><p>reactive policy는 관측 즉시 행동(a=policy(obs))으로 싸고 근시안적. world-model planning은 여러 미래를 latent로 rollout한 뒤 best를 선택(MPC/CEM)해 앞을 내다보지만 계산이 비싸고 dynamics 오차에 취약하다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>GR00T는 planning과 reaction을 층으로 나눴다</h3><p>값비싼 앞내다보기(Cosmos Reason)는 상단에 드물게, 빠른 실행(VLA policy + whole-body RL)은 하단에 촘촘하게. 둘을 하나로 섞지 않고 분리한 것이 하이브리드 통합의 실용적 핵심.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>예측과 생성은 같은 dynamics의 앞뒷면</h3><p>세상이 어떻게 굴러가는지 아는 능력이 방향만 바꾸면 미래 예측(추론)도 되고 그럴듯한 장면 렌더링(생성)도 된다. 그래서 계획하는 뇌와 데이터를 찍는 공장이 같은 world model일 수 있다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>Cosmos 3는 생성·추론·시뮬을 하나로 통합한다</h3><p>COMPUTEX 2026 공개, synthetic world generation·physical AI reasoning·action simulation을 통합한 최초의 WFM. 이중 역할이 단일 substrate로 수렴하며, 학습·계획·평가가 같은 dynamics를 공유해 sim-to-real gap을 근본에서 줄이는 방향이다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-04.html">← Inside GR00T N1.6</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-06.html">Whole-Body Control &amp; SONIC →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>
