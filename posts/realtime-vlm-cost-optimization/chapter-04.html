@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch4: StreamingVLM — Infinite Stream, Constant Cost — Real-time VLM Cost Optimization — direcf</title>
+  <meta name="description" content="attention sink를 비디오로 확장한다. Sink + 텍스트 윈도우(길게) + 비전 윈도우(짧게)의 3구역 고정 KV cache에, RoPE 위치 재인덱싱과 학습-추론 정렬을 더해, 캐시 크기를 상수로 묶고 H100 한 장에서 8 FPS 무한 스트림을 돌린다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;height:22px;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><linearGradient id="direcf-nav-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs></svg>
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg></span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg></span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.25 15a4.5 4.5 0 0 0 4.5 4.5H18a3.75 3.75 0 0 0 1.332-7.257 3 3 0 0 0-3.758-3.848 5.25 5.25 0 0 0-10.233 2.33A4.502 4.502 0 0 0 2.25 15Z"/></svg></span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/multimodal-ai">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"/></svg></span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg></span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/multimodal-ai">Real-time VLM Cost Optimization</a><span class="sep">›</span>
+        <strong>Ch04 StreamingVLM — Infinite Stream, Constant Cost</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 04 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">♾️</div>
+      <h1 class="chapter-title">StreamingVLM — Infinite Stream, Constant Cost</h1>
+      <div class="chapter-title-kr">StreamingVLM — 무한 스트림을 고정 비용으로</div>
+      <div class="chapter-tldr">attention sink를 비디오로 확장한다. Sink + 텍스트 윈도우(길게) + 비전 윈도우(짧게)의 3구역 고정 KV cache에, RoPE 위치 재인덱싱과 학습-추론 정렬을 더해, 캐시 크기를 상수로 묶고 H100 한 장에서 8 FPS 무한 스트림을 돌린다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-04.png" alt="Chapter 4 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 4 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>순진한 full-cache와 슬라이딩 윈도우가 각각 왜 실패하는지 설명한다</li><li>sink·텍스트·비전 3구역 캐시의 역할 분담을 안다</li><li>중간 토큰 방출 후 RoPE 위치 재인덱싱이 필요한 이유를 이해한다</li><li>학습-추론 정렬이 짧은 학습으로 무한 추론을 가능케 하는 원리를 안다</li><li>텍스트 윈도우가 과거 영상의 압축 기억 역할을 겸하는 구조를 설명한다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>이제 Stage ② 기억 관리로 넘어간다. 이 단계의 다섯 논문은 전부 하나의 질문에 답한다 — <strong>KV cache를 시간과 무관한 고정 크기로 어떻게 유지하는가.</strong> 그 계보의 출발점이 StreamingVLM(MIT Han Lab, arXiv 2510.09608)이다.</p>
+<p>1장에서 배운 attention sink를 기억하는가? StreamingLLM이 텍스트에서 &quot;sink + 최근 윈도우&quot;로 무한 스트림을 처리했다면, StreamingVLM은 이것을 <strong>비디오로</strong> 확장한다. 하지만 단순 확장이 아니다. 핵심은 &quot;왜 슬라이딩 윈도우를 그냥 쓰면 망하는가&quot;에 대한 정교한 답에 있다.</p>
+<p>비디오에는 텍스트에 없는 특수성이 있다 — 비전 토큰은 양이 많고 정보 밀도가 낮은 반면, 모델이 생성한 텍스트(캡션·답변)는 양이 적고 밀도가 높다. StreamingVLM은 이 비대칭을 이용해 <strong>비전 토큰은 짧게 유지하고 텍스트는 길게 유지</strong>한다. 그 결과 과거 영상의 원본 픽셀은 버리되 그 내용을 서술한 텍스트가 압축된 장기 기억으로 남는다. 이 챕터는 그 3구역 구조와, 그것을 실제로 작동시키는 두 디테일(위치 재인덱싱, 학습-추론 정렬)을 해부한다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>왜 순진한 두 접근이 실패하는가</h2><p>고정 캐시를 만들려는 순진한 두 시도가 왜 무너지는지부터 봐야 StreamingVLM의 설계가 이해된다.</p>
+<p><strong>접근 A — 전부 유지.</strong> KV cache가 선형으로 커지고 attention은 사실상 제곱 비용이 된다(1장에서 계산했다). 몇 분 만에 메모리와 지연이 폭발한다. 무한 스트림에는 애초에 불가능한 선택지다.</p>
+<p><strong>접근 B — 최근 N개만 유지(순수 슬라이딩 윈도우).</strong> 여기엔 두 가지 함정이 있다.</p>
+<p>첫째, 앞서 배운 <strong>attention sink를 버리면 모델이 붕괴</strong>한다. 최근 N개만 남기면 맨 앞 sink 토큰이 사라져 attention 분포가 무너진다.</p>
+<p>둘째, 더 미묘한 <strong>학습-추론 불일치(train-test mismatch)</strong>다. 모델은 학습 때 &quot;처음부터 끝까지 다 보이는&quot; 풀 attention으로 배웠는데, 추론에서 갑자기 중간이 뻥 뚫린 캐시를 주면 이는 학습 중 본 적 없는 분포다. 모델은 처음 보는 입력 형태에 성능이 무너진다.</p>
+<p>즉 고정 캐시는 &quot;무엇을 남길지&quot;만의 문제가 아니라 &quot;모델이 그 남긴 형태를 학습 때도 봤는가&quot;의 문제이기도 하다. StreamingVLM은 이 둘을 각각 3구역 구조와 정렬 학습으로 푼다.</p></div><div class="sb-block"><h2>3구역 KV cache — 역할에 따라 수명을 달리한다</h2><p>StreamingVLM의 KV cache는 세 구역으로 나뉘고, 각 구역이 서로 다른 수명을 가진다.</p>
+<p>- <strong>Sink 토큰</strong> — 맨 앞 몇 개, 영구 보존. attention 붕괴를 막는 닻(anchor) 역할. 절대 방출하지 않는다.</p>
+<p>- <strong>텍스트 윈도우(길게)</strong> — 지금까지 모델이 생성한 답변·캡션 토큰들. 텍스트는 토큰당 정보 밀도가 높아 사실상 과거 영상의 &quot;요약본&quot; 역할을 하므로 오래 유지한다.</p>
+<p>- <strong>비전 윈도우(짧게)</strong> — 최근 프레임의 비주얼 토큰만. 양이 많고 밀도가 낮으므로 오래된 것부터 빨리 방출한다.</p>
+<p>이 구조의 직관이 핵심이다. <strong>과거 영상의 원본 픽셀 토큰은 버리되, 그 내용을 서술한 텍스트가 압축된 기억으로 남는다.</strong></p>
+<p>사람이 영화를 볼 때와 똑같다. 두 시간 전 장면의 픽셀을 정확히 기억하진 못해도, &quot;아까 주인공이 총을 챙겼지&quot;라는 언어적 기억은 또렷이 남는다. 비전은 순간의 지각이고 텍스트는 지속되는 기억이다. StreamingVLM은 이 인간 기억의 비대칭을 KV cache 설계에 그대로 옮겼다.</p>
+<p>덕분에 캐시 크기가 상수로 고정되어, 시간이 아무리 지나도 프레임당 처리 비용이 일정하다. 결과는 강력하다 — H100 한 장에서 8 FPS로 사실상 무한 스트림을 처리하고, 자체 장기 스트리밍 벤치마크에서 GPT-4o mini 대비 66% 승률을 낸다.</p></div><div class="sb-block"><h2>위치 재인덱싱 — 구멍 난 좌표를 메운다</h2><p>3구역 구조를 실제로 작동시키려면 반드시 풀어야 하는 디테일이 있다 — <strong>위치 정보 문제</strong>다.</p>
+<p>요즘 LLM은 RoPE(Rotary Position Embedding)로 각 토큰에 위치 정보를 심는다. 그런데 중간의 비전 토큰을 방출하면 위치 번호에 구멍이 생긴다. 예를 들어 남은 토큰의 위치가 <span class="math-inline">\(0, 1, 2, \dots, 5000, 90000, 90001, \dots\)</span> 처럼 뛴다.</p>
+<p>모델은 이런 거대한 간격(gap)을 학습한 적이 없다. RoPE는 상대 위치에 민감하게 설계되어 있어, 5000에서 90000으로 점프하는 상대 거리는 모델에게 &quot;듣도 보도 못한 먼 거리&quot;로 해석되어 혼란을 일으킨다.</p>
+<p>해법은 방출 후 남은 토큰들의 위치를 <strong>연속되게 다시 매기는 것</strong>이다.</p>
+<p><span class="math-display">\[\text{방출 전: } [0,1,\dots,5000,\ 90000,90001,\dots] \;\longrightarrow\; \text{재인덱싱 후: } [0,1,2,3,\dots]\]</span></p>
+<p>이렇게 하면 모델 입장에서는 &quot;구멍 없는 짧은 시퀀스&quot;처럼 보인다. 실제로는 1시간 전 정보와 방금 전 정보가 섞여 있지만, 위치 좌표상으로는 매끄럽게 이어진 짧은 문맥이 된다. 이 재인덱싱이 없으면 3구역 캐시는 이론적으로만 예쁘고 실전에서는 붕괴한다 — 논문의 숨은 일꾼이다.</p></div><div class="sb-block"><h2>학습-추론 정렬 — 짧게 배워 무한히 추론한다</h2><p>마지막 조각은 앞서 언급한 학습-추론 불일치를 정면으로 해소하는 <strong>정렬 학습(training-inference alignment)</strong>이다.</p>
+<p>추론 때 캐시가 [sink + 텍스트 + 최근 비전]이라는 특정 모양을 가진다면, 학습도 그 모양과 비슷해지도록 맞춰준다. 구체적으로는 긴 영상 전체를 한 번에 학습하는 대신, <strong>짧은 구간을 겹쳐가며(overlapped) 학습</strong>해 추론 시의 캐시 분포를 학습 중에 미리 경험시킨다.</p>
+<p>이 정렬의 실용적 이득이 크다. 무한 스트림을 추론하기 위해 무한 길이 영상으로 학습할 필요가 없다. <strong>짧은 시퀀스 학습만으로 무한 스트림 추론이 가능</strong>하다. 학습 비용까지 절감되는 것이다 — Stage ②의 다른 기법들이 대부분 추론 시 비용만 다루는 것과 대조된다.</p>
+<p>정리하면 StreamingVLM은 세 가지를 결합해 완성된다.</p>
+<p>| 구성요소 | 해결하는 문제 |
+|---|---|
+| 3구역 고정 캐시 | 캐시 크기를 상수로 (메모리 폭발) |
+| 위치 재인덱싱 | RoPE 좌표 구멍 (위치 혼란) |
+| 학습-추론 정렬 | 분포 불일치 (성능 붕괴) |</p>
+<p>한계도 분명하다. 장기 기억이 <strong>텍스트 서술에 의존</strong>하므로, 모델이 말로 남기지 않은 과거 시각 정보는 소실된다. &quot;1시간 전 그 장면을 다시 자세히 봐&quot; 같은 질의에는 취약하다. 이 빈틈을 다음 장 ReKV(버리지 않고 오프로드+검색)가 보완재로 메운다. StreamingVLM과 ReKV는 &quot;버리되 요약을 남긴다&quot; vs &quot;안 버리고 창고에 넣는다&quot;라는 정반대 철학의 짝이다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">회의록만 남기는 서기</div>
+      <div class="a-body"><p>온종일 이어지는 마라톤 회의가 있다. 속기사가 모든 발언의 음성 파일을 통째로 보관하려 들면(full cache), 저장고가 몇 시간 만에 터진다. 그렇다고 최근 10분 음성만 남기면(순수 슬라이딩 윈도우), 회의 초반에 정한 대전제를 잊어 논의가 산으로 간다.</p>
+<p>유능한 서기는 다르게 한다. <strong>회의 안건표 첫 장(sink)은 늘 펼쳐두고</strong>, 지나간 논의는 원본 음성을 버리는 대신 <strong>핵심을 요약한 회의록 텍스트(텍스트 윈도우)로 길게 남기며</strong>, 방금 나온 발언의 생생한 음성(비전 윈도우)만 잠깐 손에 쥔다. 두 시간 전 발언의 억양은 잊어도 &quot;그때 예산 삭감에 합의했다&quot;는 문장은 회의록에 또렷이 남는다.</p>
+<p>여기에 두 가지 요령이 더 있다. 회의록 페이지를 버릴 때마다 <strong>쪽 번호를 1,2,3…으로 다시 매겨(위치 재인덱싱)</strong> 나중에 참조가 꼬이지 않게 하고, 신입 서기를 훈련할 때 <strong>실제 회의와 똑같은 &#x27;요약본+최근 발언&#x27; 형태로 연습시켜(학습-추론 정렬)</strong> 첫날부터 무한정 긴 회의도 감당하게 만든다. 단, 회의록에 안 적힌 사소한 장면은 영원히 사라진다 — 그게 이 방식의 한계다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>3구역 고정 캐시와 위치 재인덱싱을 개념 구현으로 보자. 새 프레임 KV가 들어올 때 비전 윈도우만 넘치면 방출하고, 남은 토큰의 위치를 연속으로 다시 매긴다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import torch
+
+class StreamingKVCache:
+    def __init__(self, n_sink=4, text_budget=1024, vision_budget=256):
+        self.n_sink = n_sink              # 영구 보존 닻
+        self.text_budget = text_budget    # 텍스트: 길게(밀도 높음)
+        self.vision_budget = vision_budget  # 비전: 짧게(밀도 낮음)
+        self.sink, self.text, self.vision = [], [], []   # 각 구역의 (K,V) 토큰
+
+    def add(self, kv, kind):
+        &quot;&quot;&quot;kv: 한 토큰의 (key, value). kind: &#x27;sink&#x27;|&#x27;text&#x27;|&#x27;vision&#x27;.&quot;&quot;&quot;
+        if kind == &quot;sink&quot; and len(self.sink) &lt; self.n_sink:
+            self.sink.append(kv)
+        elif kind == &quot;text&quot;:
+            self.text.append(kv)
+            if len(self.text) &gt; self.text_budget:
+                self.text.pop(0)          # 오래된 텍스트 방출 (천천히)
+        else:  # vision
+            self.vision.append(kv)
+            if len(self.vision) &gt; self.vision_budget:
+                self.vision.pop(0)        # 오래된 비전 방출 (빠르게)
+
+    def assemble(self):
+        &quot;&quot;&quot;추론용 캐시를 조립하고 RoPE 위치를 연속으로 재인덱싱.&quot;&quot;&quot;
+        ordered = self.sink + self.text + self.vision      # 3구역 순서 결합
+        keys  = torch.stack([k for k, v in ordered])
+        vals  = torch.stack([v for k, v in ordered])
+        # 방출로 생긴 위치 구멍을 무시하고 0..N-1로 새 좌표 부여
+        new_positions = torch.arange(len(ordered))
+        keys = apply_rope(keys, new_positions)             # 구멍 없는 짧은 시퀀스처럼
+        return keys, vals
+
+# 캐시 크기는 항상 n_sink + text_budget + vision_budget 이하로 &#x27;상수&#x27; 고정
+</code></pre>
+      <div class="c-walk"><p>세 리스트 <code>sink/text/vision</code>이 서로 다른 예산(budget)을 갖는 게 핵심이다 — <code>vision_budget</code>(256)이 <code>text_budget</code>(1024)보다 훨씬 작아, 정보 밀도가 낮은 비전 토큰이 먼저 빠르게 방출된다. <code>sink</code>는 예산 초과 로직이 없어 영구 보존된다. <code>assemble</code>의 <code>new_positions = torch.arange(len(ordered))</code>가 위치 재인덱싱이다 — 실제로 방출된 토큰 때문에 원래 좌표엔 구멍이 났지만, 남은 토큰에 0부터 연속 번호를 다시 매겨 모델에게는 매끄러운 짧은 시퀀스로 보이게 한다. 전체 캐시 크기가 세 예산의 합으로 상한이 잡혀 있어, 스트림이 몇 시간을 흘러도 메모리가 상수로 유지된다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">StreamingVLM은 실시간 VLM 배포의 사실상 베이스라인이다. 면접·설계 리뷰에서 &#x27;고정 캐시를 어떻게 구성하고 위치 인코딩을 어떻게 다루는가&#x27;는 스트리밍 추론 이해도의 핵심 지표다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>attention sink 보존과 위치 재인덱싱을 고정 캐시의 필수 요소로 인지하는가</li><li>비전/텍스트의 정보 밀도 차이를 캐시 예산 배분으로 연결하는가</li><li>학습-추론 분포 정렬이 성능 유지에 왜 필수인지 설명하는가</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>슬라이딩 윈도우를 그냥 적용하고 sink 붕괴·위치 구멍을 간과함</li><li>고정 캐시를 추론만의 문제로 보고 학습 정렬의 필요성을 놓침</li><li>&quot;텍스트 요약으로 다 커버된다&quot;며 말 안 한 시각 정보 소실 한계를 무시함</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>슬라이딩 윈도우로 고정 캐시를 만들었더니 출력이 무너졌다. 두 가지 원인과 각 수정은?</li><li>비전 토큰과 텍스트 토큰에 서로 다른 캐시 예산을 주는 근거는 무엇인가?</li><li>StreamingVLM만으로 &#x27;1시간 전 장면 다시 보기&#x27; 질의가 왜 어려운가? 어떻게 보완하겠는가?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 겉핥기는 &#x27;sink + 최근 윈도우를 남긴다&#x27;까지다. 통달한 사람은 3구역 예산 배분·RoPE 재인덱싱·학습 정렬을 각각 어떤 실패 모드를 막는 장치로 설명하고, 텍스트 의존 장기기억의 빈틈을 ReKV/StreamMem으로 메우는 조합까지 설계한다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>두 순진한 실패</h3><p>전부 유지는 폭발, 순수 슬라이딩은 sink 붕괴+학습 불일치로 무너진다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>3구역 캐시</h3><p>sink(영구)·텍스트(길게)·비전(짧게)로 수명을 차등해 크기를 상수로 고정한다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>텍스트=압축 기억</h3><p>픽셀은 버리되 그 내용을 서술한 텍스트가 과거의 요약 기억으로 남는다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>위치 재인덱싱</h3><p>방출로 생긴 RoPE 좌표 구멍을 연속 재부여해 구멍 없는 짧은 시퀀스로 위장한다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>학습-추론 정렬</h3><p>추론 캐시 모양으로 짧게 학습해 무한 스트림 추론과 학습비 절감을 동시에 얻는다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>상수 비용</h3><p>H100 한 장 8 FPS로 무한 스트림, GPT-4o mini 대비 66% 승률.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>텍스트 의존 한계</h3><p>말로 안 남긴 과거 시각 정보는 소실 — ReKV 계열이 보완재.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-03.html">← Dispider — Disentangled Perception, Decision, Reaction</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-05.html">ReKV — Offload then Retrieve →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch7: StreamMem — Fixed-Size, Importance-Ranked Memory — Real-time VLM Cost Optimization — direcf</title>
+  <meta name="description" content="FIFO의 나이순 방출을 중요도순으로 바꾼다. 새 프레임이 올 때마다 [기존 메모리+새 KV]를 한 덩어리로 놓고 전체를 중요도로 재선별·재압축해, 스트림 길이와 완전히 무관한 고정 크기 KV 메모리를 유지한다. 중요도는 범용 프록시 질의로 측정한다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;height:22px;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><linearGradient id="direcf-nav-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs></svg>
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg></span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg></span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.25 15a4.5 4.5 0 0 0 4.5 4.5H18a3.75 3.75 0 0 0 1.332-7.257 3 3 0 0 0-3.758-3.848 5.25 5.25 0 0 0-10.233 2.33A4.502 4.502 0 0 0 2.25 15Z"/></svg></span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/multimodal-ai">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"/></svg></span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg></span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/multimodal-ai">Real-time VLM Cost Optimization</a><span class="sep">›</span>
+        <strong>Ch07 StreamMem — Fixed-Size, Importance-Ranked Memory</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 07 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">⚖️</div>
+      <h1 class="chapter-title">StreamMem — Fixed-Size, Importance-Ranked Memory</h1>
+      <div class="chapter-title-kr">StreamMem — 밀어내지 말고 매번 다시 요약하라</div>
+      <div class="chapter-tldr">FIFO의 나이순 방출을 중요도순으로 바꾼다. 새 프레임이 올 때마다 [기존 메모리+새 KV]를 한 덩어리로 놓고 전체를 중요도로 재선별·재압축해, 스트림 길이와 완전히 무관한 고정 크기 KV 메모리를 유지한다. 중요도는 범용 프록시 질의로 측정한다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-07.png" alt="Chapter 7 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 7 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>FIFO 망각과 중요도순 방출의 차이를 명확히 구분한다</li><li>매 스텝 전체를 재선별하는 방식이 왜 나이순보다 공정한지 안다</li><li>실제 질문 없이 범용 프록시 질의로 중요도를 재는 원리를 설명한다</li><li>GPU 메모리가 스트림 길이와 완전 무관해지는 배포상 이점을 안다</li><li>프록시 질의에 이벤트 정의를 심는 편향 아이디어(열린 연구)를 이해한다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>6장 LiveVLM의 마지막 한계 — FIFO 망각 — 를 기억하는가? 저장 한계를 넘으면 오래된 것부터 밀어내는데, 이 방출이 나이순이라 중요도와 무관했다. 30분 전의 결정적 단서가 방금 들어온 사소한 프레임에 밀려 사라지는 위험. StreamMem(arXiv 2508.15717)은 정확히 이 지점을 공략한다 — <strong>&quot;밀어내지 말고, 매번 다시 요약하라.&quot;</strong></p>
+<p>핵심 전환은 방출의 우선순위를 <strong>나이에서 중요도로</strong> 바꾸는 것이다. 오래됐어도 중요하면 살아남고, 방금 들어왔어도 사소하면 밀려난다. 옛것과 새것이 나이가 아니라 <strong>중요도로 공정하게 경쟁</strong>한다.</p>
+<p>이를 위해 StreamMem은 처음부터 끝까지 <strong>고정 크기 KV 메모리 하나</strong>만 유지하고, 새 프레임이 올 때마다 기존 메모리와 새 KV를 합쳐 전체를 다시 선별·압축한다. 그 결과 GPU 메모리가 스트림 길이와 <strong>완전히 무관</strong>해져, 24시간 감시의 자원 계획이 상수 계산이 된다 — 배포 관점에서 대단히 매력적인 성질이다. 이 챕터는 그 재압축 메커니즘과, &quot;중요도를 어떻게 재는가&quot;라는 프록시 질의 트릭, 그리고 이벤트 탐지를 위한 편향 아이디어(열린 연구 지점)를 다룬다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>재압축 — 나이순을 중요도순으로</h2><p>StreamMem의 작동은 매 프레임 반복되는 하나의 루프로 요약된다.</p>
+<p>처음부터 끝까지 <strong>고정 크기 KV 메모리 하나</strong>만 유지한다. 새 프레임이 도착하면,</p>
+<p>1. [기존 메모리 + 새 프레임 KV]를 <strong>한 덩어리로</strong> 놓는다.</p>
+<p>2. 이 합쳐진 덩어리 전체를 <strong>중요도 기준으로 재선별·재압축</strong>한다.</p>
+<p>3. 고정 크기에 맞게 상위 중요도 토큰만 남긴다.</p>
+<p>FIFO와의 차이가 여기서 극명하다. FIFO는 &quot;가장 오래된 것&quot;을 무조건 방출하지만, StreamMem은 <strong>전체를 다시 평가</strong>해 &quot;가장 덜 중요한 것&quot;을 방출한다. 오래됐어도 중요하면 살아남는다.</p>
+<p><span class="math-display">\[\text{FIFO: keep} = \text{argmax}_{\text{나이}} \quad\neq\quad \text{StreamMem: keep} = \text{argmax}_{\text{중요도}}\]</span></p>
+<p>이 &quot;매번 전체를 다시 요약한다&quot;는 발상이 중요하다. 기존 메모리를 고정된 것으로 취급하지 않고, 새 정보가 들어올 때마다 과거의 중요도까지 재평가한다. 어제는 중요해 보였던 정보가 오늘의 맥락에서 덜 중요해질 수 있고, 그 반대도 가능하다. 메모리가 정적 저장고가 아니라 <strong>끊임없이 재정렬되는 우선순위 큐</strong>처럼 작동한다.</p>
+<p>대가는 명확하다 — 스텝마다 재선별 연산이 추가된다. FIFO는 그냥 앞을 자르면 되지만, StreamMem은 매 스텝 중요도를 다시 계산해야 한다. 이 추가 연산이 &quot;정보를 더 똑똑하게 보존&quot;하는 값이다.</p></div><div class="sb-block"><h2>프록시 질의 — 질문 없이 중요도를 재는 법</h2><p>&quot;중요도로 선별한다&quot;고 했는데, 중요도를 어떻게 측정하는가? 여기 StreamMem의 핵심 트릭이 있다.</p>
+<p>가장 자연스러운 방법은 &quot;실제 질문에 대한 attention&quot;을 보는 것이다. 질문이 특정 토큰을 많이 참조하면 그 토큰이 중요하다. 하지만 스트리밍 감시에서는 문제가 있다 — <strong>질문이 아직 오지 않았거나, 미래에 어떤 질문이 올지 모른다.</strong> 압축은 지금 해야 하는데 질문은 나중에 온다.</p>
+<p>StreamMem의 해법은 <strong>범용 프록시 질의(query-agnostic proxy query)</strong>다. 실제 질문 대신, &quot;어떤 질문에도 평균적으로 참조될 법한&quot; 일반적인 프록시 질의를 만들어, 그에 대한 attention 신호로 중요도를 측정한다.</p>
+<p>즉 &quot;이 토큰이 앞으로 올 법한 온갖 질문들에 대해 평균적으로 얼마나 유용한가&quot;를 프록시로 추정하는 것이다. 특정 질문에 최적화하는 대신, <strong>범용적으로 유용한 토큰</strong>을 남긴다. 6장 LiveVLM도 query-agnostic이었지만, LiveVLM은 attention 허브 구조를, StreamMem은 프록시 질의 attention을 기준으로 삼는다는 차이가 있다.</p>
+<p>이 프록시 질의 메커니즘이 다음 섹션에서 볼 이벤트 편향의 문이 된다 — 프록시를 범용이 아니라 &quot;이벤트 지향&quot;으로 바꾸면, 메모리가 그 이벤트에 유리하게 편향되기 때문이다.</p></div><div class="sb-block"><h2>배포 이점 — 스트림 길이와 무관한 상수 메모리</h2><p>StreamMem의 실무적 매력은 자원 계획의 단순함에 있다.</p>
+<p>Stage ②의 다른 기법들과 비교해보자.</p>
+<p>| 기법 | GPU 메모리 | 저장 공간 | 망각 방식 |
+|---|---|---|---|
+| StreamingVLM | 고정 | 고정 | 비전 조기 방출 |
+| ReKV | 고정 | <strong>선형 증가</strong> | 망각 없음 |
+| LiveVLM | 고정 | 완화된 증가 | FIFO(나이순) |
+| <strong>StreamMem</strong> | <strong>완전 고정</strong> | <strong>고정</strong> | <strong>중요도순</strong> |</p>
+<p>StreamMem은 GPU 메모리가 스트림 길이와 <strong>완전히 무관</strong>하다. ReKV처럼 디스크가 선형으로 늘지도 않고, LiveVLM처럼 나이순으로 밀어내지도 않는다. 그저 고정 크기 하나를 유지하며 내용물만 계속 갱신한다.</p>
+<p>이것이 배포에서 왜 중요한가? <strong>용량 계획이 상수 계산</strong>이 되기 때문이다. &quot;24시간 돌리면 메모리가 얼마나 필요한가?&quot;라는 질문에, StreamMem은 &quot;1시간이든 24시간이든 동일하다&quot;고 답한다. GPU를 몇 장 확보할지, 인스턴스 크기를 얼마로 할지가 스트림 길이에 의존하지 않으니, 프로덕션 SRE 관점에서 예측 가능하고 안전하다.</p>
+<p>한계도 정직하게 짚자. 고정 예산이 <strong>작으면</strong> 초장기 스트림에서 정보 소실 자체는 불가피하다. StreamMem이 하는 것은 &quot;무엇을 잊을지를 잘 고르는 것&quot;이지, &quot;아무것도 안 잊는 것&quot;이 아니다. 완전 보존이 필요하면 ReKV식 오프로드를 병행해야 한다.</p></div><div class="sb-block"><h2>이벤트 편향 메모리 — 열린 연구 지점</h2><p>이 챕터의 가장 흥미로운 부분은 StreamMem이 <strong>아직 열어둔 문</strong>이다. 이것은 10장 최종 아키텍처에서 &quot;자체 기여 후보&quot;로 다시 등장한다.</p>
+<p>앞서 중요도를 <strong>범용 프록시 질의</strong>로 잰다고 했다. &quot;어떤 질문에도 평균적으로 유용한 토큰&quot;을 남기는 방식이다. 그런데 이벤트 탐지 시나리오에서는 상황이 다르다 — <strong>탐지할 이벤트가 미리 정해져 있는 경우가 많다.</strong> &quot;가방을 두고 떠나는 사람&quot;, &quot;쓰러진 사람&quot;, &quot;불량 동작&quot; 등.</p>
+<p>이때 자연스러운 개선 방향이 있다. 범용 프록시 대신 <strong>프록시 질의에 이벤트 정의를 심는 것</strong>이다. 그러면 메모리가 &quot;그 이벤트와 관련된 토큰이 우선 살아남도록&quot; 편향된다.</p>
+<p><span class="math-display">\[\text{범용 프록시: } q_{\text{proxy}} \approx \text{avg. useful} \;\longrightarrow\; \text{이벤트 편향: } q_{\text{proxy}} \leftarrow \text{event definition}\]</span></p>
+<p>직관은 명료하다. 우리가 &quot;가방 방치&quot;를 찾는다면, 가방·사람·이동과 관련된 토큰을 우선 보존하고 무관한 배경은 먼저 잊는 게 합리적이다. 범용적으로 공정하게 잊는 것보다, <strong>목표 이벤트에 유리하게 편향해서 잊는 것</strong>이 특정 탐지 작업에는 최적이다.</p>
+<p>이것이 <strong>열린 연구 지점</strong>인 이유는, 이벤트 정의를 프록시 질의로 어떻게 인코딩하고 편향 강도를 어떻게 조절할지가 아직 정립되지 않았기 때문이다. StreamMem 원논문은 범용 프록시를 제안했을 뿐, 이벤트 편향은 자연스러운 확장으로 남겨두었다. 논문화 가능한 자체 기여 후보로, 이 코스의 최종 아키텍처가 &quot;기억&quot; 계층에서 정확히 이 아이디어를 채택한다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">책상 위 서류 한 뭉치</div>
+      <div class="a-body"><p>책상 위에 딱 스무 장만 올려둘 수 있다고 하자(고정 크기 메모리). 새 서류가 한 장 올 때마다 스물한 장이 되니 한 장을 내려야 한다.</p>
+<p>FIFO식 직원(LiveVLM)은 &quot;맨 아래 가장 오래된 것&quot;을 무조건 뺀다. 편하지만, 3주 전 받은 계약서가 오늘 온 광고 전단 때문에 버려질 수 있다. 반면 StreamMem식 직원은 매번 스물한 장 <strong>전체를 다시 훑어보고</strong> 가장 덜 중요한 한 장을 뺀다. 오래된 계약서라도 중요하면 남고, 방금 온 전단이라도 사소하면 나간다. 나이가 아니라 값어치로 자리를 다툰다.</p>
+<p>그런데 &quot;중요하다&quot;는 걸 어떻게 아는가? 이 직원은 미래에 상사가 뭘 물을지 모르니, &quot;웬만한 질문에 두루 쓸모 있는 서류&quot;를 남긴다(범용 프록시 질의). 만약 상사가 미리 &quot;이번 달은 계약 건만 챙겨&quot;라고 일러주면(이벤트 정의), 직원은 계약 관련 서류를 우선 남기도록 판단 기준을 바꾼다 — 그게 이벤트 편향 메모리다. 다만 책상이 스무 장뿐이라, 서류가 수천 장 흘러가면 무언가는 결국 버려진다. 이 직원의 재주는 &quot;안 버리는 것&quot;이 아니라 &quot;덜 아까운 것부터 버리는 것&quot;이다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>StreamMem의 핵심을 구현해보자. 고정 크기 메모리에 새 KV를 합친 뒤, 프록시 질의 attention으로 중요도를 매겨 전체를 재선별한다. 프록시에 이벤트 정의를 주입하는 편향 옵션까지 넣는다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import torch, torch.nn.functional as F
+
+class StreamMem:
+    def __init__(self, budget=256, proxy_query=None, event_bias=None):
+        self.budget = budget                 # 고정 메모리 크기 (스트림 길이 무관)
+        self.mem_k, self.mem_v = None, None  # 유지 중인 KV
+        self.proxy = proxy_query             # 범용 프록시 질의 [D]
+        self.event_bias = event_bias         # (선택) 이벤트 정의 임베딩 [D]
+
+    def _importance(self, K):
+        &quot;&quot;&quot;프록시 질의에 대한 attention으로 각 토큰의 중요도 산정.&quot;&quot;&quot;
+        q = self.proxy
+        if self.event_bias is not None:      # 이벤트 편향: 프록시를 목표 쪽으로 기울임
+            q = F.normalize(q + 0.5 * self.event_bias, dim=-1)
+        return F.softmax(K @ q, dim=0)       # [N] 중요도 분포
+
+    def update(self, new_k, new_v):
+        &quot;&quot;&quot;새 프레임 KV를 합쳐 전체를 중요도로 재선별 (FIFO 아님!).&quot;&quot;&quot;
+        if self.mem_k is None:
+            K, V = new_k, new_v
+        else:
+            K = torch.cat([self.mem_k, new_k], 0)   # [기존 + 신규] 한 덩어리
+            V = torch.cat([self.mem_v, new_v], 0)
+
+        if K.shape[0] &gt; self.budget:
+            score = self._importance(K)             # 나이가 아니라 중요도로 평가
+            keep = score.topk(self.budget).indices  # 오래돼도 중요하면 생존
+            keep, _ = torch.sort(keep)              # 상대 순서 보존
+            K, V = K[keep], V[keep]
+
+        self.mem_k, self.mem_v = K, V               # 항상 budget 이하로 고정
+        return K.shape[0]
+</code></pre>
+      <div class="c-walk"><p>FIFO(6장)와 비교하면 차이가 선명하다 — LiveVLM은 <code>sort(key=age)</code>로 잘랐지만, 여기서는 <code>score.topk(budget)</code>으로 <strong>중요도 상위</strong>를 남긴다. <code>keep</code> 인덱스에는 오래된 토큰도 중요하면 포함될 수 있다. <code>_importance</code>가 중요도의 정의다 — 실제 질문 대신 <code>self.proxy</code>(범용 프록시 질의)에 대한 attention을 쓴다. 그리고 <code>event_bias</code>가 이 코스의 열린 연구 지점이다 — 이벤트 정의 임베딩을 프록시에 더해(<code>q + 0.5*event_bias</code>) 메모리를 목표 이벤트 쪽으로 기울인다. <code>self.mem_k</code>가 매 <code>update</code>마다 통째로 갱신되어 항상 <code>budget</code> 이하로 유지되므로, 메모리는 스트림이 1시간이든 24시간이든 상수 크기를 지킨다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">고정 메모리 스트리밍은 24/7 서비스의 자원 예측성을 결정한다. 면접에서는 &#x27;FIFO를 왜, 어떻게 넘어서는가&#x27;와 &#x27;질문 없이 중요도를 재는 방법&#x27;을 이해하는지가 핵심이다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>중요도순 방출이 나이순 방출보다 어떤 정보 손실을 막는지 구체적으로 설명하는가</li><li>프록시 질의로 query-agnostic 중요도를 추정하는 아이디어를 이해하는가</li><li>GPU 메모리 스트림-무관성이 배포 용량 계획에 주는 이점을 아는가</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>&#x27;고정 메모리면 정보 손실이 없다&#x27;는 오해 — 예산이 작으면 소실 불가피함을 놓침</li><li>재선별의 추가 연산 비용(스텝당)을 간과</li><li>프록시 질의를 실제 질문과 혼동해 스트리밍에서 질문 부재 문제를 못 봄</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>FIFO 망각을 중요도순으로 바꾸려면 무엇을 매 스텝 계산해야 하고 그 비용은?</li><li>질문이 오기 전에 중요도를 어떻게 정의하는가? 프록시 질의의 장단점은?</li><li>특정 이벤트만 잘 탐지하도록 고정 메모리를 편향시키려면 어디를 건드리겠는가?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 겉핥기는 &#x27;고정 크기로 유지한다&#x27;까지다. 통달한 사람은 StreamMem을 &#x27;나이순→중요도순 방출 전환 + 프록시 질의 기반 query-agnostic 중요도&#x27;로 규정하고, 스텝당 재선별 비용과 소예산 소실의 불가피성을 인정하며, 이벤트 편향 프록시라는 확장 여지를 자체 기여로 설계한다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>나이→중요도</h3><p>FIFO의 나이순 방출을 중요도순으로 바꿔 오래돼도 중요하면 살린다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>매번 재요약</h3><p>[기존+신규]를 한 덩어리로 놓고 전체를 다시 선별 — 정적 저장고가 아닌 우선순위 큐.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>프록시 질의</h3><p>실제 질문 없이 범용 프록시 질의 attention으로 중요도를 추정한다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>완전 고정 메모리</h3><p>GPU 메모리가 스트림 길이와 무관 — 용량 계획이 상수 계산이 된다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>재선별 비용</h3><p>스텝마다 중요도 재계산이 추가된다 — 똑똑한 보존의 대가.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>소실은 불가피</h3><p>예산이 작으면 초장기 스트림에서 손실 자체는 피할 수 없다 — 잘 고를 뿐.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>이벤트 편향(열린 연구)</h3><p>프록시에 이벤트 정의를 심으면 목표 이벤트에 유리하게 편향 — 논문화 후보.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-06.html">← LiveVLM — Compress before Storing</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-08.html">Flash-VStream — Hierarchical Gist + Detail Memory →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

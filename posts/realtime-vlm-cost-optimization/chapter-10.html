@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch10: StreamMind, StreamBridge &amp; the 2-Stage Cascade — Real-time VLM Cost Optimization — direcf</title>
+  <meta name="description" content="게이트를 어디까지 내리느냐의 두 극점 — StreamMind는 SSM 게이트로 LLM을 상시 루프에서 완전히 빼 100 FPS를 달성하고, StreamBridge는 0.5B 게이트를 본체 옆에 붙여 무수정 스트리밍화한다. 마지막에 10편 전부를 쌓아 &#x27;2단 게이트 캐스케이드&#x27;로 최소 비용 실시간 이벤트 탐지 VLM을 설계한다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;height:22px;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><linearGradient id="direcf-nav-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs></svg>
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg></span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg></span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.25 15a4.5 4.5 0 0 0 4.5 4.5H18a3.75 3.75 0 0 0 1.332-7.257 3 3 0 0 0-3.758-3.848 5.25 5.25 0 0 0-10.233 2.33A4.502 4.502 0 0 0 2.25 15Z"/></svg></span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/multimodal-ai">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"/></svg></span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg></span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/multimodal-ai">Real-time VLM Cost Optimization</a><span class="sep">›</span>
+        <strong>Ch10 StreamMind, StreamBridge &amp; the 2-Stage Cascade</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 10 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🏗️</div>
+      <h1 class="chapter-title">StreamMind, StreamBridge &amp; the 2-Stage Cascade</h1>
+      <div class="chapter-title-kr">StreamMind·StreamBridge와 2단 게이트 캐스케이드 — 10편의 종합</div>
+      <div class="chapter-tldr">게이트를 어디까지 내리느냐의 두 극점 — StreamMind는 SSM 게이트로 LLM을 상시 루프에서 완전히 빼 100 FPS를 달성하고, StreamBridge는 0.5B 게이트를 본체 옆에 붙여 무수정 스트리밍화한다. 마지막에 10편 전부를 쌓아 &#x27;2단 게이트 캐스케이드&#x27;로 최소 비용 실시간 이벤트 탐지 VLM을 설계한다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-10.png" alt="Chapter 10 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 10 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>StreamMind가 SSM 게이트로 LLM을 상시 루프에서 빼는 원리를 안다</li><li>StreamBridge의 0.5B 분리 게이트가 본체 무수정 스트리밍화를 이루는 방식을 안다</li><li>게이트를 어디까지 내리느냐의 스펙트럼(비용 vs 의미판단 vs 이식성)을 비교한다</li><li>2단 게이트 캐스케이드가 미탐/오탐 트레이드오프를 어떻게 분해하는지 설명한다</li><li>10편의 직교적 절감 축을 하나의 스택으로 조립할 수 있다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>드디어 마지막 챕터다. Stage ③ 트리거의 두 정점 — StreamMind와 StreamBridge — 를 보고, 그다음 이 코스 전체의 10편을 하나로 종합한다.</p>
+<p>9장 VideoLLM-Online이 남긴 가장 큰 숙제는 &quot;1토큰 판단에도 풀 LLM이 매 프레임 돈다&quot;였다. StreamMind와 StreamBridge는 이 판단(게이트)을 <strong>어디까지 내릴 것인가</strong>라는 질문에 서로 다른 극단으로 답한다. StreamMind는 게이트를 아예 LLM 밖 SSM으로 내려 상시 루프에서 LLM을 완전히 제거하고(100 FPS), StreamBridge는 판단을 별도 0.5B 모델로 분리해 본체를 전혀 건드리지 않는다(플러그앤플레이).</p>
+<p>그리고 마지막 — 이 코스의 진짜 목적지다. 10편의 논문이 깎는 비용 축이 서로 <strong>직교</strong>하므로, 그대로 쌓을 수 있다. TimeChat-Online(토큰) + StreamMind(게이트) + StreamBridge(의미 검증) + StreamingVLM(고정 캐시) + StreamMem(이벤트 편향 기억)을 <strong>2단 게이트 캐스케이드</strong>로 조립하면, 미탐과 오탐이라는 근본 트레이드오프를 캐스케이드로 분해한 최소 비용 실시간 이벤트 탐지 VLM이 나온다. 이것이 참고 글의 최종 제안이자, 이 코스가 도달하는 종합이다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>StreamMind — 게이트를 LLM 밖으로 내린다</h2><p>StreamMind(Event-Gated Cognition)는 VideoLLM-Online의 &quot;판단조차 풀 LLM&quot; 숙제를 가장 급진적으로 푼다 — <strong>상시 루프에서 LLM을 통째로 제거한다.</strong></p>
+<p>두 개의 부품이 있다.</p>
+<p><strong>EPFE(Event-Preserving Feature Extraction).</strong> state-space 모델(SSM) 기반이다. SSM은 고정 크기 내부 상태를 순환적으로 갱신하는 구조라, 프레임당 <strong>상수 비용</strong>으로 시공간 특징을 응축한 perception token을 <strong>1개</strong> 생성한다. Transformer attention이 과거 전체를 참조해 <span class="math-inline">\(O(N)\)</span>인 것과 달리, SSM은 고정 상태만 갱신하므로 프레임 수와 무관하게 일정하다.</p>
+<p><strong>Cognition Gate.</strong> LLM의 얕은 층에서 초기화한 초경량 게이트다. &quot;유의미한 변화&quot;에 대한 표현은 LLM 얕은 층에서 물려받되, 깊은 층의 비싼 추론은 제거한다. 이 게이트가 <strong>열릴 때만 풀 LLM을 호출</strong>한다.</p>
+<p>핵심 효과는 상시 루프에서 LLM이 완전히 사라진다는 것이다. 평소엔 SSM(상수 비용) + 경량 게이트만 돌고, LLM 연산은 0이다. 그 덕에 <strong>100 FPS 풀 프레임레이트 감시</strong>가 가능해진다 — 찰나의 이벤트까지 놓치지 않는 시간 해상도다.</p>
+<p><span class="math-display">\[\text{VideoLLM-Online: 매 프레임 풀 LLM} \;\longrightarrow\; \text{StreamMind: 게이트 열릴 때만 LLM (평시 0)}\]</span></p>
+<p>한계도 명확하다. 1토큰 게이트는 &quot;가방을 두고 떠남&quot; 같은 <strong>의미론적 이벤트에 약하다</strong> — 변화(motion)는 잡아도 관련성(semantics)은 못 잡는다. 또 <strong>미탐이 치명적</strong>(복구 불가)이라 임계값을 보수적으로 잡으면 절감폭이 깎이는 트레이드오프가 있다. 그리고 EPFE·게이트는 전용 학습이 필요하다. 이 &quot;의미 판단 약함&quot;이 바로 StreamBridge가 메우는 지점이다.</p></div><div class="sb-block"><h2>StreamBridge — 본체는 두고 옆에 0.5B를 세운다</h2><p>StreamBridge(Decoupled Activation Model)는 StreamMind와 정반대 방향에서 같은 숙제를 푼다. StreamMind가 &quot;게이트를 최대한 내려 전용 학습&quot;이라면, StreamBridge는 <strong>&quot;본체를 전혀 안 건드린다&quot;</strong>.</p>
+<p>현실적 고민에서 출발한다. Qwen2.5-VL 같은 오프라인 Video-LLM은 이미 이해 능력이 훌륭한데, 스트리밍화하겠다고 본체를 재학습하면 비용도 크고 기존 능력이 망가질 위험도 있다. StreamBridge의 답 — 본체는 그대로 두고, &quot;언제 말할지&quot;만 담당하는 <strong>별도의 0.5B 경량 VLM</strong>을 옆에 붙인다.</p>
+<p><strong>핵심 1 — Decoupled Activation Model.</strong> 0.5B급 경량 VLM이 스트림을 계속 보며 딱 하나만 판단한다 — &quot;지금 본체를 깨울 순간인가?&quot; 트리거가 켜지면 그제서야 본체 Video-LLM이 컨텍스트를 받아 답변한다. 흥미롭게도 이 분리 자체가 성능에도 이득이다 — 본체가 &quot;선제 판단&quot;의 부담에서 해방되어 이해·생성에만 집중하니 서술 품질이 오히려 좋아진다. VideoLLM-Online처럼 한 모델에 판단+생성을 다 시키면 두 능력이 간섭하는데, 나눠 놓으니 각자 잘하는 것만 한다.</p>
+<p><strong>핵심 2 — Round-Decayed Compression.</strong> 대화가 길어져 컨텍스트를 넘으면, 단순 truncation이 아니라 오래된 라운드일수록 강하게 압축한다. 4장 StreamingVLM의 &quot;최근은 선명하게, 과거는 압축&quot;을 대화 라운드 단위에 적용한 것이다.</p>
+<p><strong>핵심 3 — Stream-IT.</strong> 오프라인 모델에 스트리밍 능력을 이식하는 instruction 데이터셋을 공개했다. 9장 VideoLLM-Online 합성 레시피의 계보를 규모·다양성 면에서 키운 버전이다.</p>
+<p>StreamMind와의 결정적 차이 — 게이트가 <strong>언어를 이해하는 VLM</strong>이므로 이벤트 정의를 자연어 프롬프트로 교체할 수 있다. &quot;가방을 두고 떠나는 사람&quot;을 프롬프트로 주면 그걸 탐지한다. 이벤트가 자주 바뀌거나 의미론적으로 복잡할 때 StreamMind 대비 결정적 우위다. 대가는 상시 비용이 더 높다는 것(0.5B가 매 프레임)과, 게이트-본체 판단 기준 불일치 가능성이다.</p></div><div class="sb-block"><h2>게이트 스펙트럼 — 어디까지 내릴 것인가</h2><p>9·10장의 트리거 계열을 하나의 축으로 정리하면, 결국 &quot;게이트를 어디까지 내리느냐&quot;의 스펙트럼이다. 내릴수록 싸지지만 의미 판단력이 줄고, 올릴수록 똑똑하지만 비싸진다.</p>
+<p>| 논문 | 게이트 | 상시 비용 | 의미론적 판단력 | 이식성 |
+|---|---|---|---|---|
+| VideoLLM-Online | 본체 LLM 자신(EOS) | 높음 | 최고 | 본체 재학습 |
+| Dispider | 본체 1토큰(TODO/ANS) | 중상 | 높음 | 본체 재학습 |
+| StreamBridge | 별도 0.5B VLM | 중간 | 좋음(자연어 정의) | <strong>본체 무수정</strong> |
+| StreamMind | SSM + 경량 게이트 | <strong>최저(100 FPS)</strong> | 제한적 | 전용 학습 |</p>
+<p>이 표가 이 코스 트리거 파트의 결론이다. <strong>단일 최적해는 없다</strong> — 탐지할 이벤트의 성격이 선택을 좌우한다.</p>
+<p>- 이벤트가 <strong>고정적·단순</strong>하면(움직임 기반) → StreamMind. 최저 비용, 100 FPS.</p>
+<p>- 이벤트가 <strong>자주 바뀌거나 의미론적으로 복잡</strong>하면 → StreamBridge. 자연어로 정의 교체, 본체 무수정.</p>
+<p>그런데 여기서 핵심 통찰이 나온다. StreamMind의 약점(의미 판단 약함)과 StreamBridge의 약점(상시 비용 높음)이 <strong>상보적</strong>이다. StreamMind는 싸지만 관련성을 못 잡고, StreamBridge는 관련성을 잡지만 비싸다. 그렇다면 <strong>둘을 캐스케이드로 쌓으면</strong> — StreamMind가 싸게 1차로 거르고, 그 통과분에만 StreamBridge를 돌려 의미를 검증하면 — 각자의 약점을 상대가 메운다. 이것이 다음 섹션의 최종 아키텍처로 이어지는 결정적 발상이다.</p></div><div class="sb-block"><h2>최종 종합 — 2단 게이트 캐스케이드 스택</h2><p>이제 10편 전부를 하나로 조립한다. 설계 원칙은 하나 — <strong>각 논문이 깎는 비용 축이 서로 직교하므로 그대로 쌓을 수 있다.</strong> 핵심 아이디어는 미탐(복구 불가)과 오탐(비용 낭비)이라는 트레이드오프를 <strong>캐스케이드로 분해</strong>하는 것이다.</p>
+<p><code>`</code>
+프레임 스트림 (임의 FPS)
+   │
+[L0] 토큰 다이어트 ─ DTD (TimeChat-Online)
+   │   변화 없는 패치 드롭 · drop률 급증을 L1에 이벤트 프라이어로 전달
+   ▼
+[L1] 상시 게이트 ─ EPFE + Cognition Gate (StreamMind)
+   │   SSM 상수 비용 · 100 FPS 감시 · 임계값 낮게(민감하게)
+   ├── 닫힘(대부분) ──▶ LLM 연산 0 · 다음 프레임
+   ▼ 열림
+[L2] 의미 게이트 ─ 0.5B Activation VLM (StreamBridge)
+   │   이벤트 정의를 자연어로 검증 · L1의 오탐을 여기서 필터
+   ├── 기각 ──▶ 본체 미호출 · 로그만
+   ▼ 확정
+[본체] Qwen2.5-VL + StreamingVLM 3구역 고정 캐시
+   │   이벤트 서술·판단 생성 (드물게) · Round-Decayed 대화 압축
+   ▼
+[기억] StreamMem 고정 KV (+ 선택: ReKV 디스크 오프로드)
+       프록시 질의에 이벤트 정의를 심어 편향 · 사후 질의 대응
+<code>`</code></p>
+<p>각 층의 논리를 짚자.</p>
+<p>- <strong>L0 (TimeChat-Online)</strong> — 정보 없는 토큰을 최상류에서 드롭. drop률을 L1 게이트의 보조 입력으로 넣어 recall을 올린다. 카메라 모션이 크면 bypass.</p>
+<p>- <strong>L1 (StreamMind)</strong> — 100 FPS 상시 감시. <strong>임계값을 의도적으로 낮게</strong> 잡아 미탐(복구 불가)을 구조적으로 억제한다. StreamMind 단독의 약점(&quot;민감하면 오탐 증가&quot;)은 여기서 문제가 안 된다 — 오탐 처리를 L2가 맡으니 L1은 <strong>recall에만 최적화</strong>하면 된다.</p>
+<p>- <strong>L2 (StreamBridge)</strong> — L1이 열린 순간에만 0.5B가 가동돼, 자연어 이벤트 정의와 대조 검증한다. StreamMind의 &quot;의미 판단 약함&quot;을 정확히 메운다. 원안은 0.5B가 매 프레임 돌지만, 여기서는 L1 통과분에만 돌아 상시 비용이 아니다.</p>
+<p>- <strong>본체 (StreamingVLM)</strong> — 확정 이벤트에만 서술 생성. 고정 캐시로 프레임당 비용이 시간과 무관.</p>
+<p>- <strong>기억 (StreamMem)</strong> — 7장의 열린 연구 지점을 채택 — 프록시 질의에 이벤트 정의를 심어 관련 토큰이 살아남도록 편향. 포렌식이 필요하면 ReKV 오프로드 병행.</p>
+<p>이 스택의 아름다움은 <strong>트레이드오프 분해</strong>에 있다. 단일 게이트는 &quot;민감하게 잡으면 오탐 폭증, 보수적으로 잡으면 미탐 위험&quot;이라는 딜레마에 갇힌다. 캐스케이드는 이를 분해한다 — L1은 미탐을 막는 데(recall) 전념하고, 그로 인한 오탐은 L2가 정밀하게(precision) 걸러낸다. 두 목표를 하나의 게이트가 동시에 만족시키려 애쓰는 대신, 역할을 나눠 각자 최적화한다.</p>
+<p>| 상황 | 가동 모듈 | 비용 | 빈도 |
+|---|---|---|---|
+| 평시(이벤트 없음) | DTD + EPFE + Gate | 최저(LLM 0) | 대부분 |
+| L1 발화(변화 감지) | + 0.5B 의미 검증 | 낮음 | 가끔 |
+| 이벤트 확정 | + 본체 생성 | 높음 | 드묾 |
+| 사후 질의 | + StreamMem/ReKV 검색 | 중간 | 요청 시 |</p>
+<p>이것이 이 코스가 도달한 종합이다. <strong>정보가 없는 곳에 연산을 쓰지 않고, 무거운 모델은 드물게 돌리며, 압축 실패를 공짜 이벤트 신호로 활용하는</strong> — 세 원리가 하나의 아키텍처로 수렴한다. 학습은 VideoLLM-Online 합성 레시피와 Stream-IT로 데이터를 만들고, 게이트 타이밍은 MMDuet2식 멀티턴 RL(PAUC 보상)로 미세조정한다. 클래스 불균형(99% 침묵)은 거대 본체가 아니라 작은 게이트들만 감당하므로 학습이 안정적이다. 그리고 &quot;이벤트 편향 프록시 질의&quot;는 아직 열린 연구 지점 — 이 스택을 실제로 구현하는 사람에게 논문화 가능한 자체 기여로 남는다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">3중 보안 검색대</div>
+      <div class="a-body"><p>공항 보안을 생각하자. 모든 승객을 정밀 신체검사(풀 LLM)하면 정확하지만 줄이 끝없이 밀린다. 반대로 아무도 검사 안 하면 위험하다. 현명한 공항은 <strong>단계별 검색대</strong>를 쓴다.</p>
+<p><strong>1차 — 금속 탐지기(L1, StreamMind).</strong> 모든 승객이 빠르게 통과한다. 상수 시간이고 100명이 지나가도 일정하다. <strong>일부러 민감하게</strong> 맞춰둔다 — 동전 하나에도 울리게. 왜? 진짜 흉기를 놓치는 것(미탐)이 치명적이니, 놓치느니 자주 울리는 게 낫다. 대부분은 여기서 통과(닫힘)하고 아무 일 없이 게이트로 간다.</p>
+<p><strong>2차 — 보안요원 정밀 확인(L2, StreamBridge).</strong> 탐지기가 울린 사람만 불러 세워, &quot;이게 뭡니까?&quot;라고 묻고 가방을 연다(자연어 검증). 열쇠뭉치였으면 통과, 진짜 흉기면 확정. 금속 탐지기가 만든 오탐(동전·열쇠)을 여기서 걸러낸다. 이 요원은 탐지기가 부른 사람만 상대하니 늘 여유롭다.</p>
+<p><strong>3차 — 전문 조사관(본체, StreamingVLM).</strong> 진짜 위협이 확정된 극소수만 조사실로 데려가 상세히 처리한다. 그리고 모든 기록은 <strong>CCTV 아카이브(StreamMem)</strong>에 남겨, 나중에 &quot;저 사람 아까 어디서 왔지?&quot;를 조회한다.</p>
+<p>핵심은 <strong>역할 분해</strong>다. 금속 탐지기 하나로 &quot;빠르면서 정확하게&quot;를 동시에 하려 하면 실패한다 — 민감하면 다 울리고, 둔감하면 놓친다. 대신 탐지기는 놓치지 않는 데(recall)만, 요원은 걸러내는 데(precision)만 집중하면, 전체가 싸면서도 정확해진다. 이것이 2단 게이트 캐스케이드의 전부다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>10편을 하나로 엮은 2단 게이트 캐스케이드를 오케스트레이션 골격으로 구현하자. 각 프레임이 L0→L1→L2→본체→기억을 통과하되, 대부분은 L1에서 멈춘다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">class TwoStageCascadeVLM:
+    def __init__(self, event_def):
+        self.dtd = DifferentialTokenDrop(num_patches=196)     # L0 (ch2)
+        self.ssm_gate = StreamMindGate(threshold=0.3)         # L1: 민감하게(낮은 임계)
+        self.semantic_gate = ActivationVLM_0_5B(event_def)    # L2 (ch10)
+        self.body = StreamingVLM_Qwen()                       # 본체 (ch4)
+        self.memory = StreamMem(budget=256,                   # 기억 (ch7)
+                                event_bias=embed(event_def))  # 이벤트 편향 프록시
+        self.event_def = event_def
+
+    def process(self, frame):
+        # L0 — 변화 패치만 통과 + drop률을 이벤트 프라이어로
+        tokens, drop_rate = self.dtd(frame)
+        event_prior = 1.0 - drop_rate                 # survival↑ = 변화↑
+
+        # L1 — 상시 게이트(SSM 상수 비용, LLM 0). 대부분 여기서 종료.
+        gate = self.ssm_gate.step(tokens, prior=event_prior)  # 100 FPS
+        if not gate.open:
+            return None                               # 평시: LLM 연산 0
+
+        # L2 — 열렸을 때만 0.5B가 자연어 이벤트 정의로 검증 (오탐 필터)
+        if not self.semantic_gate.confirm(tokens, self.event_def):
+            log(&quot;L1 fired but L2 rejected&quot;)            # 본체 미호출
+            return None
+
+        # 본체 — 확정 이벤트만 서술 생성 (드물게), 고정 캐시
+        answer = self.body.generate(tokens, memory=self.memory)
+
+        # 기억 — 이벤트 편향 고정 KV에 기록 (사후 질의 대비)
+        self.memory.update(*self.body.last_kv())
+        return answer
+```</code></pre>
+      <div class="c-walk"><p>제어 흐름 자체가 비용 전략이다. 대부분의 프레임은 <code>if not gate.open: return None</code>에서 끝나 <strong>LLM을 한 번도 안 돌린다</strong> — L0의 패치 비교와 L1의 SSM 게이트만 상수 비용으로 도니 100 FPS가 나온다. <code>event_prior = 1.0 - drop_rate</code>가 2장의 공짜 신호를 L1에 주입하는 지점이다. L1 임계값을 <code>0.3</code>으로 <strong>낮게</strong> 잡은 게 핵심 설계 — 미탐을 막으려 일부러 민감하게 하고, 그로 인한 오탐은 <code>semantic_gate.confirm</code>(L2)이 자연어 이벤트 정의로 걸러낸다. 두 게이트가 recall과 precision을 나눠 맡는 트레이드오프 분해가 코드에 그대로 드러난다. <code>event_bias=embed(event_def)</code>는 7장의 열린 연구 지점 — 기억마저 목표 이벤트로 편향시킨다. 각 부품이 앞선 9개 챕터에서 온 것임을 확인하라.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">이 캐스케이드는 실제 이벤트 탐지 제품의 설계 청사진이다. 시니어 면접·아키텍처 리뷰에서는 개별 기법 지식을 넘어, 직교하는 절감 축을 조합하고 미탐/오탐 트레이드오프를 분해하는 시스템 사고를 검증한다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>게이트 스펙트럼(비용-의미판단-이식성)을 이해하고 이벤트 성격에 맞게 선택하는가</li><li>캐스케이드가 recall(L1)과 precision(L2)을 분리해 단일 게이트 딜레마를 푸는 원리를 아는가</li><li>10편의 절감 축이 직교함을 근거로 조합 가능성을 설명하는가</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>단일 만능 게이트를 고집하며 미탐/오탐 동시 최적화의 불가능성을 못 봄</li><li>L2를 상시로 돌려 StreamBridge 원안의 비용 문제를 그대로 답습</li><li>각 기법을 독립적으로만 알고 조합 시의 시너지·간섭을 설계하지 못함</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>단일 게이트로 미탐과 오탐을 동시에 최소화할 수 없는 이유와, 캐스케이드가 이를 어떻게 분해하는가?</li><li>L1 임계값을 일부러 낮게 잡는 근거는? 그 대가는 어디서 회수되는가?</li><li>탐지 이벤트가 매주 바뀌는 제품이라면 이 스택의 어디를 어떻게 바꾸겠는가?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 겉핥기는 개별 논문 열 개를 나열하는 데서 멈춘다. 통달한 사람은 이들을 직교 절감 축으로 재배치해 하나의 스택으로 조립하고, 캐스케이드가 recall/precision을 분리해 미탐·오탐 트레이드오프를 분해하는 원리를 설명하며, 이벤트 편향 프록시 질의 같은 열린 지점을 자체 기여로 발전시킨다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>StreamMind</h3><p>SSM 게이트로 상시 루프에서 LLM을 완전히 빼 100 FPS 감시 — 대신 의미 판단이 약하다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>StreamBridge</h3><p>0.5B 게이트를 본체 옆에 붙여 무수정 스트리밍화 — 자연어로 이벤트 정의를 교체한다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>게이트 스펙트럼</h3><p>게이트를 내릴수록 싸지만 의미 판단이 줄고, 올릴수록 똑똑하지만 비싸진다 — 단일 최적해는 없다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>상보적 약점</h3><p>StreamMind(싸지만 둔함)와 StreamBridge(똑똑하지만 비쌈)의 약점이 캐스케이드로 상쇄된다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>트레이드오프 분해</h3><p>L1은 recall(미탐 억제), L2는 precision(오탐 필터)에 각각 전념해 딜레마를 나눈다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>직교 조합</h3><p>10편의 절감 축이 직교하므로 L0~기억까지 그대로 쌓아 최소 비용 스택을 만든다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>이벤트 편향(자체 기여)</h3><p>StreamMem 프록시에 이벤트 정의를 심는 편향은 아직 열린 연구 — 논문화 후보다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-09.html">← VideoLLM-Online — Silence as Learned Output</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <span></span>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

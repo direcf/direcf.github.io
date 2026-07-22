@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch3: Dispider — Disentangled Perception, Decision, Reaction — Real-time VLM Cost Optimization — direcf</title>
+  <meta name="description" content="하나의 LLM이 인식·판단·생성을 다 하면 답변 중엔 눈을 감는다. Dispider는 셋을 별도 모듈로 쪼개 비동기로 돌리고, 장면 경계 기반 비균일 세그먼트와 1토큰 판단으로 &#x27;싸게 감시, 드물게 생성&#x27;을 구현한다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;height:22px;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><linearGradient id="direcf-nav-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs></svg>
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg></span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg></span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.25 15a4.5 4.5 0 0 0 4.5 4.5H18a3.75 3.75 0 0 0 1.332-7.257 3 3 0 0 0-3.758-3.848 5.25 5.25 0 0 0-10.233 2.33A4.502 4.502 0 0 0 2.25 15Z"/></svg></span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/multimodal-ai">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"/></svg></span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg></span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/multimodal-ai">Real-time VLM Cost Optimization</a><span class="sep">›</span>
+        <strong>Ch03 Dispider — Disentangled Perception, Decision, Reaction</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 03 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🎭</div>
+      <h1 class="chapter-title">Dispider — Disentangled Perception, Decision, Reaction</h1>
+      <div class="chapter-title-kr">Dispider — 보는 놈·판단하는 놈·말하는 놈을 분리하라</div>
+      <div class="chapter-tldr">하나의 LLM이 인식·판단·생성을 다 하면 답변 중엔 눈을 감는다. Dispider는 셋을 별도 모듈로 쪼개 비동기로 돌리고, 장면 경계 기반 비균일 세그먼트와 1토큰 판단으로 &#x27;싸게 감시, 드물게 생성&#x27;을 구현한다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-03.png" alt="Chapter 3 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 3 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>단일 LLM 스트리밍의 &#x27;말하는 동안 눈 감는&#x27; 동기화 문제를 설명한다</li><li>Perception·Decision·Reaction 세 역할의 비용 프로파일을 구분한다</li><li>장면 경계 기반 비균일 세그먼트가 왜 고정 분할보다 효율적인지 안다</li><li>1토큰 &lt;TODO&gt;/&lt;ANS&gt; 판단이 비용을 거의 없앤 원리를 설명한다</li><li>Dispider가 이벤트 탐지기의 구조적 레퍼런스가 되는 이유를 안다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>2장 DTD가 &quot;무엇을 입력할지&quot;를 패치 공간에서 줄였다면, Dispider(CVPR 2025)는 같은 아이디어를 <strong>시간축과 역할 구조</strong>로 확장한다. 그리고 3대 병목 중 세 번째 — 파이프라인 동기화 제약을 정면으로 공략한다.</p>
+<p>문제 설정부터 보자. VideoLLM-Online(9장) 같은 초기 스트리밍 모델은 하나의 LLM이 프레임을 읽으며 &quot;말할까 말까&quot;도 판단하고, 말하기로 하면 답변 생성까지 한다. 그런데 답변을 생성하는 동안(decode는 토큰을 하나씩 뱉으니 몇 초가 걸린다) <strong>비디오는 계속 흘러가는데 모델은 그걸 못 보고 있다.</strong> 말하는 동안 눈을 감는 셈이다. 결정적 이벤트가 하필 발화 중에 지나가면 놓친다.</p>
+<p>Dispider의 해법은 세 역할을 별도 모듈로 쪼개고 <strong>비동기로</strong> 돌리는 것이다. 가벼운 인식은 항상 켜두고, 판단은 1토큰으로 싸게, 무거운 생성은 별도 스레드에서 드물게. 이 &quot;싸게 감시, 드물게 생성&quot; 철학은 10장 StreamMind(게이트를 인코더로 내림)와 StreamBridge(판단을 0.5B로 분리)로 이어지는 계보의 원형이다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>Perception — 항상 켜진 가벼운 눈</h2><p>첫 번째 모듈 Perception은 무거운 LLM이 아니라 <strong>가벼운 비전 인코더(SigLIP류)</strong>로 프레임 특징만 계속 뽑는다. 상시 가동되지만 비용이 낮은 이유가 여기 있다 — LLM 포워딩이 아니라 인코더 한 번이면 되니까.</p>
+<p>여기서 핵심 트릭이 <strong>장면 기반 비균일 세그먼트(non-uniform segmentation)</strong>다. &quot;5초마다 자르기&quot; 같은 고정 분할 대신, 인접 프레임 특징의 유사도를 보고 <strong>장면이 바뀌는 지점에서 자른다</strong>. 정적인 구간은 하나의 긴 덩어리로 뭉개지고(토큰 절약), 변화가 많은 구간만 잘게 쪼개진다.</p>
+<p>이것을 2장과 연결하면 명확해진다. <strong>TimeChat-Online이 패치 단위(공간)로 하던 중복 제거를, Dispider는 시간축 단위로 한다.</strong> 안 변하는 5분짜리 복도 영상은 한 세그먼트로, 사람들이 붐비는 10초는 여러 세그먼트로 — 정보량에 비례해 시간 해상도를 배분하는 것이다.</p>
+<p>결과적으로 Perception 단계에서 이미 &quot;정보가 없는 시간 구간&quot;에는 연산을 아끼는 첫 번째 원리가 구현된다.</p></div><div class="sb-block"><h2>Decision — 1토큰짜리 판단</h2><p>두 번째 모듈 Decision은 이 코스에서 처음 만나는 <strong>명시적 트리거 게이트</strong>다.</p>
+<p>세그먼트가 하나 끝날 때마다 [지금까지의 메모리 + 현재 클립 특징 + 질문]을 넣고 딱 <strong>토큰 하나만</strong> 예측시킨다.</p>
+<p>- <code>&lt;TODO&gt;</code> = 아직 답할 때가 아님, 침묵하고 대기
+- <code>&lt;ANS&gt;</code> = 지금 답해라, 반응 모듈을 깨워라</p>
+<p>핵심은 <strong>전체 답변을 생성해보고 판단하는 게 아니라, 1토큰짜리 분류</strong>라는 점이다. Decode가 길게 돌 필요가 없으니 판단 비용이 거의 없다. 이것이 &quot;판단은 싸게&quot;의 구체적 구현이다.</p>
+<p>이 설계가 곧바로 이벤트 탐지기가 된다. &quot;이벤트 X가 발생하면 알려줘&quot;라는 질문을 걸어두면, Decision 모듈이 매 세그먼트마다 저비용으로 감시하다가 발생 시점에만 <code>&lt;ANS&gt;</code>를 낸다. 즉 <strong>Dispider의 구조 자체가 저비용 상시 감시기</strong>다 — 이벤트 탐지를 위해 별도 시스템을 얹는 게 아니라, 질문을 바꿔 끼우기만 하면 된다.</p>
+<p>다만 판단이 세그먼트 경계에서만 일어난다는 점을 기억하라. 이것은 뒤에서 다룰 지연의 원천이 된다.</p></div><div class="sb-block"><h2>Reaction — 무거운 생성을 별도 스레드로</h2><p>세 번째 모듈 Reaction은 <code>&lt;ANS&gt;</code>가 나왔을 때만 도는 무거운 생성 단계다. 여기서 Dispider의 진짜 기여가 드러난다 — <strong>비동기(asynchronous) 실행.</strong></p>
+<p>Reaction이 답변을 생성하는 동안, Perception은 멈추지 않고 계속 스트림을 관찰한다. 별도 스레드/프로세스에서 돌기 때문이다. 즉 <strong>말하면서도 눈을 뜨고 있다.</strong> 이것이 &quot;파이프라인 동기화 제약&quot;을 해소하는 핵심 설계다.</p>
+<p>세 모듈의 비용 프로파일을 정리하면 이렇다.</p>
+<p>| 모듈 | 무게 | 가동 빈도 | 역할 |
+|---|---|---|---|
+| Perception | 가벼움(인코더) | 항상 | 특징 추출 + 세그먼트 |
+| Decision | 초경량(1토큰) | 세그먼트마다 | 침묵/응답 판단 |
+| Reaction | 무거움(풀 생성) | 트리거 시에만 | 답변 생성 |</p>
+<p>비용 절감의 논리는 결국 <strong>&quot;무거운 연산을 얼마나 드물게 호출하느냐&quot;</strong>로 귀결된다. 상시 도는 것은 가벼운 인코더뿐이고, LLM 생성은 이벤트 순간에만 켜진다. 평시 비용과 피크 비용을 분리해, 24시간 감시 같은 시나리오에서 평균 비용을 극적으로 낮춘다.</p></div><div class="sb-block"><h2>한계 — 라벨 제작과 경계 지연</h2><p>Dispider의 우아한 구조에는 두 가지 대가가 따른다.</p>
+<p>첫째, <strong>학습 데이터 제작이 까다롭다.</strong> Decision 모듈을 학습시키려면 &quot;언제 답해야 하는가&quot;의 정확한 타임스탬프 라벨이 필요하다. 즉 &quot;이 순간에는 <code>&lt;TODO&gt;</code>, 저 순간에는 <code>&lt;ANS&gt;</code>&quot;라는 정답을 영상마다 만들어야 하는데, 이런 시점 라벨링은 일반적인 비디오 캡션보다 훨씬 손이 많이 간다. 9장 VideoLLM-Online이 제안한 &quot;오프라인 라벨 → 스트리밍 대화 변환&quot; 합성 레시피가 이 부담을 던다.</p>
+<p>둘째, <strong>경계 지연(boundary latency)이다.</strong> 판단이 세그먼트 경계에서만 일어나므로, 이벤트가 세그먼트 중간에 걸치면 다음 경계까지 반응이 미뤄진다. 세그먼트를 잘게 쪼개면 지연은 줄지만 판단 횟수가 늘어 비용이 오르는 트레이드오프가 생긴다.</p>
+<p>이 지연 문제는 10장 StreamMind가 다른 방식으로 공략한다 — SSM 게이트를 프레임마다 상수 비용으로 돌려 100 FPS 판단을 달성함으로써, 세그먼트 경계라는 개념 자체를 없앤다. Dispider가 &quot;세그먼트당 1토큰&quot;이라면 StreamMind는 &quot;프레임당 게이트 신호&quot;인 셈이다.</p>
+<p>정리하면 Dispider는 <strong>역할 분리와 비동기라는 구조적 정답</strong>을 제시했지만, 판단 주기(세그먼트)와 학습 라벨이라는 실무적 비용을 남겼다. 이 둘을 각각 개선하는 것이 이후 트리거 계열 연구의 전장이다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">응급실의 트리아지 간호사</div>
+      <div class="a-body"><p>붐비는 응급실을 생각하자. 만약 전문의(무거운 LLM) 한 명이 접수·진단·수술을 혼자 다 하면, 수술하는 동안(생성) 새로 실려 오는 환자(프레임)를 아무도 못 본다. 그 사이 위독한 환자가 방치될 수 있다 — 이것이 단일 LLM의 동기화 문제다.</p>
+<p>Dispider의 응급실은 역할을 나눈다. <strong>접수 데스크(Perception)</strong>는 항상 열려 있고, 실려 오는 환자를 계속 훑는다. 한가한 시간대는 뭉뚱그려 넘기고, 사고가 몰리는 시간대만 촘촘히 기록한다(비균일 세그먼트).</p>
+<p><strong>트리아지 간호사(Decision)</strong>는 환자를 볼 때마다 딱 한 번의 판정만 한다 — &quot;대기(TODO)&quot; 또는 &quot;지금 의사 호출(ANS)&quot;. 진단서를 길게 쓰지 않고 초록/빨강 팔찌 하나만 채운다(1토큰). 그리고 <strong>전문의(Reaction)</strong>는 빨강 팔찌가 나올 때만 수술방으로 불려간다. 전문의가 수술하는 동안에도 접수 데스크는 계속 돌아가니, 응급실은 결코 눈을 감지 않는다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>Dispider의 세 모듈을 개념 수준으로 엮어보자. 가벼운 perception이 장면 경계로 세그먼트를 끊고, 경계마다 1토큰 decision을 내리며, &lt;ANS&gt;일 때만 무거운 reaction을 비동기로 던진다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import threading, queue
+
+class Dispider:
+    def __init__(self, boundary_thr=0.4):
+        self.boundary_thr = boundary_thr      # 장면 전환 판정 임계
+        self.prev_feat = None
+        self.segment = []                     # 현재 세그먼트에 쌓인 프레임 특징
+        self.memory = []                      # 과거 요약(간략화)
+        self.react_q = queue.Queue()
+        threading.Thread(target=self._reaction_worker, daemon=True).start()
+
+    def perceive(self, feat):                 # 1) 항상 켜진 가벼운 인식
+        &quot;&quot;&quot;feat: 경량 인코더가 뽑은 프레임 특징 벡터. 장면 경계면 세그먼트 종료.&quot;&quot;&quot;
+        boundary = False
+        if self.prev_feat is not None:
+            dist = 1.0 - cosine(feat, self.prev_feat)
+            boundary = dist &gt; self.boundary_thr     # 변화 크면 경계
+        self.prev_feat = feat
+        self.segment.append(feat)
+        return boundary
+
+    def decide(self, query):                  # 2) 세그먼트당 1토큰 판단
+        clip = summarize(self.segment)        # 세그먼트를 한 덩어리로 압축
+        token = one_token_head(self.memory, clip, query)   # &lt;TODO&gt; or &lt;ANS&gt;
+        self.memory.append(clip)
+        self.segment = []
+        return token
+
+    def _reaction_worker(self):               # 3) 무거운 생성 — 별도 스레드(비동기)
+        while True:
+            clip, query = self.react_q.get()
+            answer = heavy_llm_generate(self.memory, clip, query)  # 몇 초 소요
+            emit(answer)                       # 이 동안에도 perceive()는 계속 돈다
+
+    def stream(self, feat, query=&quot;가방을 두고 떠나는 사람이 있으면 알려줘&quot;):
+        if self.perceive(feat):                # 경계에 도달했을 때만 판단
+            if self.decide(query) == &quot;&lt;ANS&gt;&quot;:
+                self.react_q.put((summarize(self.segment), query))  # 비동기 발화
+</code></pre>
+      <div class="c-walk"><p>구조가 곧 비용 전략이다. <code>perceive</code>는 매 프레임 호출되지만 코사인 거리 계산뿐이라 싸고, 장면 경계에서만 <code>True</code>를 돌려준다. <code>decide</code>는 경계에서만 불려 <code>one_token_head</code>로 <strong>딱 한 토큰</strong>만 뽑는다 — 전체 답변을 생성하지 않으니 판단 비용이 거의 없다. 진짜 무거운 <code>heavy_llm_generate</code>는 <code>&lt;ANS&gt;</code>일 때만 <code>react_q</code>에 실려 <strong>별도 스레드</strong>에서 돈다. 덕분에 답변이 생성되는 몇 초 동안에도 메인 루프의 <code>perceive</code>는 멈추지 않는다 — 말하면서 눈을 뜨고 있는 비동기의 핵심이다. <code>query</code>만 바꾸면 임의의 이벤트 감시기로 변신한다는 점도 확인하라.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">실시간 시스템 설계 면접에서 Dispider식 역할 분리는 &#x27;동기/비동기 경계를 어디에 긋는가&#x27;라는 아키텍처 감각을 검증한다. 이벤트 탐지 제품을 논할 때 거의 필수로 등장하는 레퍼런스 구조다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>생성 중 입력을 못 보는 동기화 문제를 인지하고 비동기 분리로 푸는가</li><li>상시/드문 연산을 분리해 평균 비용과 피크 비용을 따로 관리하는가</li><li>고정 분할 대신 정보량 기반 비균일 세그먼트의 이점을 설명하는가</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>단일 모델에 판단+생성을 다 맡기고 동기화 지연을 무시함</li><li>세그먼트를 무조건 잘게 쪼개 비용 증가를 못 봄 (지연-비용 트레이드오프 무시)</li><li>Decision 학습에 필요한 타임스탬프 라벨의 제작 난이도를 간과함</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>답변 생성 중에 중요한 이벤트가 지나갔다. 아키텍처를 어떻게 바꿔 놓치지 않겠는가?</li><li>세그먼트를 잘게/굵게 나눌 때 지연과 비용은 각각 어떻게 변하는가? 최적점은?</li><li>Decision 모듈의 &lt;ANS&gt; 타이밍 라벨을 값싸게 만드는 방법은?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 겉핥기는 &#x27;Dispider는 세 모듈로 나눈다&#x27;까지다. 통달한 사람은 이를 &#x27;동기화 병목을 비동기로 풀고, 판단 주기(세그먼트)와 라벨 비용을 남긴 트리거 원형&#x27;으로 규정하고, StreamMind의 프레임 단위 게이트가 경계 지연을 어떻게 없애는지까지 연결한다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>눈 감는 문제</h3><p>단일 LLM은 답변 생성 중 새 프레임을 못 본다 — 파이프라인 동기화 병목.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>3역할 분리</h3><p>Perception(항상)·Decision(1토큰)·Reaction(드물게)을 별도 모듈로 쪼갠다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>비동기가 핵심</h3><p>Reaction을 별도 스레드로 돌려 생성 중에도 인식이 멈추지 않는다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>비균일 세그먼트</h3><p>장면 경계로 잘라 정적 구간은 뭉치고 변화 구간만 쪼갠다 — 시간축 중복 제거.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>1토큰 판단</h3><p>&lt;TODO&gt;/&lt;ANS&gt; 한 토큰 분류로 판단 비용을 거의 없앤다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>질문만 바꾸면 감시기</h3><p>이벤트 정의를 query로 걸면 구조가 그대로 저비용 이벤트 탐지기가 된다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>경계 지연·라벨 비용</h3><p>세그먼트 경계에서만 판단하고 타임스탬프 라벨이 필요한 것이 대가다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-02.html">← TimeChat-Online — Differential Token Drop</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-04.html">StreamingVLM — Infinite Stream, Constant Cost →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

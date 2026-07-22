@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch9: VideoLLM-Online — Silence as Learned Output — Real-time VLM Cost Optimization — direcf</title>
+  <meta name="description" content="트리거 계열의 시조. Streaming EOS라는 어휘 하나로 &#x27;언제 말할지&#x27;와 &#x27;뭘 말할지&#x27;를 통합하고, 오프라인 타임스탬프 라벨을 스트리밍 대화로 바꾸는 데이터 합성 레시피를 세워 이후 모든 후속 연구의 기반이 된다. 다만 판단조차 풀 LLM을 매 프레임 돌린다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;height:22px;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .sidebar{display:none}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+}
+
+.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><linearGradient id="direcf-nav-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs></svg>
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg></span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg></span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.25 15a4.5 4.5 0 0 0 4.5 4.5H18a3.75 3.75 0 0 0 1.332-7.257 3 3 0 0 0-3.758-3.848 5.25 5.25 0 0 0-10.233 2.33A4.502 4.502 0 0 0 2.25 15Z"/></svg></span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/multimodal-ai">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"/></svg></span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg></span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/multimodal-ai">Real-time VLM Cost Optimization</a><span class="sep">›</span>
+        <strong>Ch09 VideoLLM-Online — Silence as Learned Output</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 09 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🔔</div>
+      <h1 class="chapter-title">VideoLLM-Online — Silence as Learned Output</h1>
+      <div class="chapter-title-kr">VideoLLM-Online — 침묵도 학습된 출력이다</div>
+      <div class="chapter-tldr">트리거 계열의 시조. Streaming EOS라는 어휘 하나로 &#x27;언제 말할지&#x27;와 &#x27;뭘 말할지&#x27;를 통합하고, 오프라인 타임스탬프 라벨을 스트리밍 대화로 바꾸는 데이터 합성 레시피를 세워 이후 모든 후속 연구의 기반이 된다. 다만 판단조차 풀 LLM을 매 프레임 돌린다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-09.png" alt="Chapter 9 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 9 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>proactive(스스로 발화) 구조가 reactive(질문 응답)와 어떻게 다른지 안다</li><li>Streaming EOS가 &#x27;언제/무엇을 말할지&#x27;를 하나로 통합한 방식을 설명한다</li><li>오프라인 라벨을 스트리밍 대화로 바꾸는 합성 레시피의 의의를 안다</li><li>99% EOS라는 클래스 불균형 문제와 그 위험을 이해한다</li><li>판단에도 풀 LLM을 돌리는 비효율이 StreamMind·StreamBridge의 공략점임을 안다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>이제 마지막 단계, Stage ③ 트리거로 들어간다. 이것이 이벤트 탐지의 본체다. 지금까지의 논문들은 대부분 &quot;질문이 오면 답하는&quot; reactive 구조였다. Stage ③은 다르다 — <strong>아무도 안 물어봐도, 그 순간이 오면 스스로 입을 여는</strong> proactive 구조를 만든다.</p>
+<p>그 계보의 시조가 VideoLLM-Online(CVPR 2024, LIVE 프레임워크)이다. 이 논문의 통찰은 우아하다 — <strong>&quot;침묵도 학습된 출력이다&quot;.</strong></p>
+<p>기존 사고방식에서는 &quot;언제 말할지&quot;(탐지)와 &quot;무엇을 말할지&quot;(생성)가 별개 문제였다. VideoLLM-Online은 이 둘을 EOS(End-Of-Sequence)라는 어휘 하나로 통합한다. 프레임마다 다음 토큰을 예측하는데, 그 토큰이 EOS면 &quot;지금은 침묵&quot;이고 일반 토큰이면 &quot;지금 말한다&quot;가 된다. 별도의 탐지기 없이, autoregressive 예측 하나로 탐지와 생성을 한 몸으로 만든 것이다.</p>
+<p>이 논문은 또한 <strong>데이터 합성 레시피</strong>를 세워, 이후 거의 모든 스트리밍 트리거 연구가 이를 계승한다. 다만 시조인 만큼 비효율도 남겼다 — 1토큰 판단에조차 무거운 LLM을 매 프레임 돌린다. 이 비효율이 다음 장 StreamMind·StreamBridge의 정확한 공략 지점이 된다. 이 챕터는 그 우아한 아이디어와 남겨진 숙제를 함께 본다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>Streaming EOS — 침묵과 발화를 한 어휘로</h2><p>VideoLLM-Online의 핵심은 EOS 토큰의 재해석이다.</p>
+<p>일반적인 LLM에서 EOS는 &quot;문장의 끝&quot;을 뜻하는 특수 토큰이다. VideoLLM-Online은 이것을 스트리밍 맥락에서 재정의한다 — <strong>&quot;지금은 말할 때가 아니다&quot;</strong>라는 신호로.</p>
+<p>작동은 이렇다. 프레임이 하나 들어올 때마다 모델은 다음 토큰 하나를 예측한다.</p>
+<p>- 예측이 <strong>EOS</strong>면 → 침묵하고 다음 프레임을 기다린다.</p>
+<p>- 예측이 <strong>일반 토큰</strong>이면 → 그 토큰부터 시작해 문장을 생성한다(발화).</p>
+<p>이 단순한 규칙이 탐지와 생성을 통합한다. &quot;언제 말할지&quot;는 EOS냐 아니냐로 결정되고, &quot;무엇을 말할지&quot;는 EOS가 아닐 때 이어지는 토큰들로 결정된다. 별도의 이벤트 탐지 모듈, 별도의 트리거 분류기가 필요 없다 — 모델의 autoregressive 예측 하나에 전부 녹아 있다.</p>
+<p><span class="math-display">\[\text{매 프레임: } \hat{t} = \text{LLM}(\text{frames}) \quad \begin{cases} \hat{t} = \text{EOS} &amp; \to \text{침묵} \\ \hat{t} \neq \text{EOS} &amp; \to \text{발화 시작} \end{cases}\]</span></p>
+<p>&quot;침묵도 학습된 출력&quot;이라는 표현의 의미가 이것이다. 모델은 &quot;언제 조용히 있어야 하는지&quot;를 명시적으로 학습한다. 침묵은 아무것도 안 하는 상태가 아니라, EOS를 능동적으로 예측하는 하나의 결정이다. 이 관점 전환이 proactive 스트리밍 VLM의 문을 열었다.</p></div><div class="sb-block"><h2>데이터 합성 레시피 — 후속 연구의 공통 기반</h2><p>VideoLLM-Online의 두 번째 기여는 아키텍처가 아니라 <strong>데이터</strong>에 있다. 그리고 이것이 어쩌면 더 오래 남은 유산이다.</p>
+<p>문제는 이렇다. &quot;언제 말해야 하는가&quot;를 학습시키려면, &quot;이 순간엔 침묵(EOS), 저 순간엔 발화&quot;라는 시점별 정답이 붙은 스트리밍 대화 데이터가 필요하다. 그런데 이런 데이터는 세상에 거의 없다.</p>
+<p>VideoLLM-Online의 해법은 <strong>기존 오프라인 라벨을 재활용</strong>하는 것이다. 예를 들어 Ego4D 같은 데이터셋에는 &quot;몇 초에 무슨 행동&quot; 같은 타임스탬프 라벨이 이미 있다. 이 라벨을 LLM으로 <strong>스트리밍 대화 형식으로 변환</strong>한다 — 라벨이 붙은 시각을 &quot;말해야 할 시점(발화)&quot;으로, 그 사이를 &quot;침묵(EOS)&quot;으로 만들어 스트리밍 대화를 합성하는 것이다.</p>
+<p><span class="math-display">\[\text{오프라인 라벨(행동 타임스탬프)} \;\xrightarrow{\text{LLM 변환}}\; \text{스트리밍 대화(발화 시점 + 침묵 구간)}\]</span></p>
+<p>이 레시피의 영향력은 지대하다. <strong>이후 스트리밍 트리거 연구가 거의 전부 이 방식을 계승</strong>한다. 3장 Dispider의 Decision 학습도, 10장 StreamBridge의 Stream-IT 데이터셋도 이 &quot;오프라인 라벨 → 스트리밍 대화&quot; 계보 위에 있다. 새로운 데이터를 처음부터 라벨링하는 대신, 이미 있는 라벨을 스트리밍 형태로 재활용하는 것 — 이 데이터 전략이 스트리밍 트리거 분야 전체의 실용적 기반이 되었다.</p></div><div class="sb-block"><h2>비동기 병렬화와 극단적 토큰 다이어트</h2><p>VideoLLM-Online은 실시간성을 위해 두 가지 시스템 최적화를 결합한다.</p>
+<p>첫째, <strong>극단적 토큰 다이어트</strong>다. 프레임당 비주얼 토큰을 <strong>10개 수준</strong>까지 줄인다. 2장 TimeChat-Online이 변화 패치만 남긴 것, 3장 Dispider가 세그먼트로 뭉친 것과 같은 방향이되, 여기서는 아예 프레임당 토큰 수 자체를 극단적으로 압축한다. 매 프레임 판단해야 하니, 프레임당 입력이 작아야 실시간이 가능하기 때문이다.</p>
+<p>둘째, <strong>비동기 병렬화</strong>다. 비디오 인코딩, LLM 포워딩, 응답 생성을 병렬로 돌린다. 3장 Dispider의 비동기 철학이 여기서도 나타난다 — 한 단계가 다른 단계를 기다리며 놀지 않도록 파이프라인을 겹친다.</p>
+<p>이 두 최적화 덕에 VideoLLM-Online은 실시간 스트리밍 대화를 처음으로 실용적 수준에서 시연했다. 상시 비용은 &quot;10토큰 prefill + 1토큰 판단&quot; 수준으로, 당시로서는 놀랍도록 가벼웠다.</p>
+<p>하지만 바로 이 지점에 근본적 비효율이 숨어 있다. &quot;1토큰 판단&quot;이라 해도, <strong>그 1토큰을 예측하려면 풀 LLM을 한 번 포워딩</strong>해야 한다. 즉 침묵할지 말지를 정하는 데에도 7B 모델 전체가 매 프레임 돌아간다. 다음 섹션에서 볼 클래스 불균형과 함께, 이것이 시조가 남긴 가장 큰 숙제다.</p></div><div class="sb-block"><h2>남겨진 숙제 — 불균형과 판단 비용</h2><p>VideoLLM-Online은 길을 열었지만, 세 가지 숙제를 후속 연구에 넘겼다. 이 숙제들이 이후 트리거 계열 논문의 전장(battlefield)이다.</p>
+<p><strong>숙제 1 — 클래스 불균형.</strong> 스트리밍 감시에서 대부분의 프레임은 &quot;아무 일 없음&quot;이다. 그래서 학습 데이터의 99%가 정답이 EOS(침묵)다. 이 심한 불균형을 순진하게 학습하면, 모델은 &quot;항상 EOS를 예측하면 99% 맞다&quot;는 게으른 해에 빠져 <strong>영원히 침묵</strong>하게 된다. 아무 말도 안 하는 모델이 손실은 가장 낮은 역설이다. 이 불균형을 어떻게 다루느냐가 트리거 학습의 핵심 난제가 된다.</p>
+<p><strong>숙제 2 — 판단조차 풀 LLM.</strong> 앞서 봤듯 1토큰 판단에도 7B가 매 프레임 가동된다. 대부분의 프레임이 침묵인데도 매번 무거운 모델을 돌리는 것은 큰 낭비다. <strong>10장 StreamMind는 이 판단을 아예 LLM 밖의 경량 게이트로 내려</strong> 100 FPS를 달성하고, <strong>StreamBridge는 판단을 별도 0.5B 모델로 분리</strong>해 본체를 건드리지 않는다. 둘 다 &quot;판단에 왜 풀 LLM을 쓰는가&quot;라는 VideoLLM-Online의 비효율을 공략한 것이다.</p>
+<p><strong>숙제 3 — 타이밍 민감성.</strong> 10토큰이라는 극단적 다이어트의 대가로 미세 디테일이 소실되고, EOS 임계값에 발화 타이밍이 민감해진다. 임계값을 조금만 잘못 잡아도 너무 자주 말하거나 너무 안 말하게 된다.</p>
+<p>| 숙제 | 문제 | 공략한 후속 연구 |
+|---|---|---|
+| 클래스 불균형 | 99% EOS → 영원한 침묵 위험 | 작은 게이트만 불균형 감당(StreamMind) |
+| 판단 비용 | 1토큰에도 풀 LLM | 경량 게이트/0.5B 분리(StreamMind·StreamBridge) |
+| 타이밍 민감성 | 임계값에 취약 | RL 기반 타이밍 학습(MMDuet2) |</p>
+<p>이 세 숙제를 각각 어떻게 푸는지가 다음 장의 내용이다. VideoLLM-Online을 &quot;완성된 해법&quot;이 아니라 &quot;문제를 올바르게 정의한 시조&quot;로 읽는 것이 정확하다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">무전기를 든 초병</div>
+      <div class="a-body"><p>야간 경계 근무를 서는 초병을 생각하자. 이 초병의 임무는 이상 징후가 있을 때만 무전으로 보고하는 것이다. 여기서 중요한 깨달음 — <strong>&quot;이상 없음&quot;도 하나의 판단</strong>이다. 초병은 매 순간 &quot;보고할까, 말까&quot;를 능동적으로 결정하며, 대부분의 순간은 &quot;보고 안 함(EOS)&quot;을 선택한다. 침묵이 곧 근무다.</p>
+<p>이 초병을 훈련시키려면 &quot;언제 보고해야 하는가&quot;의 교본이 필요하다. 그런데 실시간 근무 교본은 없으니, 과거 사건 일지(오프라인 라벨)를 가져다 &quot;이 시각엔 보고, 그 사이엔 침묵&quot;으로 재구성해 훈련 시나리오를 만든다(데이터 합성 레시피). 이후 모든 초병 교관이 이 방식을 쓴다.</p>
+<p>문제는 두 가지다. 밤새 아무 일도 없는 게 정상이라(99% 침묵), 게으른 초병은 &quot;무조건 이상 없음만 외치면 거의 항상 맞다&quot;는 요령을 배워 진짜 침입자도 놓친다(클래스 불균형). 게다가 이 초병은 &quot;보고 안 함&quot;을 결정하는 데에도 매번 사령부에 전화를 걸어 확인한다(판단에 풀 LLM) — 정작 대부분은 아무 일 없는데 말이다. 다음 장의 개선은 &quot;이상 없음 판단만큼은 초병 스스로 값싸게 하고, 사령부는 진짜 사건 때만 부른다&quot;는 것이다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>Streaming EOS의 핵심과, 클래스 불균형을 다루는 가중 손실을 함께 보자. 매 프레임 EOS/발화를 예측하되, 드문 발화 시점에 더 큰 가중치를 줘 &#x27;영원한 침묵&#x27;을 막는다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import torch, torch.nn.functional as F
+
+class StreamingEOSHead:
+    def __init__(self, llm, eos_id, speak_weight=50.0):
+        self.llm = llm
+        self.eos_id = eos_id
+        # 99% EOS 불균형 보정: 드문 &#x27;발화&#x27; 정답에 큰 가중치
+        self.speak_weight = speak_weight
+
+    def step(self, frame_tokens, kv_cache):
+        &quot;&quot;&quot;매 프레임: 풀 LLM을 돌려 다음 토큰 1개 예측 (여기가 바로 비효율!).&quot;&quot;&quot;
+        logits, kv_cache = self.llm(frame_tokens, kv_cache)   # 판단에도 풀 forward
+        next_id = logits[-1].argmax().item()
+        speak = (next_id != self.eos_id)          # EOS 아니면 발화 시작
+        return speak, next_id, kv_cache
+
+    def loss(self, logits, target_ids):
+        &quot;&quot;&quot;불균형 보정 손실: 발화(비-EOS) 정답 위치에 speak_weight를 준다.&quot;&quot;&quot;
+        weights = torch.where(target_ids == self.eos_id,
+                              torch.ones_like(target_ids, dtype=torch.float),
+                              torch.full_like(target_ids, self.speak_weight, dtype=torch.float))
+        ce = F.cross_entropy(logits, target_ids, reduction=&quot;none&quot;)
+        return (ce * weights).mean()      # 순진한 CE면 &#x27;항상 EOS&#x27;로 붕괴
+
+# 상시 루프: 대부분 프레임은 speak=False(침묵)지만 매번 풀 LLM이 돈다
+# → StreamMind/StreamBridge가 공략하는 지점
+</code></pre>
+      <div class="c-walk"><p><code>step</code>의 <code>self.llm(frame_tokens, kv_cache)</code>가 VideoLLM-Online의 우아함과 비효율을 동시에 보여준다 — 매 프레임 풀 LLM을 돌려 다음 토큰 하나를 뽑고, 그게 EOS면 침묵·아니면 발화다. 탐지와 생성이 이 한 번의 forward에 통합돼 있다. 하지만 대부분 프레임에서 답이 침묵인데도 7B가 매번 도는 게 다음 장의 공략점이다. <code>loss</code>가 클래스 불균형 대응이다 — 순진한 <code>cross_entropy</code>를 쓰면 99% EOS 때문에 모델이 &#x27;항상 EOS&#x27;로 붕괴하므로, <code>speak_weight</code>(여기선 50배)로 드문 발화 시점의 손실을 키워 균형을 잡는다. 이 가중치 설계가 트리거 학습의 핵심 난제임을 코드가 드러낸다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">proactive 스트리밍(스스로 발화)은 이벤트 알림 제품의 근간이다. 면접에서는 탐지/생성 통합의 우아함을 이해하면서도, 클래스 불균형과 판단 비용이라는 실전 함정을 아는지가 관건이다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>reactive와 proactive의 차이, 그리고 &#x27;침묵도 결정&#x27;이라는 관점 전환을 이해하는가</li><li>99% EOS 불균형이 &#x27;영원한 침묵&#x27;으로 붕괴하는 메커니즘과 대응을 아는가</li><li>1토큰 판단에도 풀 LLM이 도는 비효율을 인지하고 개선 방향을 제시하는가</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>탐지와 생성을 억지로 두 모델로 분리하려 하며 EOS 통합의 우아함을 못 봄</li><li>불균형 데이터를 순진한 CE로 학습해 침묵 붕괴를 자초</li><li>&#x27;1토큰이니 싸다&#x27;며 매 프레임 풀 LLM forward 비용을 간과</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>정답의 99%가 EOS인 데이터로 순진하게 학습하면 무슨 일이 벌어지는가? 대응은?</li><li>스트리밍 트리거 학습 데이터가 없을 때 오프라인 라벨을 어떻게 재활용하는가?</li><li>1토큰 판단에도 풀 LLM이 도는 것이 왜 낭비인가? 어떻게 줄이겠는가?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 겉핥기는 &#x27;EOS로 말할지 말지 정한다&#x27;까지다. 통달한 사람은 VideoLLM-Online을 &#x27;탐지·생성을 EOS로 통합하고 데이터 합성 레시피를 세운 시조&#x27;로 규정하되, 클래스 불균형·판단 비용·타이밍 민감성이라는 세 숙제를 짚고 각각 StreamMind·StreamBridge·MMDuet2가 어떻게 공략하는지 연결한다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>proactive의 시작</h3><p>질문 없이 스스로 발화하는 구조 — 이벤트 탐지 트리거 계열의 시조.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>침묵=출력</h3><p>EOS를 &#x27;지금은 말 안 함&#x27;으로 재해석해 탐지와 생성을 한 어휘로 통합한다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>합성 레시피</h3><p>오프라인 타임스탬프 라벨을 스트리밍 대화로 변환 — 후속 연구가 전부 계승.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>극단 다이어트+비동기</h3><p>프레임당 10토큰, 인코딩·포워딩·생성 병렬화로 실시간을 확보한다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>클래스 불균형</h3><p>99% EOS를 순진하게 학습하면 영원히 침묵 — 가중 손실 등 보정이 필수.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>판단 비용 숙제</h3><p>1토큰 판단에도 풀 LLM이 매 프레임 도는 비효율 — 다음 장의 공략점.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>타이밍 민감성</h3><p>극단 다이어트로 디테일이 줄고 EOS 임계값에 발화 타이밍이 민감해진다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-08.html">← Flash-VStream — Hierarchical Gist + Detail Memory</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-10.html">StreamMind, StreamBridge &amp; the 2-Stage Cascade →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>
