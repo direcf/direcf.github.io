@@ -291,12 +291,7 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 <p><strong>변환 Lambda</strong>는 Firehose가 데이터를 저장하기 전에 Lambda를 호출하여 데이터를 변환합니다. JSON 정규화, PII 마스킹, Parquet 변환 등에 활용합니다.</p>
 <p><strong>Dynamic Partitioning</strong>은 레코드의 내용을 기반으로 S3 prefix를 동적으로 설정합니다. 예를 들어 <code>{country}/{year}/{month}/</code> 형태로 자동 파티셔닝하여 Athena 쿼리 성능을 향상시킵니다.</p>
 <p>Kinesis Data Streams와 Firehose의 차이는 다음과 같습니다.</p>
-<p>| 비교 | Data Streams | Firehose |
-|---|---|---|
-| 데이터 보존 | 1~365일 | 전송 후 삭제 |
-| 소비자 코드 | 필요 | 불필요 |
-| 목적지 | 커스텀 | 사전 정의된 대상 |
-| 레이턴시 | 70ms | 60~900초 |</p></div><div class="sb-block"><h2>Amazon MSK: 관리형 Apache Kafka</h2><p><strong>Amazon MSK(Managed Streaming for Apache Kafka)</strong>는 Apache Kafka의 Control Plane(ZooKeeper 또는 KRaft, 브로커 관리)을 AWS가 관리하는 서비스입니다. Kafka의 강력한 기능과 생태계를 유지하면서 운영 부담을 줄입니다.</p>
+<table><thead><tr><th>비교</th><th>Data Streams</th><th>Firehose</th></tr></thead><tbody><tr><td>데이터 보존</td><td>1~365일</td><td>전송 후 삭제</td></tr><tr><td>소비자 코드</td><td>필요</td><td>불필요</td></tr><tr><td>목적지</td><td>커스텀</td><td>사전 정의된 대상</td></tr><tr><td>레이턴시</td><td>70ms</td><td>60~900초</td></tr></tbody></table></div><div class="sb-block"><h2>Amazon MSK: 관리형 Apache Kafka</h2><p><strong>Amazon MSK(Managed Streaming for Apache Kafka)</strong>는 Apache Kafka의 Control Plane(ZooKeeper 또는 KRaft, 브로커 관리)을 AWS가 관리하는 서비스입니다. Kafka의 강력한 기능과 생태계를 유지하면서 운영 부담을 줄입니다.</p>
 <p>MSK를 선택하는 주요 이유는 다음과 같습니다.</p>
 <p>- 기존 Kafka 기반 애플리케이션 이전(Migration)
 - Kafka Connect, Kafka Streams, ksqlDB 등 Kafka 생태계 활용
@@ -304,12 +299,7 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 - 특정 Kafka 버전 고정 필요</p>
 <p><strong>MSK Serverless</strong>는 서버 없이 Kafka를 사용하는 옵션으로, 용량 계획 없이 자동 스케일링됩니다.</p>
 <p><strong>MSK Connect</strong>는 Kafka Connect 커넥터를 완전 관리형으로 실행합니다. S3 Sink Connector로 Kafka 토픽의 데이터를 S3에 자동 저장하거나, Debezium Source Connector로 데이터베이스 변경 사항을 CDC(Change Data Capture)로 Kafka에 스트리밍합니다.</p>
-<p>| 비교 | Kinesis Data Streams | MSK |
-|---|---|---|
-| 관리 부담 | 최소 (완전 관리) | 보통 (브로커 관리) |
-| 생태계 | AWS 네이티브 | Kafka 오픈소스 |
-| 비용 단위 | Shard·시간 | 브로커·시간 |
-| 메시지 보존 | 최대 1년 | 무제한 (스토리지 기반) |</p></div><div class="sb-block"><h2>KCL과 스트림 소비자 설계</h2><p><strong>KCL(Kinesis Client Library)</strong>는 Kinesis Data Streams의 공식 소비자 라이브러리입니다. Shard 리밸런싱, 체크포인팅(DynamoDB 기반), 오류 처리, 로드 밸런싱을 자동화합니다.</p>
+<table><thead><tr><th>비교</th><th>Kinesis Data Streams</th><th>MSK</th></tr></thead><tbody><tr><td>관리 부담</td><td>최소 (완전 관리)</td><td>보통 (브로커 관리)</td></tr><tr><td>생태계</td><td>AWS 네이티브</td><td>Kafka 오픈소스</td></tr><tr><td>비용 단위</td><td>Shard·시간</td><td>브로커·시간</td></tr><tr><td>메시지 보존</td><td>최대 1년</td><td>무제한 (스토리지 기반)</td></tr></tbody></table></div><div class="sb-block"><h2>KCL과 스트림 소비자 설계</h2><p><strong>KCL(Kinesis Client Library)</strong>는 Kinesis Data Streams의 공식 소비자 라이브러리입니다. Shard 리밸런싱, 체크포인팅(DynamoDB 기반), 오류 처리, 로드 밸런싱을 자동화합니다.</p>
 <p>KCL의 핵심 개념은 <strong>Record Processor</strong>입니다. 각 Shard에 하나의 Record Processor 인스턴스가 할당됩니다. <code>initialize()</code> → <code>processRecords()</code> → <code>shutdown()</code> 생명주기를 구현합니다. <code>processRecords()</code>에서 처리 완료 후 <code>checkpoint()</code>를 호출하여 DynamoDB에 현재 위치를 저장합니다.</p>
 <p><strong>Lambda 소비자</strong>는 KCL 없이 Lambda를 Kinesis 트리거로 사용하는 방식입니다. Shard당 하나의 Lambda 인스턴스가 호출됩니다. <code>BisectBatchOnFunctionError</code>를 활성화하면 실패 레코드를 이진 분할하여 문제 레코드를 격리합니다.</p>
 <p><strong>처리 보증</strong>: Kinesis는 At-Least-Once 전달을 제공합니다. Exactly-Once 처리는 소비자 측에서 Idempotency를 구현해야 합니다. 레코드의 <code>sequenceNumber</code>를 Idempotency Key로 사용하여 DynamoDB Conditional Write로 중복 처리를 방지합니다.</p></div><div class="sb-block"><h2>스트림 처리 패턴: 집계, 윈도잉, 조인</h2><p><strong>집계(Aggregation)</strong>는 스트리밍 데이터를 요약하는 기본 패턴입니다. 예를 들어 초당 결제 건수를 집계하거나, 1분 동안의 평균 응답 시간을 계산합니다.</p>

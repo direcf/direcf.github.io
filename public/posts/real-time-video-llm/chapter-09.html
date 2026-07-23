@@ -289,10 +289,7 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 <p>Queue가 5개. 각 queue가 운영 결정을 요구한다. (a) <strong>Bounded or unbounded?</strong> Unbounded면 producer가 빠르고 consumer가 느릴 때 메모리 폭발. Real-time에서는 거의 항상 bounded. (b) <strong>Capacity?</strong> 1이면 strict pipeline(producer가 consumer 한 칸만 앞서 감), N이면 burst absorber. Real-time video는 보통 2-8 capacity. (c) <strong>Full일 때 정책?</strong> Block, drop oldest, drop newest, sample down. 이게 backpressure / drop policy의 핵심.</p>
 <p>Graph 구조를 보면 결정 포인트가 보인다. Capture와 Decode는 frame-independent해서 parallel. Sample은 sequential dependency가 있어 single-worker. Encode는 batchable해서 multi-frame batch worker. LLM은 KV cache state를 들고 있어 session-affinity. Stage마다 worker 모델이 다르다.</p>
 <p>핵심 결정: <strong>&#x27;어디서 frame을 drop할 것인가&#x27;를 architecture 단에서 정해야 한다</strong>. 모든 queue에서 drop 가능하게 두면 frame이 어디서 사라졌는지 debug 불가. 시니어 결정은 &#x27;capture 직후 (q1) 또는 reduce 직후 (q5)&#x27; 둘 중 하나로 *drop point를 고정*하는 것이다. q1 drop은 &#x27;too fast input&#x27; 처리, q5 drop은 &#x27;too slow LLM&#x27; 처리에 대응한다.</p></div><div class="sb-block"><h2>2. Async vs sync, GPU vs CPU — 4-quadrant 분류</h2><p>Stage를 어떤 concurrency 모델로 실행할지 결정하려면 4-quadrant 분류가 유용하다.</p>
-<p>| | Sync (blocking) | Async (non-blocking) |
-|---|---|---|
-| <strong>CPU stage</strong> | thread pool / multiprocessing | asyncio |
-| <strong>GPU stage</strong> | dedicated worker thread + CUDA stream | CUDA graph + async kernel launch |</p>
+<table><thead><tr><th></th><th>Sync (blocking)</th><th>Async (non-blocking)</th></tr></thead><tbody><tr><td><strong>CPU stage</strong></td><td>thread pool / multiprocessing</td><td>asyncio</td></tr><tr><td><strong>GPU stage</strong></td><td>dedicated worker thread + CUDA stream</td><td>CUDA graph + async kernel launch</td></tr></tbody></table>
 <p><strong>Capture (CPU sync)</strong>: 네트워크 socket read나 camera handle은 blocking system call이 많다. Asyncio도 가능하지만 lib 지원 따라 다름. 가장 단순한 건 dedicated thread.</p>
 <p><strong>Decode (GPU+CPU hybrid)</strong>: NVDEC는 GPU async이고 PyCairo/OpenCV는 CPU sync. 둘 다 비-Python time 영역에 머무르므로 GIL 영향 적음. Decode worker를 dedicated thread로 두는 게 표준.</p>
 <p><strong>Sample (CPU async)</strong>: 결정 로직만이라 매우 가볍다 (&lt;1ms). asyncio coroutine으로 충분.</p>

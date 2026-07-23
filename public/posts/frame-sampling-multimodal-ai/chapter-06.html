@@ -281,12 +281,7 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
       </div>
 
       <div class="sb-block"><p>Chapter 3–5는 5분짜리 영상에서 어떤 frame을 고를지를 다뤘다. 그러나 1시간이 넘어가는 순간 문제의 성격이 바뀐다. 1 fps만 해도 3,600 frame이고, 6시간이면 21,600 frame이다. SigLIP token 256개씩만 잡아도 token이 백만 단위로 폭발한다. 이건 단순히 &#x27;sampler를 더 영리하게&#x27;로 해결할 영역이 아니다. 인간이 War &amp; Peace를 읽을 때 한 페이지씩 다 외우는 게 아니라 chapter 요약과 메모를 쓰는 것처럼, hour-scale video도 *episodic memory* 라는 다른 인지 시스템이 필요하다. 이 챕터는 LongVU(ICLR 2025, Meta, arXiv:2410.17434)의 spatiotemporal adaptive compression, Hour-LLaVA(NeurIPS 2025 Spotlight)의 MemAug + VideoMarathon 9.7K-hour 데이터셋, 그리고 HourVideo 벤치마크가 이 phase transition을 어떻게 풀고 있는지를 본다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>1. Hour-scale에서 일어나는 phase transition</h2><p>먼저 token이 얼마나 폭발하는지 보자. SigLIP per-frame ≈ 256 vision token, frame 당 평균치로 잡자.</p>
-<p>| 길이 | 1 fps frames | Tokens(256/frame) | 1M ctx 대비 |
-|---|---|---|---|
-| 5분 | 300 | 76.8K | 7.6% |
-| 30분 | 1,800 | 460K | 46% |
-| 1시간 | 3,600 | 921K | 92% |
-| 6시간 | 21,600 | 5.5M | 553% |</p>
+<table><thead><tr><th>길이</th><th>1 fps frames</th><th>Tokens(256/frame)</th><th>1M ctx 대비</th></tr></thead><tbody><tr><td>5분</td><td>300</td><td>76.8K</td><td>7.6%</td></tr><tr><td>30분</td><td>1,800</td><td>460K</td><td>46%</td></tr><tr><td>1시간</td><td>3,600</td><td>921K</td><td>92%</td></tr><tr><td>6시간</td><td>21,600</td><td>5.5M</td><td>553%</td></tr></tbody></table>
 <p>5분에서는 어떤 sampler든 다 들어간다. 30분에서는 query-aware adaptive sampling (Chapter 3–5)이 충분히 효과적이다. 그러나 <strong>1시간을 넘는 순간 1M context에도 1 fps가 안 들어간다</strong>. 6시간이면 token compression(VideoChat-Flash의 1/50 HiCo) 없이는 시작도 못한다.</p>
 <p>그리고 token만의 문제가 아니다. 1시간 영상에서는 사건이 *시간적으로 분산*되어 있다. &#x27;A 인물이 B를 보고 어떻게 반응했나?&#x27;라는 질문에 A와 B가 40분 차이로 등장할 수 있다. 5분 clip의 short-range attention pattern은 여기서 깨진다. 이게 hour-scale의 phase transition 두 축이다: <strong>token explosion</strong> + <strong>temporal dispersion</strong>.</p>
 <p>결론: hour-scale은 &#x27;sampler를 더 영리하게&#x27;가 아니라 &#x27;memory 시스템을 추가&#x27;하는 새로운 design axis를 요구한다.</p></div><div class="sb-block"><h2>2. LongVU — DINOv2 temporal pruning + cross-attention spatial reduction</h2><p>LongVU(Shen et al., Meta, ICLR 2025, arXiv:2410.17434)는 hour-scale의 첫 production-ready 솔루션 중 하나다. 핵심 통찰은 <strong>spatiotemporal adaptive compression</strong>: 시간 축과 공간 축을 *서로 다른 방법*으로 압축한다.</p>
@@ -299,14 +294,7 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 <p><strong>MemAug (Memory Augmentation module).</strong> 영상을 chunk 단위(예: 30초)로 자르고, 각 chunk를 작은 memory token bank로 압축한다. 새 chunk가 들어올 때 *과거의 memory bank*를 cross-attention key/value로 참조한다. 즉 LLM이 현재 chunk를 처리하면서 과거 chunk의 압축된 표현을 읽는다. 이건 사실상 Transformer-XL의 segment-recurrent memory를 video에 도입한 셈이다. 결과: <strong>1 FPS로 1시간 영상을 end-to-end 학습 가능</strong>.</p>
 <p><strong>VideoMarathon 데이터셋.</strong> Hour-LLaVA의 진짜 임팩트는 데이터셋이다. <strong>9,700 시간 분량의 hour-long video + QA pair</strong>를 공개했다. 비교: 기존 LLaVA-Video 178K 클립의 평균 길이가 ~1분대인 걸 생각하면, hour-long training data는 처음으로 산업 규모에 도달했다. &#x27;hour-scale을 풀려면 hour-scale 데이터로 학습해야 한다&#x27;는 당연한 명제가 처음으로 가능해진 것.</p>
 <p>MemAug + VideoMarathon 조합의 결론은 단순하다: hour-scale은 inference-time trick(더 영리한 sampler)만으로는 못 풀고, *training distribution이 hour-scale이어야* 한다.</p></div><div class="sb-block"><h2>4. HourVideo 벤치마크 — 무엇을 측정하나</h2><p>Hour-scale 시대의 benchmark가 따로 필요한 이유는 기존 benchmark가 hour-scale의 진짜 능력을 측정하지 못해서다. 비교해보자.</p>
-<p>| 벤치마크 | 평균 길이 | 측정하는 능력 |
-|---|---|---|
-| Video-MME (Long split) | ~30–60분 | comprehensive QA, multi-domain |
-| MLVU | 평균 10분대 | multitask long-video understanding |
-| LongVideoBench | 8분–1시간 | referred-question QA (referring expression 포함) |
-| EgoSchema | 3분 | egocentric long-form (실은 &#x27;long&#x27;이 아님) |
-| <strong>HourVideo</strong> | <strong>1시간 전후</strong> | <strong>temporal reasoning, causal chain, narrative summarization</strong> |
-| Multi-Hop NIAH | 10K frame | needle-in-haystack (retrieval 능력만) |</p>
+<table><thead><tr><th>벤치마크</th><th>평균 길이</th><th>측정하는 능력</th></tr></thead><tbody><tr><td>Video-MME (Long split)</td><td>~30–60분</td><td>comprehensive QA, multi-domain</td></tr><tr><td>MLVU</td><td>평균 10분대</td><td>multitask long-video understanding</td></tr><tr><td>LongVideoBench</td><td>8분–1시간</td><td>referred-question QA (referring expression 포함)</td></tr><tr><td>EgoSchema</td><td>3분</td><td>egocentric long-form (실은 &#x27;long&#x27;이 아님)</td></tr><tr><td><strong>HourVideo</strong></td><td><strong>1시간 전후</strong></td><td><strong>temporal reasoning, causal chain, narrative summarization</strong></td></tr><tr><td>Multi-Hop NIAH</td><td>10K frame</td><td>needle-in-haystack (retrieval 능력만)</td></tr></tbody></table>
 <p>HourVideo의 차별점:
 - 단일 timestamp 한 곳 보면 풀리는 question을 의도적으로 배제
 - *temporal reasoning chain*(&#x27;A 다음에 B가 일어났고 그 결과 C가 발생한 이유는?&#x27;)

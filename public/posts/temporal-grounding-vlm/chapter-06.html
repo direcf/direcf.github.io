@@ -282,14 +282,7 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 
       <div class="sb-block"><p>5장에서 RL post-training이 timestamp emission의 정확도를 끌어올린다는 것을 봤지만, 모두 Charades-STA(평균 30초) / ActivityNet(평균 2분) 같은 short-to-medium form 벤치마크였다. 영상이 한 시간을 넘어가면 — MAD(평균 110분), Ego4D-NLQ, 그리고 2026년 6월에 나온 ExtremeWhenBench(평균 75.7분, 최대 9시간) — 같은 모델이 <strong>6.7×</strong> 격차로 무너진다. 한 시간 영상을 1 FPS로 sampling해도 3,600 frame이고, 각 frame이 256 token이면 921,600 token이 입력으로 들어간다. Qwen2.5-VL-7B의 context window가 32K, Long-context variant가 128K인 상황에서 이건 <strong>불가능한 길이</strong>다. 그리고 frame을 강하게 down-sample하면 target moment가 한 frame도 포함되지 않을 확률이 압도적으로 높다. 즉 모델이 못 보는 게 아니라 본 적이 없는 상태다. 2026년 SOTA가 이 문제에 내놓은 답은 <strong>agentic search</strong>다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>6.1 The Hour-Scale Problem</h2><p><strong>Token budget explosion</strong></p>
 <p>Qwen2.5-VL-7B는 이미지 한 장을 평균 256 visual token으로 인코딩한다. 1 FPS sampling 기준:</p>
-<p>| 영상 길이 | Frames | Visual tokens | Context window 적합? |
-|---|---|---|---|
-| Charades-STA (30s) | 30 | 7,680 | ✅ 32K 안에 여유 |
-| ActivityNet (2min) | 120 | 30,720 | ⚠️ 32K 임계 |
-| Ego4D-NLQ (8min clip) | 480 | 122,880 | ❌ 128K Long-context만 가능 |
-| MAD (110min movie) | 6,600 | 1,689,600 | ❌ 모든 open VLM 불가 |
-| ExtremeWhenBench 평균 (75.7min) | 4,542 | 1,162,752 | ❌ 불가 |
-| ExtremeWhenBench max (9hr) | 32,400 | 8,294,400 | ❌ 한 자릿수 차이로 불가 |</p>
+<table><thead><tr><th>영상 길이</th><th>Frames</th><th>Visual tokens</th><th>Context window 적합?</th></tr></thead><tbody><tr><td>Charades-STA (30s)</td><td>30</td><td>7,680</td><td>✅ 32K 안에 여유</td></tr><tr><td>ActivityNet (2min)</td><td>120</td><td>30,720</td><td>⚠️ 32K 임계</td></tr><tr><td>Ego4D-NLQ (8min clip)</td><td>480</td><td>122,880</td><td>❌ 128K Long-context만 가능</td></tr><tr><td>MAD (110min movie)</td><td>6,600</td><td>1,689,600</td><td>❌ 모든 open VLM 불가</td></tr><tr><td>ExtremeWhenBench 평균 (75.7min)</td><td>4,542</td><td>1,162,752</td><td>❌ 불가</td></tr><tr><td>ExtremeWhenBench max (9hr)</td><td>32,400</td><td>8,294,400</td><td>❌ 한 자릿수 차이로 불가</td></tr></tbody></table>
 <p>fp16 KV cache 메모리를 함께 계산하면 1M token이면 KV cache만 <strong>200GB</strong>. H100 80GB 8장으로도 부족하다.</p>
 <p><strong>Down-sampling이 답이 아닌 이유 — temporal dispersion</strong></p>
 <p>Frame budget을 32로 잡고 75.7분 영상에서 균일 sampling하면 frame 간격이 142초다. 평균 moment 길이가 30초인 ExtremeWhenBench에서 target moment에 frame이 떨어질 확률은 30/142 ≈ 21%. 즉 <strong>5번 중 4번은 모델이 ground truth window 안의 frame을 한 장도 못 본다</strong>.</p>
@@ -321,20 +314,12 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 - Multi-domain
 - Moment 길이 분포: median 30s, 75th percentile 75s</p>
 <p><strong>세 baseline 비교</strong>:</p>
-<p>| Baseline | mIoU |
-|---|---|
-| Qwen3.5-9B (monolithic VLM) | <strong>0.110</strong> |
-| CLIP-only retrieve | <strong>0.269</strong> |
-| Retrieve-then-ground hybrid | <strong>0.354</strong> |</p>
+<table><thead><tr><th>Baseline</th><th>mIoU</th></tr></thead><tbody><tr><td>Qwen3.5-9B (monolithic VLM)</td><td><strong>0.110</strong></td></tr><tr><td>CLIP-only retrieve</td><td><strong>0.269</strong></td></tr><tr><td>Retrieve-then-ground hybrid</td><td><strong>0.354</strong></td></tr></tbody></table>
 <p><strong>Failure mode 분해</strong>:</p>
 <p>- <strong>85% search failure</strong>
 - <strong>11% localization failure</strong>
 - <strong>4% 기타</strong></p></div><div class="sb-block"><h2>6.6 Tool-use 디자인</h2><p><strong>최소 tool set</strong> (3개): coarse_retrieve, zoom_in, verify.</p>
-<p>| Tool | 출력 | 호출 빈도 |
-|---|---|---|
-| <code>coarse_retrieve(video, query, k)</code> | k개 candidate window | 보통 1번 |
-| <code>zoom_in(window, factor)</code> | dense-sampled frame list | 1~5번 |
-| <code>verify(window, query)</code> | (IoU 추정, confidence) | 3~10번 |</p>
+<table><thead><tr><th>Tool</th><th>출력</th><th>호출 빈도</th></tr></thead><tbody><tr><td><code>coarse_retrieve(video, query, k)</code></td><td>k개 candidate window</td><td>보통 1번</td></tr><tr><td><code>zoom_in(window, factor)</code></td><td>dense-sampled frame list</td><td>1~5번</td></tr><tr><td><code>verify(window, query)</code></td><td>(IoU 추정, confidence)</td><td>3~10번</td></tr></tbody></table>
 <p><strong>Production 의사결정</strong>:</p>
 <p>- <strong>5분 미만</strong>: monolithic VLM 우세. agentic 불필요.</p>
 <p>- <strong>5분~30분</strong>: agentic이 정확도 +5~10%p, latency 5~10× 증가.</p>

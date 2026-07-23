@@ -290,13 +290,7 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 (6) LLM          : vLLM / TensorRT-LLM → text
 <code>`</code></p>
 <p>각 stage가 plug-and-play가 되려면 *interface가 stage 사이 경계에서만* 정의되어야 한다. 즉 (2)→(3) 경계는 &#x27;T 프레임의 numpy array와 (옵션) 메타데이터&#x27;로, (3)→(4) 경계는 &#x27;List[int] 인덱스&#x27;로 못박혀 있어야 한다. 다음 표는 각 경계의 *불변 contract*다.</p>
-<p>| 경계 | 입력 타입 | 출력 타입 | 불변 메타 |
-|---|---|---|---|
-| Input → Decode | <code>bytes</code> or <code>Path</code> | <code>VideoHandle(reader, fps, T, hw)</code> | <code>video_id</code>, <code>sha256</code> |
-| Decode → Sample | <code>VideoHandle</code> | <code>List[int]</code> (frame indices) | <code>query</code>, <code>budget</code>, <code>scenes?</code> |
-| Sample → Encode | <code>List[int]</code> + <code>VideoHandle</code> | <code>Tensor[N, D_v]</code> | <code>model_id</code>, <code>preprocess_id</code> |
-| Encode → Reduce | <code>Tensor[N, D_v]</code> | <code>Tensor[N&#x27;, D_v]</code> | <code>reduction_ratio</code> |
-| Reduce → LLM | <code>Tensor[N&#x27;, D_v]</code> | <code>str</code> (생성 결과) | <code>prompt</code>, <code>tokenizer_id</code> |</p>
+<table><thead><tr><th>경계</th><th>입력 타입</th><th>출력 타입</th><th>불변 메타</th></tr></thead><tbody><tr><td>Input → Decode</td><td><code>bytes</code> or <code>Path</code></td><td><code>VideoHandle(reader, fps, T, hw)</code></td><td><code>video_id</code>, <code>sha256</code></td></tr><tr><td>Decode → Sample</td><td><code>VideoHandle</code></td><td><code>List[int]</code> (frame indices)</td><td><code>query</code>, <code>budget</code>, <code>scenes?</code></td></tr><tr><td>Sample → Encode</td><td><code>List[int]</code> + <code>VideoHandle</code></td><td><code>Tensor[N, D_v]</code></td><td><code>model_id</code>, <code>preprocess_id</code></td></tr><tr><td>Encode → Reduce</td><td><code>Tensor[N, D_v]</code></td><td><code>Tensor[N&#x27;, D_v]</code></td><td><code>reduction_ratio</code></td></tr><tr><td>Reduce → LLM</td><td><code>Tensor[N&#x27;, D_v]</code></td><td><code>str</code> (생성 결과)</td><td><code>prompt</code>, <code>tokenizer_id</code></td></tr></tbody></table>
 <p>실수 패턴: 많은 초기 코드베이스가 stage (3)와 (4)를 한 함수에 묶어 <code>sample_and_encode()</code>로 노출한다. 이러면 sampler를 바꿀 때마다 encoder caller도 손대야 한다. *boundary가 코드 경계*가 아니라 *함수 시그니처 경계*여야 plug-and-play가 가능하다.</p>
 <p>실제 production stack 매핑:
 - <strong>Decode</strong>: Decord는 numpy zero-copy로 빠르지만 H.265 일부 코덱에서 PyAV로 fallback. NVIDIA stack에서는 NVDEC + DALI.</p>

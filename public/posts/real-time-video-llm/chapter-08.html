@@ -283,15 +283,7 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
       <div class="sb-block"><p>Chapter 1-7까지가 &#x27;real-time video LLM의 각 stage가 무엇이고 어떻게 최적화하는가&#x27;였다면, 이 챕터는 *system 관점*으로 한 발 빠진다. 실시간 시스템에서 latency는 single number가 아니다. p50과 p99는 다른 quantity이고, 둘 사이의 차이가 *systemic jitter*의 측정이다. 그리고 6-stage pipeline에서 어느 stage가 bottleneck인지 모르면 어떤 최적화도 ROI를 정당화할 수 없다.</p>
 <p>핵심 멘탈 모델 시프트: General video LLM은 &#x27;accuracy&#x27;가 1급 metric이었다. Hour-scale은 &#x27;memory efficiency&#x27;를 같이 봤다. <strong>Real-time은 latency distribution이 1급 metric이다</strong>. 단일 평균이 아니라 분포 전체. 그리고 latency distribution을 다루려면 (a) stage별로 분해, (b) 각 stage의 jitter source 식별, (c) tail (p99)를 별도로 추적, (d) Amdahl&#x27;s law로 ROI 계산 — 이 4가지를 마스터해야 한다.</p>
 <p>이 챕터는 Nvidia Nsight Systems, CUDA event timing, py-spy, OpenTelemetry, Phoenix 같은 tooling을 함께 다룬다. Production 시스템(Gemini Live, GPT-4o Realtime, Twelve Labs Marengo)의 실측 latency를 references로 사용한다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>1. 6-stage latency breakdown — 무엇을 어떻게 측정할 것인가</h2><p>Real-time video LLM의 latency budget을 정확히 다루려면 stage 분해가 첫걸음이다. 6-stage breakdown은 다음과 같다.</p>
-<p>| Stage | 무엇 | 일반적 latency (30 FPS budget) |
-|---|---|---|
-| <strong>1. Capture</strong> | 카메라/네트워크에서 raw frame 수신 | 1-5 ms (camera) / 10-50 ms (network) |
-| <strong>2. Decode</strong> | H.264/H.265/AV1 → RGB tensor | 1-3 ms (NVDEC) / 5-15 ms (CPU) |
-| <strong>3. Sample</strong> | adaptive frame sampling 결정 | 0.1-1 ms |
-| <strong>4. Encode</strong> | SigLIP/CLIP visual encoding | 5-20 ms (per frame) |
-| <strong>5. Reduce</strong> | token compression (STAR, TokenMerge) | 1-5 ms |
-| <strong>6. LLM</strong> | prefill + (sparse) decode | 5-50 ms |
-| <strong>(7. Response)</strong> | text-to-speech, network return | 10-100 ms |</p>
+<table><thead><tr><th>Stage</th><th>무엇</th><th>일반적 latency (30 FPS budget)</th></tr></thead><tbody><tr><td><strong>1. Capture</strong></td><td>카메라/네트워크에서 raw frame 수신</td><td>1-5 ms (camera) / 10-50 ms (network)</td></tr><tr><td><strong>2. Decode</strong></td><td>H.264/H.265/AV1 → RGB tensor</td><td>1-3 ms (NVDEC) / 5-15 ms (CPU)</td></tr><tr><td><strong>3. Sample</strong></td><td>adaptive frame sampling 결정</td><td>0.1-1 ms</td></tr><tr><td><strong>4. Encode</strong></td><td>SigLIP/CLIP visual encoding</td><td>5-20 ms (per frame)</td></tr><tr><td><strong>5. Reduce</strong></td><td>token compression (STAR, TokenMerge)</td><td>1-5 ms</td></tr><tr><td><strong>6. LLM</strong></td><td>prefill + (sparse) decode</td><td>5-50 ms</td></tr><tr><td><strong>(7. Response)</strong></td><td>text-to-speech, network return</td><td>10-100 ms</td></tr></tbody></table>
 <p>각 stage의 jitter 특성이 다르다. Capture는 network 환경에 따라 p99가 폭발 (RTP packet loss, retransmit). Decode는 keyframe 주기에 따라 spike (B-frame일 때 backward decode 필요). Encode는 batch가 부분 사용될 때 jitter. LLM은 prefix-cache miss 시 spike.</p>
 <p><strong>측정 도구.</strong> Stage별로 적절한 도구가 다르다. (1) Capture/Decode: CPU/OS 영역 → OpenTelemetry span, kernel trace. (2) Encode/Reduce/LLM: GPU 영역 → CUDA event (<code>torch.cuda.Event(enable_timing=True)</code>). Wall-clock(<code>time.perf_counter()</code>)으로 GPU stage를 재면 async launch 때문에 0에 가깝게 나온다 — 반드시 CUDA event + synchronize. (3) Cross-stage: distributed tracing (OpenTelemetry, Arize Phoenix). 같은 frame_id로 모든 span을 join.</p>
 <p>시니어 관점: &#x27;p99 latency가 200ms이다&#x27;라는 답은 의미 없다. &#x27;6 stage 중 capture가 p99=80ms, encode가 p99=40ms, LLM이 p99=60ms로 sum이 180ms&#x27;가 답이다. 후자가 있어야 어디를 최적화할지 정해진다.</p></div><div class="sb-block"><h2>2. p50 / p95 / p99 — 왜 각각이 다른 product question이 답인가</h2><p>Latency를 single number로 reporting하면 절반의 정보가 사라진다. 분포의 어느 점을 보느냐가 product question을 결정한다.</p>
@@ -339,27 +331,10 @@ ms = start.elapsed_time(end)  # in milliseconds
 <p><strong>GPT-4o Realtime API (OpenAI).</strong> Voice-to-voice ~232ms (OpenAI blog). Video까지 합쳐도 보통 &lt; 500ms target. Token streaming으로 first-token latency를 줄이는 데 집중.</p>
 <p><strong>Twelve Labs Marengo / Pegasus.</strong> 비디오 indexing/search 서비스. Real-time이라기보다 quasi-real-time (수초 lag 허용). 그러나 streaming ingestion으로 영상이 들어오는 동안 embedding을 만든다. 1 FPS sampling으로 운영하는 것으로 평가됨.</p>
 <p>실전 budget 분해 예시. 30 FPS = 33ms total budget으로 vision streaming LLM:</p>
-<p>| Stage | Target ms | Note |
-|---|---|---|
-| Capture | 3 | NVDEC + zero-copy |
-| Decode | 2 | HW decoder |
-| Sample (Chapter 3) | 0.5 | adaptive 결정 |
-| Encode (Chapter 5) | 8 | SigLIP small + batch 4 |
-| Reduce (Chapter 6) | 2 | online TokenMerge |
-| LLM prefill | 15 | 256 token incremental |
-| Buffer/queue | 2.5 | safety margin |
-| <strong>Total</strong> | <strong>33</strong> | <strong>p95 budget</strong> |</p>
+<table><thead><tr><th>Stage</th><th>Target ms</th><th>Note</th></tr></thead><tbody><tr><td>Capture</td><td>3</td><td>NVDEC + zero-copy</td></tr><tr><td>Decode</td><td>2</td><td>HW decoder</td></tr><tr><td>Sample (Chapter 3)</td><td>0.5</td><td>adaptive 결정</td></tr><tr><td>Encode (Chapter 5)</td><td>8</td><td>SigLIP small + batch 4</td></tr><tr><td>Reduce (Chapter 6)</td><td>2</td><td>online TokenMerge</td></tr><tr><td>LLM prefill</td><td>15</td><td>256 token incremental</td></tr><tr><td>Buffer/queue</td><td>2.5</td><td>safety margin</td></tr><tr><td><strong>Total</strong></td><td><strong>33</strong></td><td><strong>p95 budget</strong></td></tr></tbody></table>
 <p>p99에서 +30% 여유 두면 ~45ms. SLA를 &#x27;p99 &lt; frame budget&#x27;으로 잡으면 위 budget을 더 줄여야 한다. 일반적으로 30 FPS는 너무 빡빡해서 production은 10-15 FPS로 운영하고 user에게 &#x27;실시간&#x27;으로 보이게 한다. Gemini Live가 그렇게 평가됨.</p>
 <p>500ms response budget도 분해:</p>
-<p>| Stage | Target ms |
-|---|---|
-| Frame ingestion (latest few seconds) | 0 (이미 처리됨) |
-| Decode trigger probe | 5 |
-| LLM decode (50 token @ specdec 5ms/tok) | 250 |
-| TTS first audio | 100 |
-| Network return | 50 |
-| Margin | 95 |
-| <strong>Total</strong> | <strong>500</strong> |</p>
+<table><thead><tr><th>Stage</th><th>Target ms</th></tr></thead><tbody><tr><td>Frame ingestion (latest few seconds)</td><td>0 (이미 처리됨)</td></tr><tr><td>Decode trigger probe</td><td>5</td></tr><tr><td>LLM decode (50 token @ specdec 5ms/tok)</td><td>250</td></tr><tr><td>TTS first audio</td><td>100</td></tr><tr><td>Network return</td><td>50</td></tr><tr><td>Margin</td><td>95</td></tr><tr><td><strong>Total</strong></td><td><strong>500</strong></td></tr></tbody></table>
 <p>Decode가 250ms로 dominant. Speculative decoding이 1.5-2x 가속하면 budget이 100ms 풀린다. 이게 Chapter 7의 speculative decoding 결정이 product 수준에서 매우 가치 있는 이유다.</p>
 <p>시니어 관점: budget 분해를 안 한 채 &#x27;p99 &lt; X를 맞춰라&#x27;라고 들으면 일을 못 시작한다. 분해표를 만드는 것 자체가 첫 deliverable이고, 분해표가 production communication의 공용 언어가 된다.</p></div>
       <div class="section-div"><h2>💡 비유로 이해하기</h2></div>

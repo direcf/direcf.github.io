@@ -295,12 +295,7 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 <p><span class="math-display">\[\mathcal{L}_{total} = \mathbb{E}\left[r(x, y) - \beta \cdot D_{KL}(\pi_\theta(\cdot|x) \| \pi_{ref}(\cdot|x))\right]\]</span></p>
 <p><span class="math-inline">\(\beta\)</span>는 KL constraint의 강도를 조절한다. 너무 작으면 reward hacking, 너무 크면 SFT 모델과 차이가 없어진다. 실제로 <span class="math-inline">\(\beta\)</span>는 0.01~0.1 범위에서 시작해 reward curve와 KL divergence를 모니터링하면서 조정한다.</p>
 <p><strong>Over-optimization</strong>은 RLHF의 잘 알려진 문제다. 처음에는 reward가 올라가지만 KL이 증가하면서 downstream 성능이 오히려 떨어지는 inverted-U curve 패턴이 관찰된다. 조기 종료 또는 adaptive <span class="math-inline">\(\beta\)</span> 조정이 대응 방법이다.</p></div><div class="sb-block"><h2>4-모델 메모리 구조와 실전 구현</h2><p>표준 RLHF PPO 구현에는 동시에 4개의 모델이 필요하다:</p>
-<p>| 모델 | 역할 | 업데이트 여부 | 메모리 |
-|---|---|---|---|
-| Policy | 실제 훈련 대상 | ✓ | ~14GB (7B, bf16) |
-| Reference | KL 계산용 frozen copy | ✗ | ~14GB |
-| Reward | 스칼라 reward 출력 | ✗ | ~14GB |
-| Value | Advantage 추정 | ✓ | ~14GB |</p>
+<table><thead><tr><th>모델</th><th>역할</th><th>업데이트 여부</th><th>메모리</th></tr></thead><tbody><tr><td>Policy</td><td>실제 훈련 대상</td><td>✓</td><td>~14GB (7B, bf16)</td></tr><tr><td>Reference</td><td>KL 계산용 frozen copy</td><td>✗</td><td>~14GB</td></tr><tr><td>Reward</td><td>스칼라 reward 출력</td><td>✗</td><td>~14GB</td></tr><tr><td>Value</td><td>Advantage 추정</td><td>✓</td><td>~14GB</td></tr></tbody></table>
 <p>총 ~56GB+ VRAM이 필요하다. 실전에서는 policy와 reference를 공유하고 lora adapter만 분기하거나, reward model과 value model을 같은 base에서 가져오는 방식으로 메모리를 줄인다. TRL의 <code>PPOTrainer</code>는 이 복잡한 구조를 추상화하지만, 내부 동작을 이해해야 디버깅이 가능하다.</p>
 <p>DeepSpeed ZeRO-2/3을 RLHF에 적용할 때 값 함수(value function)의 forward-backward 스케줄링이 까다롭다. RLHF 전문 프레임워크인 OpenRLHF나 veRL이 이 문제를 더 잘 처리한다.</p></div><div class="sb-block"><h2>RLHF 학습 불안정성과 디버깅</h2><p>RLHF는 SFT보다 훨씬 불안정하다. 흔한 문제들:</p>
 <p><strong>Reward collapse</strong>: Policy가 reward를 최대화하는 특정 응답 패턴(예: 매우 긴 응답, 특정 구문 반복)으로 수렴한다. → KL coefficient <span class="math-inline">\(\beta\)</span>를 높이거나 reward clipping(-5.0, 5.0 범위)을 적용한다.</p>
