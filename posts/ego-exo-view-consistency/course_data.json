@@ -1,0 +1,1407 @@
+{
+  "topic": "Ego-Exo View Consistency",
+  "topicKr": "에고-엑소 시점 일관성 — 두 시점을 하나로 잇는 연구의 흐름",
+  "topicSlug": "ego-exo-view-consistency",
+  "categorySlug": "computer-vision",
+  "level": "advanced",
+  "codeLanguage": "Python",
+  "author": "Seung Jun Lee",
+  "canonicalBase": "https://direcf.github.io",
+  "publishDate": "2026-07-23",
+  "updatedDate": "2026-07-23",
+  "description": "1인칭(ego)과 3인칭(exo) — 같은 사건의 두 시점을 '일관되게' 잇는 연구가 8년간 어떻게 깊어졌는지의 흐름과 insight를 10편으로 정리한다. 데이터셋이 아니라 방법론에 집중: 표현 정렬(Actor-Observer·Ego-Exo·AE2·BYOV·Rosetta Stone) → 객체 대응(ObjectRelator·O-MaMa·CCMP) → 시점 생성(Exo2Ego) → 추론 통합(View-GRPO). '일관성의 정의가 feature→시간→픽셀→생성→추론으로 점점 깊어진 역사'를 축으로, 각 전환의 필연을 논문 figure·개념 다이어그램과 함께 해부하는 연구자·면접 대비 advanced 10챕터.",
+  "references": [
+    {
+      "arxivId": "1804.09627",
+      "title": "Actor and Observer: Joint Modeling of First and Third-Person Videos",
+      "authors": "Sigurdsson et al.",
+      "year": 2018,
+      "venue": "CVPR 2018",
+      "license": "arXiv default (attribution)",
+      "redistributable": true
+    },
+    {
+      "arxivId": "2104.07905",
+      "title": "Ego-Exo: Transferring Visual Representations from Third-person to First-person Videos",
+      "authors": "Li et al.",
+      "year": 2021,
+      "venue": "CVPR 2021",
+      "license": "arXiv default (attribution)",
+      "redistributable": true
+    },
+    {
+      "arxivId": "2306.05526",
+      "title": "Learning Fine-grained View-Invariant Representations from Unpaired Ego-Exo Videos via Temporal Alignment (AE2)",
+      "authors": "Xue, Grauman",
+      "year": 2023,
+      "venue": "NeurIPS 2023",
+      "license": "arXiv default (attribution)",
+      "redistributable": true
+    },
+    {
+      "arxivId": "2503.19706",
+      "title": "Bootstrap Your Own Views: Masked Ego-Exo Modeling for Fine-grained View-invariant Video Representations (BYOV)",
+      "authors": "Park et al.",
+      "year": 2025,
+      "venue": "CVPR 2025",
+      "license": "arXiv default (attribution)",
+      "redistributable": true
+    },
+    {
+      "arxivId": "2411.19083",
+      "title": "ObjectRelator: Enabling Cross-View Object Relation Understanding Across Ego-Centric and Exo-Centric Perspectives",
+      "authors": "Fu et al.",
+      "year": 2025,
+      "venue": "ICCV 2025",
+      "license": "arXiv default (attribution)",
+      "redistributable": true
+    },
+    {
+      "arxivId": "2506.06026",
+      "title": "O-MaMa: Learning Object Mask Matching between Egocentric and Exocentric Views",
+      "authors": "Mur-Labadia et al.",
+      "year": 2025,
+      "venue": "ICCV 2025",
+      "license": "arXiv default (attribution)",
+      "redistributable": true
+    },
+    {
+      "arxivId": "2602.18996",
+      "title": "Learning Cross-View Object Correspondence via Cycle-Consistent Mask Prediction (CCMP)",
+      "authors": "Yan et al.",
+      "year": 2026,
+      "venue": "CVPR 2026",
+      "license": "arXiv default (attribution)",
+      "redistributable": true
+    },
+    {
+      "arxivId": "2403.06351",
+      "title": "Put Myself in Your Shoes: Lifting the Egocentric Perspective from Exocentric Videos (Exo2Ego)",
+      "authors": "Luo et al.",
+      "year": 2024,
+      "venue": "ECCV 2024",
+      "license": "arXiv default (attribution)",
+      "redistributable": true
+    },
+    {
+      "arxivId": "2510.26113",
+      "title": "EgoExo-Con / View-GRPO: Cross-view Temporal Consistency for Video-LLMs",
+      "authors": "(EgoExo-Con)",
+      "year": 2025,
+      "venue": "arXiv 2025",
+      "license": "arXiv default (attribution)",
+      "redistributable": true
+    }
+  ],
+  "chapters": [
+    {
+      "number": 1,
+      "emoji": "🪞",
+      "title": "Actor and Observer",
+      "titleKr": "배우와 관찰자 — 두 시점을 한 임베딩에 담다",
+      "tldr": "1인칭(ego)과 3인칭(exo)은 같은 행동의 두 그림자다. Actor-Observer는 이 둘을 하나의 공유 임베딩 공간으로 끌어당겨, exo에서 배운 것을 ego로 옮기는 길을 처음 냈다.",
+      "hook": "당신이 요리하는 모습을, 당신의 눈과 벽에 걸린 CCTV가 동시에 본다. 둘은 완전히 다른 픽셀이지만 같은 사건이다. 기계는 이 둘이 하나임을 어떻게 알까?",
+      "arxivId": "1804.09627",
+      "topics": [
+        "Joint embedding",
+        "Triplet loss",
+        "Weak supervision",
+        "Ego-Exo transfer"
+      ],
+      "learningGoals": [
+        "ego view와 exo view의 근본적 차이(시점·손·화각)를 설명한다",
+        "view-invariant 표현이 왜 전이(transfer)의 전제인지 안다",
+        "triplet 기반 공유 임베딩이 두 시점을 정렬하는 원리를 이해한다",
+        "약지도(weak supervision)로 정렬을 학습하는 이점과 한계를 구분한다",
+        "이 논문이 이후 10년 연구의 출발점이 된 이유를 안다"
+      ],
+      "overview": "한 사람이 커피를 내리는 장면을 생각하자. 그 사람의 머리에 달린 카메라가 담는 영상(**egocentric, ego**)과, 맞은편에 놓인 카메라가 담는 영상(**exocentric, exo**)은 픽셀 수준에서 전혀 닮지 않았다. ego에는 손과 컵이 화면을 가득 채우고 배경은 흔들리며, exo에는 사람 전체가 작게 보이고 배경은 안정적이다.\n\n그런데 이 둘은 **같은 행동**이다. 사람은 두 영상을 보고 \"아, 같은 커피 내리기구나\"라고 즉시 안다. 기계에게 이 능력을 주는 것 — 서로 다른 시점의 영상을 같은 개념으로 묶는 것 — 이 ego-exo 연구 전체의 출발 질문이다.\n\n[Actor and Observer](https://arxiv.org/abs/1804.09627)(CVPR 2018)는 이 질문에 최초로 방법론적 답을 냈다. 핵심 발상은 단순하고 강력하다. ego와 exo를 각각 인코딩하되, **같은 행동에서 온 두 영상은 공유 임베딩 공간에서 가까이, 다른 행동은 멀리** 놓이도록 학습한다. 이렇게 정렬된 공간이 생기면, 데이터가 풍부한 exo에서 배운 지식을 데이터가 귀한 ego로 옮길 수 있다. 이 챕터는 그 '공유 임베딩'이라는 씨앗 아이디어를 해부한다.",
+      "sections": [
+        {
+          "title": "왜 두 시점을 정렬해야 하는가",
+          "content": "ego 데이터는 만들기 어렵다. 사람이 카메라를 머리에 쓰고 일상을 녹화해야 하니 규모도 작고 다양성도 부족하다. 반면 exo 데이터(유튜브, 영화, CCTV)는 세상에 넘친다. 자연스러운 유혹은 \"exo로 학습해서 ego에 쓰자\"이지만, 그대로는 안 된다. 두 시점의 **도메인 격차(domain gap)**가 너무 커서, exo로 학습한 모델은 ego 영상에서 무너진다.\n\n그래서 필요한 것이 **view-invariant 표현** — 시점이 바뀌어도 변하지 않는, 행동의 본질을 담은 표현이다. 만약 ego의 '커피 내리기'와 exo의 '커피 내리기'가 임베딩 공간에서 같은 지점에 놓인다면, 그 지점에 붙인 분류기는 시점과 무관하게 작동한다.\n\n이것이 이 분야의 첫 번째 공리다. **시점 정렬(view alignment)은 전이(transfer)의 전제다.** 정렬 없이는 exo의 풍요를 ego로 가져올 수 없다. Actor-Observer는 이 정렬을 '공유 임베딩'이라는 가장 직접적인 방법으로 시도한 첫 논문이다.",
+          "figures": [
+            {
+              "src": "/posts/ego-exo-view-consistency/figures/1804.09627/examplessmall.png",
+              "caption": "Examples from Charades-Ego, showing third-person (left) and the corresponding first-person (right) video frames.-0.5cm",
+              "captionKr": "Charades-Ego의 3인칭(좌)과 대응하는 1인칭(우) 영상 — 같은 행동의 두 시점.",
+              "alt": "Paired third-person and first-person clips from Charades-Ego",
+              "kind": "teaser",
+              "figNo": "1",
+              "arxivId": "1804.09627"
+            }
+          ]
+        },
+        {
+          "title": "공유 임베딩과 triplet 목적함수",
+          "content": "메커니즘은 metric learning의 고전, **triplet loss**다. 세 개의 클립을 뽑는다 — 기준(anchor)이 되는 ego 클립, 같은 행동의 exo 클립(positive), 다른 행동의 exo 클립(negative). 그리고 임베딩 공간에서 anchor–positive 거리는 줄이고 anchor–negative 거리는 늘린다.\n\n$$\\mathcal{L} = \\max\\big(0,\\; \\|f(a)-f(p)\\|^2 - \\|f(a)-f(n)\\|^2 + \\alpha\\big)$$\n\n여기서 $f$는 ego와 exo를 같은 공간으로 보내는 인코더(ActorObserverNet), $\\alpha$는 마진이다. 이 손실을 최소화하면, 네트워크는 '시점'이라는 표면적 차이를 무시하고 '행동'이라는 공통 신호에 반응하도록 스스로 조직된다.\n\n주목할 점은 **약지도(weak supervision)**다. 프레임 단위의 정밀한 시간 정렬 라벨이 없어도, \"이 ego와 이 exo가 같은 행동\"이라는 느슨한 짝 정보(Charades-Ego의 약한 페어)만으로 학습한다. 정밀한 감독 없이도 정렬이 창발한다는 이 발견이, 이후 'unpaired' 계열(3~5장)로 가는 문을 연다.",
+          "diagram": {
+            "type": "mermaid",
+            "code": "flowchart LR\n  E[\"Ego 클립<br/>(anchor)\"] --> S((\"공유<br/>임베딩\"))\n  P[\"Exo 같은 행동<br/>(positive)\"] --> S\n  N[\"Exo 다른 행동<br/>(negative)\"] --> S\n  S -->|\"당김\"| P\n  S -->|\"밀어냄\"| N",
+            "caption": "공유 임베딩과 triplet: 같은 행동(ego-anchor↔exo-positive)은 당기고 다른 행동(negative)은 밀어낸다."
+          },
+          "figures": [
+            {
+              "src": "/posts/ego-exo-view-consistency/figures/1804.09627/model11.png",
+              "caption": "Illustration of our ActorObserverNet. The model has separate streams for first and third-person. Given a triplet of frames from these two modalities, the model computes their fc7 features, which are used to compare and learn their similarity. The FC and the VideoSoftmax layers also compute the likelihood of this sample with respect to the selector $P_$.-0.5cm",
+              "captionKr": "ActorObserverNet: 1인칭·3인칭을 각 스트림으로 인코딩해 공유 임베딩으로 정렬하는 구조.",
+              "alt": "ActorObserverNet two-stream joint-embedding architecture",
+              "kind": "architecture",
+              "figNo": "3",
+              "arxivId": "1804.09627"
+            }
+          ]
+        },
+        {
+          "title": "남긴 것과 남은 것",
+          "content": "Actor-Observer가 증명한 것은 명확하다. **서로 다른 시점의 영상을 하나의 임베딩으로 묶는 것이 가능하며, 그 정렬만으로 exo→ego 전이가 작동한다.** 이것은 개념 증명(proof of concept)으로서 결정적이었다.\n\n하지만 남긴 숙제도 크다. 첫째, 정렬이 **feature 수준**에 머문다 — \"같은 행동이다\"까지는 알아도, exo의 어느 픽셀이 ego의 어느 픽셀에 대응하는지(공간 대응)는 모른다. 둘째, **짝 데이터에 의존**한다. Charades-Ego처럼 같은 배우가 같은 행동을 두 시점으로 연기한 데이터가 필요하다. 셋째, triplet이라는 **얕은 목적함수**는 미세한 행동 차이를 구분하기엔 거칠다.\n\n이 세 한계가 각각 이후 연구의 방향이 된다. 공간 대응은 6~8장(correspondence), 짝 데이터 탈출은 3~5장(unpaired), 미세 행동은 3장 AE2의 object-centric 인코더가 공략한다. Actor-Observer는 답이 아니라 **올바른 질문**을 남긴 논문이다."
+        }
+      ],
+      "analogy": {
+        "title": "통역사의 공용어",
+        "content": "한국어만 아는 사람과 아랍어만 아는 사람이 있다. 둘을 직접 연결할 수는 없다(도메인 격차). 하지만 둘 다 영어라는 **공용어**로 번역하면, 영어 공간에서 \"사과\"는 한 지점에 모인다. 이제 한국어로 배운 지식을 영어를 거쳐 아랍어로 옮길 수 있다.\n\n공유 임베딩이 바로 이 영어다. ego와 exo라는 두 '언어'를 같은 의미 공간으로 번역하면, 그 공간에서 '커피 내리기'는 시점과 무관하게 한 곳에 모인다. triplet loss는 \"같은 뜻은 가까이, 다른 뜻은 멀리\"라고 통역사를 훈련시키는 채점표다.\n\n단, 이 초기 통역사는 단어장 수준이다. \"같은 주제\"까지는 통역해도 \"3번째 문장의 이 단어가 저 단어에 대응한다\"는 세밀한 정렬은 못 한다 — 그게 뒤 챕터들이 키우는 능력이다."
+      },
+      "codeExample": {
+        "language": "python",
+        "executable": true,
+        "intro": "triplet 기반 공유 임베딩의 핵심을 최소 구현으로 보자. ego/exo를 같은 인코더로 보내 정렬 손실을 계산한다.",
+        "code": "import torch, torch.nn.functional as F\n\ndef actor_observer_loss(anchor_ego, pos_exo, neg_exo, margin=0.3):\n    \"\"\"anchor_ego: [B,D] ego 임베딩, pos_exo: 같은 행동의 exo, neg_exo: 다른 행동의 exo.\"\"\"\n    a = F.normalize(anchor_ego, dim=-1)\n    p = F.normalize(pos_exo,   dim=-1)\n    n = F.normalize(neg_exo,   dim=-1)\n    d_pos = (a - p).pow(2).sum(-1)      # 같은 행동 → 가깝게\n    d_neg = (a - n).pow(2).sum(-1)      # 다른 행동 → 멀게\n    return F.relu(d_pos - d_neg + margin).mean()\n\n# 정렬이 되면: 같은 행동의 ego/exo 코사인 유사도 > 다른 행동\nego  = torch.randn(4, 128)\nexo_same = ego + 0.1*torch.randn(4,128)   # 같은 행동(약한 짝)\nexo_diff = torch.randn(4, 128)            # 다른 행동\nprint(\"loss:\", actor_observer_loss(ego, exo_same, exo_diff).item())",
+        "walkthrough": "핵심은 `d_pos - d_neg + margin`을 `relu`로 자른 것 — 같은 행동 쌍이 다른 행동 쌍보다 마진 이상 가까워지면 손실이 0이 된다. ego와 exo가 **같은 인코더**(또는 공유 공간으로 보내는 두 인코더)를 통과한다는 점이 핵심이다. 이 손실만으로 네트워크는 시점 차이를 무시하고 행동 정체성에 반응하게 된다. 라벨은 '같은 행동인가'라는 약한 신호뿐이다."
+      },
+      "industryEvaluation": {
+        "overview": "ego-exo·멀티뷰를 다루는 비전 팀 면접에서 이 논문은 'view-invariance가 왜 전이의 전제인가'라는 첫 원리를 검증한다. metric learning의 기본기와 도메인 격차 감각을 함께 본다.",
+        "whatEngineersLookFor": [
+          "도메인 격차와 view-invariance의 관계를 전이 관점에서 설명하는가",
+          "triplet/contrastive 정렬의 목적함수를 정확히 쓰는가",
+          "약지도로 정렬이 창발하는 원리와 한계를 아는가"
+        ],
+        "redFlags": [
+          "exo 데이터를 그냥 ego 모델에 넣으면 된다고 생각(도메인 격차 무시)",
+          "feature 정렬과 공간(픽셀) 대응을 혼동",
+          "triplet negative 샘플링의 중요성을 모름"
+        ],
+        "interviewQuestions": [
+          {
+            "question": "exo 데이터가 풍부한데 왜 ego 태스크에 바로 못 쓰는가? 무엇이 필요한가?",
+            "modelAnswer": "**도메인 격차** 때문이다. 시점·화각·손 가시성·모션이 완전히 달라 exo로 학습한 표현은 ego 분포에서 무너진다. 필요한 것은 **view-invariant 표현** — 두 시점을 같은 임베딩 공간으로 정렬해, 그 공간 위의 분류기가 시점과 무관하게 작동하도록 하는 것. Actor-Observer는 이를 공유 임베딩 + triplet으로 처음 구현했다."
+          },
+          {
+            "question": "triplet loss에서 anchor를 ego로, positive/negative를 exo로 두는 이유는?",
+            "modelAnswer": "전이 방향이 exo→ego이므로, ego 앵커를 기준으로 exo를 끌어당겨 **ego 관점에서 exo가 정렬되게** 만든다. positive는 같은 행동의 exo, negative는 다른 행동의 exo. 이렇게 하면 임베딩 공간이 ego 질의에 대해 exo를 검색·전이할 수 있는 구조가 된다. negative 샘플링이 거칠면 미세 행동 구분이 안 되는 게 한계."
+          },
+          {
+            "question": "이 방법이 '커피 내리기'는 정렬해도 못 하는 것은 무엇인가?",
+            "modelAnswer": "**공간 대응**이다. feature 수준에서 '같은 행동'까지는 알아도 exo의 컵과 ego의 컵이 픽셀·객체 수준에서 어디에 대응하는지는 모른다. 로보틱스·AR은 이 객체 수준 대응이 필요해서, 6~8장의 correspondence 연구(ObjectRelator·O-MaMa·CCMP)가 이 빈틈을 공략한다."
+          }
+        ],
+        "masteryVsFamiliar": "겉핥기는 'triplet으로 두 시점을 붙인다'까지다. 통달한 사람은 view-invariance를 '전이의 전제'로 규정하고, 약지도 정렬의 창발과 feature-vs-공간 대응의 구분, 그리고 이 논문이 unpaired·correspondence·generative 세 방향의 공통 출발점임을 지도 위에 배치한다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "두 시점 = 한 사건",
+          "content": "ego와 exo는 픽셀은 다르지만 같은 행동의 두 그림자다 — 기계에게 이 동일성을 가르치는 게 출발 질문."
+        },
+        {
+          "title": "정렬은 전이의 전제",
+          "content": "view-invariant 표현 없이는 exo의 풍요를 ego로 옮길 수 없다."
+        },
+        {
+          "title": "공유 임베딩",
+          "content": "ego·exo를 같은 공간으로 보내 같은 행동은 가깝게, 다른 행동은 멀게 정렬한다."
+        },
+        {
+          "title": "triplet 목적함수",
+          "content": "anchor(ego)–positive(같은 exo)–negative(다른 exo)로 시점을 무시하고 행동에 반응하게 만든다."
+        },
+        {
+          "title": "약지도의 힘",
+          "content": "프레임 정렬 라벨 없이 '같은 행동' 약한 짝만으로 정렬이 창발한다 — unpaired 계열의 씨앗."
+        },
+        {
+          "title": "feature 정렬의 한계",
+          "content": "'같은 행동'은 알아도 픽셀·객체 대응은 모른다 — correspondence 연구의 출발점."
+        },
+        {
+          "title": "올바른 질문",
+          "content": "Actor-Observer는 완성된 답이 아니라 이후 10년의 방향(unpaired·대응·생성)을 정의한 질문이다."
+        }
+      ],
+      "nextTeaser": "짝 데이터로 정렬은 됐다. 그런데 exo에서 배운 지식을 ego로 '증류'하려면 무엇을 옮겨야 할까? Ego-Exo transfer가 그 신호를 찾아낸다."
+    },
+    {
+      "number": 2,
+      "emoji": "⚗️",
+      "title": "Ego-Exo Transfer",
+      "titleKr": "Ego-Exo — 3인칭에서 1인칭으로 지식을 증류하다",
+      "tldr": "exo는 풍부하지만 도메인이 다르고, ego는 딱 맞지만 부족하다. Ego-Exo는 exo 영상 속에 숨은 '1인칭적 신호'(주목 객체·상호작용 지도)를 찾아 사전학습 증류 손실로 주입해, 이 딜레마를 우회한다.",
+      "hook": "exo 영상 수백만 개가 창고에 쌓여 있다. 하지만 그대로는 1인칭 모델에 독이다. 이 풍요를 어떻게 '1인칭스럽게' 정제할 것인가?",
+      "arxivId": "2104.07905",
+      "topics": [
+        "Knowledge distillation",
+        "Pre-training",
+        "Ego-specific signals",
+        "Domain mismatch"
+      ],
+      "learningGoals": [
+        "scale vs domain-mismatch 딜레마를 정확히 진술한다",
+        "exo 영상에서 ego-specific 신호를 발굴하는 아이디어를 이해한다",
+        "지식 증류(distillation)를 사전학습 보조손실로 쓰는 구조를 안다",
+        "1장의 임베딩 정렬과 2장의 증류가 어떻게 다른지 구분한다",
+        "단방향·사전학습 한정이라는 한계를 설명한다"
+      ],
+      "overview": "1장이 \"두 시점을 같은 공간에 놓자\"였다면, [Ego-Exo](https://arxiv.org/abs/2104.07905)(CVPR 2021)는 한 걸음 더 실용적인 질문을 던진다 — **exo의 무엇을 ego로 옮겨야 하는가?**\n\n문제를 딜레마로 정식화한다. 순수 ego 데이터로 학습하면 **규모와 다양성이 부족**하고, 순수 exo 데이터로 학습하면 **도메인 격차가 크다**. 둘 중 하나만으로는 최고 성능이 안 나온다. 두 세계의 장점만 취할 방법이 필요하다.\n\nEgo-Exo의 답은 우아하다. exo 영상을 ego로 변환하려 애쓰는 대신, **exo 영상 안에 이미 존재하는 '1인칭적 단서'를 발굴**한다. 3인칭 영상에도 \"지금 누가 무엇에 주목하는가\", \"손이 어떤 객체와 상호작용하는가\" 같은 신호가 암묵적으로 담겨 있다. 이 신호들을 뽑아, ego 인코더를 사전학습할 때 **증류(distillation) 손실**로 주입한다. 결과적으로 exo의 규모를 쓰되 ego에 필요한 것만 정제해 넣는다.",
+      "sections": [
+        {
+          "title": "scale vs domain-mismatch 딜레마",
+          "content": "이 논문의 힘은 문제 정식화에 있다. 두 축을 놓고 보자.\n\n| 데이터 | 장점 | 치명적 약점 |\n|---|---|---|\n| 순수 ego | 태스크에 완벽히 부합 | 규모·다양성 부족 |\n| 순수 exo | 규모·다양성 풍부 | 도메인 격차 큼 |\n\n어느 한쪽도 단독으로는 최적이 아니다. 순진한 절충 — exo로 사전학습 후 ego로 미세조정 — 은 도메인 격차 때문에 사전학습이 오히려 방해가 될 수 있다.\n\nEgo-Exo의 통찰은 \"exo 전체를 옮기지 말고, exo 속의 **ego-예측적 신호**만 옮기자\"다. exo 영상이라도 그 안에는 1인칭 관점을 예측하는 데 유용한 잠재 신호가 있다. 그 신호만 증류하면 도메인 격차라는 독을 피하면서 규모라는 약을 취한다."
+        },
+        {
+          "title": "exo 속에서 ego 신호를 발굴하기",
+          "content": "구체적으로 세 가지 ego-specific 보조 신호를 exo 영상에서 자동 추출한다.\n\n- **Ego-score**: 이 exo 프레임이 얼마나 '1인칭스러운' 구도인가(클로즈업·손 중심).\n- **Object-of-interaction**: 지금 행위자가 상호작용하는 핵심 객체는 무엇인가.\n- **Interaction-map**: 화면에서 상호작용이 일어나는 공간적 영역.\n\n이 신호들은 exo 영상에서 기존 모델·휴리스틱으로 뽑을 수 있다. 중요한 건 이것들이 **1인칭 인식에서 특히 중요한 요소**라는 점이다. ego 영상에서는 손과 조작 객체가 화면을 지배하니, \"무엇에 주목하고 무엇을 만지는가\"가 행동 이해의 핵심이다.\n\n즉 Ego-Exo는 exo라는 원석에서 ego에 쓸모 있는 광물만 골라 캔다. 이것이 1장의 '통째로 정렬'과 결정적으로 다른 점 — **선택적 전이**다.",
+          "diagram": {
+            "type": "mermaid",
+            "code": "flowchart LR\n  X[\"Exo 영상<br/>(대규모)\"] --> A[\"ego 신호 발굴<br/>ego-score / 상호작용 객체 / 상호작용 지도\"]\n  A -->|\"지식 증류\"| ENC[\"Ego 인코더<br/>(사전학습)\"]\n  ENC --> T[\"Ego 태스크\"]",
+            "caption": "선택적 전이: exo에서 ego-예측적 신호만 발굴해 증류 손실로 ego 인코더에 주입."
+          },
+          "figures": [
+            {
+              "src": "/posts/ego-exo-view-consistency/figures/2104.07905/interaction_map1.png",
+              "caption": "Interaction-Map construction. Soft-labels for hand-map and object-map are generated from detected bounding boxes according to Eqn~eq:bbox.",
+              "captionKr": "exo 영상에서 손·객체 검출로 상호작용 지도(hand-map·object-map) soft-label을 만드는 과정.",
+              "alt": "Interaction-map construction from hand and object detections",
+              "kind": "pipeline",
+              "figNo": "14",
+              "arxivId": "2104.07905"
+            }
+          ]
+        },
+        {
+          "title": "증류라는 주입 방식",
+          "content": "발굴한 신호를 어떻게 ego 인코더에 넣는가? **지식 증류(knowledge distillation)** 방식이다. 사전학습 중, ego 인코더가 이 보조 신호들(ego-score, object-of-interaction, interaction-map)을 예측하도록 보조 손실을 건다.\n\n$$\\mathcal{L}_{pretrain} = \\mathcal{L}_{main} + \\lambda_1 \\mathcal{L}_{ego\\text{-}score} + \\lambda_2 \\mathcal{L}_{OI} + \\lambda_3 \\mathcal{L}_{imap}$$\n\n이렇게 학습된 인코더는 \"1인칭 관점에서 중요한 것\"에 미리 민감해진 상태로 ego 태스크에 투입된다. exo의 방대한 데이터로 이 민감성을 길렀으니 규모의 이점을 취했고, 주입한 것은 ego-예측적 신호뿐이니 도메인 격차라는 독은 피했다.\n\n한계도 분명하다. 전이가 **exo→ego 단방향**이고 **사전학습 단계에 한정**된다. 두 시점을 실시간으로 상호 참조하거나, exo의 특정 픽셀이 ego의 특정 픽셀에 대응하는 관계는 다루지 않는다. 정렬이 '표현 수준'에 머문다는 1장의 한계를 물려받는다. 다음 장부터는 이 '짝 데이터 의존'과 '표현 수준' 두 벽을 차례로 넘는다.",
+          "figures": [
+            {
+              "src": "/posts/ego-exo-view-consistency/figures/2104.07905/arch_blur.png",
+              "caption": "Ego-Exo framework. To enhance traditional pre-training (left panel), we generate soft-labels for third-person videos from a set of pre-trained egocentric models (top-right) that capture a variety of key egocentric signals (Sec~sec:tasks), and we train distillation modules to approximate the responses of these models (bottom-right). % Note that no egocentric video instances are labeled during training. It may cause confusion as we use labeled ego data for pre-trained models. Shall we remove it? TN: Yes, agreed. Once pre-trained, the video backbone can be directly fine-tuned for a downstream egocentric task.%, or used in conjunction with the distillation losses to further improve performance. % TODO: Reference fig better in text. % I meant figure bottom-right: do we want 'Distillation task heads' instead of 'Task distillation heads'? %TN: I think Task distillation heads is fine. Let me know if you strongly prefer the other! % Okay. %try to use some of the key notation, like $H$ etc.",
+              "captionKr": "Ego-Exo 프레임워크: 기존 사전학습에 exo에서 뽑은 ego 신호를 soft-label 증류로 더한다.",
+              "alt": "Ego-Exo pre-training framework with ego-signal distillation",
+              "kind": "architecture",
+              "figNo": "13",
+              "arxivId": "2104.07905"
+            }
+          ]
+        }
+      ],
+      "analogy": {
+        "title": "광산에서 금만 골라내기",
+        "content": "exo 데이터는 거대한 광산이다. 광석 전체를 제련소(ego 모델)에 쏟아부으면 불순물 때문에 오히려 설비가 망가진다(도메인 격차). 그렇다고 광산을 안 쓰면 재료가 부족하다(ego의 규모 부족).\n\nEgo-Exo는 광산에서 **금맥만 골라 캔다**. \"1인칭 인식에 유용한 신호\"가 금이다 — 무엇에 주목하는가(ego-score), 무엇을 만지는가(object-of-interaction), 어디서 일이 벌어지는가(interaction-map). 이 금만 정제해 제련소에 넣으니, 광산의 규모는 취하되 불순물은 걸러진다.\n\n증류는 이 금을 제련소의 훈련 과정에 녹여 넣는 방식이다. 완제품에 금을 붙이는 게 아니라, 만들어지는 과정 자체를 금에 민감하도록 길들인다."
+      },
+      "codeExample": {
+        "language": "python",
+        "executable": true,
+        "intro": "exo에서 뽑은 ego-specific 신호를 사전학습 보조손실로 주입하는 구조를 개념 구현으로 보자.",
+        "code": "import torch, torch.nn.functional as F\n\ndef ego_exo_pretrain_loss(feat, main_target, ego_signals, heads, lambdas=(0.5,0.5,0.5)):\n    \"\"\"feat: exo 영상 인코딩 [B,D]. ego_signals: exo에서 뽑은 ego-예측적 신호 dict.\n       heads: 각 신호를 예측하는 보조 head들.\"\"\"\n    loss = F.cross_entropy(heads['main'](feat), main_target)   # 주 태스크\n    # exo 속 ego 신호를 예측하도록 증류\n    loss = loss + lambdas[0]*F.binary_cross_entropy_with_logits(\n                     heads['ego_score'](feat), ego_signals['ego_score'])\n    loss = loss + lambdas[1]*F.cross_entropy(\n                     heads['obj_interact'](feat), ego_signals['obj_interact'])\n    loss = loss + lambdas[2]*F.mse_loss(\n                     heads['interaction_map'](feat), ego_signals['interaction_map'])\n    return loss\n# → 이렇게 사전학습된 feat는 '1인칭적으로 중요한 것'에 미리 민감해진다",
+        "walkthrough": "핵심은 주 손실에 **세 개의 ego-specific 보조 손실**을 더한 것이다. `ego_signals`는 exo 영상에서 자동 추출된, ego 인식에 유용한 신호다. 인코더가 exo를 보면서 '무엇에 주목·상호작용하는가'를 예측하도록 강제되면, ego 태스크로 넘어갈 때 그 민감성이 전이된다. `lambdas`가 각 신호의 주입 강도다. 1장의 triplet이 '표현을 정렬'했다면, 여기서는 '표현을 특정 신호에 민감하게 형성'한다."
+      },
+      "industryEvaluation": {
+        "overview": "사전학습 전략을 설계하는 표현학습 팀에서 이 논문은 '이질적 대규모 데이터를 어떻게 선택적으로 활용하는가'라는 감각을 검증한다. 증류·보조손실 설계 역량을 본다.",
+        "whatEngineersLookFor": [
+          "scale vs domain-mismatch 딜레마를 데이터 전략으로 풀어내는가",
+          "전이할 '무엇'을 선택하는 관점(선택적 전이)이 있는가",
+          "증류를 사전학습 보조손실로 통합하는 설계를 이해하는가"
+        ],
+        "redFlags": [
+          "exo로 사전학습 후 ego 미세조정이면 충분하다고 단정(도메인 격차가 사전학습을 해칠 수 있음)",
+          "보조 신호의 ego-관련성을 따지지 않고 아무 신호나 증류",
+          "단방향·사전학습 한정이라는 적용 범위를 과대평가"
+        ],
+        "interviewQuestions": [
+          {
+            "question": "exo로 사전학습하고 ego로 미세조정하면 왜 최선이 아닐 수 있나?",
+            "modelAnswer": "도메인 격차 때문에 exo 사전학습이 ego와 무관하거나 상충하는 표현을 형성할 수 있어, 미세조정이 이를 '되돌리는' 데 용량을 쓴다. Ego-Exo는 exo 전체가 아니라 **ego-예측적 신호만** 증류해, 사전학습이 처음부터 ego에 유용한 표현을 형성하게 한다."
+          },
+          {
+            "question": "어떤 신호를 exo에서 뽑아 ego로 증류하는가? 왜 그것들인가?",
+            "modelAnswer": "ego-score(1인칭적 구도), object-of-interaction(조작 객체), interaction-map(상호작용 영역). ego 영상은 손과 조작 객체가 화면을 지배하므로, '무엇에 주목·상호작용하는가'가 1인칭 행동 이해의 핵심이라 이 신호들이 ego 예측에 유용하다."
+          },
+          {
+            "question": "이 방법의 적용 범위 한계는?",
+            "modelAnswer": "전이가 exo→ego **단방향**이고 **사전학습에 한정**된다. 두 시점의 실시간 상호 참조나 픽셀·객체 수준 대응은 다루지 않는다. 표현 수준 정렬이라는 1장의 한계를 물려받아, 이후 correspondence·generative 연구가 이를 넘는다."
+          }
+        ],
+        "masteryVsFamiliar": "겉핥기는 'exo로 사전학습해 ego에 전이'까지다. 통달한 사람은 scale-vs-mismatch 딜레마를 '선택적 증류'로 우회하는 설계로 규정하고, 어떤 신호가 왜 ego-예측적인지, 그리고 단방향·사전학습 한정이라는 범위를 정확히 긋는다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "딜레마 정식화",
+          "content": "순수 ego는 규모 부족, 순수 exo는 도메인 격차 — 어느 하나로는 최적이 아니다."
+        },
+        {
+          "title": "선택적 전이",
+          "content": "exo 전체가 아니라 exo 속 'ego-예측적 신호'만 골라 옮긴다."
+        },
+        {
+          "title": "세 가지 ego 신호",
+          "content": "ego-score·object-of-interaction·interaction-map — 1인칭 인식의 핵심 요소."
+        },
+        {
+          "title": "증류로 주입",
+          "content": "사전학습 보조손실로 인코더를 'ego적으로 중요한 것'에 미리 민감하게 형성한다."
+        },
+        {
+          "title": "규모는 취하고 독은 피함",
+          "content": "exo 규모의 이점을 쓰되 도메인 격차라는 부작용은 회피한다."
+        },
+        {
+          "title": "단방향·사전학습 한정",
+          "content": "exo→ego 한 방향, 사전학습 단계에 국한 — 실시간 상호참조·픽셀 대응은 못 함."
+        },
+        {
+          "title": "표현 수준의 벽",
+          "content": "1장처럼 정렬이 표현 수준에 머문다 — 다음 장부터 짝 의존과 표현 수준을 차례로 넘는다."
+        }
+      ],
+      "nextTeaser": "1·2장은 모두 '짝지어진(paired)' 데이터를 전제했다. 그런데 같은 행동의 ego·exo를 동시에 찍은 데이터는 귀하다. 짝 없이 정렬할 수 있을까? AE2가 '시간'에서 답을 찾는다."
+    },
+    {
+      "number": 3,
+      "emoji": "⏳",
+      "title": "AE2 — Align Ego-Exo",
+      "titleKr": "AE2 — 짝 없이, 시간으로 정렬하다",
+      "tldr": "같은 시각에 찍은 ego·exo 짝은 귀하다. AE2는 '동시 촬영' 가정을 버리고, 서로 다른 때·다른 곳에서 찍힌 ego·exo를 시간축에서 정렬해 미세한 view-invariant 행동 표현을 배운다.",
+      "hook": "세상의 ego 영상과 exo 영상은 대부분 서로 남남이다 — 같은 순간을 찍은 짝이 아니다. 이 '짝 없는 바다'를 어떻게 정렬 재료로 쓸 것인가?",
+      "arxivId": "2306.05526",
+      "topics": [
+        "Unpaired alignment",
+        "Temporal alignment",
+        "Object-centric encoder",
+        "Contrastive learning"
+      ],
+      "learningGoals": [
+        "paired-synchronized 가정이 왜 확장의 걸림돌인지 안다",
+        "시간 정렬(temporal alignment)로 unpaired 데이터를 정렬하는 원리를 이해한다",
+        "object-centric 인코더가 손·객체에 집중하는 이유를 안다",
+        "시간 역순 프레임을 negative로 쓰는 대조 목적함수를 설명한다",
+        "feature·시간 정렬이 공간 대응과 어떻게 다른지 구분한다"
+      ],
+      "overview": "1·2장은 조용한 가정을 깔고 있었다 — **같은 행동을 두 시점으로 동시에 찍은 짝 데이터**가 있다는 것. 그러나 현실에서 이런 짝은 극히 드물다. 세상에 널린 ego 영상과 exo 영상은 대부분 서로 무관하게, 다른 사람이 다른 때 다른 곳에서 찍은 것이다.\n\n[AE2](https://arxiv.org/abs/2306.05526)(NeurIPS 2023)는 이 강한 가정을 정면으로 깬다. **동시 촬영도, 같은 환경도 아닌** ego·exo 영상을 정렬하겠다는 것이다. 재료는 \"짝 없는(unpaired)\" 두 영상 더미뿐이다.\n\n열쇠는 **시간**이다. 같은 종류의 행동(예: 커피 내리기)은 시점이 달라도 비슷한 시간적 진행을 갖는다 — 물을 붓고, 젓고, 따른다. AE2는 ego와 exo를 **시간축에서 정렬**해, \"이 순간의 ego는 저 순간의 exo에 대응한다\"는 대응을 시간으로 찾는다. 그 과정에서 시점 불변의 미세 행동 표현이 창발한다. 이 챕터는 '동시성'이라는 목발을 버리고 '시간 구조'로 정렬하는 전환을 다룬다.",
+      "sections": [
+        {
+          "title": "paired 가정을 버리는 이유",
+          "content": "paired-synchronized 데이터의 문제는 **확장성**이다. Charades-Ego 같은 데이터를 만들려면 같은 배우가 같은 행동을 두 시점으로 연기해야 한다. 이는 비싸고, 규모가 제한되며, 도메인이 좁다(연출된 실내 행동).\n\n만약 짝 없이 정렬할 수 있다면, 세상의 모든 ego 영상과 모든 exo 영상이 잠재적 학습 재료가 된다. 이것이 AE2가 여는 문이다 — **데이터 가정의 완화가 곧 규모의 해방**이다.\n\n하지만 짝이 없으면 \"이 ego 클립의 짝은 이 exo 클립\"이라는 감독 신호가 사라진다. 무엇을 정렬 기준으로 삼을 것인가? AE2의 답은 행동의 **시간적 진행 구조**다. 같은 행동은 시점이 달라도 유사한 단계 순서를 밟으므로, 그 순서를 정렬의 앵커로 쓴다.",
+          "figures": [
+            {
+              "src": "/posts/ego-exo-view-consistency/figures/2306.05526/intro_blur.png",
+              "caption": "Left: We propose AE2, a self-supervised approach for learning frame-wise action features that are invariant to the egocentric and exocentric viewpoints. The key is %to discover temporal alignment of ego and exo videos. % to find correspondences across the viewpoints via temporal alignment. Right: Before training, the frame embeddings are clustered by viewpoint (pink and green); after training, our learned AE2 embeddings effectively capture the progress of an action and exhibit viewpoint invariance. Shading indicates time. %The figure is hard to read because frames are so small; use fewer left to right and make bigger? updated the figure",
+              "captionKr": "AE2: 짝 없는 ego·exo를 시간 정렬해 view-invariant 프레임 특징을 자기지도로 학습.",
+              "alt": "AE2 self-supervised unpaired ego-exo temporal alignment",
+              "kind": "teaser",
+              "figNo": "1",
+              "arxivId": "2306.05526"
+            }
+          ]
+        },
+        {
+          "title": "시간 정렬 + object-centric 인코더",
+          "content": "AE2는 두 설계를 결합한다.\n\n**첫째, object-centric 인코더.** ego와 exo의 배경은 완전히 다르지만, **손과 조작 객체**는 두 시점에 공통으로 등장한다. AE2는 인코더가 전체 장면이 아니라 손·활성 객체 영역에 집중하게 만든다(ResNet-50 + transformer). 배경이라는 시점 종속 노이즈를 걷어내고, 시점 불변의 공통 신호에 표현을 앉힌다.\n\n**둘째, 시간 대조 목적함수.** ego와 exo 시퀀스를 시간축에서 정렬하되, 영리한 negative를 쓴다 — **시간을 뒤집은(reversed) 프레임**. 물을 붓는 정방향과 거꾸로 감은 역방향은 시각적으로 비슷하지만 행동으로는 정반대다. 역순을 negative로 주면, 네트워크는 단순 외형이 아니라 **행동의 방향성·시간 구조**를 학습한다.\n\n이 둘이 합쳐져, 짝 없는 영상에서도 \"이 ego 순간 ↔ 저 exo 순간\"의 시간 대응이 잡히고, 그 대응을 만족하는 미세한 view-invariant 표현이 형성된다.",
+          "diagram": {
+            "type": "mermaid",
+            "code": "flowchart LR\n  subgraph OC[\"object-centric 인코더 (손·객체에 집중)\"]\n    EG[\"Ego 시퀀스\"]\n    EX[\"Exo 시퀀스\"]\n  end\n  EG --> AL{\"시간 정렬\"}\n  EX --> AL\n  REV[\"Exo 역순<br/>(hard negative)\"] -->|\"밀어냄\"| AL\n  AL --> VI[\"view-invariant<br/>미세 행동 표현\"]",
+            "caption": "AE2: object-centric 인코더 위에서 unpaired ego·exo를 시간으로 정렬, 역순을 hard negative로."
+          },
+          "figures": [
+            {
+              "src": "/posts/ego-exo-view-consistency/figures/2306.05526/method_blur.png",
+              "caption": "Overview of . We extract frame-wise representations from the two video sequences (, $S$ and $V$) %should it be ${V$?} using the encoder $$ and temporally align their embeddings (, $X$ and $Y$) using DTW. Left: Our proposed encoder network design emphasizes attention to hand and active object regions, leading to more object-centric representations. Right: As a form of regularization, we reverse the video sequence $S$ and enforce that the cost of aligning $(S, V)$ is less than that of aligning $(S, V)$. %update Loss to refer to $$ in figure? try to make it more obvious in teh figure that bottom S is reversed. added a reverse arrow in the figure",
+              "captionKr": "AE2 개요: 두 시퀀스에서 프레임 표현을 뽑아 시간축에서 정렬하는 구조.",
+              "alt": "AE2 temporal alignment framework overview",
+              "kind": "architecture",
+              "figNo": "2",
+              "arxivId": "2306.05526"
+            }
+          ]
+        },
+        {
+          "title": "무엇을 얻고 무엇이 남았나",
+          "content": "AE2의 성취는 두 겹이다. **데이터 측면**에서 동시 촬영이라는 목발을 버려 unpaired 바다를 정렬 재료로 열었다. **표현 측면**에서 object-centric + 시간 대조로 '커피 젓기'와 '커피 따르기'를 구분할 만큼 **미세한(fine-grained)** 행동 표현을 얻었다 — 1장의 거친 triplet이 못 하던 것이다.\n\n그러나 정렬의 성질은 여전히 **시간·feature 수준**이다. \"이 ego 순간이 저 exo 순간에 대응한다\"는 시간 대응은 주지만, \"이 ego 프레임의 컵이 저 exo 프레임의 어느 픽셀·객체에 대응한다\"는 **공간 대응**은 주지 않는다. 또한 손·활성 객체라는 prior에 의존해, 그 prior가 약한 도메인에서는 흔들린다.\n\n정리하면 AE2는 정렬의 축을 '동시성'에서 '시간 구조'로 옮겨 규모를 해방했지만, 대응의 해상도는 여전히 시간·표현에 머문다. 4장 BYOV는 같은 unpaired 전제에서 대조 대신 **마스킹**으로 표현을 강화하고, 6장부터는 드디어 **공간(객체) 대응**으로 넘어간다."
+        }
+      ],
+      "analogy": {
+        "title": "두 오케스트라의 악보 맞추기",
+        "content": "같은 교향곡을 서울과 파리의 오케스트라가 각각 다른 날 연주해 녹음했다(unpaired). 두 녹음은 같은 순간이 아니지만, **악곡의 진행**은 같다 — 1악장, 전개, 클라이맥스, 종결.\n\nAE2는 이 **시간 구조**로 두 녹음을 맞춘다. \"서울의 클라이맥스 ↔ 파리의 클라이맥스\"처럼 곡의 단계로 정렬하니, 동시 녹음이 아니어도 대응이 잡힌다. object-centric 인코더는 홀의 잔향(배경)을 무시하고 멜로디(손·객체)에만 귀 기울이는 것과 같다.\n\n역순 negative는 영리한 채점이다. 곡을 거꾸로 튼 것은 음색은 비슷해도 음악으로는 틀렸다. \"정방향과 역방향을 구분하라\"고 훈련하면, 연주자는 표면 음색이 아니라 곡의 **방향과 흐름**을 배운다. 단, 이 방식은 \"몇 악장 언저리\"까지 맞출 뿐, \"바이올린 주자의 이 활 놀림이 저쪽의 어느 주자에 대응하는가\"는 모른다 — 그게 뒤 챕터의 과제다."
+      },
+      "codeExample": {
+        "language": "python",
+        "executable": true,
+        "intro": "AE2의 두 핵심 — 시간 대조와 역순 negative — 를 개념 구현으로 보자.",
+        "code": "import torch, torch.nn.functional as F\n\ndef ae2_temporal_contrast(ego_seq, exo_seq, temp=0.1):\n    \"\"\"ego_seq, exo_seq: [T,D] object-centric 인코더가 뽑은 시퀀스 임베딩.\n       같은 행동의 시간 대응은 당기고, 시간 역순은 밀어낸다.\"\"\"\n    ego = F.normalize(ego_seq, dim=-1)\n    exo = F.normalize(exo_seq, dim=-1)\n    sim = ego @ exo.T                      # [T,T] ego 순간 x exo 순간\n    # positive: 대각(같은 진행 단계) / negative: 시간 역순 시퀀스\n    exo_rev = F.normalize(exo_seq.flip(0), dim=-1)\n    sim_rev = ego @ exo_rev.T\n    pos = torch.diag(sim)                   # 시간 정렬된 대응\n    neg = torch.diag(sim_rev)               # 역순 = 행동 방향 반대\n    return -torch.log(torch.sigmoid((pos - neg) / temp)).mean()\n\nego = torch.randn(8,64); exo = ego.roll(1,0)+0.1*torch.randn(8,64)  # 유사 진행\nprint(\"temporal-contrast loss:\", ae2_temporal_contrast(ego, exo).item())",
+        "walkthrough": "핵심은 `pos`(시간 정렬된 대응)를 `neg`(시간 역순 대응)보다 크게 만드는 것이다. `exo_seq.flip(0)`가 역순 negative — 외형은 비슷하지만 행동 방향이 반대인 하드 negative다. 이걸 밀어내면 네트워크는 단순 외형이 아니라 **시간적 진행·방향**을 학습한다. `ego_seq`/`exo_seq`가 object-centric 인코더 출력이라는 점이 배경 노이즈를 이미 걷어낸 전제다. 짝 라벨 없이 시간 구조만으로 정렬이 창발한다."
+      },
+      "industryEvaluation": {
+        "overview": "자기지도 표현학습·비디오 정렬 팀에서 AE2는 '데이터 가정 완화가 규모를 어떻게 여는가'와 '시간 구조를 감독 신호로 쓰는 법'을 검증한다. 하드 negative 설계 감각을 본다.",
+        "whatEngineersLookFor": [
+          "paired 가정을 완화하는 것과 규모 해방의 연결을 설명하는가",
+          "시간 정렬을 unpaired 감독 신호로 쓰는 원리를 아는가",
+          "역순 negative 같은 하드 negative의 설계 의도를 이해하는가"
+        ],
+        "redFlags": [
+          "unpaired인데 여전히 프레임 단위 짝 감독을 가정",
+          "object-centric prior의 필요성(배경 노이즈)을 간과",
+          "시간 정렬과 공간 대응을 같은 것으로 혼동"
+        ],
+        "interviewQuestions": [
+          {
+            "question": "paired 데이터 가정을 버리면 무엇을 얻고 무엇을 잃는가?",
+            "modelAnswer": "얻는 것은 **규모**다 — 세상의 무관한 ego·exo 영상 전부가 재료가 된다. 잃는 것은 '이 ego의 짝은 이 exo'라는 직접 감독 신호다. AE2는 그 손실을 **행동의 시간적 진행 구조**로 메운다. 같은 행동은 시점이 달라도 비슷한 단계 순서를 밟으므로 시간을 정렬 앵커로 쓴다."
+          },
+          {
+            "question": "왜 시간 역순 프레임을 negative로 쓰는가?",
+            "modelAnswer": "역순은 **외형은 유사하나 행동 방향이 반대**인 하드 negative다. 이를 밀어내도록 학습하면 네트워크가 표면 외형이 아니라 시간적 방향·진행을 학습하게 되어, '젓기'와 '따르기'처럼 미세하고 순서 의존적인 행동을 구분하는 view-invariant 표현이 형성된다."
+          },
+          {
+            "question": "object-centric 인코더가 없으면 무엇이 문제인가?",
+            "modelAnswer": "ego·exo의 배경은 완전히 달라 시점 종속 노이즈가 크다. 전체 장면을 인코딩하면 이 노이즈가 정렬을 방해한다. 손·활성 객체는 두 시점의 공통 신호이므로, 거기에 집중해야 배경을 무시하고 시점 불변 표현을 얻는다. 단 이 prior가 약한 도메인에선 성능이 흔들린다."
+          }
+        ],
+        "masteryVsFamiliar": "겉핥기는 '시간으로 ego·exo를 맞춘다'까지다. 통달한 사람은 '동시성 목발 제거 → unpaired 규모 해방'의 논리를 짚고, 역순 negative가 시간 방향성을 강제하는 메커니즘과 object-centric prior의 역할·한계, 그리고 정렬이 여전히 시간·feature 수준이라 공간 대응으로의 도약이 남았음을 규정한다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "동시성 목발 제거",
+          "content": "동시 촬영·같은 환경 가정을 버려 unpaired ego·exo 바다를 정렬 재료로 연다."
+        },
+        {
+          "title": "시간이 감독을 대체",
+          "content": "같은 행동의 시간적 진행 구조를 정렬 앵커로 삼아 짝 라벨 없이 대응을 찾는다."
+        },
+        {
+          "title": "object-centric 인코더",
+          "content": "배경(시점 종속 노이즈) 대신 손·활성 객체(시점 공통)에 표현을 앉힌다."
+        },
+        {
+          "title": "역순 negative",
+          "content": "시간을 뒤집은 하드 negative로 외형이 아닌 행동의 방향·진행을 학습시킨다."
+        },
+        {
+          "title": "미세 행동 표현",
+          "content": "'젓기 vs 따르기'를 구분할 만큼 fine-grained — 1장 triplet보다 정밀하다."
+        },
+        {
+          "title": "규모의 해방",
+          "content": "데이터 가정 완화가 곧 학습 재료의 규모 확장으로 이어진다."
+        },
+        {
+          "title": "공간 대응은 미해결",
+          "content": "정렬이 시간·feature 수준 — 픽셀·객체 대응은 6장부터의 과제로 남는다."
+        }
+      ],
+      "nextTeaser": "AE2는 대조(contrastive)로 unpaired를 정렬했다. 그런데 대조 대신 '가리고 맞히기(masking)'로 하면 더 강한 표현이 나올까? BYOV가 자기예측으로 답한다."
+    },
+    {
+      "number": 4,
+      "emoji": "🎭",
+      "title": "BYOV — Masked Ego-Exo",
+      "titleKr": "BYOV — 가리고 맞히며 두 시점을 함께 부트스트랩",
+      "tldr": "BYOV는 unpaired 계열을 이어가되 대조 대신 마스킹을 쓴다. 자기 시점을 가려 시간 동역학을 배우고, 상대 시점의 잠재를 예측해 cross-view 정렬을 배운다 — 두 목적을 동시에.",
+      "hook": "문장의 빈칸을 채우다 보면 언어를 배운다. 그렇다면 영상의 '시점'을 빈칸으로 두고 채우게 하면, 기계는 두 시점의 관계를 배울까?",
+      "arxivId": "2503.19706",
+      "topics": [
+        "Masked modeling",
+        "Self-view masking",
+        "Cross-view masking",
+        "View-invariance"
+      ],
+      "learningGoals": [
+        "대조 학습과 마스크 예측의 차이를 표현학습 관점에서 안다",
+        "self-view masking이 시간 동역학을 포착하는 원리를 이해한다",
+        "cross-view masking이 시점 정렬을 만드는 방식을 안다",
+        "두 마스킹을 동시에 학습하는 이점을 설명한다",
+        "표현 수준 정렬 계열(1~5장)의 공통 한계를 정리한다"
+      ],
+      "overview": "3장 AE2가 unpaired 정렬을 **대조(contrastive)**로 풀었다면, [BYOV](https://arxiv.org/abs/2503.19706)(CVPR 2025)는 같은 unpaired 전제에서 도구를 바꾼다 — **마스크 예측(masked modeling)**이다.\n\n마스크 예측은 최근 표현학습의 주력이다. BERT가 문장의 단어를 가리고 맞히며 언어를 배우고, MAE가 이미지 패치를 가리고 복원하며 시각을 배웠다. BYOV는 이 발상을 ego-exo에 이식한다 — 무엇을 가릴 것인가가 핵심 설계다.\n\nBYOV의 답은 **두 종류의 가리기**다. **self-view masking**은 한 시점 안에서 일부 토큰을 가리고 그 시점의 나머지로 복원하게 해 시간 동역학을 배우게 한다. **cross-view masking**은 한 시점의 잠재를 가리고 **다른 시점**으로부터 예측하게 해 시점 간 정렬을 배우게 한다. 이 둘을 동시에 학습하면, 표현이 '자기 시점의 시간 구조'와 '상대 시점과의 대응'을 함께 담는다. 이름 그대로 두 시점이 서로를 부트스트랩한다.",
+      "sections": [
+        {
+          "title": "대조에서 마스킹으로",
+          "content": "대조 학습(AE2)과 마스크 예측(BYOV)은 표현을 형성하는 철학이 다르다.\n\n| 축 | 대조 학습 | 마스크 예측 |\n|---|---|---|\n| 신호 | positive/negative 쌍의 거리 | 가린 부분의 복원·예측 |\n| negative | 필요(하드 negative 설계 중요) | 불필요 |\n| 학습 대상 | 무엇이 같고 다른가 | 무엇이 빠졌는가를 채우는 구조 |\n\n대조는 강력하지만 negative 설계에 민감하다(AE2의 역순 트릭이 그 예다). 마스크 예측은 negative 없이, \"빠진 것을 문맥으로 채워라\"는 자기예측만으로 풍부한 구조를 학습한다. 특히 시간·시점 같은 구조적 관계를 배우는 데 유리하다.\n\nBYOV의 베팅은 \"ego-exo 정렬도 채우기 문제로 볼 수 있다\"는 것이다. 시점을 빈칸으로 두고 채우게 하면, 그 채우기를 잘 하기 위해 네트워크는 두 시점의 관계를 내부에 표현해야 한다.",
+          "diagram": {
+            "type": "mermaid",
+            "code": "flowchart TB\n  ENC((\"공유 인코더\"))\n  SM[\"self-view masking<br/>같은 시점 복원\"] --> ENC\n  CM[\"cross-view masking<br/>상대 시점으로 예측\"] --> ENC\n  ENC --> D[\"시간 동역학\"]\n  ENC --> A[\"시점 정렬\"]",
+            "caption": "BYOV: 하나의 공유 인코더가 self-view(시간 동역학)와 cross-view(시점 정렬) 마스킹을 동시에 학습."
+          },
+          "figures": [
+            {
+              "src": "/posts/ego-exo-view-consistency/figures/2503.19706/fig1-rev.png",
+              "caption": "Challenges for view-invariant video representation learning from unpaired ego and exo videos. There is a fundamental gap between ego-exo views, such as perspective differences following the camera angle, context cues, scale and depth variations, and different motion patterns even when doing the activity.",
+              "captionKr": "unpaired ego·exo 표현학습의 도전 — 시간 의존성과 시점 정렬을 동시에 잡아야 한다.",
+              "alt": "Challenges of view-invariant learning from unpaired ego-exo videos",
+              "kind": "teaser",
+              "figNo": "1",
+              "arxivId": "2503.19706"
+            }
+          ]
+        },
+        {
+          "title": "두 개의 마스킹, 하나의 인코더",
+          "content": "**self-view masking**부터 보자. ego(또는 exo) 시퀀스의 일부 토큰을 가리고, **같은 시점**의 나머지 토큰으로 가린 토큰의 임베딩을 복원한다. 이렇게 하면 인코더는 \"이 시점 안에서 시간이 어떻게 흐르는가\" — 인과적 시간 동역학 — 를 배운다. 한 시점의 자기 완결적 구조다.\n\n**cross-view masking**이 정렬의 핵심이다. 한 시점의 잠재를 가리고, **다른 시점**의 정보로부터 그것을 예측한다. exo를 보고 가려진 ego 잠재를 맞히려면, 네트워크는 \"exo의 이 상태는 ego의 어떤 상태에 대응하는가\"를 알아야 한다. 이 예측이 성공하려면 두 시점이 공유 표현으로 정렬되어야 하므로, cross-view masking 자체가 정렬을 강제한다.\n\n두 마스킹은 **하나의 공유 인코더**에서 동시에 학습된다. self-view가 각 시점의 시간 구조를 다지고, cross-view가 시점 간 다리를 놓는다. 이름 'Bootstrap Your Own Views'가 가리키듯, 두 시점이 서로의 학습 신호가 되어 함께 표현을 끌어올린다."
+        },
+        {
+          "title": "표현 정렬 계열의 마침표",
+          "content": "BYOV는 unpaired·표현 수준 정렬 계열(1~5장)에서 방법론적으로 성숙한 지점이다. negative 설계 부담 없이, 마스크 예측만으로 시간 동역학과 시점 정렬을 함께 얻는다. AE2가 연 unpaired 문을, 더 안정적이고 확장 가능한 도구로 통과한 셈이다.\n\n그러나 여기서 이 계열의 **공통 천장**이 드러난다. 1~5장은 모두 정렬을 **표현(feature) 공간**에서 이룬다 — 두 시점의 임베딩을 가깝게, 시간을 맞게, 잠재를 예측 가능하게. 이것은 \"같은 행동인가\", \"어느 순간에 대응하는가\"에는 답하지만, **\"이 exo 프레임의 저 컵이 이 ego 프레임의 어느 컵·어느 픽셀인가\"**라는 공간적·객체적 대응에는 답하지 못한다.\n\n로보틱스·AR은 바로 이 공간 대응을 요구한다. 로봇이 3인칭 시연 영상을 보고 1인칭으로 따라 하려면, 시연 속 객체가 자기 시야의 어느 객체인지 픽셀 수준으로 알아야 한다. 표현 정렬만으로는 부족하다. 다음 장(5장 Rosetta Stone)이 표현 계열의 마지막 확장을 보인 뒤, 6장부터 무대는 **객체 수준 대응(correspondence)**으로 완전히 이동한다."
+        }
+      ],
+      "analogy": {
+        "title": "빈칸 채우기로 배우는 두 언어",
+        "content": "언어를 배우는 두 방법이 있다. 하나는 \"이 문장과 저 문장이 같은 뜻인가\"를 계속 비교하는 것(대조). 다른 하나는 문장에 **빈칸을 뚫고 채우게** 하는 것(마스킹). 후자가 BERT의 방식이고, 놀랍게도 비교 없이 더 깊은 문법을 가르친다.\n\nBYOV의 self-view masking은 **한 언어 안에서** 빈칸 채우기다 — 한국어 문장의 단어를 가리고 한국어 문맥으로 채우며 한국어 문법(시간 동역학)을 익힌다. cross-view masking은 **번역 빈칸 채우기**다 — 한국어 문장을 보고 대응하는 영어 문장의 가린 부분을 채운다. 이걸 잘하려면 두 언어의 대응 관계를 내부에 표현해야 하니, 채우기 자체가 정렬을 만든다.\n\n두 빈칸 채우기를 한 학생이 동시에 하면, 각 언어의 문법과 두 언어의 다리를 함께 배운다. 단, 이 학생은 '문장 대 문장'의 대응까지다 — \"이 단어가 저 단어에 정확히 대응한다\"는 단어 정렬은 다음 학기(correspondence) 과정이다."
+      },
+      "codeExample": {
+        "language": "python",
+        "executable": true,
+        "intro": "BYOV의 두 마스킹을 한 인코더에서 동시에 학습하는 골격을 보자.",
+        "code": "import torch, torch.nn.functional as F\n\ndef byov_loss(ego_tok, exo_tok, encoder, mask_ratio=0.5):\n    \"\"\"ego_tok, exo_tok: [T,D] 토큰 시퀀스. encoder: 공유 인코더.\"\"\"\n    T = ego_tok.shape[0]\n    m = torch.rand(T) < mask_ratio          # 가릴 토큰\n\n    # self-view masking: 같은 시점의 나머지로 가린 토큰 복원 → 시간 동역학\n    ego_ctx = ego_tok.clone(); ego_ctx[m] = 0\n    ego_pred = encoder(ego_ctx)\n    L_self = F.mse_loss(ego_pred[m], ego_tok[m])\n\n    # cross-view masking: 상대 시점으로부터 가린 잠재 예측 → 시점 정렬\n    exo_lat = encoder(exo_tok)              # exo 잠재\n    ego_from_exo = encoder(exo_lat, cross=True)   # exo→ego 예측\n    L_cross = F.mse_loss(ego_from_exo[m], ego_tok[m])\n\n    return L_self + L_cross                 # 두 목적 동시 학습\n# self가 각 시점의 시간 구조를, cross가 시점 간 다리를 만든다",
+        "walkthrough": "두 손실이 핵심이다. `L_self`는 ego를 가리고 ego 문맥으로 복원 — 자기 시점의 시간 동역학을 배운다. `L_cross`는 가린 ego 잠재를 **exo로부터** 예측 — 이게 성공하려면 두 시점이 공유 표현으로 정렬되어야 하므로 정렬이 강제된다. `encoder`가 공유되어 두 신호가 같은 표현 공간을 함께 형성한다. AE2와 달리 negative 샘플이 전혀 없다 — 채우기만으로 시간 구조와 시점 정렬을 함께 얻는 게 마스킹의 매력이다."
+      },
+      "industryEvaluation": {
+        "overview": "자기지도 사전학습을 설계하는 팀에서 BYOV는 '대조 vs 마스킹' 선택 감각과 마스킹 설계(무엇을 가릴 것인가)를 검증한다. 표현 정렬의 천장을 인지하는지도 본다.",
+        "whatEngineersLookFor": [
+          "대조와 마스킹의 트레이드오프(negative 부담 등)를 설명하는가",
+          "self/cross masking이 각각 무엇을 학습시키는지 구분하는가",
+          "표현 수준 정렬의 공통 한계(공간 대응 부재)를 인지하는가"
+        ],
+        "redFlags": [
+          "마스킹을 그냥 MAE 복붙으로 보고 self/cross 구분을 못 함",
+          "cross-view masking이 왜 정렬을 만드는지 설명 못 함",
+          "표현 정렬로 로보틱스 공간 대응까지 된다고 과신"
+        ],
+        "interviewQuestions": [
+          {
+            "question": "AE2의 대조 대신 BYOV가 마스킹을 택한 이점은?",
+            "modelAnswer": "마스킹은 **negative 샘플이 불필요**하다. AE2는 역순 같은 하드 negative 설계에 성능이 민감했지만, 마스킹은 '가린 것을 문맥으로 채워라'는 자기예측만으로 시간·시점 구조를 배운다. 특히 구조적 관계 학습에 안정적이고 확장 가능하다."
+          },
+          {
+            "question": "self-view와 cross-view masking은 각각 무엇을 학습시키는가?",
+            "modelAnswer": "self-view는 한 시점 내에서 가린 토큰을 같은 시점 문맥으로 복원 → **시간 동역학**(인과적 흐름)을 학습. cross-view는 가린 한 시점의 잠재를 **다른 시점**으로부터 예측 → 이게 되려면 두 시점이 정렬돼야 하므로 **시점 정렬**을 강제. 둘을 공유 인코더에서 동시에 배워 각 시점 구조와 시점 간 다리를 함께 얻는다."
+          },
+          {
+            "question": "1~5장 표현 정렬 계열이 공통으로 못 하는 것은?",
+            "modelAnswer": "**공간·객체 수준 대응**이다. 임베딩을 가깝게·시간을 맞게·잠재를 예측 가능하게 만들어 '같은 행동인가/어느 순간인가'에는 답하지만, 'exo의 이 컵이 ego의 어느 픽셀·객체인가'에는 답 못 한다. 로보틱스·AR이 요구하는 이 대응은 6장 correspondence 계열의 과제다."
+          }
+        ],
+        "masteryVsFamiliar": "겉핥기는 '마스킹으로 ego-exo를 배운다'까지다. 통달한 사람은 대조→마스킹 전환의 이점(negative 제거), self/cross 마스킹이 각각 시간 동역학·시점 정렬을 만드는 메커니즘, 그리고 표현 정렬 계열 전체가 공간 대응이라는 천장에 부딪힘을 규정해 다음 단계의 필연성을 설명한다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "대조→마스킹",
+          "content": "같은 unpaired 전제에서 negative 없는 마스크 예측으로 표현을 형성한다."
+        },
+        {
+          "title": "self-view masking",
+          "content": "한 시점 안에서 가린 토큰을 복원해 인과적 시간 동역학을 배운다."
+        },
+        {
+          "title": "cross-view masking",
+          "content": "가린 한 시점 잠재를 다른 시점으로 예측 — 성공하려면 정렬이 필요하므로 정렬이 강제된다."
+        },
+        {
+          "title": "공유 인코더 동시 학습",
+          "content": "두 마스킹이 같은 표현 공간을 함께 형성해 시점이 서로를 부트스트랩한다."
+        },
+        {
+          "title": "negative 부담 제거",
+          "content": "AE2의 하드 negative 설계 민감성을 채우기 자기예측으로 우회한다."
+        },
+        {
+          "title": "표현 정렬의 성숙",
+          "content": "unpaired·표현 수준 정렬 계열의 방법론적으로 성숙한 지점."
+        },
+        {
+          "title": "공통 천장",
+          "content": "1~5장 모두 feature 정렬 — 공간·객체 대응은 못 한다. correspondence로의 이동이 필연."
+        }
+      ],
+      "nextTeaser": "unpaired 정렬은 무르익었다. 하지만 소량의 paired 데이터가 있다면, 그것으로 대량의 unpaired를 '해금'할 수 있을까? Rosetta Stone이 확산모델을 번역기로 쓴다."
+    },
+    {
+      "number": 5,
+      "emoji": "🗝️",
+      "title": "Viewpoint Rosetta Stone",
+      "titleKr": "로제타석 — 소량의 짝으로 대량의 짝 없는 데이터를 해금",
+      "tldr": "소량의 동기화 paired 영상을 '로제타석'으로 삼아, 확산모델 번역기(RST)가 ego feature에서 exo feature를 합성한다. 이 합성 짝으로 대량 unpaired를 정렬 — paired의 정확성과 unpaired의 규모를 잇는 다리.",
+      "hook": "고대 이집트 상형문자는 그리스어가 나란히 새겨진 돌 하나로 해독됐다. 두 시점의 영상도, 작은 '번역 돌' 하나로 대량의 미지를 풀 수 있다면?",
+      "topics": [
+        "Feature translation",
+        "Diffusion",
+        "Paired-to-unpaired bridge",
+        "Synthetic augmentation"
+      ],
+      "learningGoals": [
+        "paired의 정확성과 unpaired의 규모라는 상충을 잇는 발상을 이해한다",
+        "확산모델을 feature 공간 번역기로 쓰는 원리를 안다",
+        "합성 feature 증강이 unpaired 정렬을 돕는 구조를 설명한다",
+        "생성(4단계)과 표현학습(2단계)을 잇는 이 논문의 위치를 파악한다",
+        "feature 공간 번역과 픽셀 번역의 차이를 구분한다"
+      ],
+      "overview": "3·4장은 unpaired 정렬을 밀어붙였지만, 조용한 대가가 있다. 짝이 없으니 \"이 ego가 저 exo에 대응한다\"는 정확한 감독이 없어, 정렬이 간접적·근사적이다. 반대로 1·2장의 paired는 정확하지만 규모가 작다. **정확성(paired) vs 규모(unpaired)** — 익숙한 상충이다.\n\nViewpoint Rosetta Stone(CVPR 2025 Oral, [프로젝트 페이지](https://vision.cs.utexas.edu/projects/ViewpointRosetta/))은 이 둘을 잇는 다리를 놓는다. 발상은 이름 그대로다. 고대 로제타석이 그리스어라는 아는 언어로 상형문자라는 모르는 언어를 풀었듯, **소량의 동기화 paired 영상**을 '번역 돌'로 삼아 대량의 unpaired를 해금한다.\n\n메커니즘의 핵심은 **확산 기반 번역기(Rosetta Stone Translator, RST)**다. 소량 paired로 RST를 학습시켜 \"ego feature → exo feature\" 번역을 배우게 한다. 그다음 unpaired ego 영상에 RST를 적용해 **합성 exo feature**를 만들고, 이 합성 짝으로 dual encoder를 대조 학습한다. paired의 정확성을 RST에 응축하고, 그것으로 unpaired의 규모를 정렬 가능하게 바꾼다. 표현학습(2단계)과 생성(4단계)의 아이디어가 여기서 처음 만난다.",
+      "sections": [
+        {
+          "title": "정확성과 규모의 다리",
+          "content": "문제를 다시 보자. paired 데이터는 \"이 ego 순간 = 이 exo 순간\"이라는 **정확한 대응**을 준다. 하지만 만들기 비싸 규모가 작다. unpaired는 규모는 크지만 대응이 없어 정렬이 간접적이다.\n\nRosetta Stone의 전략은 **정확성을 압축해 규모에 이식**하는 것이다. 소량 paired로 두 시점의 대응 규칙을 학습한 번역기를 만들면, 그 번역기는 paired의 정확성을 담은 함수가 된다. 이제 이 번역기를 unpaired ego에 적용하면, 대응 짝을 **합성**할 수 있다.\n\n$$\\text{RST}: \\; f_{ego} \\;\\longmapsto\\; \\hat{f}_{exo}$$\n\n즉 unpaired ego 영상 하나하나가, RST를 거쳐 '가상의 exo 짝'을 얻는다. 이렇게 만든 합성 paired로 정렬을 학습하니, 규모(unpaired)와 정확성(RST에 응축된 paired)을 동시에 취한다."
+        },
+        {
+          "title": "확산모델을 feature 번역기로",
+          "content": "왜 하필 **확산모델(diffusion)**인가? 시점 번역은 일대일 함수가 아니다. 하나의 ego 상태에 대응하는 exo는 여러 가능성이 있다(exo 카메라 위치·각도에 따라). 이런 **다중 모드(multi-modal) 대응**을 결정론적 회귀로 학습하면 평균으로 뭉개진다.\n\n확산모델은 이 다중성을 자연스럽게 표현한다. RST는 ego feature를 조건으로 받아, 노이즈에서 시작해 점진적 디노이징으로 그럴듯한 exo feature를 생성한다. 조건부 생성이라 하나의 ego에서 분포로서의 exo를 만들 수 있다.\n\n주목할 점은 이 번역이 **픽셀이 아니라 feature 공간**에서 일어난다는 것이다. 사실적인 exo 영상을 그리는 게 목적이 아니라, 정렬 학습에 쓸 exo **표현**을 만드는 게 목적이다. 그래서 무겁게 픽셀을 렌더링하지 않고 feature를 번역한다 — 9장 Exo2Ego가 픽셀을 생성하는 것과 대비되는 선택이다. 이 'feature 공간 확산 번역'이 표현학습과 생성 사이의 절묘한 중간 지대다.",
+          "diagram": {
+            "type": "mermaid",
+            "code": "flowchart LR\n  PA[\"소량 paired\"] -->|\"학습\"| RST[\"RST<br/>확산 번역기\"]\n  UE[\"대량 unpaired ego\"] --> RST\n  RST --> SE[\"합성 exo feature\"]\n  UE --> DE((\"dual encoder<br/>대조 정렬\"))\n  SE --> DE",
+            "caption": "Rosetta Stone: 소량 paired로 학습한 확산 번역기(RST)가 unpaired ego에서 합성 exo feature를 만들어 정렬."
+          }
+        },
+        {
+          "title": "세 계보가 만나는 지점",
+          "content": "Rosetta Stone이 흥미로운 이유는 세 흐름을 한자리에 모으기 때문이다.\n\n- **1·2장(paired 감독)**: 소량 paired로 RST를 학습 — paired의 정확성을 계승.\n- **3·4장(unpaired 규모)**: 합성 짝으로 대량 unpaired를 정렬 — unpaired의 규모를 계승.\n- **9장(생성)**: 확산 번역기라는 생성 도구 — 생성 계열의 씨앗.\n\n이 융합이 이 논문을 표현 정렬 계열의 **마지막 확장**이자 생성 계열의 **선구**로 만든다. paired vs unpaired 상충을 '번역'으로 해소한 발상은 데이터가 귀한 모든 멀티뷰 문제에 일반화된다.\n\n한계도 정직하다. RST를 학습하려면 여전히 **어느 정도의 동기화 paired**가 필요하다 — 로제타석 자체는 있어야 한다. 또한 번역이 feature 공간에 머물러, 픽셀 수준의 사실적 시점 변환이나 객체 대응은 주지 않는다. 그럼에도 이 논문은 표현 정렬 계열이 도달한 정점이며, 여기서 무대는 완전히 바뀐다 — 6장부터는 '표현'이 아니라 '객체'를, 'feature 유사도'가 아니라 '픽셀 대응'을 다룬다."
+        }
+      ],
+      "analogy": {
+        "title": "로제타석과 번역기 제작",
+        "content": "이집트 상형문자는 200년간 아무도 못 읽었다. 로제타석 — 같은 내용이 그리스어·상형문자·민중문자로 나란히 새겨진 돌 — 하나가 나오자, 아는 그리스어를 지렛대로 모르는 상형문자가 풀렸다.\n\nRosetta Stone 논문의 소량 paired 영상이 바로 이 돌이다. 그 자체로는 작지만, 그것으로 **번역기(RST)**를 만들 수 있다. 번역기가 생기면, 이제 그리스어 문헌(unpaired ego) 수만 권을 상형문자(exo)로 번역해 대량의 대역 텍스트를 얻는다.\n\n확산모델을 쓰는 이유는, 이 번역이 일대일이 아니기 때문이다. 한 그리스어 문장이 문맥에 따라 여러 상형문자 표현을 가질 수 있듯, 한 ego 상태는 여러 exo로 대응한다. 확산은 '하나의 정답'이 아니라 '그럴듯한 후보들의 분포'를 만들어 이 다의성을 담는다. 단, 이 번역은 '뜻'(feature) 수준이다 — 아름다운 필사본(픽셀)을 그리는 건 9장의 몫이다."
+      },
+      "codeExample": {
+        "language": "python",
+        "executable": true,
+        "intro": "RST의 발상 — 소량 paired로 학습한 확산 번역기로 unpaired ego에서 합성 exo feature를 만들어 정렬 — 을 개념 골격으로 보자.",
+        "code": "import torch, torch.nn.functional as F\n\nclass RosettaTranslator(torch.nn.Module):\n    \"\"\"소량 paired로 학습: ego feature를 조건으로 exo feature를 확산 생성.\"\"\"\n    def __init__(self, d=128):\n        super().__init__()\n        self.net = torch.nn.Sequential(torch.nn.Linear(2*d, d), torch.nn.SiLU(), torch.nn.Linear(d, d))\n    def denoise(self, noisy_exo, ego_cond, t):\n        return self.net(torch.cat([noisy_exo, ego_cond], -1))   # 조건부 디노이징\n    @torch.no_grad()\n    def translate(self, ego_feat, steps=10):\n        x = torch.randn_like(ego_feat)\n        for t in reversed(range(steps)):\n            x = x - 0.1*self.denoise(x, ego_feat, t)             # 간이 역확산\n        return x                                                  # 합성 exo feature\n\ndef align_with_synthetic(ego_unpaired, rst):\n    exo_syn = rst.translate(ego_unpaired)          # unpaired ego → 합성 exo 짝\n    a = F.normalize(ego_unpaired, -1); p = F.normalize(exo_syn, -1)\n    return (1 - (a*p).sum(-1)).mean()              # 합성 짝으로 정렬 학습",
+        "walkthrough": "`RosettaTranslator`는 소량 paired로 학습돼 ego feature를 조건으로 exo feature를 **확산 생성**한다(`translate`). 결정론적 회귀가 아니라 노이즈에서 디노이징하는 이유는 한 ego→여러 exo의 다중성을 담기 위함이다. `align_with_synthetic`이 핵심 — unpaired ego에 RST를 적용해 **합성 exo 짝**을 만들고, 그 짝으로 정렬을 학습한다. paired의 정확성이 RST에 응축돼 unpaired 규모로 퍼진다. 모든 게 feature 공간(픽셀 아님)에서 일어난다."
+      },
+      "industryEvaluation": {
+        "overview": "데이터가 귀한 멀티뷰·멀티모달 문제를 다루는 팀에서 이 논문은 'paired 정확성을 unpaired 규모로 전파하는' 전략과 확산을 번역기로 쓰는 감각을 검증한다.",
+        "whatEngineersLookFor": [
+          "paired vs unpaired 상충을 '번역기 응축'으로 잇는 발상을 이해하는가",
+          "확산을 다중모드 대응 번역에 쓰는 이유를 설명하는가",
+          "feature 공간 번역과 픽셀 번역의 목적 차이를 구분하는가"
+        ],
+        "redFlags": [
+          "합성 데이터를 그냥 'GAN처럼 가짜'로 폄하하고 정렬 활용 가치를 못 봄",
+          "시점 번역을 일대일 회귀로 두고 다중성을 무시",
+          "이 논문이 unpaired를 완전 탈피했다고 오해(로제타석은 여전히 필요)"
+        ],
+        "interviewQuestions": [
+          {
+            "question": "소량 paired만으로 어떻게 대량 unpaired를 정렬 재료로 바꾸는가?",
+            "modelAnswer": "소량 paired로 **확산 번역기(RST)**를 학습해 'ego feature→exo feature' 대응 규칙을 응축한다. 그다음 unpaired ego에 RST를 적용해 **합성 exo 짝**을 만들면, 대응 없던 unpaired가 (합성) paired가 된다. paired의 정확성을 함수로 압축해 unpaired 규모에 전파하는 것."
+          },
+          {
+            "question": "왜 결정론적 회귀가 아니라 확산으로 번역하는가?",
+            "modelAnswer": "시점 번역은 일대다다 — 한 ego 상태에 exo 카메라 위치·각도에 따라 여러 대응이 있다. 결정론적 회귀는 이 다중 모드를 평균으로 뭉개 흐릿해진다. 확산은 조건부 분포에서 샘플링해 다중성을 담아 그럴듯한 exo 후보들을 생성한다."
+          },
+          {
+            "question": "이 번역이 feature 공간인 것이 왜 중요한가? 9장 Exo2Ego와 어떻게 다른가?",
+            "modelAnswer": "목적이 '정렬 학습용 exo 표현' 생성이지 '사실적 exo 영상' 렌더링이 아니라서 무거운 픽셀 생성 대신 feature를 번역한다. 9장 Exo2Ego는 반대로 픽셀 수준의 사실적 ego 영상을 생성한다 — 같은 '번역' 발상의 표현판 vs 픽셀판."
+          }
+        ],
+        "masteryVsFamiliar": "겉핥기는 '확산으로 exo를 합성해 쓴다'까지다. 통달한 사람은 paired 정확성을 RST에 응축해 unpaired 규모로 전파하는 구조, 확산이 다중모드 대응에 필요한 이유, feature-vs-픽셀 번역의 목적 분기, 그리고 이 논문이 표현 계열의 정점이자 생성 계열의 선구라는 이중 위치를 규정한다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "정확성↔규모의 다리",
+          "content": "소량 paired(정확)와 대량 unpaired(규모)를 '번역'으로 잇는다."
+        },
+        {
+          "title": "로제타석 번역기(RST)",
+          "content": "소량 paired로 확산 번역기를 학습해 paired 대응 규칙을 함수로 응축한다."
+        },
+        {
+          "title": "합성 짝 증강",
+          "content": "unpaired ego에 RST를 적용해 합성 exo 짝을 만들어 대량 정렬을 가능케 한다."
+        },
+        {
+          "title": "확산=다중모드",
+          "content": "한 ego→여러 exo의 다의성을 확산 조건부 생성으로 담는다."
+        },
+        {
+          "title": "feature 공간 번역",
+          "content": "픽셀이 아닌 feature를 번역 — 정렬 학습이 목적이라 가볍다(9장 픽셀판과 대비)."
+        },
+        {
+          "title": "세 계보의 교차점",
+          "content": "paired 감독·unpaired 규모·생성 번역이 한자리에서 만난다."
+        },
+        {
+          "title": "무대 전환의 문턱",
+          "content": "표현 정렬 계열의 정점 — 여기서 6장부터 객체·픽셀 대응으로 무대가 바뀐다."
+        }
+      ],
+      "nextTeaser": "표현을 아무리 정렬해도 '이 컵이 저 컵'이라는 픽셀 대응은 안 나온다. 로봇이 시연을 따라 하려면 그게 필요하다. ObjectRelator가 문제를 '객체 대응'으로 다시 세운다."
+    },
+    {
+      "number": 6,
+      "emoji": "🧩",
+      "title": "ObjectRelator",
+      "titleKr": "ObjectRelator — 표현 정렬에서 객체 대응으로",
+      "tldr": "로봇·AR은 '같은 행동'이 아니라 '이 컵이 저 컵'이라는 객체 대응이 필요하다. ObjectRelator는 문제를 cross-view 세그멘테이션으로 세우고, 시점 변화로 무너지는 분할을 XObjAlign 일관성으로 잡는다.",
+      "hook": "로봇에게 3인칭 시연 영상을 보여준다. 로봇은 '커피 내리기'인 줄은 안다. 그런데 시연 속 그 컵이 자기 눈앞 어느 컵인지를 모른다면, 한 발짝도 못 뗀다.",
+      "arxivId": "2411.19083",
+      "topics": [
+        "Cross-view segmentation",
+        "Object correspondence",
+        "XObjAlign",
+        "Viewpoint robustness"
+      ],
+      "learningGoals": [
+        "표현 정렬과 객체 대응의 근본적 차이를 안다",
+        "cross-view object correspondence를 세그멘테이션으로 정식화하는 이유를 이해한다",
+        "시점 변화가 기존 분할 모델을 무너뜨리는 양상을 설명한다",
+        "XObjAlign의 cross-view 일관성 자기지도 원리를 안다",
+        "MCFuse가 위치 추정을 돕는 역할을 이해한다"
+      ],
+      "overview": "1~5장은 표현을 정렬했다. 그런데 로보틱스와 AR이 실제로 요구하는 것은 다른 층위다. 로봇이 3인칭 시연을 1인칭으로 재현하려면, **시연 영상의 특정 객체가 자기 시야의 어느 객체인지**를 픽셀 수준으로 알아야 한다. \"같은 행동이다\"로는 부족하다. \"그 컵 = 이 컵\"이 필요하다.\n\n[ObjectRelator](https://arxiv.org/abs/2411.19083)(ICCV 2025 Highlight)는 무대를 바꾼다. 문제를 **cross-view object correspondence** — 한 시점에서 지정한 객체를 다른 시점에서 찾아 분할하는 것 — 로 세운다. 입력은 exo(또는 ego)의 객체 마스크, 출력은 ego(또는 exo)에서 그 객체의 마스크다.\n\n핵심 진단이 날카롭다. 강력한 분할 모델(PSALM 등)조차 **극단적 ego-exo 시점 변화** 앞에서 무너진다 — 복잡한 배경에서 객체를 찾지도, 분할하지도 못한다. ObjectRelator는 두 모듈로 이를 고친다. **XObjAlign**(Cross-View Object Alignment)은 같은 객체의 ego 마스크와 exo 마스크가 유사한 임베딩을 갖도록 자기지도 일관성을 걸고, **MCFuse**는 위치 추정(localization)을 돕는다. 표현이 아니라 객체를, feature 유사도가 아니라 픽셀 마스크를 정렬하는 새 국면이다.",
+      "sections": [
+        {
+          "title": "왜 객체 대응인가",
+          "content": "표현 정렬(1~5장)과 객체 대응은 요구 수준이 다르다.\n\n| 축 | 표현 정렬 | 객체 대응 |\n|---|---|---|\n| 질문 | 같은 행동인가 | 이 객체가 저기 어디인가 |\n| 출력 | feature 임베딩 | 픽셀 마스크 |\n| 응용 | 인식·검색 | 로보틱스·AR 조작 |\n\n로봇이 시연을 모방하려면 시연 속 도구·대상 객체를 자기 시야에서 특정해야 한다. AR이 1인칭·3인칭을 겹쳐 안내하려면 두 시점의 같은 물체를 잇는 앵커가 필요하다. 이 모든 게 **객체 수준의 픽셀 대응**을 요구한다.\n\n그래서 ObjectRelator는 문제를 세그멘테이션으로 정식화한다. \"exo에서 이 마스크로 지정한 객체를, ego에서 찾아 분할하라.\" 이렇게 하면 대응이 곧 픽셀 마스크로 나와, 다운스트림(로봇 파지, AR 오버레이)이 바로 쓸 수 있다.",
+          "figures": [
+            {
+              "src": "/posts/ego-exo-view-consistency/figures/2411.19083/teaser.png",
+              "caption": "Illustration of the Ego-Exo Object Correspondence Task (example shown: Ego2Exo).",
+              "captionKr": "Ego-Exo 객체 대응 과제: 한 시점의 객체 마스크를 다른 시점에서 찾아 분할(Ego2Exo 예시).",
+              "alt": "Ego-Exo object correspondence task illustration",
+              "kind": "teaser",
+              "figNo": "6",
+              "arxivId": "2411.19083"
+            }
+          ]
+        },
+        {
+          "title": "시점 변화가 분할을 깨뜨린다",
+          "content": "순진한 접근은 \"강한 분할 모델(SAM·PSALM)을 그냥 쓰면 되지 않나\"다. ObjectRelator의 진단은 **아니다**이다.\n\nego와 exo는 같은 객체라도 외형이 급변한다. exo에서 작게 보이던 컵이 ego에서는 손에 가려진 채 화면을 채우고, 조명·각도·가림(occlusion)이 완전히 다르다. PSALM 같은 모델은 이 극단적 도메인 이동 앞에서 **객체를 찾지도(localization 실패), 정확히 분할하지도 못한다**. 특히 복잡한 배경에서 오분할이 심하다.\n\n핵심 원인은 이 모델들이 **단일 시점** 분할로 학습돼, cross-view 대응이라는 개념 자체가 없다는 것이다. \"이 마스크가 가리키는 객체의 정체성\"을 시점을 넘어 유지하는 능력이 없다.\n\n따라서 필요한 것은 두 가지다 — (1) 시점이 바뀌어도 **같은 객체의 정체성을 유지**하는 표현, (2) 그 객체가 새 시점의 **어디에 있는지 찾는** 능력. ObjectRelator의 두 모듈이 정확히 이 둘을 담당한다."
+        },
+        {
+          "title": "XObjAlign과 MCFuse",
+          "content": "**XObjAlign(Cross-View Object Alignment)**이 정체성 유지를 맡는다. 자기지도 방식으로, 같은 객체의 ego 마스크 영역 임베딩과 exo 마스크 영역 임베딩이 **가까워지도록** 정렬한다.\n\n$$\\mathcal{L}_{XObjAlign} = \\big\\| \\phi(\\text{obj}_{ego}) - \\phi(\\text{obj}_{exo}) \\big\\|^2$$\n\n여기서 $\\phi$는 마스크 영역의 객체 임베딩이다. 이 일관성 손실은 \"시점이 달라도 같은 객체는 같은 표현\"을 강제해, 정체성이 시점을 넘어 보존되게 한다. 1장의 triplet 정렬이 **영상 전체** 수준이었다면, XObjAlign은 **객체 마스크** 수준으로 내려온 정렬이다.\n\n**MCFuse**는 위치 추정(localization)을 돕는다. 여러 단서(멀티 컨텍스트)를 융합해 \"그 객체가 새 시점의 어느 영역인가\"를 좁힌다. 정체성(XObjAlign)만으로는 \"무엇인지\"는 알아도 \"어디인지\"가 약한데, MCFuse가 이 위치 축을 보강한다.\n\n두 모듈이 합쳐져, 극단적 시점 변화에도 객체를 찾아 분할하는 cross-view 대응이 완성된다. 다만 대응이 **자기지도 정렬**에 기대고 명시적 기하(geometry)는 쓰지 않아, 매칭 방식 자체를 더 밀어붙일 여지가 남는다 — 그게 7·8장의 출발이다.",
+          "diagram": {
+            "type": "mermaid",
+            "code": "flowchart LR\n  Q[\"질의 객체 마스크<br/>(한 시점)\"] --> XA[\"XObjAlign<br/>정체성 정렬\"]\n  XA --> MC[\"MCFuse<br/>위치 추정\"]\n  MC --> OUT[\"다른 시점<br/>객체 마스크\"]\n  XA -.->|\"무엇인가\"| OUT\n  MC -.->|\"어디인가\"| OUT",
+            "caption": "ObjectRelator: XObjAlign(정체성)과 MCFuse(위치)가 결합해 극단 시점 변화에도 객체를 찾아 분할."
+          },
+          "figures": [
+            {
+              "src": "/posts/ego-exo-view-consistency/figures/2411.19083/framework.png",
+              "caption": "Overview of ObjectRelator. Ego2Exo is used as an example. Our method builds on the PSALM baseline (pink blocks) and tailors it for Ego-Exo Object Correspondence with two novel modules: Multimodal Condition Fusion and Cross-View Object Alignment.",
+              "captionKr": "ObjectRelator 구조: PSALM 베이스라인 위에 XObjAlign(정체성)과 MCFuse(위치)를 얹는다.",
+              "alt": "ObjectRelator architecture built on PSALM with XObjAlign and MCFuse",
+              "kind": "architecture",
+              "figNo": "7",
+              "arxivId": "2411.19083"
+            }
+          ]
+        }
+      ],
+      "analogy": {
+        "title": "목격자 두 명의 라인업",
+        "content": "한 사건을 두 목격자가 봤다. 한 명은 정문(exo)에서, 한 명은 사건 한복판(ego)에서. 형사가 정문 목격자에게 \"저 사람\"이라고 지목받은 인물을, 한복판 목격자의 기억에서 찾아야 한다. 문제는 두 시점에서 그 사람의 외형(각도·거리·가림)이 완전히 달라 보인다는 것이다.\n\n기존 분할 모델은 각 목격자의 진술을 따로 처리할 뿐, \"정문의 그 사람 = 한복판의 이 사람\"을 잇지 못한다(단일 시점 학습). ObjectRelator는 두 가지를 한다. XObjAlign은 \"같은 사람은 시점이 달라도 같은 인상착의 코드를 갖는다\"고 훈련해 정체성을 잇고(무엇인지), MCFuse는 여러 단서로 \"한복판 진술의 어느 위치인가\"를 좁힌다(어디인지).\n\n둘이 합쳐져야 라인업이 완성된다 — 정체성만으로는 \"그 사람이 여기 있긴 한데 어디?\"이고, 위치만으로는 \"여기 누군가 있는데 그 사람 맞나?\"다. 단, 이 형사는 인상착의 매칭(자기지도)에 의존하지 정밀 삼각측량(기하)은 안 쓴다 — 그 정밀화가 다음 챕터들이다."
+      },
+      "codeExample": {
+        "language": "python",
+        "executable": true,
+        "intro": "XObjAlign의 핵심 — 같은 객체의 ego·exo 마스크 임베딩을 정렬하는 자기지도 일관성 — 을 보자.",
+        "code": "import torch, torch.nn.functional as F\n\ndef masked_object_embed(feat_map, mask):\n    \"\"\"feat_map: [C,H,W] 백본 특징, mask: [H,W] 객체 마스크 → 객체 임베딩 [C].\"\"\"\n    m = mask.unsqueeze(0)\n    return (feat_map * m).sum((1,2)) / (m.sum() + 1e-6)   # 마스크 영역 평균 풀링\n\ndef xobjalign_loss(ego_feat, ego_mask, exo_feat, exo_mask):\n    \"\"\"같은 객체의 ego/exo 마스크 임베딩을 가깝게(정체성 보존).\"\"\"\n    e = F.normalize(masked_object_embed(ego_feat, ego_mask), dim=0)\n    x = F.normalize(masked_object_embed(exo_feat, exo_mask), dim=0)\n    return (1 - (e * x).sum())          # cross-view 객체 일관성\n\nego_f = torch.randn(64,32,32); exo_f = torch.randn(64,32,32)\nego_m = (torch.rand(32,32)>0.7).float(); exo_m = (torch.rand(32,32)>0.7).float()\nprint(\"XObjAlign loss:\", xobjalign_loss(ego_f, ego_m, exo_f, exo_m).item())",
+        "walkthrough": "`masked_object_embed`가 객체 마스크 영역만 평균 풀링해 **객체 단위 임베딩**을 뽑는다 — 영상 전체가 아니라 객체가 단위라는 게 1~5장과의 결정적 차이다. `xobjalign_loss`는 같은 객체의 ego·exo 임베딩을 코사인으로 가깝게 만들어, 극단적 시점 변화에도 '같은 객체 = 같은 표현'을 강제한다. 이 자기지도 일관성이 정체성을 잇고, 별도의 MCFuse가 위치를 좁혀 최종 마스크를 낸다."
+      },
+      "industryEvaluation": {
+        "overview": "로보틱스·AR 인지 팀에서 이 논문은 '표현 정렬과 픽셀 대응은 다른 문제'라는 감각과, 시점 강건 분할 설계를 검증한다. 대응을 세그멘테이션으로 정식화하는 관점을 본다.",
+        "whatEngineersLookFor": [
+          "표현 정렬로 안 되고 객체 대응이 필요한 응용을 구체화하는가",
+          "시점 변화가 단일 시점 분할을 깨는 원인을 진단하는가",
+          "정체성(무엇)과 위치(어디)를 분리해 설계하는가"
+        ],
+        "redFlags": [
+          "SAM 같은 강한 분할이면 cross-view도 된다고 가정",
+          "객체 대응과 행동 인식(표현 정렬)을 같은 문제로 취급",
+          "자기지도 정렬과 명시적 기하 대응의 차이를 모름"
+        ],
+        "interviewQuestions": [
+          {
+            "question": "표현 정렬(1~5장)이 다 됐는데 왜 객체 대응이 또 필요한가?",
+            "modelAnswer": "표현 정렬은 '같은 행동인가'까지다. 로봇이 3인칭 시연을 모방하려면 시연 속 **특정 객체가 자기 시야 어느 픽셀인지**를 알아야 하고, AR은 두 시점의 같은 물체를 픽셀로 이어야 한다. 이 객체·픽셀 수준 대응은 feature 유사도로는 안 나와서, 문제를 cross-view 세그멘테이션으로 다시 세운다."
+          },
+          {
+            "question": "PSALM 같은 강한 분할 모델이 ego-exo에서 왜 무너지나?",
+            "modelAnswer": "단일 시점 분할로 학습돼 **cross-view 객체 정체성** 개념이 없다. ego-exo는 같은 객체라도 각도·거리·가림·조명이 급변해, 모델이 객체를 찾지도(localization) 정확히 분할하지도 못한다. 특히 복잡 배경에서 오분할이 심하다. 정체성 유지 + 위치 추정을 명시적으로 넣어야 한다."
+          },
+          {
+            "question": "XObjAlign과 MCFuse의 역할 분담은?",
+            "modelAnswer": "XObjAlign은 같은 객체의 ego·exo 마스크 임베딩을 가깝게 하는 자기지도 일관성으로 **정체성(무엇인지)**을 시점 넘어 보존. MCFuse는 멀티 컨텍스트를 융합해 **위치(어디인지)**를 좁힘. 정체성만으로는 위치가 약하고 위치만으로는 정체성이 약해, 둘을 분리·결합해야 극단 시점에서 대응이 완성된다."
+          }
+        ],
+        "masteryVsFamiliar": "겉핥기는 'ego-exo 객체를 분할한다'까지다. 통달한 사람은 표현→객체 대응의 층위 전환을 규정하고, 단일 시점 분할이 깨지는 원인, XObjAlign(정체성)·MCFuse(위치)의 분담, 그리고 자기지도 정렬이라 명시적 매칭·기하로 더 밀어붙일 여지(7·8장)가 남음을 짚는다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "무대 전환",
+          "content": "표현 정렬(같은 행동)에서 객체 대응(이 컵=저 컵)으로 층위가 바뀐다."
+        },
+        {
+          "title": "세그멘테이션 정식화",
+          "content": "cross-view 대응을 '한 시점 마스크→다른 시점 마스크'로 세워 로봇·AR이 바로 쓰게 한다."
+        },
+        {
+          "title": "시점이 분할을 깬다",
+          "content": "단일 시점 학습 모델(PSALM)은 극단적 ego-exo 변화에서 localization·분할 모두 실패."
+        },
+        {
+          "title": "XObjAlign=정체성",
+          "content": "같은 객체의 ego·exo 마스크 임베딩을 정렬해 시점 넘어 정체성을 보존한다."
+        },
+        {
+          "title": "MCFuse=위치",
+          "content": "멀티 컨텍스트 융합으로 '새 시점 어디에 있는가'를 좁힌다."
+        },
+        {
+          "title": "객체가 단위",
+          "content": "영상 전체가 아니라 객체 마스크가 정렬 단위 — 1~5장과의 결정적 차이."
+        },
+        {
+          "title": "기하는 아직",
+          "content": "자기지도 정렬에 의존, 명시적 매칭·기하는 미사용 — 7·8장의 출발점."
+        }
+      ],
+      "nextTeaser": "ObjectRelator는 객체를 '정렬'했다. 그런데 대응을 아예 '마스크 후보 간 매칭 게임'으로 다시 보면 어떨까? O-MaMa가 dense matching을 mask matching으로 뒤집는다."
+    },
+    {
+      "number": 7,
+      "emoji": "🎯",
+      "title": "O-MaMa — Object Mask Matching",
+      "titleKr": "O-MaMa — 대응을 '마스크 매칭'으로 다시 세우다",
+      "tldr": "O-MaMa는 픽셀 dense matching 대신 문제를 '마스크 후보 간 매칭'으로 재프레이밍한다. FastSAM 후보를 DINOv2로 인코딩하고, cross-attention과 대조 매칭·하드 negative로 정답 마스크를 고른다.",
+      "hook": "모래알 하나하나를 비교하는 대신, 먼저 모래성을 몇 개 쌓고 '어느 성이 맞는가'만 고른다면? 대응 문제가 갑자기 쉬워진다.",
+      "arxivId": "2506.06026",
+      "topics": [
+        "Mask matching",
+        "FastSAM candidates",
+        "DINOv2",
+        "Contrastive + hard negatives"
+      ],
+      "learningGoals": [
+        "dense feature matching과 mask matching의 차이를 안다",
+        "분할 후보를 먼저 만들고 매칭하는 재프레이밍의 이점을 이해한다",
+        "DINOv2 + FastSAM 조합의 역할을 설명한다",
+        "cross-attention과 하드 negative 마이닝의 기여를 안다",
+        "매칭 품질이 후보 품질에 묶이는 한계를 파악한다"
+      ],
+      "overview": "6장 ObjectRelator가 객체 대응을 세그멘테이션으로 세웠다면, [O-MaMa](https://arxiv.org/abs/2506.06026)(ICCV 2025)는 그 대응을 **푸는 방식**을 뒤집는다.\n\n전통적 cross-view 대응은 **dense feature matching** — 한 시점의 모든 픽셀 특징을 다른 시점의 모든 픽셀과 비교 — 이다. 계산이 무겁고, 시점이 급변하면 픽셀 특징이 안 맞아 매칭이 흔들린다.\n\nO-MaMa의 재프레이밍은 명료하다. 픽셀을 하나하나 비교하지 말고, **먼저 객체 마스크 후보를 만든 뒤 '어느 마스크가 정답인가'만 고르자.** 문제가 dense 픽셀 매칭에서 이산적 **mask matching**으로 바뀐다 — 수만 픽셀 비교가 수십 마스크 중 선택으로 축소된다.\n\n파이프라인은 네 부품이다. (1) **Mask-Context Encoder**: FastSAM으로 마스크 후보를 만들고 DINOv2 특징을 마스크 위로 풀링, (2) **Ego↔Exo Cross-Attention**: 두 시점 관찰을 융합, (3) **Mask-Matching 대조 손실**: 정답 마스크를 공유 공간에서 정렬, (4) **Hard Negative Adjacent Mining**: 헷갈리는 인접 마스크를 하드 negative로. Ego-Exo4D 대응에서 큰 폭 SOTA(Exo2Ego IoU +76%)를 냈다.",
+      "sections": [
+        {
+          "title": "dense matching을 버리는 이유",
+          "content": "dense feature matching의 두 약점이 ego-exo에서 치명적이다.\n\n첫째, **연산**이다. $H\\times W$ 픽셀을 다른 시점 $H\\times W$와 비교하면 $O((HW)^2)$다. 고해상에서 폭발한다.\n\n둘째, **강건성**이다. ego-exo는 시점이 급변해 같은 객체의 픽셀 특징조차 크게 달라진다. 픽셀 단위로 비교하면 이 변동에 그대로 노출돼 매칭이 부서진다.\n\nO-MaMa의 통찰은 \"대응의 단위는 픽셀이 아니라 **객체**\"라는 것이다. 우리가 원하는 답은 \"저 컵\"이지 \"저 픽셀 (i,j)\"가 아니다. 그렇다면 애초에 객체 단위 후보(마스크)를 만들고 그중에서 고르면 된다. 이산적 선택은 연산이 가볍고, 마스크 수준 특징은 픽셀 잡음을 평균 내어 시점 변동에 강하다.\n\n이것은 문제를 쉽게 만드는 재프레이밍의 전형이다 — 어려운 회귀(dense 대응)를 쉬운 분류(마스크 선택)로 바꾼다.",
+          "figures": [
+            {
+              "src": "/posts/ego-exo-view-consistency/figures/2506.06026/teaser_alejandro.png",
+              "caption": "Overview of our proposed Object Mask Matching (O-MaMa). Instead of attempting the complex cross-view segmentation task, we obtain a set of mask candidates in the destination view using FastSAM. Through contrastive learning, we select the mask candidate that best matches the source mask.",
+              "captionKr": "O-MaMa 개요: 복잡한 dense 대응 대신 '마스크 후보 간 매칭'으로 재프레이밍.",
+              "alt": "O-MaMa mask-matching reframing overview",
+              "kind": "teaser",
+              "figNo": "1",
+              "arxivId": "2506.06026"
+            }
+          ]
+        },
+        {
+          "title": "네 부품의 매칭 파이프라인",
+          "content": "**Mask-Context Encoder.** FastSAM이 각 시점에서 객체 마스크 후보들을 빠르게 생성한다. 그리고 자기지도 백본 **DINOv2**의 특징을 각 마스크 영역 위로 풀링해, 마스크마다 하나의 문맥 임베딩을 만든다. FastSAM이 '후보를 만들고', DINOv2가 '각 후보를 시점 강건하게 기술한다'.\n\n**Ego↔Exo Cross-Attention.** ego 마스크 임베딩과 exo 마스크 임베딩이 서로를 참조한다. 한 시점만 보면 애매한 객체도, 상대 시점 정보를 융합하면 정체가 또렷해진다. 두 시점의 관찰을 한 표현으로 엮는 단계다.\n\n**Mask-Matching 대조 손실.** 정답 ego-exo 마스크 쌍은 공유 공간에서 가깝게, 오답 쌍은 멀게 정렬한다. 6장 XObjAlign이 '같은 객체를 가깝게'였다면, 여기서는 '**후보들 중 정답을 골라내는**' 대조로 목적이 더 날카롭다.\n\n**Hard Negative Adjacent Mining.** 가장 헷갈리는 negative는 인접한·유사한 마스크다(옆에 놓인 비슷한 컵). 이런 하드 negative를 집중 채굴해 학습하면, 미세하게 다른 객체를 구분하는 능력이 생긴다. AE2의 역순 negative(3장)와 같은 철학 — 어려운 negative가 정밀도를 만든다.",
+          "diagram": {
+            "type": "mermaid",
+            "code": "flowchart LR\n  I[\"두 시점 영상\"] --> F[\"FastSAM<br/>마스크 후보\"]\n  F --> DN[\"DINOv2<br/>마스크 임베딩\"]\n  DN --> CA[\"Ego-Exo<br/>Cross-Attention\"]\n  CA --> M{\"대조 매칭<br/>+ hard negative\"}\n  M --> OUT[\"정답 마스크 선택\"]",
+            "caption": "O-MaMa 4단계: FastSAM 후보 → DINOv2 인코딩 → cross-attention 융합 → 대조 매칭으로 정답 마스크 선택."
+          },
+          "figures": [
+            {
+              "src": "/posts/ego-exo-view-consistency/figures/2506.06026/diagram_alejandro_red.png",
+              "caption": "O-MaMa architecture. In the destination view, we generate a set of mask candidates with FastSAM. We extract descriptors on both source and destination masks by pooling dense DINOv2 features, and we aggregate global cross-view features with respective cross-attention mechanisms. We learn view-invariant features in a latent space via contrastive learning, and we select the most similar mask embedding to obtain the corresponding mask.",
+              "captionKr": "O-MaMa 구조: 대상 시점에서 FastSAM 마스크 후보를 만들고 대조 매칭으로 정답을 고른다.",
+              "alt": "O-MaMa architecture: FastSAM candidates and contrastive mask matching",
+              "kind": "architecture",
+              "figNo": "2",
+              "arxivId": "2506.06026"
+            }
+          ]
+        },
+        {
+          "title": "성취와 후보의 천장",
+          "content": "O-MaMa는 Ego-Exo4D Correspondence에서 큰 폭의 SOTA를 냈다(Exo2Ego +76%, Ego2Exo +22% IoU). 재프레이밍 하나가 성능을 도약시킨 사례다. dense 회귀를 마스크 분류로 바꾸니 연산은 가벼워지고 강건성은 올라갔다.\n\n핵심 교훈은 **\"대응의 단위를 픽셀에서 객체로 올리면 문제가 쉬워진다\"**이다. 이는 6~8장 correspondence 계열을 관통하는 원리다. ObjectRelator가 객체를 정렬했고, O-MaMa가 객체를 매칭했다.\n\n그러나 이 접근의 천장은 이름에 이미 있다. 매칭은 **후보 마스크 안에서만** 정답을 고른다. 만약 FastSAM이 정답 객체를 애초에 마스크로 만들지 못했다면(놓쳤거나 잘못 쪼갰다면), 매칭은 존재하지 않는 정답을 고를 수 없다. **매칭 품질의 상한은 후보 품질**이다.\n\n이 의존성이 다음 두 방향을 낳는다. 8장 CCMP는 매칭을 **cycle-consistency**로 자기검증해 후보 없이도 대응을 정련하고, 10장 언저리의 V2-SAM류는 **SAM2**를 대응에 직접 적응시켜 후보 생성 자체를 강화한다. O-MaMa는 재프레이밍의 힘과 그 대가(후보 의존)를 동시에 보여준 이정표다."
+        }
+      ],
+      "analogy": {
+        "title": "용의자 라인업 vs 몽타주",
+        "content": "범인을 찾는 두 방법이 있다. 하나는 목격자에게 얼굴의 모든 픽셀을 기억에서 재구성하게 하는 것(dense matching) — 힘들고 부정확하다. 다른 하나는 **용의자 몇 명을 세워두고 \"이 중 누구?\"**라고 묻는 것(mask matching) — 훨씬 쉽고 정확하다.\n\nO-MaMa는 후자다. FastSAM이 라인업(마스크 후보)을 세우고, DINOv2가 각 용의자의 인상착의를 시점에 강건하게 기록한다. cross-attention은 두 목격자(ego·exo)가 서로 정보를 교환해 확신을 높이는 것이고, 하드 negative 마이닝은 \"쌍둥이처럼 닮은 용의자\"를 일부러 세워 미세한 차이를 구분하도록 훈련하는 것이다.\n\n이 방식의 결정적 약점도 라인업에 있다 — **진범이 라인업에 없으면** 아무리 잘 골라도 틀린다. FastSAM이 정답 객체를 놓치면 매칭은 실패한다. 그래서 다음 수사관들은 라인업 자체를 검증하거나(cycle-consistency) 더 잘 세우는(SAM2 적응) 쪽으로 간다."
+      },
+      "codeExample": {
+        "language": "python",
+        "executable": true,
+        "intro": "O-MaMa의 핵심 — 마스크 후보들 중 대조로 정답을 고르고 인접 하드 negative를 강조 — 를 보자.",
+        "code": "import torch, torch.nn.functional as F\n\ndef mask_matching(query_emb, cand_embs, gt_idx, temp=0.1):\n    \"\"\"query_emb: [D] 한 시점의 질의 객체. cand_embs: [N,D] 다른 시점 마스크 후보들.\n       gt_idx: 정답 후보 인덱스. → 정답을 고르는 대조 분류.\"\"\"\n    q = F.normalize(query_emb, dim=-1)\n    c = F.normalize(cand_embs, dim=-1)\n    logits = (c @ q) / temp                       # 후보별 매칭 점수 [N]\n    # hard negative: 정답과 가장 헷갈리는 인접 후보에 가중\n    with torch.no_grad():\n        hard = logits.clone(); hard[gt_idx] = -1e9\n        w = torch.ones_like(logits); w[hard.argmax()] = 2.0   # 최난 negative 강조\n    return F.cross_entropy((logits*w).unsqueeze(0), torch.tensor([gt_idx]))\n\nq = torch.randn(128); cands = torch.randn(12,128); cands[3]=q+0.1*torch.randn(128)\nprint(\"mask-matching loss:\", mask_matching(q, cands, gt_idx=3).item())",
+        "walkthrough": "`mask_matching`은 대응을 **분류**로 푼다 — 질의 객체 임베딩 `q`에 대해 후보 마스크들 `cands` 중 정답(`gt_idx`)을 고른다. dense 픽셀 회귀가 이산 선택으로 바뀐 게 재프레이밍의 핵심이다. `hard` 부분이 하드 negative 마이닝 — 정답과 가장 헷갈리는 인접 후보에 가중치를 줘 미세 구분력을 키운다. `cands`가 FastSAM 후보, `q`/`cands` 임베딩이 DINOv2 기반이라는 게 전제다. 단, 정답이 `cands`에 없으면 이 게임은 이길 수 없다 — 후보 의존이 천장이다."
+      },
+      "industryEvaluation": {
+        "overview": "대응·매칭을 다루는 비전 팀에서 O-MaMa는 '문제 재프레이밍으로 난이도를 낮추는' 감각과 후보-기반 파이프라인의 트레이드오프를 검증한다. 하드 negative 설계도 본다.",
+        "whatEngineersLookFor": [
+          "dense 회귀를 이산 매칭으로 바꾸는 재프레이밍의 이점(연산·강건성)을 설명하는가",
+          "FastSAM(후보)·DINOv2(기술)·cross-attention(융합)의 역할을 구분하는가",
+          "후보 품질이 매칭 상한이라는 의존성을 인지하는가"
+        ],
+        "redFlags": [
+          "여전히 dense 픽셀 매칭이 정석이라 고집",
+          "마스크 후보가 정답을 놓칠 수 있음을 간과",
+          "하드 negative 없이도 미세 객체 구분이 된다고 가정"
+        ],
+        "interviewQuestions": [
+          {
+            "question": "dense feature matching 대신 mask matching으로 바꾸면 무엇이 좋아지나?",
+            "modelAnswer": "연산이 $O((HW)^2)$ 픽셀 비교에서 수십 개 마스크 중 이산 선택으로 축소되고, 마스크 수준 특징이 픽셀 잡음을 평균 내어 급격한 ego-exo 시점 변동에 강건해진다. 어려운 dense 회귀가 쉬운 분류가 된다 — 원하는 답이 애초에 '픽셀'이 아니라 '객체'이므로 단위를 올리는 게 자연스럽다."
+          },
+          {
+            "question": "파이프라인에서 FastSAM과 DINOv2는 각각 무슨 역할인가?",
+            "modelAnswer": "FastSAM은 각 시점에서 **객체 마스크 후보를 빠르게 생성**(라인업 세우기). DINOv2는 자기지도 백본으로 각 마스크 영역 특징을 풀링해 **시점 강건한 마스크 임베딩**을 만든다(각 후보 기술). 이후 cross-attention이 두 시점을 융합하고 대조 손실이 정답을 고른다."
+          },
+          {
+            "question": "이 접근의 성능 상한은 무엇이 결정하나?",
+            "modelAnswer": "**후보 마스크 품질**이다. 매칭은 후보 안에서만 정답을 고르므로, FastSAM이 정답 객체를 놓치거나 잘못 쪼개면 매칭이 존재하지 않는 정답을 고를 수 없다. 그래서 후속 연구는 cycle-consistency로 자기검증(CCMP)하거나 SAM2를 대응에 직접 적응(V2-SAM)해 후보 자체를 강화한다."
+          }
+        ],
+        "masteryVsFamiliar": "겉핥기는 '마스크를 매칭한다'까지다. 통달한 사람은 dense→mask 재프레이밍이 연산·강건성을 어떻게 바꾸는지, 네 부품의 분담, 하드 negative가 미세 구분을 만드는 원리, 그리고 후보 품질이 상한이라는 구조적 의존과 그것이 CCMP·V2-SAM으로 이어지는 필연을 규정한다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "대응=매칭 게임",
+          "content": "dense 픽셀 회귀를 '마스크 후보 중 정답 고르기'라는 이산 매칭으로 재프레이밍한다."
+        },
+        {
+          "title": "단위를 픽셀→객체",
+          "content": "원하는 답이 '객체'이므로 후보를 객체 단위로 만들면 연산은 가볍고 강건성은 오른다."
+        },
+        {
+          "title": "FastSAM+DINOv2",
+          "content": "FastSAM이 마스크 후보를, DINOv2가 시점 강건한 마스크 임베딩을 만든다."
+        },
+        {
+          "title": "Cross-Attention 융합",
+          "content": "두 시점 관찰을 서로 참조해 애매한 객체의 정체를 또렷하게 만든다."
+        },
+        {
+          "title": "하드 negative",
+          "content": "인접·유사 마스크를 집중 채굴해 미세하게 다른 객체를 구분하는 힘을 기른다."
+        },
+        {
+          "title": "큰 폭 SOTA",
+          "content": "Ego-Exo4D 대응에서 Exo2Ego IoU +76% — 재프레이밍이 성능을 도약시켰다."
+        },
+        {
+          "title": "후보가 천장",
+          "content": "매칭은 후보 안에서만 고른다 — 정답을 놓친 후보는 이길 수 없다. CCMP·V2-SAM의 출발."
+        }
+      ],
+      "nextTeaser": "매칭은 후보에 갇힌다. 그런데 '올바른 대응이라면 되돌아와도 원래로 돌아온다'는 자기검증을 걸면? CCMP가 cycle-consistency로 대응에 나침반을 준다."
+    },
+    {
+      "number": 8,
+      "emoji": "🔄",
+      "title": "CCMP — Cycle-Consistent Mask Prediction",
+      "titleKr": "CCMP — 되돌아오면 제자리, 사이클로 대응을 자기검증하다",
+      "tldr": "CCMP는 ego→exo 예측 마스크를 다시 exo→ego로 되돌려 원래 질의 마스크를 복원하게 한다. 이 cycle-consistency가 라벨 없는 자기지도와 test-time 적응을 주어, 대응을 스스로 검증·정련한다.",
+      "hook": "번역이 옳은지 확인하는 가장 확실한 방법 — 다시 원래 언어로 되돌려 처음과 같은지 보는 것. 시점 대응도 똑같이 검증할 수 있다.",
+      "arxivId": "2602.18996",
+      "topics": [
+        "Cycle-consistency",
+        "Self-supervision",
+        "Test-time training",
+        "Bidirectional correspondence"
+      ],
+      "learningGoals": [
+        "cycle-consistency가 왜 강력한 자기지도 신호인지 안다",
+        "양방향(ego↔exo) 대응을 사이클로 검증하는 구조를 이해한다",
+        "라벨 없는 자기지도와 test-time training의 연결을 설명한다",
+        "학습된 사이클과 엄격한 3D 기하 재투영의 차이를 구분한다",
+        "이 논문이 '일관성'이라는 코스 주제를 정면으로 구현함을 안다"
+      ],
+      "overview": "7장 O-MaMa는 대응을 매칭으로 풀되 후보에 갇혔다. 무엇이 옳은 대응인지 **검증할 내부 신호**가 없다는 게 근본 문제다. 정답 라벨에 기대야 하고, 새 도메인에서 스스로 교정할 방법이 없다.\n\n[CCMP](https://arxiv.org/abs/2602.18996)(CVPR 2026)는 이 코스의 이름 그대로 **일관성(consistency)**을 정면으로 무기화한다. 발상은 번역 검증의 고전이다 — 올바른 번역이라면 되돌려도 원문과 같아야 한다.\n\n구체적으로, ego의 질의 마스크를 exo로 예측한 뒤(forward), 그 예측된 exo 마스크를 다시 ego로 되돌려 예측한다(backward). **되돌아온 마스크가 원래 질의 마스크와 같으면** 그 대응은 자기일관적이다. 이 **cycle-consistency**를 손실로 걸면, 정답 라벨 없이도 대응을 학습·검증할 수 있고, 심지어 추론 시점에 스스로 적응(test-time training)할 수 있다.\n\nO-MaMa가 '후보 중 고르기'였다면 CCMP는 '고른 대응이 사이클을 닫는가'로 자기검증한다. correspondence 계열이 외부 라벨 의존에서 내부 일관성 자기감독으로 진화하는 지점이다.",
+      "sections": [
+        {
+          "title": "사이클이 곧 감독 신호",
+          "content": "cycle-consistency의 힘은 **라벨 없이 정답 여부를 판별하는 내부 신호**를 만든다는 데 있다.\n\nego 마스크 $M_{ego}$를 exo로 예측하는 함수를 $F$(forward), exo를 ego로 되돌리는 함수를 $B$(backward)라 하자. 올바른 대응이라면,\n\n$$B(F(M_{ego})) \\approx M_{ego}$$\n\n되돌아온 마스크가 원래와 같아야 한다. 이 등식이 깨지면 대응이 틀렸다는 신호다. 정답 exo 마스크를 몰라도, **되돌아오는지만 보면** 대응 품질을 잴 수 있다.\n\n$$\\mathcal{L}_{cycle} = \\big\\| B(F(M_{ego})) - M_{ego} \\big\\|$$\n\n이것이 자기지도(self-supervision)의 정수다 — 데이터 자체의 구조(왕복 일관성)에서 감독 신호를 짜낸다. 7장까지 정답 마스크 라벨에 기대던 대응 학습이, 여기서 **라벨 없는 일관성**으로 독립한다.",
+          "diagram": {
+            "type": "mermaid",
+            "code": "flowchart LR\n  M0[\"Ego 질의 마스크\"] -->|\"forward\"| MX[\"예측 Exo 마스크\"]\n  MX -->|\"backward\"| M1[\"복원 Ego 마스크\"]\n  M1 -.->|\"제자리면 일관<br/>(무라벨 감독)\"| M0",
+            "caption": "CCMP: ego→exo(forward)→ego(backward) 왕복이 원래 마스크를 복원하면 자기일관 — 라벨 없는 감독."
+          },
+          "figures": [
+            {
+              "src": "/posts/ego-exo-view-consistency/figures/2602.18996/teaser.png",
+              "caption": "{Cycle-Consistent Visual Correspondence with Test-Time Training. Our framework learns object-level correspondences by enforcing cycle consistency: the object mask is transferred from source to target view and projected back to reconstruct the original query. This self-supervised constraint enables robust cross-view alignment and supports test-time training to further improve performance during inference.}",
+              "captionKr": "Cycle-Consistent 대응 + test-time training: 객체 대응을 왕복 일관성으로 학습.",
+              "alt": "Cycle-consistent correspondence with test-time training teaser",
+              "kind": "teaser",
+              "figNo": "1",
+              "arxivId": "2602.18996"
+            }
+          ]
+        },
+        {
+          "title": "양방향 대응과 test-time 적응",
+          "content": "사이클을 닫으려면 대응이 **양방향**이어야 한다 — ego→exo와 exo→ego를 모두 예측한다. 두 방향을 함께 학습하니 대응이 대칭적이고 견고해진다. 한 방향만 학습하는 것보다 정보가 풍부하다.\n\n더 흥미로운 것은 **test-time training**이다. cycle-consistency 손실은 정답 라벨이 필요 없으므로, **추론하는 바로 그 영상에서** 계산할 수 있다. 즉 학습 때 못 본 새 장면·새 도메인을 만나도, 그 영상에서 사이클 손실을 최소화하며 모델을 즉석 미세조정할 수 있다.\n\n이것이 실전에서 결정적이다. ego-exo는 환경·객체·조명이 무한히 다양해 학습 분포를 벗어나기 일쑤다. 대부분의 대응 모델은 새 도메인에서 성능이 떨어지지만, CCMP는 그 도메인의 영상 자체로 스스로 교정한다. 라벨 없는 자기검증이 곧 적응 능력으로 이어진다 — 자기지도의 두 얼굴이다.\n\n주의할 점은 이 '되돌리기'가 **학습된 조건부 분할의 사이클**이지, 엄격한 **3D 기하 재투영**은 아니라는 것이다. 카메라 기하로 픽셀을 정확히 역투영하는 게 아니라, 신경망이 배운 대응 함수를 왕복시킨다. 그래서 기하적으로 완벽하진 않지만, 라벨·기하 정보 없이 작동한다는 실용적 장점이 크다.",
+          "figures": [
+            {
+              "src": "/posts/ego-exo-view-consistency/figures/2602.18996/overview.png",
+              "caption": "Model overview. \\( CLS \\) denotes class tokens, and \\( CDT \\) denotes condition tokens. The CLS head determines whether the object in the target image corresponding to a given object mask in the source image is visible. The bottom-left image shows the source image with the object mask, while the bottom-right image shows the target image.",
+              "captionKr": "CCMP 모델 개요: 조건 토큰으로 forward/backward 마스크 예측을 왕복시키는 구조.",
+              "alt": "CCMP model overview with forward-backward mask prediction",
+              "kind": "architecture",
+              "figNo": "2",
+              "arxivId": "2602.18996"
+            }
+          ]
+        },
+        {
+          "title": "'일관성'이라는 주제의 완성형",
+          "content": "CCMP는 이 코스 전체를 관통하는 단어 — consistency — 를 가장 직접적으로 구현한 논문이다. 1~5장의 정렬도 넓게는 일관성이지만, 그것은 '표현이 시점 간에 일관되게'였다. CCMP는 대응 자체에 **왕복 일관성**이라는 수학적 제약을 걸어, 일관성을 감독 신호로 승격시킨다.\n\ncorrespondence 계열의 진화를 정리하면 이렇다.\n\n| 논문 | 대응을 푸는 법 | 감독 |\n|---|---|---|\n| ObjectRelator | 객체 정렬 + 위치 | 자기지도 정렬 + 라벨 |\n| O-MaMa | 마스크 후보 매칭 | 대조 + 정답 라벨 |\n| CCMP | 양방향 예측 + 사이클 | **왕복 일관성(라벨 불필요)** |\n\n외부 라벨 의존에서 내부 일관성 자기감독으로 내려온 궤적이 뚜렷하다. 여기까지가 correspondence의 흐름이다.\n\n하지만 대응은 여전히 \"저 객체가 여기 어디\"까지다. 대응은 **매핑**이지 **재구성**이 아니다. 로봇이 3인칭 시연을 보고 자기 1인칭 영상 자체를 상상하거나, 없는 시점을 만들어내는 것 — 그건 대응을 넘어선 **생성**의 영역이다. 9장에서 무대는 마지막으로 한 번 더 바뀐다. 정렬도 대응도 아닌, **한 시점에서 다른 시점을 통째로 그려내는** 생성으로."
+        }
+      ],
+      "analogy": {
+        "title": "왕복 번역 검사",
+        "content": "번역의 정확성을 확인하는 가장 확실한 손쉬운 방법이 있다. 한국어를 영어로 번역한 뒤, 그 영어를 **다시 한국어로 번역**해 처음과 같은지 보는 것이다. \"고양이가 담을 넘었다 → The cat jumped over the wall → 고양이가 담을 뛰어넘었다\"면 대체로 옳다. 되돌린 결과가 원문과 크게 다르면 번역이 어딘가 틀렸다.\n\nCCMP의 cycle-consistency가 정확히 이것이다. ego의 컵 마스크를 exo로 예측하고, 그 exo 마스크를 다시 ego로 되돌린다. 되돌아온 컵이 원래 컵과 겹치면 대응이 자기일관적이다. 놀라운 점은 **정답(참조 번역)이 없어도** 이 검사가 된다는 것 — 되돌아오는지만 보면 되니까.\n\n덕분에 처음 보는 문장(새 도메인 영상)을 만나도, 그 자리에서 왕복 검사를 하며 번역기를 스스로 다듬을 수 있다(test-time training). 단, 이 검사는 '의미가 왕복하는가'이지 '문법적으로 완벽한가'는 아니다 — 학습된 대응의 왕복일 뿐 엄밀한 기하 재투영은 아니라는 뜻이다."
+      },
+      "codeExample": {
+        "language": "python",
+        "executable": true,
+        "intro": "CCMP의 심장 — forward/backward 예측을 왕복시켜 원래 마스크 복원을 강제하는 cycle 손실 — 을 보자.",
+        "code": "import torch, torch.nn.functional as F\n\ndef cycle_consistency_loss(ego_mask, forward, backward):\n    \"\"\"ego_mask: [H,W] 질의. forward: ego→exo 예측기, backward: exo→ego 예측기.\n       라벨 없이 왕복 복원으로 대응을 자기검증.\"\"\"\n    exo_pred = forward(ego_mask)              # ego → exo (forward)\n    ego_recon = backward(exo_pred)            # exo → ego (backward)\n    L_cycle = F.binary_cross_entropy(ego_recon, ego_mask)   # 되돌아오면 제자리?\n    return L_cycle, exo_pred\n\n# test-time: 정답 라벨 없이 '지금 이 영상'에서 사이클 손실로 즉석 적응\ndef test_time_adapt(ego_mask, forward, backward, opt, steps=5):\n    for _ in range(steps):\n        opt.zero_grad()\n        L, _ = cycle_consistency_loss(ego_mask, forward, backward)\n        L.backward(); opt.step()             # 라벨 없이 새 도메인에 적응\n    return forward(ego_mask)",
+        "walkthrough": "`cycle_consistency_loss`가 핵심 — `forward`로 ego→exo 마스크를 예측하고 `backward`로 다시 ego로 되돌려, 원래 `ego_mask`와의 복원 오차를 손실로 건다. **정답 exo 마스크가 어디에도 필요 없다** — 왕복 일관성만으로 대응을 감독한다. `test_time_adapt`은 이 무라벨 손실을 추론 대상 영상에서 직접 최소화해, 학습 분포 밖 새 도메인에 즉석 적응한다. O-MaMa가 후보에 갇혔던 것과 달리, 사이클이 대응에 내부 나침반을 준다. 단 이 왕복은 학습된 함수의 사이클이지 3D 기하 재투영은 아니다."
+      },
+      "industryEvaluation": {
+        "overview": "자기지도·도메인 적응을 다루는 팀에서 CCMP는 'cycle-consistency를 감독 신호로 쓰는' 발상과 test-time training의 실전 가치를 검증한다. 학습된 일관성과 기하적 일관성의 차이도 본다.",
+        "whatEngineersLookFor": [
+          "왕복 일관성이 라벨 없이 정답성을 판별하는 원리를 설명하는가",
+          "양방향 대응과 test-time 적응의 연결을 이해하는가",
+          "학습된 사이클과 엄밀 3D 재투영의 차이를 구분하는가"
+        ],
+        "redFlags": [
+          "cycle-consistency를 3D 기하 재투영과 동일시",
+          "test-time training이 라벨을 필요로 한다고 오해",
+          "일관성 손실만으로 자명해(trivial solution)에 빠질 위험을 간과"
+        ],
+        "interviewQuestions": [
+          {
+            "question": "정답 마스크 라벨 없이 어떻게 대응을 학습·검증하는가?",
+            "modelAnswer": "**cycle-consistency**로. ego 마스크를 exo로 예측(forward)하고 그 exo를 다시 ego로 되돌려(backward) 원래 마스크와 같은지 본다. 되돌아오면 자기일관적, 아니면 틀린 신호. 데이터 구조(왕복 일관성)에서 감독을 짜내므로 정답 exo 라벨이 필요 없다."
+          },
+          {
+            "question": "cycle-consistency가 test-time training으로 이어지는 이유는?",
+            "modelAnswer": "손실이 라벨을 안 쓰니 **추론 대상 영상 자체에서** 계산·최소화할 수 있다. ego-exo는 도메인이 무한 다양해 학습 분포를 자주 벗어나는데, CCMP는 새 영상에서 사이클 손실로 즉석 미세조정해 스스로 교정한다. 무라벨 자기검증이 곧 적응 능력이 된다."
+          },
+          {
+            "question": "이 '되돌리기'와 3D 기하 재투영의 차이는? 왜 중요한가?",
+            "modelAnswer": "CCMP의 왕복은 **학습된 조건부 분할 함수의 사이클**이지, 카메라 기하로 픽셀을 역투영하는 엄밀 재투영이 아니다. 그래서 기하적으로 완벽하진 않지만 카메라 파라미터·깊이 같은 기하 정보 없이 작동한다 — ego-exo는 그런 정보가 대개 없으므로 실용적 이점이 크다. 대신 trivial solution 방지 설계가 필요하다."
+          }
+        ],
+        "masteryVsFamiliar": "겉핥기는 'cycle로 대응을 검증한다'까지다. 통달한 사람은 왕복 일관성이 무라벨 감독을 만드는 원리, 양방향성이 견고함을 주는 이유, test-time training으로의 자연스러운 확장, 그리고 학습된 사이클 vs 기하 재투영의 경계와 trivial-solution 위험까지 규정하며, 이 논문이 코스 주제 '일관성'의 완성형임을 짚는다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "일관성=감독",
+          "content": "올바른 대응이면 왕복해도 제자리 — 이 cycle-consistency를 감독 신호로 승격한다."
+        },
+        {
+          "title": "무라벨 자기지도",
+          "content": "정답 exo 마스크 없이, 되돌아오는지만으로 대응 품질을 잰다."
+        },
+        {
+          "title": "양방향 대응",
+          "content": "ego→exo와 exo→ego를 함께 예측해 사이클을 닫고 대칭적·견고하게 만든다."
+        },
+        {
+          "title": "test-time training",
+          "content": "라벨 불필요라 추론 영상 자체에서 즉석 적응 — 새 도메인을 스스로 교정한다."
+        },
+        {
+          "title": "학습된 사이클",
+          "content": "엄밀 3D 재투영이 아닌 학습된 대응의 왕복 — 기하 정보 없이 작동하는 실용성."
+        },
+        {
+          "title": "라벨 의존 탈피",
+          "content": "ObjectRelator·O-MaMa의 라벨 의존에서 내부 일관성 자기감독으로 내려온 궤적의 끝."
+        },
+        {
+          "title": "대응≠재구성",
+          "content": "대응은 '어디인가'까지 — 없는 시점을 그려내는 생성은 9장의 영역이다."
+        }
+      ],
+      "nextTeaser": "대응은 객체를 이을 뿐, 없는 시점을 만들지 못한다. 3인칭 영상만 보고 1인칭 영상 자체를 그려낼 수 있다면? Exo2Ego가 확산으로 '남의 신발을 신는다'."
+    },
+    {
+      "number": 9,
+      "emoji": "👟",
+      "title": "Exo2Ego",
+      "titleKr": "남의 신발을 신다 — 3인칭에서 1인칭을 통째로 생성",
+      "tldr": "정렬도 대응도 아닌 생성. Exo2Ego는 3인칭 영상만 보고 사실적 1인칭 영상을 만든다. 대응을 강제하는 구조 변환 단계와, 손 배치 사전에 조건화된 확산 픽셀 생성의 2단계로 시점을 통째로 번역한다.",
+      "hook": "타인의 하루를 3인칭으로 지켜보다가, 문득 '그 사람 눈으로는 어떻게 보일까'가 궁금해진다. 기계가 그 1인칭 시야를 픽셀까지 그려낼 수 있을까?",
+      "arxivId": "2403.06351",
+      "topics": [
+        "View translation",
+        "Diffusion generation",
+        "Structure transform",
+        "Hand-layout prior"
+      ],
+      "learningGoals": [
+        "대응(매핑)과 생성(재구성)의 근본적 차이를 안다",
+        "exo→ego 생성이 왜 어려운 다중모드 문제인지 이해한다",
+        "구조 변환 + 픽셀 확산의 2단계 분해 이유를 설명한다",
+        "손 배치(hand-layout) 사전이 생성을 조건화하는 역할을 안다",
+        "생성 계열이 대응 계열과 상보적인 지점을 파악한다"
+      ],
+      "overview": "1~8장은 두 갈래였다. 표현을 정렬(1~5장)하거나 객체를 대응(6~8장)시켰다. 둘 다 **주어진 두 시점을 잇는** 일이다. [Exo2Ego](https://arxiv.org/abs/2403.06351)(ECCV 2024, 'Put Myself in Your Shoes')는 질적으로 다른 것을 한다. **없는 시점을 통째로 만든다.**\n\n과제는 이렇다. 3인칭(exo) 영상만 주어졌을 때, 그 사람의 1인칭(ego) 영상 — 손이 화면을 채우고 조작 객체가 클로즈업된, 사실적인 첫 사람 시점 — 을 **생성**한다. 이것은 시점 일관성의 가장 강한 형태다. 대응이 \"저 컵이 여기\"라면, 생성은 \"당신 눈에는 이 컵이 이렇게 보일 것\"을 픽셀로 그린다.\n\n왜 어려운가? exo→ego는 **극도로 다중모드**다. 같은 3인칭 장면에 대해 1인칭 시야는 머리 방향·주목 대상에 따라 무수히 갈린다. 게다가 ego 특유의 손·조작 디테일을 사실적으로 만들어야 한다. Exo2Ego는 이를 2단계로 분해한다. 먼저 **명시적 구조 변환**으로 cross-view 대응을 강제하고(무엇이 어디로 가는가), 그 위에 **손 배치 사전에 조건화된 확산**으로 픽셀을 환각(hallucinate)한다(어떻게 보이는가).",
+      "sections": [
+        {
+          "title": "대응에서 생성으로",
+          "content": "6~8장의 대응과 9장의 생성은 출력의 성질이 다르다.\n\n| 축 | 대응(correspondence) | 생성(generation) |\n|---|---|---|\n| 입력 | 두 시점 모두 | 한 시점만 |\n| 출력 | 매핑(마스크·대응) | 새 시점의 픽셀 |\n| 질문 | 이게 저기 어디인가 | 저기서는 어떻게 보이는가 |\n\n대응은 두 시점이 **모두 있어야** 잇는다. 하지만 실전에서는 종종 한 시점만 있다. 3인칭 시연 영상만 있고 로봇의 1인칭은 아직 없다. 이때 필요한 건 잇기가 아니라 **만들기**다.\n\nExo2Ego는 시점 일관성을 **생성 문제**로 재정의한다. \"두 시점이 일관되다\"의 궁극은 \"한 시점에서 다른 시점을 정확히 예측(생성)할 수 있다\"는 것이다. 5장 Rosetta Stone이 feature를 생성했다면, Exo2Ego는 **픽셀**을 생성한다. 사람이 볼 수 있는 사실적 영상을.",
+          "figures": [
+            {
+              "src": "/posts/ego-exo-view-consistency/figures/2403.06351/problem_setting_horizontal.png",
+              "caption": "Cross-view translation from exocentric to egocentric video. Given an exocentric video sequence (top), the goal is to generate the corresponding egocentric perspective (bottom).",
+              "captionKr": "exo→ego 교차 시점 번역: 3인칭 영상 시퀀스에서 1인칭 영상을 생성하는 문제.",
+              "alt": "Exocentric-to-egocentric cross-view translation problem setting",
+              "kind": "teaser",
+              "figNo": "1",
+              "arxivId": "2403.06351"
+            }
+          ]
+        },
+        {
+          "title": "2단계 분해 — 구조 먼저, 픽셀 나중",
+          "content": "순진하게 확산모델에 exo를 넣고 ego를 뽑으면 실패한다. 시점 변환의 **기하적 구조**와 **사실적 텍스처**를 한 번에 처리하려다 둘 다 놓친다. Exo2Ego는 문제를 둘로 가른다.\n\n**1단계. 명시적 고수준 구조 변환.** 먼저 exo의 장면 구조를 ego 시점의 구조로 변환한다. \"이 객체가 1인칭 시야의 이 위치·이 배치로 온다\"는 **cross-view 대응을 명시적으로 강제**하는 단계다. 여기서 6~8장의 대응 사고가 생성 안으로 흡수된다. 대응이 생성의 골격이 된다.\n\n**2단계 — 손 배치 조건 확산.** 구조가 정해지면, 그 위에 확산모델이 사실적 픽셀을 채운다. 핵심 조건이 **손 배치 사전(hand-layout prior)**이다. ego 영상의 정체성은 손이다 — 화면을 채우는 손과 그것이 쥔 객체가 1인칭임을 규정한다. 손 배치를 조건으로 주면, 확산이 '아무 1인칭'이 아니라 '이 행동을 하는 이 손의 1인칭'을 그린다.\n\n$$\\text{exo} \\xrightarrow{\\text{1) 구조 변환}} \\text{ego 구조} \\xrightarrow{\\text{2) hand-layout 확산}} \\text{사실적 ego 픽셀}$$\n\n이 분해가 다중모드 문제를 다스린다. 구조 변환이 '무엇이 어디로'라는 큰 다의성을 먼저 고정하고, 확산이 그 안에서 '어떻게 보이는가'의 세부 다의성만 담당한다.",
+          "diagram": {
+            "type": "mermaid",
+            "code": "flowchart LR\n  X[\"Exo 영상 (한 시점만)\"] --> S1[\"1. 구조 변환<br/>대응을 골격으로\"]\n  HL[\"손 배치 사전\"] --> S2\n  S1 --> S2[\"2. 조건부 확산<br/>픽셀 생성\"]\n  S2 --> EGO[\"사실적 Ego 영상\"]",
+            "caption": "Exo2Ego 2단계: 구조 변환이 '무엇이 어디로' 골격을 잡고, 손 배치 조건 확산이 사실적 픽셀을 채운다."
+          },
+          "figures": [
+            {
+              "src": "/posts/ego-exo-view-consistency/figures/2403.06351/method.png",
+              "caption": "Our Exo2Ego framework comprises two modules: (a) High-level Structure Transformation, which predicts the ego layout, capturing hand position and interactions using a transformer-based encoder-decoder architecture. (b) Diffusion-based Pixel Hallucination, which enhances pixel-level details on top of the ego layout using a conditional diffusion model.",
+              "captionKr": "Exo2Ego 2모듈: (a) 고수준 구조 변환으로 대응을 잡고 (b) 확산으로 사실적 픽셀을 생성.",
+              "alt": "Exo2Ego two-stage structure transformation then diffusion",
+              "kind": "architecture",
+              "figNo": "2",
+              "arxivId": "2403.06351"
+            }
+          ]
+        },
+        {
+          "title": "생성과 대응은 상보적이다",
+          "content": "Exo2Ego가 보여준 것은 시점 일관성의 **가장 강한 시험**이다. 정렬은 \"같은가\"를, 대응은 \"어디인가\"를 물었다면, 생성은 \"**정확히 어떻게 보이는가**\"를 픽셀로 답해야 한다. 한 시점에서 다른 시점을 사실적으로 그려낼 수 있다면, 그 모델은 두 시점의 관계를 가장 깊이 이해한 것이다.\n\n흥미로운 것은 생성과 대응이 **상보적**이라는 점이다. Exo2Ego의 1단계가 대응(구조 변환)을 생성의 골격으로 쓰듯, 좋은 대응은 좋은 생성을 돕는다. 거꾸로 생성은 대응 학습의 데이터 증강이 된다(5장 Rosetta Stone이 이미 보여줬다). 두 계열은 경쟁이 아니라 서로를 강화한다.\n\n한계도 분명하다. 이 프레이밍은 **exo→ego 단방향**이고, 생성 품질이 **손 배치 사전**에 묶인다. 손이 잘 안 보이는 행동에서는 조건이 약해진다. 또한 확산 생성은 무겁고, 사실성과 정확성 사이 트레이드오프가 있다.\n\n그럼에도 Exo2Ego는 ego-exo 일관성이 도달할 수 있는 가장 야심 찬 형태다. 그런데 여기까지 온 모든 연구. 정렬·대응·생성 — 는 **전용 모델**의 이야기였다. 현대 시스템의 주역은 video-LLM이다. 이 거대 모델들은 과연 두 시점을 일관되게 **추론**할까? 마지막 10장이 이 질문으로 무대를 통합한다."
+        }
+      ],
+      "analogy": {
+        "title": "목격담으로 그리는 몽타주 영상",
+        "content": "법정 화가는 사건을 직접 보지 않았다. 목격자의 3인칭 진술(exo)만 듣고, 범인의 1인칭 시야. 그 순간 범인 눈에 무엇이 어떻게 보였을지. 를 그려야 한다면? 이것이 Exo2Ego의 과제다.\n\n유능한 화가는 두 단계로 그린다. 먼저 **구도를 잡는다** — \"피해자가 왼쪽, 문이 정면, 손에 든 것이 화면 하단\"이라는 공간 구조(1단계 구조 변환). 이 골격이 없으면 세부가 아무리 사실적이어도 배치가 틀린다. 골격이 서면 그 위에 **사실적 채색**을 한다(2단계 확산).\n\n결정적 힌트는 **손**이다. 1인칭 그림의 정체성은 화면을 채우는 손이다. \"이 손이 이 물건을 이렇게 쥐고 있다\"는 손 배치를 알면, 화가는 '아무 1인칭'이 아니라 '이 행동을 하는 바로 그 1인칭'을 그린다. 단 손이 안 보이는 장면에서는 이 힌트가 약해져 그림이 흔들린다. 그리고 이 화가는 3인칭→1인칭만 그린다 — 반대 방향은 또 다른 훈련이다."
+      },
+      "codeExample": {
+        "language": "python",
+        "executable": true,
+        "intro": "Exo2Ego의 2단계 — 구조 변환으로 골격을 잡고 손 배치 조건 확산으로 픽셀을 채우는 — 흐름을 개념 골격으로 보자.",
+        "code": "import torch, torch.nn.functional as F\n\ndef structure_transform(exo_feat, cross_view_map):\n    \"\"\"1단계: exo 구조를 ego 시점 구조로 변환(대응을 명시적으로 강제).\"\"\"\n    return cross_view_map(exo_feat)            # '무엇이 어디로' 골격\n\ndef hand_conditioned_diffusion(ego_struct, hand_layout, unet, steps=20):\n    \"\"\"2단계: ego 구조 + 손 배치 사전에 조건화된 확산으로 사실적 픽셀 생성.\"\"\"\n    x = torch.randn_like(ego_struct)\n    cond = torch.cat([ego_struct, hand_layout], dim=0)   # 손 배치가 정체성 조건\n    for t in reversed(range(steps)):\n        x = x - 0.05 * unet(x, cond, t)        # 조건부 역확산\n    return x                                    # 사실적 ego 프레임\n\ndef exo2ego(exo_feat, hand_layout, cross_view_map, unet):\n    ego_struct = structure_transform(exo_feat, cross_view_map)   # 구조 먼저\n    return hand_conditioned_diffusion(ego_struct, hand_layout, unet)  # 픽셀 나중",
+        "walkthrough": "흐름이 곧 설계다. `structure_transform`이 **먼저** exo를 ego 구조로 바꿔 '무엇이 어디로 가는가'라는 큰 다의성을 고정한다 — 대응이 생성의 골격으로 흡수되는 지점이다. 그다음 `hand_conditioned_diffusion`이 그 골격 위에 픽셀을 채우되, `hand_layout`을 조건으로 줘 '이 손의 1인칭'으로 특정한다. 손 배치가 없으면 확산은 '아무 1인칭'을 그려 정체성이 흐려진다. 5장 Rosetta Stone이 feature를 확산했다면, 여기선 사람이 볼 픽셀을 확산한다."
+      },
+      "industryEvaluation": {
+        "overview": "생성모델·world model 팀에서 Exo2Ego는 '시점 일관성을 생성으로 재정의하는' 발상과 다중모드 생성의 단계 분해 설계를 검증한다. 대응과 생성의 상보성을 보는지도 본다.",
+        "whatEngineersLookFor": [
+          "대응(매핑)과 생성(재구성)의 차이·응용 맥락을 구분하는가",
+          "다중모드 생성을 구조/텍스처로 분해하는 이유를 설명하는가",
+          "손 배치 같은 도메인 사전으로 생성을 조건화하는 감각이 있는가"
+        ],
+        "redFlags": [
+          "확산에 exo 넣고 ego 뽑으면 된다고 단순화(구조/텍스처 분해 필요성 무시)",
+          "대응만 있으면 생성이 불필요하다고 생각(한 시점만 있는 상황을 놓침)",
+          "생성 품질이 손 배치 사전에 묶이는 한계를 간과"
+        ],
+        "interviewQuestions": [
+          {
+            "question": "대응(6~8장)이 있는데 왜 생성이 또 필요한가?",
+            "modelAnswer": "대응은 두 시점이 **모두 있어야** 잇는다. 하지만 3인칭 시연만 있고 1인칭은 아직 없는 상황(로봇 모방 등)에서는 잇는 게 아니라 **만들어야** 한다. 생성은 시점 일관성의 가장 강한 형태 — 한 시점에서 다른 시점을 사실적으로 그려낼 수 있다면 두 시점 관계를 가장 깊이 이해한 것이다."
+          },
+          {
+            "question": "exo→ego 생성을 왜 구조 변환과 픽셀 확산 2단계로 나누는가?",
+            "modelAnswer": "한 번에 하면 기하적 구조와 사실적 텍스처를 동시에 처리하려다 둘 다 놓친다. 1단계 구조 변환이 '무엇이 어디로'라는 큰 다의성을 먼저 고정(대응을 골격으로)하고, 2단계 확산이 그 안에서 '어떻게 보이는가' 세부만 담당한다. 다중모드를 계층적으로 다스리는 분해다."
+          },
+          {
+            "question": "손 배치(hand-layout) 사전이 왜 핵심 조건인가?",
+            "modelAnswer": "ego 영상의 정체성은 화면을 채우는 손과 조작 객체다. 손 배치를 조건으로 주면 확산이 '아무 1인칭'이 아니라 '이 행동을 하는 이 손의 1인칭'을 그린다. 단 손이 잘 안 보이는 행동에선 조건이 약해져 생성이 흔들리는 게 한계다."
+          }
+        ],
+        "masteryVsFamiliar": "겉핥기는 '확산으로 ego를 생성한다'까지다. 통달한 사람은 정렬·대응·생성의 층위와 응용 맥락(한 시점만 있는 상황)을 구분하고, 구조/텍스처 2단계 분해가 다중모드를 다스리는 원리, 손 배치 조건의 역할·한계, 그리고 생성-대응 상보성(5장 feature판과의 대비)을 규정한다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "잇기에서 만들기로",
+          "content": "정렬·대응이 주어진 두 시점을 이었다면, 생성은 없는 시점을 통째로 만든다."
+        },
+        {
+          "title": "일관성의 최강 시험",
+          "content": "한 시점에서 다른 시점을 사실적으로 그려낼 수 있음 = 관계를 가장 깊이 이해."
+        },
+        {
+          "title": "다중모드 난제",
+          "content": "exo→ego는 머리 방향·주목에 따라 무수히 갈려 극도로 다중모드다."
+        },
+        {
+          "title": "구조 먼저, 픽셀 나중",
+          "content": "1단계 구조 변환(대응 강제)으로 골격을 잡고 2단계 확산으로 텍스처를 채운다."
+        },
+        {
+          "title": "손 배치 조건",
+          "content": "ego 정체성인 손 배치를 조건으로 줘 '이 행동의 이 1인칭'으로 특정한다."
+        },
+        {
+          "title": "대응↔생성 상보",
+          "content": "대응은 생성의 골격이 되고 생성은 대응의 데이터 증강이 된다 — 서로 강화한다."
+        },
+        {
+          "title": "단방향·손 의존",
+          "content": "exo→ego 단방향이고 품질이 손 배치 사전에 묶인다 — 손이 안 보이면 약해진다."
+        }
+      ],
+      "nextTeaser": "정렬·대응·생성 — 모두 전용 모델의 이야기였다. 그런데 현대 시스템은 video-LLM이다. 이 거대 모델은 두 시점을 일관되게 '추론'할까? View-GRPO가 충격적 격차를 드러낸다."
+    },
+    {
+      "number": 10,
+      "emoji": "🧠",
+      "title": "View-GRPO & the Consistency Gap",
+      "titleKr": "View-GRPO — video-LLM은 두 시점을 일관되게 추론하는가",
+      "tldr": "정렬·대응·생성을 지나 무대는 video-LLM으로 통합된다. EgoExo-Con은 최신 video-LLM의 cross-view 시간 추론이 단일 시점의 절반 수준임을 폭로하고, View-GRPO는 '같은 답 강제'가 아니라 '시점별 추론→일치 결론'을 RL로 학습시킨다.",
+      "hook": "7B video-LLM이 1인칭 영상에서는 56% 맞히던 질문을, 같은 사건의 3인칭 영상과 함께 주면 33%로 추락한다. 거대 모델은 시점이 바뀌면 사고를 멈추는가?",
+      "arxivId": "2510.26113",
+      "topics": [
+        "Video-LLM",
+        "Cross-view reasoning",
+        "Consistency gap",
+        "View-GRPO / RL"
+      ],
+      "learningGoals": [
+        "전용 모델 시대에서 video-LLM 시대로의 통합을 이해한다",
+        "cross-view consistency gap이라는 진단의 의미를 안다",
+        "'같은 답 강제'가 왜 틀린 목표인지 설명한다",
+        "View-GRPO의 시점별 추론+일치 결론 보상 구조를 안다",
+        "10편 전체 흐름을 하나의 지도로 통합한다"
+      ],
+      "overview": "9장까지의 여정은 모두 **전용 모델**의 이야기였다 — 정렬 인코더, 대응 세그멘터, 생성 확산기. 그러나 2025~2026년 현대 비디오 시스템의 주역은 **video-LLM**(Qwen2.5-VL, TimeChat 등)이다. 그렇다면 근본 질문 — 이 거대 모델들은 ego와 exo를 **일관되게 추론**하는가?\n\n[EgoExo-Con](https://arxiv.org/abs/2510.26113)(2025) 라인의 진단은 충격적이다. 같은 사건을 묻되 시점만 바꾸면, video-LLM의 **cross-view 시간 추론 정확도가 단일 시점의 절반 언저리로 붕괴**한다. Qwen2.5-VL 7B는 단일 시점 ~54–56%에서 cross-view 33.0%로, TimeChat은 ~61–62%에서 42.1%로 떨어진다. 모델이 강건한 시간 추론이 아니라 **시점별 편향**에 기대고 있다는 증거다.\n\n이 진단에서 나온 방법이 **View-GRPO**다. 순진한 해법은 \"두 시점에 같은 답을 강제\"하는 것이지만, 이는 틀렸다 — 시점이 다르면 보이는 단서가 다르므로 추론 경로도 달라야 한다. View-GRPO는 GRPO(Group Relative Policy Optimization) 기반 강화학습으로, **시점별로 고유한 추론 흔적을 남기되 결론은 일치하도록** 유도한다. 형식·정확도·추론 보상을 결합해 \"다른 눈으로 보되 같은 진실에 도달\"하게 만든다. 10장은 이 통합과 함께 10편 전체를 하나의 지도로 묶는다.",
+      "sections": [
+        {
+          "title": "consistency gap — 거대 모델의 맹점",
+          "content": "EgoExo-Con의 핵심 기여는 **문제를 드러낸 진단**이다. 벤치마크를 만들어, 같은 사건에 대한 시간적 질문(언제 무엇이 일어났나)을 ego와 exo 각각으로 물었다. 이상적이라면 같은 사건이니 답이 일관되어야 한다.\n\n결과는 그렇지 않았다. cross-view 일관성 점수가 단일 시점 성능의 **절반 안팎**에 그쳤다.\n\n| 모델 | 단일 시점 | cross-view 일관 |\n|---|---|---|\n| Qwen2.5-VL 7B | ~54–56% | 33.0% |\n| TimeChat | ~61–62% | 42.1% |\n\n이 격차가 폭로하는 것은 뼈아프다. 모델이 사건의 **시간 구조를 진짜로 추론**했다면 시점이 바뀌어도 답이 유지되어야 한다. 절반으로 무너진다는 것은, 모델이 각 시점의 **표면적 편향**(ego에는 손, exo에는 전신 같은)에 답을 걸어놨다는 뜻이다. 1~9장이 인코더·대응·생성에서 시점 불변을 추구했는데, 정작 **추론 계층**에서는 시점 불변이 무너져 있었던 것이다.\n\n이것이 왜 통합의 자리인가. 앞선 모든 연구가 '표현·객체·픽셀'의 일관성을 다뤘다면, video-LLM 시대의 새 전선은 **추론(reasoning)의 일관성**이다. 그리고 그것이 아직 심각하게 부족하다는 진단이 출발점이다.",
+          "figures": [
+            {
+              "src": "/posts/ego-exo-view-consistency/figures/2510.26113/teaser.png",
+              "caption": "Evaluation setup in EgoExo-Con. The same query is applied to synchronized egocentric and exocentric video pairs, and model responses are checked for consistency.",
+              "captionKr": "EgoExo-Con 평가: 동기화된 ego·exo에 같은 질의를 던져 cross-view 일관성을 측정.",
+              "alt": "EgoExo-Con cross-view consistency evaluation setup",
+              "kind": "teaser",
+              "figNo": "1",
+              "arxivId": "2510.26113"
+            }
+          ]
+        },
+        {
+          "title": "'같은 답 강제'가 틀린 이유",
+          "content": "격차를 봤으니 고치면 된다. 순진한 처방은 \"두 시점에 **동일한 출력**을 내도록 강제\"하는 것이다. 손실로 두 시점 답을 똑같이 맞추면 될 것 같다.\n\n이것은 틀렸다. 핵심은 **시점이 다르면 관측 가능한 단서가 다르다**는 것이다. ego에서는 손과 조작 객체가 또렷하지만 전체 공간 배치는 안 보인다. exo는 반대다. 같은 사건이라도 \"무엇을 근거로\" 답에 이르는 경로는 시점마다 정당하게 다르다.\n\n두 시점에 똑같은 추론을 강제하면, 한 시점에서는 안 보이는 단서를 억지로 쓰게 되거나, 각 시점의 고유 정보를 버리게 된다. 일관성을 **출력 동일성**으로 오해하면 오히려 추론을 망친다.\n\n올바른 목표는 미묘하다 — **추론 경로는 시점마다 고유하되, 도달하는 결론은 일치**해야 한다. \"다른 창문으로 같은 방을 보되, 방에 대한 결론은 같다.\" 이 구분이 View-GRPO 설계의 핵심 통찰이고, 8장 CCMP가 '출력을 똑같이'가 아니라 '왕복이 닫히게'로 일관성을 정의했던 것과 같은 성숙함이다."
+        },
+        {
+          "title": "View-GRPO와 10편의 통합 지도",
+          "content": "**View-GRPO**는 이 미묘한 목표를 강화학습으로 구현한다. GRPO(Group Relative Policy Optimization) 위에서, 모델이 `<think>` 추론 흔적과 `<answer>` 결론을 생성하게 하고 세 보상을 건다.\n\n- **형식(format) 보상**: 정해진 추론·답변 템플릿을 따르는가.\n- **정확도(accuracy) 보상**: 시간적 답(tIoU 등)이 맞는가.\n- **추론(reasoning) 정합 보상**: 시점별 고유 추론을 하되 결론이 cross-view로 일치하는가.\n\nRL이라 미분 불가능한 \"결론 일치\" 같은 목표를 직접 최적화할 수 있다. 그 결과 모델은 각 시점의 고유 단서로 **시점 특화 추론**을 전개하면서도, 서로 다른 두 경로가 **같은 결론**으로 수렴하도록 학습된다. '같은 답 강제'의 함정을 피하면서 consistency gap을 좁힌다.\n\n이제 10편을 하나의 지도로 묶자.\n\n| 단계 | 일관성의 층위 | 대표 논문 |\n|---|---|---|\n| ① 표현 정렬 | feature가 시점 불변 | Actor-Observer · Ego-Exo · AE2 · BYOV · Rosetta Stone |\n| ② 객체 대응 | 픽셀·객체가 시점 간 대응 | ObjectRelator · O-MaMa · CCMP |\n| ③ 시점 생성 | 한 시점에서 다른 시점을 재구성 | Exo2Ego |\n| ④ 추론 통합 | 추론이 시점 간 일관 | View-GRPO |\n\n관통하는 서사는 **\"일관성의 정의가 점점 깊어진 역사\"**다. feature 유사도 → 시간 정렬 → 픽셀 대응 → 사실적 생성 → 추론 일치. 각 단계는 앞 단계의 한계(더 얕은 일관성)를 넘으려는 시도였다. 그리고 매 전환의 동력은 **가정의 완화**(paired→unpaired)와 **일관성 요구의 심화**(표현→객체→픽셀→추론)였다.\n\n마지막 통찰 하나. 8장 CCMP의 '왕복 일관성'과 10장 View-GRPO의 '결론 일치'는 같은 성숙함을 공유한다 — **일관성은 '똑같음'이 아니라 '되돌아옴·수렴함'**이라는 것. 두 시점은 다르게 보여야 정상이고, 그 다름에도 불구하고 같은 진실로 모이는 것이 진짜 일관성이다. 이것이 ego-exo 연구가 8년에 걸쳐 도달한 가장 깊은 정의다.",
+          "diagram": {
+            "type": "mermaid",
+            "code": "flowchart TB\n  EV[\"Ego 시점\"] --> RE[\"시점별 추론<br/>(고유 경로 허용)\"]\n  XV[\"Exo 시점\"] --> RX[\"시점별 추론<br/>(고유 경로 허용)\"]\n  RE --> C{\"결론 일치?<br/>(출력 동일 아님)\"}\n  RX --> C\n  C -->|\"GRPO 보상\"| OK[\"view-consistent 추론\"]",
+            "caption": "View-GRPO: 시점별 고유 추론 경로는 허용하되 결론 일치에 RL 보상 — '같은 답 강제'가 아니다."
+          },
+          "figures": [
+            {
+              "src": "/posts/ego-exo-view-consistency/figures/2510.26113/method.png",
+              "caption": "Overview of our approach. (a) In supervised fine-tuning, the model is trained to directly predict the same query answers (, video moments) for synchronized video pairs. (b) View-GRPO trains a model to provide viewpoint-specific reasoning chains, which are generated by GPT-5 (top).",
+              "captionKr": "View-GRPO 개요: 지도학습(SFT) 대비, 시점별 추론+결론 일치를 RL 보상으로 학습.",
+              "alt": "View-GRPO: SFT versus RL with view-specific reasoning rewards",
+              "kind": "architecture",
+              "figNo": "6",
+              "arxivId": "2510.26113"
+            }
+          ]
+        },
+        {
+          "title": "열린 전선",
+          "content": "View-GRPO가 문을 열었지만 끝은 아니다. **EgoExo-Con 주의사항**: 이 라인은 벤치마크·데이터 기여가 크지만(이 코스는 데이터 논문을 제외했으므로 View-GRPO **방법**만 다뤘다), 방법으로서의 View-GRPO는 아직 초기다.\n\n남은 질문들이 분명하다. 첫째, 추론 일관성을 표현·대응 계층과 **어떻게 연결**할 것인가 — 좋은 cross-view 인코더(1~5장)나 대응(6~8장)이 추론 일관성을 직접 끌어올릴까? 둘째, RL 보상 설계가 특정 벤치마크에 **과적합**되지 않는가. 셋째, 생성(9장)과 추론(10장)을 합쳐, 모델이 없는 시점을 상상하며 추론하는 **통합 world model**로 갈 수 있는가.\n\n10편의 여정이 남긴 가장 큰 그림은 이것이다. ego-exo 일관성은 하나의 기법이 아니라 **하나의 렌즈**다 — \"같은 세계를 다른 시점으로 볼 때, 무엇이 보존되어야 하는가\"라는 질문. 표현학습, 대응, 생성, 추론이 모두 이 한 질문의 서로 다른 깊이의 답이었다. 그리고 이 질문은 로보틱스(3인칭 시연→1인칭 실행), AR(두 시점 겹치기), 구현 지능(embodied AI) 전반의 근본 문제로 계속 확장된다."
+        }
+      ],
+      "analogy": {
+        "title": "두 증인의 진술과 판사",
+        "content": "같은 사건을 두 증인이 다른 위치에서 봤다. 정문 경비(exo)와 사건 당사자(ego)다. 서투른 판사는 \"두 진술이 **글자 그대로 똑같아야** 진실\"이라 여긴다(같은 답 강제). 하지만 이건 틀렸다 — 경비는 전체 동선을 봤고 당사자는 손에 든 것을 봤다. **정당하게 다른 것을 봤다.**\n\n현명한 판사(View-GRPO)는 다르게 한다. 각 증인이 **자기가 본 것으로 자기 추론**을 펼치게 하되(시점별 추론), 두 추론이 **같은 결론**으로 수렴하는지를 본다(결론 일치). 진술의 표면이 아니라 도달하는 진실이 같아야 한다. 강화학습은 이 '수렴하는가'라는 미분 불가능한 판단을 직접 보상으로 최적화하는 장치다.\n\n충격은 진단에 있었다. 최신 거대 모델(video-LLM)조차, 시점이 바뀌면 같은 사건에 대한 판단을 절반이나 뒤집었다 — 사건을 이해한 게 아니라 각 시점의 겉모습에 답을 걸어놨던 것이다. 8년의 ego-exo 연구가 인코더·대응·생성에서 시점 불변을 쌓아왔는데, 정작 추론에서 그것이 무너져 있었다. 그래서 마지막 전선은 **다르게 보되 같은 진실에 이르는 추론**이다."
+      },
+      "codeExample": {
+        "language": "python",
+        "executable": true,
+        "intro": "View-GRPO의 핵심 — 시점별 고유 추론은 허용하되 결론 일치에 보상 — 을 개념 골격으로 보자.",
+        "code": "import torch\n\ndef view_grpo_reward(ego_out, exo_out, gt_answer, iou_fn):\n    \"\"\"ego_out/exo_out: 각 시점의 (reasoning, answer). '같은 답 강제'가 아니라\n       '시점별 추론 + 결론 일치'를 보상.\"\"\"\n    # 1) format: 추론/답변 템플릿을 지켰는가\n    r_fmt = float(ego_out['has_think'] and exo_out['has_think'])\n    # 2) accuracy: 시간적 답이 정답과 맞는가 (tIoU)\n    r_acc = 0.5*iou_fn(ego_out['answer'], gt_answer) + 0.5*iou_fn(exo_out['answer'], gt_answer)\n    # 3) consistency: 추론 '경로'는 달라도 '결론'은 일치하는가 (출력 동일성 아님!)\n    r_con = float(iou_fn(ego_out['answer'], exo_out['answer']) > 0.7)\n    return r_fmt + r_acc + r_con      # GRPO가 이 결합 보상을 직접 최적화\n\n# 순진한 오답: loss = ||ego_out - exo_out||  ← 시점별 고유 단서를 파괴한다",
+        "walkthrough": "핵심은 세 보상의 결합과, 마지막 주석의 **오답 대비**다. 순진한 해법(`||ego_out - exo_out||`)은 두 시점 출력을 똑같이 강제해 각 시점의 고유 단서를 파괴한다. View-GRPO는 대신 `r_con`을 **결론(answer) 일치**에만 걸고 추론 경로(`think`)의 차이는 허용한다 — '다르게 보되 같은 결론'. RL(GRPO)이라 'IoU>0.7이면 일치'처럼 미분 불가능한 목표를 직접 보상으로 최적화한다. 이는 8장 CCMP가 '출력 동일'이 아니라 '왕복이 닫힘'으로 일관성을 정의한 것과 같은 성숙함이다."
+      },
+      "industryEvaluation": {
+        "overview": "video-LLM·멀티뷰 추론을 다루는 팀에서 이 논문은 'consistency를 출력 동일성으로 오해하지 않는' 감각과 RL 보상 설계, 그리고 진단→방법의 연구 구조를 검증한다. 10편을 통합하는 시야를 본다.",
+        "whatEngineersLookFor": [
+          "consistency gap 진단의 의미(표면 편향 의존)를 해석하는가",
+          "'같은 답 강제'가 왜 틀렸는지, 올바른 목표가 무엇인지 구분하는가",
+          "RL로 미분 불가능한 일관성 목표를 최적화하는 이유를 아는가"
+        ],
+        "redFlags": [
+          "cross-view 일관성을 두 시점 출력 동일성으로 정의",
+          "진단(벤치마크)과 방법(View-GRPO)을 뭉뚱그림",
+          "추론 일관성을 인코더·대응 계층과 무관하게 봄"
+        ],
+        "interviewQuestions": [
+          {
+            "question": "video-LLM의 cross-view consistency gap이 폭로하는 것은?",
+            "modelAnswer": "단일 시점 대비 cross-view 정확도가 절반 언저리로 떨어진다는 것은, 모델이 사건의 **시간 구조를 진짜 추론**한 게 아니라 각 시점의 **표면적 편향**(ego의 손, exo의 전신 등)에 답을 걸어놨다는 증거다. 1~9장이 인코더·대응·생성에서 시점 불변을 쌓았지만 추론 계층에선 그것이 무너져 있었다."
+          },
+          {
+            "question": "두 시점에 '같은 답을 강제'하면 왜 안 되나? 올바른 목표는?",
+            "modelAnswer": "시점이 다르면 관측 가능한 단서가 다르다 — ego는 손, exo는 공간 배치. 같은 추론을 강제하면 안 보이는 단서를 억지로 쓰거나 고유 정보를 버린다. 올바른 목표는 **추론 경로는 시점별로 고유하되 결론은 일치**. View-GRPO는 결론 일치에만 보상을 걸고 추론 차이는 허용한다."
+          },
+          {
+            "question": "왜 이 목표에 지도학습 손실이 아니라 RL(GRPO)을 쓰나?",
+            "modelAnswer": "'두 시점 결론이 일치하는가'(예: tIoU>0.7)나 '추론 흔적이 형식을 지키는가' 같은 목표는 **미분 불가능**하다. RL은 이런 이산·비미분 보상을 직접 최적화할 수 있어, 형식·정확도·결론일치를 결합 보상으로 걸고 시점 특화 추론을 학습시킨다."
+          }
+        ],
+        "masteryVsFamiliar": "겉핥기는 'RL로 cross-view를 맞춘다'까지다. 통달한 사람은 consistency gap이 '추론이 표면 편향에 의존'함을 폭로한 진단임을 해석하고, 출력 동일성 오해를 피한 '경로는 달라도 결론 일치' 목표, RL이 필요한 이유, 그리고 이 논문이 표현→대응→생성→추론으로 깊어진 일관성 역사의 통합점임을 지도화한다."
+      },
+      "keyTakeaways": [
+        {
+          "title": "전용 모델→video-LLM",
+          "content": "정렬·대응·생성의 전용 모델 시대에서 거대 video-LLM 추론 시대로 무대가 통합된다."
+        },
+        {
+          "title": "consistency gap",
+          "content": "video-LLM의 cross-view 추론이 단일 시점의 절반 — 표면 편향에 답을 걸어놓았다는 폭로."
+        },
+        {
+          "title": "출력 동일성은 오답",
+          "content": "시점이 다르면 단서가 다르다 — 같은 답 강제는 고유 정보를 파괴한다."
+        },
+        {
+          "title": "경로는 달라도 결론 일치",
+          "content": "시점별 고유 추론을 허용하되 결론이 수렴하도록 — 일관성의 성숙한 정의."
+        },
+        {
+          "title": "View-GRPO(RL)",
+          "content": "형식·정확도·결론일치 보상으로 미분 불가능한 일관성 목표를 직접 최적화한다."
+        },
+        {
+          "title": "일관성 심화의 역사",
+          "content": "feature→시간→픽셀→생성→추론 — 일관성의 정의가 점점 깊어진 8년의 궤적."
+        },
+        {
+          "title": "열린 world model",
+          "content": "생성(상상)과 추론(일치)을 합친 통합 embodied world model이 다음 전선이다."
+        }
+      ]
+    }
+  ]
+}

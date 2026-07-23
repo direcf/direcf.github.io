@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch6: Building Effective Agents: The Loop-as-Primitive Manifesto — Loop Engineering — direcf</title>
+  <meta name="description" content="Anthropic이 2024년에 &#x27;에이전트란 도구를 쓰며 환경 피드백을 루프로 도는 LLM&#x27;이라 못 박고, workflow와 agent를 가르며, 무거운 프레임워크 대신 API를 직접 쓰라고 선언했다. framework에서 loop로 넘어가는 결정적 피벗.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;height:22px;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{display:block;grid-template-columns:1fr}
+  .sidebar{display:none}
+  .main{width:100%;min-width:0}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+  .sb-block table,.a-body table,.c-walk table{display:block;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}
+}
+
+.math-display{display:block;max-width:100%;overflow-x:auto;overflow-y:hidden;padding:10px 0;text-align:center;-webkit-overflow-scrolling:touch}
+.math-display .katex-display{margin:0;max-width:100%}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><linearGradient id="direcf-nav-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs></svg>
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg></span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg></span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.25 15a4.5 4.5 0 0 0 4.5 4.5H18a3.75 3.75 0 0 0 1.332-7.257 3 3 0 0 0-3.758-3.848 5.25 5.25 0 0 0-10.233 2.33A4.502 4.502 0 0 0 2.25 15Z"/></svg></span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"/></svg></span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/ai-engineering">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg></span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/ai-engineering">Loop Engineering</a><span class="sep">›</span>
+        <strong>Ch06 Building Effective Agents: The Loop-as-Primitive Manifesto</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 06 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">📐</div>
+      <h1 class="chapter-title">Building Effective Agents: The Loop-as-Primitive Manifesto</h1>
+      <div class="chapter-title-kr">Building Effective Agents — &#x27;루프가 곧 primitive&#x27;라는 선언문</div>
+      <div class="chapter-tldr">Anthropic이 2024년에 &#x27;에이전트란 도구를 쓰며 환경 피드백을 루프로 도는 LLM&#x27;이라 못 박고, workflow와 agent를 가르며, 무거운 프레임워크 대신 API를 직접 쓰라고 선언했다. framework에서 loop로 넘어가는 결정적 피벗.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-06.png" alt="Chapter 6 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 6 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>Anthropic의 agent 정의와 workflow/agent 구분을 정확히 인용·설명한다</li><li>&#x27;프레임워크보다 API 직접 사용&#x27;을 권하는 이유와 그 예외를 안다</li><li>다섯 가지 workflow 패턴(prompt chaining, routing, parallelization, orchestrator-workers, evaluator-optimizer)을 구분한다</li><li>이 글이 왜 framework→loop 피벗의 선언문으로 불리는지 설명한다</li><li>복잡성을 &#x27;이득이 증명될 때만&#x27; 추가하는 실무 원칙을 적용한다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>2~5장에서 우리는 루프가 어떻게 풍부해지는지(행동·반성·기억·인지)를 봤다. 하지만 이 모든 걸 관통하는 <strong>하나의 선언</strong>이 2024년 말 Anthropic에서 나왔다. 바로 <a href="https://www.anthropic.com/engineering/building-effective-agents">Building Effective Agents</a>다. 이 글은 새 알고리즘을 제안하지 않는다. 대신 업계가 어렴풋이 느끼던 것을 <strong>명료한 언어로 못 박았다</strong> — 그래서 loop engineering의 선언문이 됐다.</p>
+<p>핵심 문장은 이것이다.</p>
+<blockquote>
+<p><em>"Agents are typically just LLMs using tools based on environmental feedback in a loop."</em></p>
+</blockquote>
+<p>'just(그저)'와 'loop(루프)'가 이 문장의 무게중심이다. 에이전트는 신비한 무언가가 아니라 <strong>그저 루프</strong>다. 이 한 문장이 AutoGPT식 거대 프레임워크의 시대를 닫고, '루프를 직접 잘 짜는' 시대를 열었다.</p>
+<p>이 글의 두 번째 기여는 <strong>workflow와 agent를 명확히 가른 것</strong>, 세 번째는 <strong>'프레임워크 대신 API를 직접 쓰라'는 반(反)프레임워크 원칙</strong>이다. 이 장에서 우리는 앞 4개 장의 실험들이 왜 하나의 패러다임으로 수렴하는지, 그리고 그 패러다임이 프로덕션 설계에 주는 구체적 지침을 배운다. 여기가 코스의 정확한 중심축이다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>&#x27;그저 루프&#x27;: 에이전트의 탈신비화</h2><p>2023년 AutoGPT 열풍 때, 에이전트는 마치 스스로 사고하는 마법 상자처럼 여겨졌다. 목표만 던지면 알아서 하위 목표를 쪼개고, 도구를 쓰고, 자기를 호출하며 무한히 일하는 — 그러나 실제로는 자주 헛돌고, 비싸고, 디버깅이 불가능한 상자였다.</p>
+<p>Anthropic의 정의는 이 신비를 걷어낸다. 에이전트는 그저 'LLM이 도구를 쓰고, 환경 피드백을 받아, 루프를 도는' 것이다. 2장 ReAct의 while 루프, 그 이상도 이하도 아니다.</p>
+<p>이 탈신비화가 왜 중요한가? <strong>디버깅과 통제가 가능해지기 때문이다.</strong> 루프라면 나는 정확히 안다 — 언제 반복하고, 무엇을 컨텍스트에 넣고, 언제 멈추는지. 마법 상자는 열어볼 수 없지만, 내가 짠 루프는 매 줄을 들여다볼 수 있다.</p>
+<p>그리고 이 정의는 앞 장들을 하나로 묶는다. Reflexion? 루프에 반성 단계를 넣은 것. Voyager? 루프에 skill 메모리를 붙인 것. Generative Agents? 루프에 인지 서브시스템을 단 것. 전부 '루프 + α'다. 루프가 만물의 기본 단위(primitive)라는 것 — 이것이 이 글의 첫 번째 못이다.</p></div><div class="sb-block"><h2>Workflow vs Agent: 스펙트럼을 긋다</h2><p>두 번째 못은 용어의 정리다. 사람들이 '에이전트'라 뭉뚱그려 부르던 것을 Anthropic은 둘로 가른다.</p>
+<blockquote>
+<p><em>"Workflows are systems where LLMs and tools are orchestrated through predefined code paths. Agents, on the other hand, are systems where LLMs dynamically direct their own processes and tool usage."</em></p>
+</blockquote>
+<table>
+<thead>
+<tr>
+<th>축</th>
+<th>Workflow</th>
+<th>Agent</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>흐름 통제</td>
+<td>개발자의 코드</td>
+<td>LLM의 실시간 판단</td>
+</tr>
+<tr>
+<td>예측 가능성</td>
+<td>높음</td>
+<td>낮음</td>
+</tr>
+<tr>
+<td>디버깅</td>
+<td>쉬움</td>
+<td>어려움</td>
+</tr>
+<tr>
+<td>적합 상황</td>
+<td>단계가 알려진 반복 작업</td>
+<td>단계를 미리 알 수 없는 개방형 작업</td>
+</tr>
+</tbody>
+</table>
+<p>핵심 실무 지침은 <strong>'대부분의 경우 workflow로 충분하다'</strong> 는 것이다. 진짜 자율 agent가 필요한 경우는 생각보다 드물다. 개방형이고, 단계 수를 예측할 수 없고, LLM의 판단에 흐름을 맡겨야만 하는 문제 — 그럴 때만 agent를 쓴다. 나머지는 예측 가능하고 디버깅 쉬운 workflow가 낫다.</p>
+<p>이 구분이 8~10장의 그래프 엔지니어링을 예고한다. 그래프는 결국 이 스펙트럼을 <strong>한 시스템 안에 섞는</strong> 도구다 — 큰 뼈대는 workflow(고정 엣지)로, 특정 노드만 agent(자율 루프)로. Anthropic이 그은 이 선이 없었다면, 그래프 오케스트레이션이 무엇을 조율하는지조차 말할 수 없었을 것이다.</p></div><div class="sb-block"><h2>반(反)프레임워크: API를 직접 써라</h2><p>세 번째 못이 가장 논쟁적이다. Anthropic은 <strong>무거운 에이전트 프레임워크를 기본값으로 삼지 말라</strong>고 권한다.</p>
+<blockquote>
+<p><em>"We suggest that developers start by using LLM APIs directly: many patterns can be implemented in a few lines of code ... consider adding complexity only when it demonstrably improves outcomes."</em></p>
+</blockquote>
+<p>이유는 명확하다. 프레임워크는 <em>"extra layers of abstraction that can obscure the underlying prompts"</em> — 밑바닥 프롬프트와 루프를 두꺼운 추상화로 가려, 무엇이 실제로 벌어지는지 알 수 없게 만든다. 1장 밀키트 비유가 그대로다.</p>
+<p>여기서 중요한 뉘앙스: 이건 '프레임워크를 절대 쓰지 마라'가 아니다. <strong>프레임워크를 쓰더라도 그 밑에서 무슨 일이 일어나는지 이해하고, 복잡성은 이득이 증명될 때만 더하라</strong>는 것이다. 기본값을 '프레임워크 먼저'에서 'API 직접 먼저'로 뒤집는 것이 요지다.</p>
+<p>글은 또 유용한 building block과 다섯 workflow 패턴을 제시한다. 토대는 <strong>augmented LLM</strong>(검색·도구·메모리로 증강된 LLM)이고, 그 위에 ① prompt chaining ② routing ③ parallelization ④ orchestrator-workers ⑤ evaluator-optimizer의 다섯 조합 패턴이 있다. 이들은 대부분 몇십 줄 코드로 짤 수 있는 것들이다 — 거대 프레임워크 없이. 이 다섯 패턴이 8~10장 그래프 구조의 원형 어휘가 된다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">오케스트라 지휘자냐, 재즈 즉흥연주냐</div>
+      <div class="a-body"><p>음악에는 두 가지 연주 방식이 있다. <strong>오케스트라</strong>는 악보(predefined code path)가 모든 걸 정한다. 언제 바이올린이 들어오고 언제 팀파니가 울리는지 미리 다 적혀 있다. 지휘자는 그 악보를 정확히 실현한다. 예측 가능하고, 매번 거의 같고, 어디가 틀렸는지 악보와 대조하면 안다. 이것이 <strong>workflow</strong>다.</p>
+<p><strong>재즈 즉흥연주(jam)</strong> 는 다르다. 코드 진행이라는 느슨한 뼈대만 있고, 그 위에서 연주자가 실시간으로 무엇을 칠지 스스로 정한다. 예측 불가능하고, 매번 다르고, 짜릿하지만 통제하기 어렵다. 이것이 <strong>agent</strong>다.</p>
+<p>Anthropic의 메시지는 이렇다 — <strong>대부분의 곡은 오케스트라로 연주하는 게 낫다.</strong> 재즈 즉흥이 필요한 순간은 정말 개방적이고 예측 불가능한 무대뿐이다. 그리고 재즈를 하겠다고 값비싼 '전자동 재즈 머신(프레임워크)'을 살 필요도 없다 — 좋은 연주자(직접 짠 루프)와 기본 악기(API)면 된다. 머신은 무슨 소리를 내는지 감춰버려서, 정작 연주가 이상할 때 고칠 수가 없다. 진짜 실력은 악보와 즉흥 사이에서 '이 곡엔 어느 쪽이 맞는가'를 고르는 판단 — 그게 8장부터 배울 그래프 엔지니어링이다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>Anthropic이 말한 '프레임워크 없이 몇 줄로'를 실증해보자. 다섯 패턴 중 가장 강력한 evaluator-optimizer를 순수 파이썬으로 구현한다. 프레임워크 임포트가 단 하나도 없다는 점, 그리고 이게 사실상 3장 Self-Refine을 workflow로 정형화한 것임에 주목하라 — 개념들이 어떻게 재조합되는지 보인다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">def augmented_llm(llm, prompt, tools=None, memory=None):
+    # &#x27;증강된 LLM&#x27; = 모든 패턴의 토대 building block
+    ctx = (memory or &quot;&quot;) + prompt
+    return llm(ctx, tools=tools)
+
+def evaluator_optimizer(task, generator, evaluator, max_rounds=3):
+    &quot;&quot;&quot;Anthropic의 5패턴 중 하나. 생성자와 평가자를 분리한 workflow.&quot;&quot;&quot;
+    draft = generator(f&quot;작업을 수행하라:\n{task}&quot;)
+
+    for _ in range(max_rounds):
+        verdict = evaluator(                       # 평가자 = 별도 역할(별도 프롬프트/모델)
+            f&quot;작업:\n{task}\n\n산출물:\n{draft}\n\n&quot;
+            &quot;PASS 또는 구체적 개선 지시를 출력하라.&quot;)
+
+        if verdict.strip().startswith(&quot;PASS&quot;):     # 예측 가능한 정지 조건
+            return draft
+        draft = generator(                         # 피드백을 반영해 재생성
+            f&quot;작업:\n{task}\n\n이전:\n{draft}\n\n개선 지시:\n{verdict}&quot;)
+    return draft
+
+# workflow: 흐름(생성→평가→분기)이 &#x27;코드&#x27;로 고정 = 예측 가능·디버깅 쉬움
+# 만약 generator가 스스로 도구·다음 단계를 정하게 하면 → 그 지점이 agent가 됨
+</code></pre>
+      <div class="c-walk"><p>이 예제의 교훈 셋. <strong>(1) 프레임워크 제로</strong> — LangChain도 뭣도 없이, 강력한 에이전트 패턴이 30줄로 끝난다. Anthropic의 'API를 직접 써라'가 과장이 아님을 보여준다. <strong>(2) workflow의 정체</strong> — 흐름(생성→평가→분기→정지)이 전부 파이썬 <code>for</code>/<code>if</code>로 <strong>코드에 고정</strong>돼 있다. 그래서 예측 가능하고 디버깅이 쉽다. 이것이 agent(LLM이 흐름을 정함)와의 결정적 차이다. <strong>(3) 역할 분리</strong> — <code>generator</code>와 <code>evaluator</code>를 다른 함수(다른 프롬프트/모델)로 나눈 게 self-bias(3장)를 완화한다. 이 evaluator-optimizer는 사실상 Self-Refine을 'workflow로 승격'한 것 — 앞 장들의 아이디어가 Anthropic의 어휘로 재정리되는 순간이다. 이 다섯 패턴의 흐름을 노드-엣지로 그리면 그대로 8~10장의 그래프가 된다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">이 글은 2025~2026 에이전트 면접의 사실상 표준 교재다. 면접관은 지원자가 &#x27;workflow로 충분한가 agent가 필요한가&#x27;를 먼저 판단하는 규율을 체화했는지, 프레임워크를 맹신하지 않고 &#x27;이득이 증명될 때만 복잡성을 더하는&#x27; 절제를 아는지를 본다. 이걸 인용할 수 있으면 신뢰도가 크게 오른다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>설계 첫머리에 workflow/agent를 판별하고, 기본값을 workflow로 두는 규율</li><li>&#x27;에이전트 = 루프&#x27;라는 탈신비화된 관점으로 시스템을 분해</li><li>프레임워크를 기본값으로 삼지 않고, 필요성이 증명될 때만 도입하는 절제</li><li>다섯 workflow 패턴을 상황에 맞게 고르고 조합하는 능력</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>모든 문제를 자율 agent로 풀려 하고 workflow를 고려하지 않음</li><li>&#x27;무조건 LangChain/프레임워크부터&#x27;라는 반사적 선택</li><li>복잡성을 이득 증명 없이 선제적으로 쌓음(over-engineering)</li><li>workflow와 agent를 구분 못 하고 &#x27;에이전트&#x27;로 뭉뚱그림</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>주어진 문제를 workflow로 짤지 agent로 짤지 어떤 기준으로 결정하고, 그 근거는?</li><li>Anthropic이 무거운 프레임워크 대신 API 직접 사용을 권하는 이유와, 그럼에도 프레임워크가 정당한 경우는?</li><li>evaluator-optimizer 같은 workflow 패턴은 Self-Refine 같은 논문 기법과 무엇이 같고 다른가?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> **표면**은 &#x27;에이전트 = 루프&#x27;라는 문장을 외운다. **마스터**는 이 글의 세 못(탈신비화·workflow/agent 구분·반프레임워크)을 앞 4개 장의 실험들을 정리하는 렌즈로 쓰고, 실제 설계에서 &#x27;여기는 workflow, 이 노드만 agent&#x27;를 근거와 함께 가르며, 이 스펙트럼 사고가 어떻게 그래프 엔지니어링으로 이어지는지까지 연결한다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>에이전트 = 그저 루프</h3><p>&#x27;LLM이 도구를 쓰며 환경 피드백을 루프로 도는 것&#x27; — 에이전트의 탈신비화가 디버깅·통제를 가능케 한다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>workflow vs agent</h3><p>흐름을 코드가 정하면 workflow, LLM이 실시간에 정하면 agent. 대부분은 workflow로 충분하다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>반프레임워크 원칙</h3><p>기본값은 &#x27;API 직접 사용&#x27;. 복잡성은 이득이 증명될 때만 더한다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>추상화가 프롬프트를 가린다</h3><p>무거운 프레임워크는 밑바닥 프롬프트·루프를 감춰 디버깅을 불가능하게 만든다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>다섯 패턴</h3><p>prompt chaining·routing·parallelization·orchestrator-workers·evaluator-optimizer — 그래프의 원형 어휘.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>앞 장들을 묶는 렌즈</h3><p>Reflexion·Voyager·Generative Agents가 전부 &#x27;루프 + α&#x27;로 통일된다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>그래프의 전제</h3><p>workflow/agent 스펙트럼을 그었기에, 8~10장 그래프가 &#x27;무엇을 섞는지&#x27;를 말할 수 있게 됐다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-05.html">← Generative Agents: Memory + Reflection + Planning as a Primitive</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-07.html">Context Engineering: Curating the Window Each Turn →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch6: ObjectRelator — Ego-Exo View Consistency — direcf</title>
+  <meta name="description" content="로봇·AR은 &#x27;같은 행동&#x27;이 아니라 &#x27;이 컵이 저 컵&#x27;이라는 객체 대응이 필요하다. ObjectRelator는 문제를 cross-view 세그멘테이션으로 세우고, 시점 변화로 무너지는 분할을 XObjAlign 일관성으로 잡는다.">
+  <link rel="canonical" href="https://direcf.github.io/posts/ego-exo-view-consistency/chapter-06.html">
+  <meta property="og:url" content="https://direcf.github.io/posts/ego-exo-view-consistency/chapter-06.html">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Ch6: ObjectRelator — Ego-Exo View Consistency — direcf">
+  <meta property="og:description" content="로봇·AR은 &#x27;같은 행동&#x27;이 아니라 &#x27;이 컵이 저 컵&#x27;이라는 객체 대응이 필요하다. ObjectRelator는 문제를 cross-view 세그멘테이션으로 세우고, 시점 변화로 무너지는 분할을 XObjAlign 일관성으로 잡는다.">
+  <meta property="og:site_name" content="direcf">
+  <meta property="og:image" content="https://direcf.github.io/posts/ego-exo-view-consistency/cheatsheets/chapter-06.png">
+  <meta property="og:image:width" content="1024">
+  <meta property="og:image:height" content="1024">
+  <meta property="og:image:alt" content="Ch6: ObjectRelator — Ego-Exo View Consistency — direcf">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Ch6: ObjectRelator — Ego-Exo View Consistency — direcf">
+  <meta name="twitter:description" content="로봇·AR은 &#x27;같은 행동&#x27;이 아니라 &#x27;이 컵이 저 컵&#x27;이라는 객체 대응이 필요하다. ObjectRelator는 문제를 cross-view 세그멘테이션으로 세우고, 시점 변화로 무너지는 분할을 XObjAlign 일관성으로 잡는다.">
+  <meta name="twitter:image" content="https://direcf.github.io/posts/ego-exo-view-consistency/cheatsheets/chapter-06.png">
+  <script type="application/ld+json">{"@context": "https://schema.org", "@type": "LearningResource", "name": "ObjectRelator", "position": 6, "description": "로봇·AR은 '같은 행동'이 아니라 '이 컵이 저 컵'이라는 객체 대응이 필요하다. ObjectRelator는 문제를 cross-view 세그멘테이션으로 세우고, 시점 변화로 무너지는 분할을 XObjAlign 일관성으로 잡는다.", "learningResourceType": "lecture chapter", "inLanguage": "ko", "isPartOf": {"@type": "Course", "name": "Ego-Exo View Consistency"}, "author": {"@type": "Person", "name": "Seung Jun Lee"}}</script>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;height:22px;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+/* chapter hook (tension opener) */
+.chapter-hook{font-size:19px;line-height:1.6;font-weight:600;color:var(--text);margin:0 0 18px;letter-spacing:-.01em}
+.chapter-hook::first-letter{font-size:1em}
+
+/* reading meta + mini toc */
+.read-meta{display:flex;flex-wrap:wrap;gap:8px;margin:-6px 0 26px}
+.read-meta .pill{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);background:var(--bg-soft);border-radius:100px;padding:3px 11px}
+.mini-toc{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px 20px;margin:0 0 30px}
+.mini-toc .mt-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:10px}
+.mini-toc ol{list-style:none;counter-reset:mt;display:grid;gap:4px}
+.mini-toc li{counter-increment:mt;font-size:13.5px}
+.mini-toc a{color:var(--text-2);display:flex;gap:9px;padding:2px 0}
+.mini-toc a::before{content:counter(mt,decimal-leading-zero);font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);flex:none}
+.mini-toc a:hover{color:var(--accent)}
+.sb-block{scroll-margin-top:72px}
+
+/* figures (paper crops) — bilingual caption + source */
+.figure-block{margin:22px 0}
+.figure-block figure{margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.figure-block img{width:100%;display:block;object-fit:contain;max-height:440px;background:#fff;padding:8px}
+.figure-block.arch img{max-height:none}
+.figure-block figcaption{padding:11px 16px;border-top:1px solid var(--border)}
+.figure-block .fig-kr{font-size:13.5px;line-height:1.6;color:var(--text-2)}
+.figure-block .fig-orig{font-size:12px;line-height:1.5;color:var(--muted);margin-top:5px}
+.figure-block .fig-src{display:block;font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:7px}
+.figure-block .fig-src a{color:var(--accent)}
+.fig-two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+
+/* mermaid concept diagrams */
+.diagram-block{margin:24px 0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:20px 16px;text-align:center;overflow-x:auto}
+.diagram-block .mermaid{display:flex;justify-content:center;min-height:40px}
+.diagram-block figcaption{font-size:12.5px;color:var(--muted);margin-top:12px;line-height:1.5;text-align:center}
+
+/* interview Q&A (self-test) */
+.qa-item{border:1px solid var(--border);border-radius:8px;margin-bottom:8px;overflow:hidden;background:var(--bg-card)}
+.qa-item>summary{cursor:pointer;padding:12px 15px;font-size:13.5px;font-weight:600;color:var(--text);list-style:none;display:flex;gap:9px;align-items:baseline}
+.qa-item>summary::-webkit-details-marker{display:none}
+.qa-item>summary::before{content:"Q";font-family:'SF Mono',Menlo,monospace;font-size:11px;font-weight:700;color:#6d28d9;flex:none}
+.qa-item[open]>summary{border-bottom:1px solid var(--border)}
+.qa-answer{padding:12px 15px 14px 33px;font-size:13.5px;color:var(--text-2);line-height:1.7}
+.qa-answer::before{content:"A";font-family:'SF Mono',Menlo,monospace;font-size:11px;font-weight:700;color:var(--accent);margin-right:9px}
+
+/* next teaser */
+.next-teaser{background:linear-gradient(135deg,var(--accent-soft),#f5f3ff);border:1px solid var(--border);border-radius:var(--r);padding:16px 20px;margin:44px 0 0}
+.next-teaser .nt-k{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--accent);text-transform:uppercase}
+.next-teaser .nt-body{font-size:14.5px;color:var(--text);margin-top:5px;line-height:1.6}
+
+/* references */
+.ref-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:18px 22px;margin:28px 0 0}
+.ref-card .rc-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;margin-bottom:12px}
+.ref-list{list-style:none;display:grid;gap:9px;counter-reset:rf}
+.ref-list li{counter-increment:rf;font-size:13px;line-height:1.55;color:var(--text-2);padding-left:26px;position:relative}
+.ref-list li::before{content:"["counter(rf)"]";position:absolute;left:0;font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted)}
+.ref-list .rf-title{color:var(--text);font-weight:600}
+.ref-list a{color:var(--accent);font-family:"SF Mono",Menlo,monospace;font-size:12px}
+
+@media(max-width:800px){
+  .app,.app.collapsed{display:block;grid-template-columns:1fr}
+  .sidebar{display:none}
+  .main{width:100%;min-width:0}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+  .fig-two{grid-template-columns:1fr}
+  .sb-block table,.a-body table,.c-walk table{display:block;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}
+  .diagram-block{padding:14px 10px}
+}
+
+.math-display{display:block;max-width:100%;overflow-x:auto;overflow-y:hidden;padding:10px 0;text-align:center;-webkit-overflow-scrolling:touch}
+.math-display .katex-display{margin:0;max-width:100%}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><linearGradient id="direcf-nav-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs></svg>
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg></span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg></span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.25 15a4.5 4.5 0 0 0 4.5 4.5H18a3.75 3.75 0 0 0 1.332-7.257 3 3 0 0 0-3.758-3.848 5.25 5.25 0 0 0-10.233 2.33A4.502 4.502 0 0 0 2.25 15Z"/></svg></span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/computer-vision">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"/></svg></span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg></span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/computer-vision">Ego-Exo View Consistency</a><span class="sep">›</span>
+        <strong>Ch06 ObjectRelator</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 06 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🧩</div>
+      <h1 class="chapter-title">ObjectRelator</h1>
+      <div class="chapter-title-kr">ObjectRelator — 표현 정렬에서 객체 대응으로</div>
+      <p class="chapter-hook">로봇에게 3인칭 시연 영상을 보여준다. 로봇은 &#x27;커피 내리기&#x27;인 줄은 안다. 그런데 시연 속 그 컵이 자기 눈앞 어느 컵인지를 모른다면, 한 발짝도 못 뗀다.</p>
+      <div class="chapter-tldr">로봇·AR은 &#x27;같은 행동&#x27;이 아니라 &#x27;이 컵이 저 컵&#x27;이라는 객체 대응이 필요하다. ObjectRelator는 문제를 cross-view 세그멘테이션으로 세우고, 시점 변화로 무너지는 분할을 XObjAlign 일관성으로 잡는다.</div>
+      <div class="read-meta"><span class="pill">⏱ 약 6분</span><span class="pill">§ 3 sections</span><span class="pill">🖼 figure 2</span><span class="pill">📊 diagram 1</span></div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-06.png" alt="Chapter 6 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 6 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>표현 정렬과 객체 대응의 근본적 차이를 안다</li><li>cross-view object correspondence를 세그멘테이션으로 정식화하는 이유를 이해한다</li><li>시점 변화가 기존 분할 모델을 무너뜨리는 양상을 설명한다</li><li>XObjAlign의 cross-view 일관성 자기지도 원리를 안다</li><li>MCFuse가 위치 추정을 돕는 역할을 이해한다</li></ul>
+      </div>
+      <nav class="mini-toc"><div class="mt-title">이 챕터에서</div><ol><li><a href="#s6-1">왜 객체 대응인가</a></li><li><a href="#s6-2">시점 변화가 분할을 깨뜨린다</a></li><li><a href="#s6-3">XObjAlign과 MCFuse</a></li></ol></nav>
+
+      <div class="sb-block"><p>1~5장은 표현을 정렬했다. 그런데 로보틱스와 AR이 실제로 요구하는 것은 다른 층위다. 로봇이 3인칭 시연을 1인칭으로 재현하려면, <strong>시연 영상의 특정 객체가 자기 시야의 어느 객체인지</strong>를 픽셀 수준으로 알아야 한다. "같은 행동이다"로는 부족하다. "그 컵 = 이 컵"이 필요하다.</p>
+<p><a href="https://arxiv.org/abs/2411.19083">ObjectRelator</a>(ICCV 2025 Highlight)는 무대를 바꾼다. 문제를 <strong>cross-view object correspondence</strong> — 한 시점에서 지정한 객체를 다른 시점에서 찾아 분할하는 것 — 로 세운다. 입력은 exo(또는 ego)의 객체 마스크, 출력은 ego(또는 exo)에서 그 객체의 마스크다.</p>
+<p>핵심 진단이 날카롭다. 강력한 분할 모델(PSALM 등)조차 <strong>극단적 ego-exo 시점 변화</strong> 앞에서 무너진다 — 복잡한 배경에서 객체를 찾지도, 분할하지도 못한다. ObjectRelator는 두 모듈로 이를 고친다. <strong>XObjAlign</strong>(Cross-View Object Alignment)은 같은 객체의 ego 마스크와 exo 마스크가 유사한 임베딩을 갖도록 자기지도 일관성을 걸고, <strong>MCFuse</strong>는 위치 추정(localization)을 돕는다. 표현이 아니라 객체를, feature 유사도가 아니라 픽셀 마스크를 정렬하는 새 국면이다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block" id="s6-1"><h2>왜 객체 대응인가</h2><p>표현 정렬(1~5장)과 객체 대응은 요구 수준이 다르다.</p>
+<table>
+<thead>
+<tr>
+<th>축</th>
+<th>표현 정렬</th>
+<th>객체 대응</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>질문</td>
+<td>같은 행동인가</td>
+<td>이 객체가 저기 어디인가</td>
+</tr>
+<tr>
+<td>출력</td>
+<td>feature 임베딩</td>
+<td>픽셀 마스크</td>
+</tr>
+<tr>
+<td>응용</td>
+<td>인식·검색</td>
+<td>로보틱스·AR 조작</td>
+</tr>
+</tbody>
+</table>
+<p>로봇이 시연을 모방하려면 시연 속 도구·대상 객체를 자기 시야에서 특정해야 한다. AR이 1인칭·3인칭을 겹쳐 안내하려면 두 시점의 같은 물체를 잇는 앵커가 필요하다. 이 모든 게 <strong>객체 수준의 픽셀 대응</strong>을 요구한다.</p>
+<p>그래서 ObjectRelator는 문제를 세그멘테이션으로 정식화한다. "exo에서 이 마스크로 지정한 객체를, ego에서 찾아 분할하라." 이렇게 하면 대응이 곧 픽셀 마스크로 나와, 다운스트림(로봇 파지, AR 오버레이)이 바로 쓸 수 있다.</p><div class="figure-block"><figure><img src="/posts/ego-exo-view-consistency/figures/2411.19083/teaser.png" alt="Ego-Exo object correspondence task illustration" loading="lazy" decoding="async"><figcaption><div class="fig-kr">Ego-Exo 객체 대응 과제: 한 시점의 객체 마스크를 다른 시점에서 찾아 분할(Ego2Exo 예시).</div><div class="fig-orig">Illustration of the Ego-Exo Object Correspondence Task (example shown: Ego2Exo).</div><span class="fig-src">Figure 6 · <a href="https://arxiv.org/abs/2411.19083" target="_blank" rel="noopener">arXiv:2411.19083</a></span></figcaption></figure></div></div><div class="sb-block" id="s6-2"><h2>시점 변화가 분할을 깨뜨린다</h2><p>순진한 접근은 "강한 분할 모델(SAM·PSALM)을 그냥 쓰면 되지 않나"다. ObjectRelator의 진단은 <strong>아니다</strong>이다.</p>
+<p>ego와 exo는 같은 객체라도 외형이 급변한다. exo에서 작게 보이던 컵이 ego에서는 손에 가려진 채 화면을 채우고, 조명·각도·가림(occlusion)이 완전히 다르다. PSALM 같은 모델은 이 극단적 도메인 이동 앞에서 <strong>객체를 찾지도(localization 실패), 정확히 분할하지도 못한다</strong>. 특히 복잡한 배경에서 오분할이 심하다.</p>
+<p>핵심 원인은 이 모델들이 <strong>단일 시점</strong> 분할로 학습돼, cross-view 대응이라는 개념 자체가 없다는 것이다. "이 마스크가 가리키는 객체의 정체성"을 시점을 넘어 유지하는 능력이 없다.</p>
+<p>따라서 필요한 것은 두 가지다 — (1) 시점이 바뀌어도 <strong>같은 객체의 정체성을 유지</strong>하는 표현, (2) 그 객체가 새 시점의 <strong>어디에 있는지 찾는</strong> 능력. ObjectRelator의 두 모듈이 정확히 이 둘을 담당한다.</p></div><div class="sb-block" id="s6-3"><h2>XObjAlign과 MCFuse</h2><p><strong>XObjAlign(Cross-View Object Alignment)</strong>이 정체성 유지를 맡는다. 자기지도 방식으로, 같은 객체의 ego 마스크 영역 임베딩과 exo 마스크 영역 임베딩이 <strong>가까워지도록</strong> 정렬한다.</p>
+<p><span class="math-display">\[\mathcal{L}_{XObjAlign} = \big\| \phi(\text{obj}_{ego}) - \phi(\text{obj}_{exo}) \big\|^2\]</span></p>
+<p>여기서 <span class="math-inline">\(\phi\)</span>는 마스크 영역의 객체 임베딩이다. 이 일관성 손실은 "시점이 달라도 같은 객체는 같은 표현"을 강제해, 정체성이 시점을 넘어 보존되게 한다. 1장의 triplet 정렬이 <strong>영상 전체</strong> 수준이었다면, XObjAlign은 <strong>객체 마스크</strong> 수준으로 내려온 정렬이다.</p>
+<p><strong>MCFuse</strong>는 위치 추정(localization)을 돕는다. 여러 단서(멀티 컨텍스트)를 융합해 "그 객체가 새 시점의 어느 영역인가"를 좁힌다. 정체성(XObjAlign)만으로는 "무엇인지"는 알아도 "어디인지"가 약한데, MCFuse가 이 위치 축을 보강한다.</p>
+<p>두 모듈이 합쳐져, 극단적 시점 변화에도 객체를 찾아 분할하는 cross-view 대응이 완성된다. 다만 대응이 <strong>자기지도 정렬</strong>에 기대고 명시적 기하(geometry)는 쓰지 않아, 매칭 방식 자체를 더 밀어붙일 여지가 남는다 — 그게 7·8장의 출발이다.</p><figure class="diagram-block"><div class="mermaid">flowchart LR
+  Q[&quot;질의 객체 마스크&lt;br/&gt;(한 시점)&quot;] --&gt; XA[&quot;XObjAlign&lt;br/&gt;정체성 정렬&quot;]
+  XA --&gt; MC[&quot;MCFuse&lt;br/&gt;위치 추정&quot;]
+  MC --&gt; OUT[&quot;다른 시점&lt;br/&gt;객체 마스크&quot;]
+  XA -.-&gt;|&quot;무엇인가&quot;| OUT
+  MC -.-&gt;|&quot;어디인가&quot;| OUT</div><figcaption>ObjectRelator: XObjAlign(정체성)과 MCFuse(위치)가 결합해 극단 시점 변화에도 객체를 찾아 분할.</figcaption></figure><div class="figure-block arch"><figure><img src="/posts/ego-exo-view-consistency/figures/2411.19083/framework.png" alt="ObjectRelator architecture built on PSALM with XObjAlign and MCFuse" loading="lazy" decoding="async"><figcaption><div class="fig-kr">ObjectRelator 구조: PSALM 베이스라인 위에 XObjAlign(정체성)과 MCFuse(위치)를 얹는다.</div><div class="fig-orig">Overview of ObjectRelator. Ego2Exo is used as an example. Our method builds on the PSALM baseline (pink blocks) and tailors it for Ego-Exo Object Correspondence with two novel modules: Multimodal Condition Fusion and Cross-View Object Alignment.</div><span class="fig-src">Figure 7 · <a href="https://arxiv.org/abs/2411.19083" target="_blank" rel="noopener">arXiv:2411.19083</a></span></figcaption></figure></div></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">목격자 두 명의 라인업</div>
+      <div class="a-body"><p>한 사건을 두 목격자가 봤다. 한 명은 정문(exo)에서, 한 명은 사건 한복판(ego)에서. 형사가 정문 목격자에게 "저 사람"이라고 지목받은 인물을, 한복판 목격자의 기억에서 찾아야 한다. 문제는 두 시점에서 그 사람의 외형(각도·거리·가림)이 완전히 달라 보인다는 것이다.</p>
+<p>기존 분할 모델은 각 목격자의 진술을 따로 처리할 뿐, "정문의 그 사람 = 한복판의 이 사람"을 잇지 못한다(단일 시점 학습). ObjectRelator는 두 가지를 한다. XObjAlign은 "같은 사람은 시점이 달라도 같은 인상착의 코드를 갖는다"고 훈련해 정체성을 잇고(무엇인지), MCFuse는 여러 단서로 "한복판 진술의 어느 위치인가"를 좁힌다(어디인지).</p>
+<p>둘이 합쳐져야 라인업이 완성된다 — 정체성만으로는 "그 사람이 여기 있긴 한데 어디?"이고, 위치만으로는 "여기 누군가 있는데 그 사람 맞나?"다. 단, 이 형사는 인상착의 매칭(자기지도)에 의존하지 정밀 삼각측량(기하)은 안 쓴다 — 그 정밀화가 다음 챕터들이다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>XObjAlign의 핵심 — 같은 객체의 ego·exo 마스크 임베딩을 정렬하는 자기지도 일관성 — 을 보자.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import torch, torch.nn.functional as F
+
+def masked_object_embed(feat_map, mask):
+    &quot;&quot;&quot;feat_map: [C,H,W] 백본 특징, mask: [H,W] 객체 마스크 → 객체 임베딩 [C].&quot;&quot;&quot;
+    m = mask.unsqueeze(0)
+    return (feat_map * m).sum((1,2)) / (m.sum() + 1e-6)   # 마스크 영역 평균 풀링
+
+def xobjalign_loss(ego_feat, ego_mask, exo_feat, exo_mask):
+    &quot;&quot;&quot;같은 객체의 ego/exo 마스크 임베딩을 가깝게(정체성 보존).&quot;&quot;&quot;
+    e = F.normalize(masked_object_embed(ego_feat, ego_mask), dim=0)
+    x = F.normalize(masked_object_embed(exo_feat, exo_mask), dim=0)
+    return (1 - (e * x).sum())          # cross-view 객체 일관성
+
+ego_f = torch.randn(64,32,32); exo_f = torch.randn(64,32,32)
+ego_m = (torch.rand(32,32)&gt;0.7).float(); exo_m = (torch.rand(32,32)&gt;0.7).float()
+print(&quot;XObjAlign loss:&quot;, xobjalign_loss(ego_f, ego_m, exo_f, exo_m).item())</code></pre>
+      <div class="c-walk"><p><code>masked_object_embed</code>가 객체 마스크 영역만 평균 풀링해 <strong>객체 단위 임베딩</strong>을 뽑는다 — 영상 전체가 아니라 객체가 단위라는 게 1~5장과의 결정적 차이다. <code>xobjalign_loss</code>는 같은 객체의 ego·exo 임베딩을 코사인으로 가깝게 만들어, 극단적 시점 변화에도 '같은 객체 = 같은 표현'을 강제한다. 이 자기지도 일관성이 정체성을 잇고, 별도의 MCFuse가 위치를 좁혀 최종 마스크를 낸다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">로보틱스·AR 인지 팀에서 이 논문은 &#x27;표현 정렬과 픽셀 대응은 다른 문제&#x27;라는 감각과, 시점 강건 분할 설계를 검증한다. 대응을 세그멘테이션으로 정식화하는 관점을 본다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>표현 정렬로 안 되고 객체 대응이 필요한 응용을 구체화하는가</li><li>시점 변화가 단일 시점 분할을 깨는 원인을 진단하는가</li><li>정체성(무엇)과 위치(어디)를 분리해 설계하는가</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>SAM 같은 강한 분할이면 cross-view도 된다고 가정</li><li>객체 대응과 행동 인식(표현 정렬)을 같은 문제로 취급</li><li>자기지도 정렬과 명시적 기하 대응의 차이를 모름</li></ul></div>
+        </div>
+        <div class="ie-q" style="background:none;padding:0;margin-top:14px"><h4 style="color:#6d28d9">🎤 예상 인터뷰 질문 (클릭하면 모범답안)</h4><details class="qa-item"><summary>표현 정렬(1~5장)이 다 됐는데 왜 객체 대응이 또 필요한가?</summary><div class="qa-answer"><p>표현 정렬은 '같은 행동인가'까지다. 로봇이 3인칭 시연을 모방하려면 시연 속 <strong>특정 객체가 자기 시야 어느 픽셀인지</strong>를 알아야 하고, AR은 두 시점의 같은 물체를 픽셀로 이어야 한다. 이 객체·픽셀 수준 대응은 feature 유사도로는 안 나와서, 문제를 cross-view 세그멘테이션으로 다시 세운다.</p></div></details><details class="qa-item"><summary>PSALM 같은 강한 분할 모델이 ego-exo에서 왜 무너지나?</summary><div class="qa-answer"><p>단일 시점 분할로 학습돼 <strong>cross-view 객체 정체성</strong> 개념이 없다. ego-exo는 같은 객체라도 각도·거리·가림·조명이 급변해, 모델이 객체를 찾지도(localization) 정확히 분할하지도 못한다. 특히 복잡 배경에서 오분할이 심하다. 정체성 유지 + 위치 추정을 명시적으로 넣어야 한다.</p></div></details><details class="qa-item"><summary>XObjAlign과 MCFuse의 역할 분담은?</summary><div class="qa-answer"><p>XObjAlign은 같은 객체의 ego·exo 마스크 임베딩을 가깝게 하는 자기지도 일관성으로 <strong>정체성(무엇인지)</strong>을 시점 넘어 보존. MCFuse는 멀티 컨텍스트를 융합해 <strong>위치(어디인지)</strong>를 좁힘. 정체성만으로는 위치가 약하고 위치만으로는 정체성이 약해, 둘을 분리·결합해야 극단 시점에서 대응이 완성된다.</p></div></details></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 겉핥기는 &#x27;ego-exo 객체를 분할한다&#x27;까지다. 통달한 사람은 표현→객체 대응의 층위 전환을 규정하고, 단일 시점 분할이 깨지는 원인, XObjAlign(정체성)·MCFuse(위치)의 분담, 그리고 자기지도 정렬이라 명시적 매칭·기하로 더 밀어붙일 여지(7·8장)가 남음을 짚는다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>무대 전환</h3><p>표현 정렬(같은 행동)에서 객체 대응(이 컵=저 컵)으로 층위가 바뀐다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>세그멘테이션 정식화</h3><p>cross-view 대응을 &#x27;한 시점 마스크→다른 시점 마스크&#x27;로 세워 로봇·AR이 바로 쓰게 한다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>시점이 분할을 깬다</h3><p>단일 시점 학습 모델(PSALM)은 극단적 ego-exo 변화에서 localization·분할 모두 실패.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>XObjAlign=정체성</h3><p>같은 객체의 ego·exo 마스크 임베딩을 정렬해 시점 넘어 정체성을 보존한다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>MCFuse=위치</h3><p>멀티 컨텍스트 융합으로 &#x27;새 시점 어디에 있는가&#x27;를 좁힌다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>객체가 단위</h3><p>영상 전체가 아니라 객체 마스크가 정렬 단위 — 1~5장과의 결정적 차이.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>기하는 아직</h3><p>자기지도 정렬에 의존, 명시적 매칭·기하는 미사용 — 7·8장의 출발점.</p></div></div>
+      <div class="ref-card"><div class="rc-title">📎 References</div><ol class="ref-list"><li>Fu et al. (2025). <span class="rf-title">ObjectRelator: Enabling Cross-View Object Relation Understanding Across Ego-Centric and Exo-Centric Perspectives</span>. ICCV 2025. <a href="https://arxiv.org/abs/2411.19083" target="_blank" rel="noopener">arXiv:2411.19083</a></li></ol></div>
+      <div class="next-teaser"><div class="nt-k">Next · Ch07</div><div class="nt-body">ObjectRelator는 객체를 &#x27;정렬&#x27;했다. 그런데 대응을 아예 &#x27;마스크 후보 간 매칭 게임&#x27;으로 다시 보면 어떨까? O-MaMa가 dense matching을 mask matching으로 뒤집는다.</div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-05.html">← Viewpoint Rosetta Stone</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-07.html">O-MaMa — Object Mask Matching →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({
+    startOnLoad:true, securityLevel:'loose',
+    theme:'base',
+    themeVariables:{
+      primaryColor:'#dbeafe', primaryTextColor:'#0f1f3a', primaryBorderColor:'#1d4ed8',
+      lineColor:'#1d4ed8', secondaryColor:'#f5f3ff', tertiaryColor:'#ecfdf5',
+      fontFamily:'-apple-system,Pretendard,sans-serif', fontSize:'14px'
+    }
+  });
+</script>
+</body></html>

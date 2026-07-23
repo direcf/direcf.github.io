@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch5: Generative Agents: Memory + Reflection + Planning as a Primitive — Loop Engineering — direcf</title>
+  <meta name="description" content="스탠퍼드의 &#x27;심즈 마을&#x27; 실험. 25명의 LLM 에이전트가 기억 스트림·성찰·계획·검색이라는 인지 아키텍처로 믿을 만한 인간적 행동을 창발시킨다. 이 memory-reflection-planning 삼각형이 이후 모든 에이전트의 재사용 primitive가 됐다.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;height:22px;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{display:block;grid-template-columns:1fr}
+  .sidebar{display:none}
+  .main{width:100%;min-width:0}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+  .sb-block table,.a-body table,.c-walk table{display:block;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}
+}
+
+.math-display{display:block;max-width:100%;overflow-x:auto;overflow-y:hidden;padding:10px 0;text-align:center;-webkit-overflow-scrolling:touch}
+.math-display .katex-display{margin:0;max-width:100%}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><linearGradient id="direcf-nav-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs></svg>
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg></span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg></span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.25 15a4.5 4.5 0 0 0 4.5 4.5H18a3.75 3.75 0 0 0 1.332-7.257 3 3 0 0 0-3.758-3.848 5.25 5.25 0 0 0-10.233 2.33A4.502 4.502 0 0 0 2.25 15Z"/></svg></span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"/></svg></span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/ai-engineering">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg></span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/ai-engineering">Loop Engineering</a><span class="sep">›</span>
+        <strong>Ch05 Generative Agents: Memory + Reflection + Planning as a Primitive</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 05 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🧠</div>
+      <h1 class="chapter-title">Generative Agents: Memory + Reflection + Planning as a Primitive</h1>
+      <div class="chapter-title-kr">Generative Agents — 기억·성찰·계획을 primitive로</div>
+      <div class="chapter-tldr">스탠퍼드의 &#x27;심즈 마을&#x27; 실험. 25명의 LLM 에이전트가 기억 스트림·성찰·계획·검색이라는 인지 아키텍처로 믿을 만한 인간적 행동을 창발시킨다. 이 memory-reflection-planning 삼각형이 이후 모든 에이전트의 재사용 primitive가 됐다.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-05.png" alt="Chapter 5 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 5 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>memory stream · reflection · planning · retrieval 네 요소의 역할과 상호작용을 설명한다</li><li>retrieval의 recency·importance·relevance 삼중 점수 메커니즘을 이해한다</li><li>낮은 수준 관찰을 고수준 통찰로 합성하는 reflection의 필요성을 안다</li><li>이 아키텍처가 왜 &#x27;재사용 가능한 primitive&#x27;로 불리는지 설명한다</li><li>4장 skill 메모리와 5장 경험 메모리의 목적 차이를 구분한다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>4장 Voyager가 '무엇을 할 줄 아는가(skill)'를 기억했다면, <a href="https://arxiv.org/abs/2304.03442">Generative Agents</a>(Park et al., UIST 2023)는 '무엇을 겪었고 그래서 어떻게 행동할까'를 기억한다. 스탠퍼드와 구글이 만든 이 실험은 25명의 LLM 에이전트를 작은 마을(Smallville)에 풀어놓았다. 그들은 아침을 차리고, 출근하고, 수다를 떨고, 심지어 한 에이전트가 발렌타인 파티를 기획하자 소문이 퍼지고 사람들이 모여든다 — 아무도 시나리오를 짜주지 않았는데 말이다.</p>
+<p>이 '믿을 만한 인간적 행동(believable behavior)'은 어디서 나올까? 논문의 답은 하나의 <strong>인지 아키텍처</strong>다. 세 개의 기둥으로 이루어진다.</p>
+<p><strong>(1) Memory stream</strong> — 겪은 모든 것을 자연어로 시간순 기록. <strong>(2) Reflection</strong> — 그 낱낱의 기억을 주기적으로 '고수준 통찰'로 합성. <strong>(3) Planning &amp; retrieval</strong> — 기억을 꺼내 계획을 세우고 행동으로 옮김. 이 memory→reflection→planning 삼각형이 이후 Lilian Weng의 정전급 에이전트 에세이를 비롯해 수많은 프레임워크가 베낀 <strong>재사용 primitive</strong>가 됐다. 이 장에서 우리는 '에이전트의 인지 구조' 그 자체를 설계하는 법을 배운다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>Memory stream: 모든 것을 자연어로 기록</h2><p>가장 기초는 <strong>기억 스트림</strong>이다. 에이전트가 관찰하거나 행동한 모든 것을 자연어 문장으로, 타임스탬프와 함께 길게 쌓는다.</p>
+<blockquote>
+<p><em>"store a complete record of the agent's experiences using natural language."</em></p>
+</blockquote>
+<p>"오전 8시, 부엌에서 커피를 내렸다", "오전 8시 10분, 이웃 John을 마주쳐 인사했다" 같은 식이다. 문제는 이게 금세 수천 개로 불어난다는 것. 매 순간 이 전부를 컨텍스트에 넣을 순 없다.</p>
+<p>그래서 <strong>검색(retrieval)</strong> 이 핵심이 된다. Generative Agents는 각 기억에 세 점수를 매겨 지금 상황에 꺼낼 것을 고른다.</p>
+<table>
+<thead>
+<tr>
+<th>점수</th>
+<th>의미</th>
+<th>예</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Recency</td>
+<td>최근일수록 높음</td>
+<td>방금 일은 잘 떠오름</td>
+</tr>
+<tr>
+<td>Importance</td>
+<td>중요한 사건일수록 높음</td>
+<td>'이사했다' &gt; '양치했다'</td>
+</tr>
+<tr>
+<td>Relevance</td>
+<td>현재 질문과 의미적으로 가까울수록 높음</td>
+<td>임베딩 유사도</td>
+</tr>
+</tbody>
+</table>
+<p>세 점수의 가중합으로 상위 기억을 뽑아 컨텍스트에 넣는다. 이 recency+importance+relevance 공식은 오늘날 거의 모든 장기기억 에이전트가 변형해 쓰는 표준 레시피가 됐다.</p></div><div class="sb-block"><h2>Reflection: 점을 이어 통찰로</h2><p>기억 스트림만으로는 부족하다. '커피를 내렸다', 'John과 인사했다' 같은 낱개 사실은 있지만, '나는 이웃과 잘 지내는 사교적인 사람이다' 같은 <strong>추상적 자기이해</strong>는 없다. 낱개 관찰만 검색해선 일관된 인격이 안 나온다.</p>
+<p>그래서 논문은 <strong>reflection(성찰)</strong> 을 도입한다.</p>
+<blockquote>
+<p><em>"synthesize those memories over time into higher-level reflections."</em></p>
+</blockquote>
+<p>주기적으로(중요도가 임계치를 넘으면) 에이전트는 최근 기억을 훑고 스스로 묻는다: "이 관찰들로부터 내릴 수 있는 고수준 결론은 무엇인가?" 그 답('나는 Klaus라는 인물의 연구를 존경한다' 같은)을 다시 기억 스트림에 <strong>새로운 고수준 기억으로 저장</strong>한다. 이 성찰은 또 다른 성찰의 재료가 되어, 기억이 트리처럼 추상화된다.</p>
+<p>핵심은 이것이 3장 Reflexion과 목적이 다르다는 점이다. Reflexion의 반성은 '실패를 고치기 위한' 것이지만, 여기 reflection은 '흩어진 경험을 일관된 세계관·자아로 통합하기 위한' 것이다. 전자는 성능, 후자는 정체성을 위한 성찰이다. 이 합성 능력이 있어야 에이전트가 그때그때 즉흥적이지 않고 '캐릭터답게' 일관되게 행동한다.</p></div><div class="sb-block"><h2>왜 &#x27;재사용 primitive&#x27;인가</h2><p>Generative Agents의 진짜 유산은 특정 구현이 아니라 <strong>패턴의 정립</strong>이다. memory + reflection + planning + retrieval이라는 네 부품의 조합이, 이후 에이전트를 설계하는 사람들의 기본 청사진이 됐다.</p>
+<p>Lilian Weng의 널리 인용되는 에이전트 개관 글은 에이전트를 'LLM(두뇌) + Planning + Memory + Tool use'로 정리하는데, 이 Memory와 Planning의 내용물이 바로 Generative Agents에서 왔다. AgentPatterns 같은 카탈로그도 이를 명명된 패턴으로 등재했다.</p>
+<p>왜 이렇게 널리 베껴졌을까? <strong>일반성</strong> 때문이다. 마인크래프트의 Voyager는 도메인(게임)에 묶여 있지만, Generative Agents의 인지 아키텍처는 '경험을 쌓고·통합하고·그로부터 계획하는' 어떤 에이전트에도 적용된다 — 고객 지원 봇이든, 개인 비서든, 코딩 에이전트든. 도메인 독립적인 '에이전트 마음의 골격'을 처음으로 명료하게 제시한 것이다.</p>
+<p>loop engineering의 관점에서 보면, 이 장은 루프에 붙일 수 있는 <strong>기억 서브시스템의 완성형 설계도</strong>를 준다. 2장이 루프의 몸통, 3장이 반성, 4장이 skill 창고였다면, 5장은 그 모든 걸 아우르는 '장기기억 + 자아' 아키텍처다. 8장부터 루프가 그래프로 펼쳐질 때, 이 기억 primitive는 그래프의 상태(state)로 자연스럽게 흡수된다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">일기 + 주말의 회고 + 다이어리 계획</div>
+      <div class="a-body"><p>한 사람의 정신적 삶을 생각해보자. 먼저 <strong>일기(memory stream)</strong> 가 있다. 매일 있었던 일을 시시콜콜 적는다 — 누굴 만났고, 뭘 먹었고, 무슨 생각을 했는지. 방대하지만, 매 순간 이 일기 전체를 떠올리며 살진 않는다. 지금 상황에 맞는 몇 페이지만 <strong>펼쳐본다(retrieval)</strong> — 최근 것, 중요한 것, 지금 고민과 관련된 것 위주로.</p>
+<p>그런데 일기만 쓰면 삶이 파편적이다. 그래서 <strong>주말마다 회고(reflection)</strong> 를 한다. 한 주의 일기를 훑고 '아, 나는 요즘 이 프로젝트에 진심이구나', '저 사람과는 거리를 두는 게 낫겠다' 같은 <strong>큰 깨달음</strong>을 뽑아, 그 통찰을 다시 일기에 굵은 글씨로 적어둔다. 이 회고가 흩어진 나날을 '나'라는 일관된 인격으로 꿰맨다.</p>
+<p>마지막으로, 이 일기와 회고를 바탕으로 <strong>내일의 계획(planning)</strong> 을 짠다. 계획은 허공이 아니라 '내가 겪고 깨달은 것' 위에 선다. 이 일기 → 회고 → 계획의 순환이 바로 Generative Agents의 인지 아키텍처다. 그리고 이 순환은 스몰빌 주민에게만 필요한 게 아니다 — 며칠에 걸쳐 한 프로젝트를 돕는 코딩 에이전트에게도 똑같이 필요한, 도메인을 초월한 '마음의 골격'이다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>Generative Agents의 심장인 recency+importance+relevance 검색과 reflection 트리거를 구현해보자. 이 두 메커니즘이 '장기기억을 가진 에이전트'의 표준 레시피다. 실무에서 커스텀 메모리 시스템을 짤 때 거의 이 골격을 변형하게 된다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import time, numpy as np
+
+class MemoryStream:
+    def __init__(self, embed, llm):
+        self.embed, self.llm, self.mem = embed, llm, []
+
+    def observe(self, text, importance=None):
+        imp = importance or int(self.llm(  # 중요도를 LLM이 1~10으로 채점
+            f&quot;이 사건의 중요도를 1~10 숫자로만: {text}&quot;))
+        self.mem.append({&quot;text&quot;: text, &quot;t&quot;: time.time(),
+                         &quot;imp&quot;: imp, &quot;vec&quot;: self.embed(text),
+                         &quot;last_access&quot;: time.time()})
+
+    def retrieve(self, query, k=5, a=1.0, b=1.0, c=1.0):
+        q, now = self.embed(query), time.time()
+        scored = []
+        for m in self.mem:
+            recency = 0.99 ** ((now - m[&quot;last_access&quot;]) / 3600)  # 시간 감쇠
+            relevance = float(np.dot(q, m[&quot;vec&quot;]))
+            score = a*recency + b*(m[&quot;imp&quot;]/10) + c*relevance    # 삼중 가중합
+            scored.append((score, m))
+        top = [m for _, m in sorted(scored, key=lambda x: x[0], reverse=True)[:k]]
+        for m in top: m[&quot;last_access&quot;] = now                      # 꺼내면 recency 갱신
+        return top
+
+    def reflect(self, threshold=150):
+        # 최근 중요도 합이 임계치를 넘으면 고수준 통찰을 합성
+        recent = self.mem[-20:]
+        if sum(m[&quot;imp&quot;] for m in recent) &lt; threshold:
+            return
+        facts = &quot;\n&quot;.join(m[&quot;text&quot;] for m in recent)
+        insight = self.llm(f&quot;다음 관찰들에서 얻을 고수준 통찰 3가지:\n{facts}&quot;)
+        self.observe(insight, importance=8)  # 통찰을 다시 기억으로 (재귀적 추상화)
+</code></pre>
+      <div class="c-walk"><p>설계 급소 셋. <strong>(1) 삼중 점수</strong> — <code>recency</code>(지수 감쇠), <code>imp</code>(LLM 채점 중요도), <code>relevance</code>(임베딩 유사도)의 가중합으로 무엇을 떠올릴지 정한다. 가중치 a·b·c를 조절하면 '최근 위주냐, 중요도 위주냐'를 튜닝할 수 있다. <strong>(2) last_access 갱신</strong> — 기억을 꺼낼 때마다 recency를 리셋해, 자주 쓰는 기억이 계속 살아남게 한다(사람의 기억 강화와 같다). <strong>(3) reflection의 재귀성</strong> — 합성한 통찰을 <code>observe</code>로 <strong>다시 기억에 넣는다</strong>. 그래서 통찰이 또 다른 통찰의 재료가 되어 추상화 트리가 자란다. 이 골격이 8장 이후 그래프의 <code>state</code>로 흡수되면, '장기기억을 가진 그래프 노드'가 된다. 4장의 skill library가 '할 줄 아는 것'의 저장소라면, 이건 '겪고 깨달은 것'의 저장소다 — 목적이 다르니 둘은 보완적이다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">장기기억은 프로덕션 에이전트의 최대 난제 중 하나다. 면접관은 지원자가 &#x27;벡터DB에 다 넣고 유사도 검색&#x27;이라는 1차원적 답을 넘어, recency·importance·relevance의 균형, 기억의 추상화(reflection), 그리고 기억 폭발 시의 압축·망각 전략까지 설계할 수 있는지를 본다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>검색을 relevance 하나가 아니라 recency·importance와 함께 균형 잡는 설계</li><li>낱개 기억을 고수준 통찰로 합성(reflection)해야 일관성이 나온다는 이해</li><li>reflection(정체성)과 Reflexion(성능 교정)의 목적 차이를 구분</li><li>기억이 폭발할 때의 압축·요약·망각 전략을 제시</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>장기기억을 &#x27;벡터DB 유사도 검색&#x27;으로만 환원 (recency·importance 무시)</li><li>reflection 없이 낱개 기억만 검색해 에이전트가 일관성을 잃는 문제를 못 봄</li><li>기억 무한 증가에 대한 압축/망각 대책이 없음</li><li>5장의 경험 메모리와 4장의 skill 메모리를 같은 것으로 취급</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>장기기억 에이전트에서 검색을 relevance만으로 하면 무엇이 잘못되는가?</li><li>reflection(고수준 통찰 합성)이 없으면 에이전트 행동에 어떤 문제가 생기는가?</li><li>기억이 수십만 건으로 늘어날 때 검색 품질과 비용을 어떻게 관리하겠는가?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> **표면**은 &#x27;Generative Agents = LLM 심즈&#x27;로 기억한다. **마스터**는 이 논문의 유산이 특정 데모가 아니라 memory+reflection+planning+retrieval이라는 도메인 독립적 인지 primitive의 정립임을 알고, recency+importance+relevance 검색과 재귀적 reflection을 자기 손으로 설계·튜닝하며, 이 기억 서브시스템이 훗날 그래프 에이전트의 state로 어떻게 흡수되는지까지 연결한다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>인지 아키텍처</h3><p>memory stream + reflection + planning + retrieval의 조합이 믿을 만한 행동을 창발시킨다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>삼중 검색 점수</h3><p>recency + importance + relevance의 가중합으로 지금 꺼낼 기억을 고른다 — 장기기억의 표준 레시피.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>reflection = 추상화</h3><p>낱개 관찰을 고수준 통찰로 합성해 다시 기억에 넣어, 일관된 자아·세계관을 만든다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>정체성 vs 성능</h3><p>5장 reflection은 일관성(정체성)을 위한 것, 3장 Reflexion은 실패 교정(성능)을 위한 것 — 목적이 다르다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>도메인 독립 primitive</h3><p>게임에 묶인 Voyager와 달리, 어떤 에이전트에도 적용되는 &#x27;마음의 골격&#x27;을 제시했다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>재귀적 추상화</h3><p>통찰이 다시 기억이 되어 또 다른 통찰의 재료가 된다 — 기억이 트리처럼 자란다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>state로 흡수</h3><p>이 기억 서브시스템은 8장 이후 그래프 에이전트의 명시적 state로 자연스럽게 흡수된다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-04.html">← Voyager: The Lifelong Loop &amp; Skill Library</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-06.html">Building Effective Agents: The Loop-as-Primitive Manifesto →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>

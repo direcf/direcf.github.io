@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch7: O-MaMa — Object Mask Matching — Ego-Exo View Consistency — direcf</title>
+  <meta name="description" content="O-MaMa는 픽셀 dense matching 대신 문제를 &#x27;마스크 후보 간 매칭&#x27;으로 재프레이밍한다. FastSAM 후보를 DINOv2로 인코딩하고, cross-attention과 대조 매칭·하드 negative로 정답 마스크를 고른다.">
+  <link rel="canonical" href="https://direcf.github.io/posts/ego-exo-view-consistency/chapter-07.html">
+  <meta property="og:url" content="https://direcf.github.io/posts/ego-exo-view-consistency/chapter-07.html">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Ch7: O-MaMa — Object Mask Matching — Ego-Exo View Consistency — direcf">
+  <meta property="og:description" content="O-MaMa는 픽셀 dense matching 대신 문제를 &#x27;마스크 후보 간 매칭&#x27;으로 재프레이밍한다. FastSAM 후보를 DINOv2로 인코딩하고, cross-attention과 대조 매칭·하드 negative로 정답 마스크를 고른다.">
+  <meta property="og:site_name" content="direcf">
+  <meta property="og:image" content="https://direcf.github.io/posts/ego-exo-view-consistency/cheatsheets/chapter-07.png">
+  <meta property="og:image:width" content="1024">
+  <meta property="og:image:height" content="1024">
+  <meta property="og:image:alt" content="Ch7: O-MaMa — Object Mask Matching — Ego-Exo View Consistency — direcf">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Ch7: O-MaMa — Object Mask Matching — Ego-Exo View Consistency — direcf">
+  <meta name="twitter:description" content="O-MaMa는 픽셀 dense matching 대신 문제를 &#x27;마스크 후보 간 매칭&#x27;으로 재프레이밍한다. FastSAM 후보를 DINOv2로 인코딩하고, cross-attention과 대조 매칭·하드 negative로 정답 마스크를 고른다.">
+  <meta name="twitter:image" content="https://direcf.github.io/posts/ego-exo-view-consistency/cheatsheets/chapter-07.png">
+  <script type="application/ld+json">{"@context": "https://schema.org", "@type": "LearningResource", "name": "O-MaMa — Object Mask Matching", "position": 7, "description": "O-MaMa는 픽셀 dense matching 대신 문제를 '마스크 후보 간 매칭'으로 재프레이밍한다. FastSAM 후보를 DINOv2로 인코딩하고, cross-attention과 대조 매칭·하드 negative로 정답 마스크를 고른다.", "learningResourceType": "lecture chapter", "inLanguage": "ko", "isPartOf": {"@type": "Course", "name": "Ego-Exo View Consistency"}, "author": {"@type": "Person", "name": "Seung Jun Lee"}}</script>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;height:22px;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+/* chapter hook (tension opener) */
+.chapter-hook{font-size:19px;line-height:1.6;font-weight:600;color:var(--text);margin:0 0 18px;letter-spacing:-.01em}
+.chapter-hook::first-letter{font-size:1em}
+
+/* reading meta + mini toc */
+.read-meta{display:flex;flex-wrap:wrap;gap:8px;margin:-6px 0 26px}
+.read-meta .pill{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);background:var(--bg-soft);border-radius:100px;padding:3px 11px}
+.mini-toc{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px 20px;margin:0 0 30px}
+.mini-toc .mt-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:10px}
+.mini-toc ol{list-style:none;counter-reset:mt;display:grid;gap:4px}
+.mini-toc li{counter-increment:mt;font-size:13.5px}
+.mini-toc a{color:var(--text-2);display:flex;gap:9px;padding:2px 0}
+.mini-toc a::before{content:counter(mt,decimal-leading-zero);font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);flex:none}
+.mini-toc a:hover{color:var(--accent)}
+.sb-block{scroll-margin-top:72px}
+
+/* figures (paper crops) — bilingual caption + source */
+.figure-block{margin:22px 0}
+.figure-block figure{margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.figure-block img{width:100%;display:block;object-fit:contain;max-height:440px;background:#fff;padding:8px}
+.figure-block.arch img{max-height:none}
+.figure-block figcaption{padding:11px 16px;border-top:1px solid var(--border)}
+.figure-block .fig-kr{font-size:13.5px;line-height:1.6;color:var(--text-2)}
+.figure-block .fig-orig{font-size:12px;line-height:1.5;color:var(--muted);margin-top:5px}
+.figure-block .fig-src{display:block;font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:7px}
+.figure-block .fig-src a{color:var(--accent)}
+.fig-two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+
+/* mermaid concept diagrams */
+.diagram-block{margin:24px 0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:20px 16px;text-align:center;overflow-x:auto}
+.diagram-block .mermaid{display:flex;justify-content:center;min-height:40px}
+.diagram-block figcaption{font-size:12.5px;color:var(--muted);margin-top:12px;line-height:1.5;text-align:center}
+
+/* interview Q&A (self-test) */
+.qa-item{border:1px solid var(--border);border-radius:8px;margin-bottom:8px;overflow:hidden;background:var(--bg-card)}
+.qa-item>summary{cursor:pointer;padding:12px 15px;font-size:13.5px;font-weight:600;color:var(--text);list-style:none;display:flex;gap:9px;align-items:baseline}
+.qa-item>summary::-webkit-details-marker{display:none}
+.qa-item>summary::before{content:"Q";font-family:'SF Mono',Menlo,monospace;font-size:11px;font-weight:700;color:#6d28d9;flex:none}
+.qa-item[open]>summary{border-bottom:1px solid var(--border)}
+.qa-answer{padding:12px 15px 14px 33px;font-size:13.5px;color:var(--text-2);line-height:1.7}
+.qa-answer::before{content:"A";font-family:'SF Mono',Menlo,monospace;font-size:11px;font-weight:700;color:var(--accent);margin-right:9px}
+
+/* next teaser */
+.next-teaser{background:linear-gradient(135deg,var(--accent-soft),#f5f3ff);border:1px solid var(--border);border-radius:var(--r);padding:16px 20px;margin:44px 0 0}
+.next-teaser .nt-k{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--accent);text-transform:uppercase}
+.next-teaser .nt-body{font-size:14.5px;color:var(--text);margin-top:5px;line-height:1.6}
+
+/* references */
+.ref-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:18px 22px;margin:28px 0 0}
+.ref-card .rc-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;margin-bottom:12px}
+.ref-list{list-style:none;display:grid;gap:9px;counter-reset:rf}
+.ref-list li{counter-increment:rf;font-size:13px;line-height:1.55;color:var(--text-2);padding-left:26px;position:relative}
+.ref-list li::before{content:"["counter(rf)"]";position:absolute;left:0;font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted)}
+.ref-list .rf-title{color:var(--text);font-weight:600}
+.ref-list a{color:var(--accent);font-family:"SF Mono",Menlo,monospace;font-size:12px}
+
+@media(max-width:800px){
+  .app,.app.collapsed{display:block;grid-template-columns:1fr}
+  .sidebar{display:none}
+  .main{width:100%;min-width:0}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+  .fig-two{grid-template-columns:1fr}
+  .sb-block table,.a-body table,.c-walk table{display:block;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}
+  .diagram-block{padding:14px 10px}
+}
+
+.math-display{display:block;max-width:100%;overflow-x:auto;overflow-y:hidden;padding:10px 0;text-align:center;-webkit-overflow-scrolling:touch}
+.math-display .katex-display{margin:0;max-width:100%}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><linearGradient id="direcf-nav-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs></svg>
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg></span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg></span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.25 15a4.5 4.5 0 0 0 4.5 4.5H18a3.75 3.75 0 0 0 1.332-7.257 3 3 0 0 0-3.758-3.848 5.25 5.25 0 0 0-10.233 2.33A4.502 4.502 0 0 0 2.25 15Z"/></svg></span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/computer-vision">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"/></svg></span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg></span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/computer-vision">Ego-Exo View Consistency</a><span class="sep">›</span>
+        <strong>Ch07 O-MaMa — Object Mask Matching</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 07 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🎯</div>
+      <h1 class="chapter-title">O-MaMa — Object Mask Matching</h1>
+      <div class="chapter-title-kr">O-MaMa — 대응을 &#x27;마스크 매칭&#x27;으로 다시 세우다</div>
+      <p class="chapter-hook">모래알 하나하나를 비교하는 대신, 먼저 모래성을 몇 개 쌓고 &#x27;어느 성이 맞는가&#x27;만 고른다면? 대응 문제가 갑자기 쉬워진다.</p>
+      <div class="chapter-tldr">O-MaMa는 픽셀 dense matching 대신 문제를 &#x27;마스크 후보 간 매칭&#x27;으로 재프레이밍한다. FastSAM 후보를 DINOv2로 인코딩하고, cross-attention과 대조 매칭·하드 negative로 정답 마스크를 고른다.</div>
+      <div class="read-meta"><span class="pill">⏱ 약 7분</span><span class="pill">§ 3 sections</span><span class="pill">🖼 figure 2</span><span class="pill">📊 diagram 1</span></div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-07.png" alt="Chapter 7 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 7 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>dense feature matching과 mask matching의 차이를 안다</li><li>분할 후보를 먼저 만들고 매칭하는 재프레이밍의 이점을 이해한다</li><li>DINOv2 + FastSAM 조합의 역할을 설명한다</li><li>cross-attention과 하드 negative 마이닝의 기여를 안다</li><li>매칭 품질이 후보 품질에 묶이는 한계를 파악한다</li></ul>
+      </div>
+      <nav class="mini-toc"><div class="mt-title">이 챕터에서</div><ol><li><a href="#s7-1">dense matching을 버리는 이유</a></li><li><a href="#s7-2">네 부품의 매칭 파이프라인</a></li><li><a href="#s7-3">성취와 후보의 천장</a></li></ol></nav>
+
+      <div class="sb-block"><p>6장 ObjectRelator가 객체 대응을 세그멘테이션으로 세웠다면, <a href="https://arxiv.org/abs/2506.06026">O-MaMa</a>(ICCV 2025)는 그 대응을 <strong>푸는 방식</strong>을 뒤집는다.</p>
+<p>전통적 cross-view 대응은 <strong>dense feature matching</strong> — 한 시점의 모든 픽셀 특징을 다른 시점의 모든 픽셀과 비교 — 이다. 계산이 무겁고, 시점이 급변하면 픽셀 특징이 안 맞아 매칭이 흔들린다.</p>
+<p>O-MaMa의 재프레이밍은 명료하다. 픽셀을 하나하나 비교하지 말고, <strong>먼저 객체 마스크 후보를 만든 뒤 '어느 마스크가 정답인가'만 고르자.</strong> 문제가 dense 픽셀 매칭에서 이산적 <strong>mask matching</strong>으로 바뀐다 — 수만 픽셀 비교가 수십 마스크 중 선택으로 축소된다.</p>
+<p>파이프라인은 네 부품이다. (1) <strong>Mask-Context Encoder</strong>: FastSAM으로 마스크 후보를 만들고 DINOv2 특징을 마스크 위로 풀링, (2) <strong>Ego↔Exo Cross-Attention</strong>: 두 시점 관찰을 융합, (3) <strong>Mask-Matching 대조 손실</strong>: 정답 마스크를 공유 공간에서 정렬, (4) <strong>Hard Negative Adjacent Mining</strong>: 헷갈리는 인접 마스크를 하드 negative로. Ego-Exo4D 대응에서 큰 폭 SOTA(Exo2Ego IoU +76%)를 냈다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block" id="s7-1"><h2>dense matching을 버리는 이유</h2><p>dense feature matching의 두 약점이 ego-exo에서 치명적이다.</p>
+<p>첫째, <strong>연산</strong>이다. <span class="math-inline">\(H\times W\)</span> 픽셀을 다른 시점 <span class="math-inline">\(H\times W\)</span>와 비교하면 <span class="math-inline">\(O((HW)^2)\)</span>다. 고해상에서 폭발한다.</p>
+<p>둘째, <strong>강건성</strong>이다. ego-exo는 시점이 급변해 같은 객체의 픽셀 특징조차 크게 달라진다. 픽셀 단위로 비교하면 이 변동에 그대로 노출돼 매칭이 부서진다.</p>
+<p>O-MaMa의 통찰은 "대응의 단위는 픽셀이 아니라 <strong>객체</strong>"라는 것이다. 우리가 원하는 답은 "저 컵"이지 "저 픽셀 (i,j)"가 아니다. 그렇다면 애초에 객체 단위 후보(마스크)를 만들고 그중에서 고르면 된다. 이산적 선택은 연산이 가볍고, 마스크 수준 특징은 픽셀 잡음을 평균 내어 시점 변동에 강하다.</p>
+<p>이것은 문제를 쉽게 만드는 재프레이밍의 전형이다 — 어려운 회귀(dense 대응)를 쉬운 분류(마스크 선택)로 바꾼다.</p><div class="figure-block"><figure><img src="/posts/ego-exo-view-consistency/figures/2506.06026/teaser_alejandro.png" alt="O-MaMa mask-matching reframing overview" loading="lazy" decoding="async"><figcaption><div class="fig-kr">O-MaMa 개요: 복잡한 dense 대응 대신 &#x27;마스크 후보 간 매칭&#x27;으로 재프레이밍.</div><div class="fig-orig">Overview of our proposed Object Mask Matching (O-MaMa). Instead of attempting the complex cross-view segmentation task, we obtain a set of mask candidates in the destination view using FastSAM. Through contrastive learning, we select the mask candidate that best matches the source mask.</div><span class="fig-src">Figure 1 · <a href="https://arxiv.org/abs/2506.06026" target="_blank" rel="noopener">arXiv:2506.06026</a></span></figcaption></figure></div></div><div class="sb-block" id="s7-2"><h2>네 부품의 매칭 파이프라인</h2><p><strong>Mask-Context Encoder.</strong> FastSAM이 각 시점에서 객체 마스크 후보들을 빠르게 생성한다. 그리고 자기지도 백본 <strong>DINOv2</strong>의 특징을 각 마스크 영역 위로 풀링해, 마스크마다 하나의 문맥 임베딩을 만든다. FastSAM이 '후보를 만들고', DINOv2가 '각 후보를 시점 강건하게 기술한다'.</p>
+<p><strong>Ego↔Exo Cross-Attention.</strong> ego 마스크 임베딩과 exo 마스크 임베딩이 서로를 참조한다. 한 시점만 보면 애매한 객체도, 상대 시점 정보를 융합하면 정체가 또렷해진다. 두 시점의 관찰을 한 표현으로 엮는 단계다.</p>
+<p><strong>Mask-Matching 대조 손실.</strong> 정답 ego-exo 마스크 쌍은 공유 공간에서 가깝게, 오답 쌍은 멀게 정렬한다. 6장 XObjAlign이 '같은 객체를 가깝게'였다면, 여기서는 '<strong>후보들 중 정답을 골라내는</strong>' 대조로 목적이 더 날카롭다.</p>
+<p><strong>Hard Negative Adjacent Mining.</strong> 가장 헷갈리는 negative는 인접한·유사한 마스크다(옆에 놓인 비슷한 컵). 이런 하드 negative를 집중 채굴해 학습하면, 미세하게 다른 객체를 구분하는 능력이 생긴다. AE2의 역순 negative(3장)와 같은 철학 — 어려운 negative가 정밀도를 만든다.</p><figure class="diagram-block"><div class="mermaid">flowchart LR
+  I[&quot;두 시점 영상&quot;] --&gt; F[&quot;FastSAM&lt;br/&gt;마스크 후보&quot;]
+  F --&gt; DN[&quot;DINOv2&lt;br/&gt;마스크 임베딩&quot;]
+  DN --&gt; CA[&quot;Ego-Exo&lt;br/&gt;Cross-Attention&quot;]
+  CA --&gt; M{&quot;대조 매칭&lt;br/&gt;+ hard negative&quot;}
+  M --&gt; OUT[&quot;정답 마스크 선택&quot;]</div><figcaption>O-MaMa 4단계: FastSAM 후보 → DINOv2 인코딩 → cross-attention 융합 → 대조 매칭으로 정답 마스크 선택.</figcaption></figure><div class="figure-block arch"><figure><img src="/posts/ego-exo-view-consistency/figures/2506.06026/diagram_alejandro_red.png" alt="O-MaMa architecture: FastSAM candidates and contrastive mask matching" loading="lazy" decoding="async"><figcaption><div class="fig-kr">O-MaMa 구조: 대상 시점에서 FastSAM 마스크 후보를 만들고 대조 매칭으로 정답을 고른다.</div><div class="fig-orig">O-MaMa architecture. In the destination view, we generate a set of mask candidates with FastSAM. We extract descriptors on both source and destination masks by pooling dense DINOv2 features, and we aggregate global cross-view features with respective cross-attention mechanisms. We learn view-invariant features in a latent space via contrastive learning, and we select the most similar mask embedding to obtain the corresponding mask.</div><span class="fig-src">Figure 2 · <a href="https://arxiv.org/abs/2506.06026" target="_blank" rel="noopener">arXiv:2506.06026</a></span></figcaption></figure></div></div><div class="sb-block" id="s7-3"><h2>성취와 후보의 천장</h2><p>O-MaMa는 Ego-Exo4D Correspondence에서 큰 폭의 SOTA를 냈다(Exo2Ego +76%, Ego2Exo +22% IoU). 재프레이밍 하나가 성능을 도약시킨 사례다. dense 회귀를 마스크 분류로 바꾸니 연산은 가벼워지고 강건성은 올라갔다.</p>
+<p>핵심 교훈은 <strong>"대응의 단위를 픽셀에서 객체로 올리면 문제가 쉬워진다"</strong>이다. 이는 6~8장 correspondence 계열을 관통하는 원리다. ObjectRelator가 객체를 정렬했고, O-MaMa가 객체를 매칭했다.</p>
+<p>그러나 이 접근의 천장은 이름에 이미 있다. 매칭은 <strong>후보 마스크 안에서만</strong> 정답을 고른다. 만약 FastSAM이 정답 객체를 애초에 마스크로 만들지 못했다면(놓쳤거나 잘못 쪼갰다면), 매칭은 존재하지 않는 정답을 고를 수 없다. <strong>매칭 품질의 상한은 후보 품질</strong>이다.</p>
+<p>이 의존성이 다음 두 방향을 낳는다. 8장 CCMP는 매칭을 <strong>cycle-consistency</strong>로 자기검증해 후보 없이도 대응을 정련하고, 10장 언저리의 V2-SAM류는 <strong>SAM2</strong>를 대응에 직접 적응시켜 후보 생성 자체를 강화한다. O-MaMa는 재프레이밍의 힘과 그 대가(후보 의존)를 동시에 보여준 이정표다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">용의자 라인업 vs 몽타주</div>
+      <div class="a-body"><p>범인을 찾는 두 방법이 있다. 하나는 목격자에게 얼굴의 모든 픽셀을 기억에서 재구성하게 하는 것(dense matching) — 힘들고 부정확하다. 다른 하나는 <strong>용의자 몇 명을 세워두고 "이 중 누구?"</strong>라고 묻는 것(mask matching) — 훨씬 쉽고 정확하다.</p>
+<p>O-MaMa는 후자다. FastSAM이 라인업(마스크 후보)을 세우고, DINOv2가 각 용의자의 인상착의를 시점에 강건하게 기록한다. cross-attention은 두 목격자(ego·exo)가 서로 정보를 교환해 확신을 높이는 것이고, 하드 negative 마이닝은 "쌍둥이처럼 닮은 용의자"를 일부러 세워 미세한 차이를 구분하도록 훈련하는 것이다.</p>
+<p>이 방식의 결정적 약점도 라인업에 있다 — <strong>진범이 라인업에 없으면</strong> 아무리 잘 골라도 틀린다. FastSAM이 정답 객체를 놓치면 매칭은 실패한다. 그래서 다음 수사관들은 라인업 자체를 검증하거나(cycle-consistency) 더 잘 세우는(SAM2 적응) 쪽으로 간다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>O-MaMa의 핵심 — 마스크 후보들 중 대조로 정답을 고르고 인접 하드 negative를 강조 — 를 보자.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import torch, torch.nn.functional as F
+
+def mask_matching(query_emb, cand_embs, gt_idx, temp=0.1):
+    &quot;&quot;&quot;query_emb: [D] 한 시점의 질의 객체. cand_embs: [N,D] 다른 시점 마스크 후보들.
+       gt_idx: 정답 후보 인덱스. → 정답을 고르는 대조 분류.&quot;&quot;&quot;
+    q = F.normalize(query_emb, dim=-1)
+    c = F.normalize(cand_embs, dim=-1)
+    logits = (c @ q) / temp                       # 후보별 매칭 점수 [N]
+    # hard negative: 정답과 가장 헷갈리는 인접 후보에 가중
+    with torch.no_grad():
+        hard = logits.clone(); hard[gt_idx] = -1e9
+        w = torch.ones_like(logits); w[hard.argmax()] = 2.0   # 최난 negative 강조
+    return F.cross_entropy((logits*w).unsqueeze(0), torch.tensor([gt_idx]))
+
+q = torch.randn(128); cands = torch.randn(12,128); cands[3]=q+0.1*torch.randn(128)
+print(&quot;mask-matching loss:&quot;, mask_matching(q, cands, gt_idx=3).item())</code></pre>
+      <div class="c-walk"><p><code>mask_matching</code>은 대응을 <strong>분류</strong>로 푼다 — 질의 객체 임베딩 <code>q</code>에 대해 후보 마스크들 <code>cands</code> 중 정답(<code>gt_idx</code>)을 고른다. dense 픽셀 회귀가 이산 선택으로 바뀐 게 재프레이밍의 핵심이다. <code>hard</code> 부분이 하드 negative 마이닝 — 정답과 가장 헷갈리는 인접 후보에 가중치를 줘 미세 구분력을 키운다. <code>cands</code>가 FastSAM 후보, <code>q</code>/<code>cands</code> 임베딩이 DINOv2 기반이라는 게 전제다. 단, 정답이 <code>cands</code>에 없으면 이 게임은 이길 수 없다 — 후보 의존이 천장이다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">대응·매칭을 다루는 비전 팀에서 O-MaMa는 &#x27;문제 재프레이밍으로 난이도를 낮추는&#x27; 감각과 후보-기반 파이프라인의 트레이드오프를 검증한다. 하드 negative 설계도 본다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>dense 회귀를 이산 매칭으로 바꾸는 재프레이밍의 이점(연산·강건성)을 설명하는가</li><li>FastSAM(후보)·DINOv2(기술)·cross-attention(융합)의 역할을 구분하는가</li><li>후보 품질이 매칭 상한이라는 의존성을 인지하는가</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>여전히 dense 픽셀 매칭이 정석이라 고집</li><li>마스크 후보가 정답을 놓칠 수 있음을 간과</li><li>하드 negative 없이도 미세 객체 구분이 된다고 가정</li></ul></div>
+        </div>
+        <div class="ie-q" style="background:none;padding:0;margin-top:14px"><h4 style="color:#6d28d9">🎤 예상 인터뷰 질문 (클릭하면 모범답안)</h4><details class="qa-item"><summary>dense feature matching 대신 mask matching으로 바꾸면 무엇이 좋아지나?</summary><div class="qa-answer"><p>연산이 <span class="math-inline">\(O((HW)^2)\)</span> 픽셀 비교에서 수십 개 마스크 중 이산 선택으로 축소되고, 마스크 수준 특징이 픽셀 잡음을 평균 내어 급격한 ego-exo 시점 변동에 강건해진다. 어려운 dense 회귀가 쉬운 분류가 된다 — 원하는 답이 애초에 '픽셀'이 아니라 '객체'이므로 단위를 올리는 게 자연스럽다.</p></div></details><details class="qa-item"><summary>파이프라인에서 FastSAM과 DINOv2는 각각 무슨 역할인가?</summary><div class="qa-answer"><p>FastSAM은 각 시점에서 <strong>객체 마스크 후보를 빠르게 생성</strong>(라인업 세우기). DINOv2는 자기지도 백본으로 각 마스크 영역 특징을 풀링해 <strong>시점 강건한 마스크 임베딩</strong>을 만든다(각 후보 기술). 이후 cross-attention이 두 시점을 융합하고 대조 손실이 정답을 고른다.</p></div></details><details class="qa-item"><summary>이 접근의 성능 상한은 무엇이 결정하나?</summary><div class="qa-answer"><p><strong>후보 마스크 품질</strong>이다. 매칭은 후보 안에서만 정답을 고르므로, FastSAM이 정답 객체를 놓치거나 잘못 쪼개면 매칭이 존재하지 않는 정답을 고를 수 없다. 그래서 후속 연구는 cycle-consistency로 자기검증(CCMP)하거나 SAM2를 대응에 직접 적응(V2-SAM)해 후보 자체를 강화한다.</p></div></details></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 겉핥기는 &#x27;마스크를 매칭한다&#x27;까지다. 통달한 사람은 dense→mask 재프레이밍이 연산·강건성을 어떻게 바꾸는지, 네 부품의 분담, 하드 negative가 미세 구분을 만드는 원리, 그리고 후보 품질이 상한이라는 구조적 의존과 그것이 CCMP·V2-SAM으로 이어지는 필연을 규정한다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>대응=매칭 게임</h3><p>dense 픽셀 회귀를 &#x27;마스크 후보 중 정답 고르기&#x27;라는 이산 매칭으로 재프레이밍한다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>단위를 픽셀→객체</h3><p>원하는 답이 &#x27;객체&#x27;이므로 후보를 객체 단위로 만들면 연산은 가볍고 강건성은 오른다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>FastSAM+DINOv2</h3><p>FastSAM이 마스크 후보를, DINOv2가 시점 강건한 마스크 임베딩을 만든다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>Cross-Attention 융합</h3><p>두 시점 관찰을 서로 참조해 애매한 객체의 정체를 또렷하게 만든다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>하드 negative</h3><p>인접·유사 마스크를 집중 채굴해 미세하게 다른 객체를 구분하는 힘을 기른다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>큰 폭 SOTA</h3><p>Ego-Exo4D 대응에서 Exo2Ego IoU +76% — 재프레이밍이 성능을 도약시켰다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>후보가 천장</h3><p>매칭은 후보 안에서만 고른다 — 정답을 놓친 후보는 이길 수 없다. CCMP·V2-SAM의 출발.</p></div></div>
+      <div class="ref-card"><div class="rc-title">📎 References</div><ol class="ref-list"><li>Mur-Labadia et al. (2025). <span class="rf-title">O-MaMa: Learning Object Mask Matching between Egocentric and Exocentric Views</span>. ICCV 2025. <a href="https://arxiv.org/abs/2506.06026" target="_blank" rel="noopener">arXiv:2506.06026</a></li></ol></div>
+      <div class="next-teaser"><div class="nt-k">Next · Ch08</div><div class="nt-body">매칭은 후보에 갇힌다. 그런데 &#x27;올바른 대응이라면 되돌아와도 원래로 돌아온다&#x27;는 자기검증을 걸면? CCMP가 cycle-consistency로 대응에 나침반을 준다.</div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-06.html">← ObjectRelator</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-08.html">CCMP — Cycle-Consistent Mask Prediction →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({
+    startOnLoad:true, securityLevel:'loose',
+    theme:'base',
+    themeVariables:{
+      primaryColor:'#dbeafe', primaryTextColor:'#0f1f3a', primaryBorderColor:'#1d4ed8',
+      lineColor:'#1d4ed8', secondaryColor:'#f5f3ff', tertiaryColor:'#ecfdf5',
+      fontFamily:'-apple-system,Pretendard,sans-serif', fontSize:'14px'
+    }
+  });
+</script>
+</body></html>

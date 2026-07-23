@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch9: ReWOO &amp; LLMCompiler: Plan-Then-Execute as a DAG — Loop Engineering — direcf</title>
+  <meta name="description" content="ReAct식 인터리빙 루프는 매 도구 호출마다 멈춰 재프롬프트한다 — 느리고 비싸다. ReWOO는 계획을 통째로 먼저 세워 관찰과 추론을 분리하고, LLMCompiler는 작업을 DAG로 컴파일해 병렬 실행한다. 순차 루프를 명시적 작업 그래프로 대체하는 성능 논거.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;height:22px;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+@media(max-width:800px){
+  .app,.app.collapsed{display:block;grid-template-columns:1fr}
+  .sidebar{display:none}
+  .main{width:100%;min-width:0}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+  .sb-block table,.a-body table,.c-walk table{display:block;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}
+}
+
+.math-display{display:block;max-width:100%;overflow-x:auto;overflow-y:hidden;padding:10px 0;text-align:center;-webkit-overflow-scrolling:touch}
+.math-display .katex-display{margin:0;max-width:100%}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><linearGradient id="direcf-nav-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs></svg>
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg></span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg></span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.25 15a4.5 4.5 0 0 0 4.5 4.5H18a3.75 3.75 0 0 0 1.332-7.257 3 3 0 0 0-3.758-3.848 5.25 5.25 0 0 0-10.233 2.33A4.502 4.502 0 0 0 2.25 15Z"/></svg></span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/multimodal-ai">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"/></svg></span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/ai-engineering">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg></span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/ai-engineering">Loop Engineering</a><span class="sep">›</span>
+        <strong>Ch09 ReWOO &amp; LLMCompiler: Plan-Then-Execute as a DAG</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 09 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🗂️</div>
+      <h1 class="chapter-title">ReWOO &amp; LLMCompiler: Plan-Then-Execute as a DAG</h1>
+      <div class="chapter-title-kr">ReWOO &amp; LLMCompiler — 계획-후-실행과 병렬 DAG</div>
+      <div class="chapter-tldr">ReAct식 인터리빙 루프는 매 도구 호출마다 멈춰 재프롬프트한다 — 느리고 비싸다. ReWOO는 계획을 통째로 먼저 세워 관찰과 추론을 분리하고, LLMCompiler는 작업을 DAG로 컴파일해 병렬 실행한다. 순차 루프를 명시적 작업 그래프로 대체하는 성능 논거.</div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-09.png" alt="Chapter 9 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 9 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">5 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>ReAct식 인터리빙 루프의 비효율(반복 재프롬프트, 순차성)을 정량적으로 이해한다</li><li>ReWOO의 Planner-Worker-Solver 분리와 관찰-추론 디커플링을 설명한다</li><li>LLMCompiler의 DAG 컴파일과 병렬 함수 호출 원리를 안다</li><li>언제 순차 루프 대신 계획-후-실행 그래프가 유리한지 판단한다</li><li>이 두 논문이 왜 framework→graph 전환의 성능 논거인지 설명한다</li></ul>
+      </div>
+
+      <div class="sb-block"><p>2장 ReAct의 루프에는 숨은 비용이 있다. 매 스텝마다 '생각 → 도구 호출 → <strong>멈춤</strong> → 결과 받기 → 다시 전체 맥락으로 재프롬프트'를 반복한다. 도구를 열 번 부르면 LLM을 열 번 (매번 전체 맥락과 함께) 호출한다. 순차적이라 느리고, 재프롬프트가 반복돼 토큰이 낭비된다.</p>
+<p><a href="https://arxiv.org/abs/2305.18323">ReWOO</a>(Xu et al., EMNLP 2023 Findings)의 통찰은 이렇다 — <strong>추론과 관찰을 분리하라(Reasoning WithOut Observation).</strong> 도구 결과를 볼 때마다 매번 추론을 다시 하지 말고, <strong>계획 전체를 처음에 한 번에</strong> 세운다. Planner가 서로 연결된 도구 호출 계획을 짜고, Worker들이 실행하고, Solver가 결과를 종합한다. 도구 결과를 기다리며 LLM을 반복 호출하는 낭비가 사라진다(논문은 최대 5배 토큰 효율을 노린다).</p>
+<p><a href="https://arxiv.org/abs/2312.04511">LLMCompiler</a>(Kim et al., ICML 2024)는 이를 컴파일러 원리로 밀어붙인다. 작업을 <strong>DAG(방향성 비순환 그래프)</strong> 로 분해하고, 의존성이 없는 작업들을 <strong>병렬 실행</strong>한다. ReAct 대비 최대 3.7배 빠르고 6.7배 저렴하다고 보고한다. 이 장에서 우리는 '순차 루프를 명시적 작업 그래프로 대체하면 무엇을 얻는가'를 성능의 언어로 배운다 — framework에서 graph로 넘어가는 가장 실용적인 이유다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>ReAct 루프의 숨은 비용</h2><p>먼저 문제를 정확히 보자. LLMCompiler 논문은 기존 방식을 이렇게 진단한다.</p>
+<blockquote>
+<p><em>"current methods for function calling often require sequential reasoning and acting for each function which can result in high latency, cost, and sometimes inaccurate behavior."</em></p>
+</blockquote>
+<p>ReWOO도 같은 곳을 찌른다.</p>
+<blockquote>
+<p><em>"an LLM reasons to call an external tool, gets halted to fetch the tool's response, and then decides the next action ... often leads to huge computation complexity from redundant prompts and repeated execution."</em></p>
+</blockquote>
+<p>구체적으로 세 가지 병이다. <strong>(1) 순차성</strong> — 서로 독립적인 도구 호출(예: '파리 날씨'와 '도쿄 날씨')도 한 번에 하나씩 순서대로 한다. 병렬로 하면 될 것을. <strong>(2) 반복 재프롬프트</strong> — 매 스텝마다 누적된 전체 맥락을 다시 LLM에 밀어넣어, 같은 정보를 몇 번씩 재처리한다. <strong>(3) 관찰 결합</strong> — 추론이 관찰에 매 스텝 묶여 있어, 도구가 느리면 전체가 느려진다.</p>
+<p>이 병들은 작업이 커질수록 심해진다. 도구 호출이 스무 번인 작업이라면, ReAct는 스무 번의 순차 LLM 호출 + 스무 번의 재프롬프트다. 여기서 '루프를 미리 계획된 구조로 바꾸면 이 낭비를 없앨 수 있지 않을까?'라는 질문이 나온다. 그 답이 ReWOO와 LLMCompiler다.</p></div><div class="sb-block"><h2>ReWOO: 먼저 다 계획하고, 관찰을 떼어내다</h2><p>ReWOO는 에이전트를 세 모듈로 분리한다.</p>
+<p><strong>Planner</strong> = 문제를 받아, 필요한 모든 추론·도구 호출을 <strong>처음에 한 번에</strong> 계획한다. 이때 아직 도구를 실행하지 않는다. 대신 결과가 들어갈 자리를 변수로 남긴다 — <code>#E1</code>, <code>#E2</code> 같은 증거 변수(evidence variable). 예: "Plan: 파리 인구를 검색 → #E1. Plan: 도쿄 인구를 검색 → #E2. Plan: #E1과 #E2를 비교."</p>
+<p><strong>Worker</strong> = Planner가 남긴 도구 호출들을 실제로 실행해 <code>#E1</code>, <code>#E2</code>에 값을 채운다.</p>
+<p><strong>Solver</strong> = 채워진 증거들을 종합해 최종 답을 낸다.</p>
+<blockquote>
+<p><em>"a modular paradigm ReWOO (Reasoning WithOut Observation) that detaches the reasoning process from external observations, thus significantly reducing token consumption."</em></p>
+</blockquote>
+<p>핵심은 <strong>추론(Planner)이 관찰(Worker)로부터 분리</strong>된 것이다. ReAct는 관찰을 볼 때마다 추론을 처음부터 다시 했지만, ReWOO는 추론을 딱 한 번(계획 시)만 한다. 그래서 재프롬프트 낭비가 사라진다. 계획이 이미 '서로 연결된 도구 호출들의 구조'라는 점에 주목하라 — 이건 사실상 작업 그래프의 초안이다. ReWOO는 순차 루프에서 명시적 계획 구조로 가는 첫 걸음이다. 물론 대가도 있다: 계획을 미리 다 세우므로, 중간 결과에 따라 경로가 크게 바뀌어야 하는 문제에는 ReAct의 적응성이 더 낫다.</p></div><div class="sb-block"><h2>LLMCompiler: 작업을 DAG로 컴파일해 병렬 실행</h2><p>LLMCompiler는 ReWOO의 아이디어를 <strong>고전 컴파일러</strong>의 언어로 완성한다. 프로그램을 컴파일할 때 컴파일러가 명령어 간 의존성을 분석해 병렬화하듯, 도구 호출들을 그렇게 다룬다. 세 부품이다.</p>
+<p><strong>Function Calling Planner</strong> = 작업을 <strong>DAG로 분해</strong>한다. 각 노드는 도구 호출, 엣지는 의존성이다. <em>"a DAG of tasks with their inter-dependencies."</em></p>
+<p><strong>Task Fetching Unit</strong> = 의존성이 해소된(입력이 준비된) 작업을 골라 실행 큐로 보낸다.</p>
+<p><strong>Executor</strong> = 서로 독립인 작업들을 <strong>병렬로</strong> 실행한다. <em>"executing these tasks in parallel."</em></p>
+<p>핵심은 <strong>병렬성</strong>이다. '파리 날씨'와 '도쿄 날씨'는 서로 의존하지 않으니 동시에 실행한다. ReAct라면 순서대로 했을 것을. 그 결과가 인상적이다.</p>
+<table>
+<thead>
+<tr>
+<th>지표</th>
+<th>ReAct 대비 LLMCompiler</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>지연(latency)</td>
+<td>최대 3.7배 빠름</td>
+</tr>
+<tr>
+<td>비용(cost)</td>
+<td>최대 6.7배 저렴</td>
+</tr>
+<tr>
+<td>정확도</td>
+<td>약 9% 향상</td>
+</tr>
+</tbody>
+</table>
+<p>정확도까지 오르는 이유는, 계획을 구조적으로 세우면 ReAct식 즉흥 루프가 빠뜨리는 단계나 중복 호출이 줄기 때문이다. 여기서 결정적 인식이 온다 — <strong>에이전트의 흐름을 DAG(그래프)로 명시하면, 성능·비용·정확도가 모두 좋아진다.</strong> 이것이 loop에서 graph 엔지니어링으로 넘어가는 가장 강력한 실용적 논거다. 8장이 개념의 다리였다면, 9장은 성능 수치로 그 다리를 건너는 이유를 준다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">장보기: 목록 없이 vs 목록 짜고 vs 여럿이 나눠서</div>
+      <div class="a-body"><p>저녁 파티를 위해 열 가지 재료를 사야 한다. 세 가지 방식을 보자.</p>
+<p><strong>ReAct 방식</strong>은 목록 없이 마트에 가는 것이다. 진열대 앞에서 '음, 파스타를 살까? 그럼 소스도 필요하겠네. 소스를 집었으니 이제 뭐가 필요하지?' 하며 매번 처음부터 다시 생각한다. 한 품목 담을 때마다 멈춰서 전체를 재고한다. 재료 하나 사고 계산대까지 갔다가, 아 치즈를 깜빡했네 하고 되돌아온다. 열 번을 이렇게 순차로 반복하니 하루가 다 간다.</p>
+<p><strong>ReWOO 방식</strong>은 집에서 <strong>장보기 목록을 통째로 먼저</strong> 짜는 것이다. '파스타, 소스, 치즈, 마늘…' 열 개를 다 적고(계획), 각 재료가 어느 코너에 있는지 표시해둔다(증거 변수). 마트에선 생각 없이 목록대로 담기만 하면 된다. 진열대 앞에서 매번 고민하는 낭비가 사라진다.</p>
+<p><strong>LLMCompiler 방식</strong>은 목록을 짜되, <strong>가족 세 명이 코너를 나눠</strong> 동시에 장을 보는 것이다. 채소 담당, 유제품 담당, 정육 담당이 병렬로 움직인다. 서로 의존하지 않는 품목(채소와 우유)은 동시에 담기니 시간이 3분의 1로 준다. 물론 '고기 상태를 보고 메뉴를 바꿀지 결정' 같은 의존 관계는 순서를 지킨다(DAG).</p>
+<p>교훈은 명확하다 — 살 게 몇 개 안 되면 목록 없이도 괜찮다. 하지만 품목이 많고 서로 독립적일수록, <strong>미리 계획하고(ReWOO) 병렬로 나누는(LLMCompiler)</strong> 방식이 압도적으로 빠르고 싸다. 에이전트의 도구 호출도 정확히 그렇다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>LLMCompiler의 핵심인 'DAG로 계획하고 의존성 없는 작업을 병렬 실행'을 구현해보자. Planner가 작업 그래프를 만들고, 실행기는 입력이 준비된 작업들을 동시에 돌린다. 2장의 순차 while 루프와 대조하면, 흐름이 '한 줄'에서 '의존성 그래프'로 바뀐 게 핵심이다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import asyncio
+
+# Planner가 만든 작업 DAG (실제로는 LLM이 생성). &#x27;$1&#x27; = 작업1의 결과 참조
+PLAN = {
+    &quot;1&quot;: {&quot;tool&quot;: &quot;search&quot;, &quot;args&quot;: [&quot;파리 인구&quot;],       &quot;deps&quot;: []},
+    &quot;2&quot;: {&quot;tool&quot;: &quot;search&quot;, &quot;args&quot;: [&quot;도쿄 인구&quot;],       &quot;deps&quot;: []},
+    &quot;3&quot;: {&quot;tool&quot;: &quot;compare&quot;, &quot;args&quot;: [&quot;$1&quot;, &quot;$2&quot;],      &quot;deps&quot;: [&quot;1&quot;, &quot;2&quot;]},
+}
+
+async def execute_dag(plan, tools):
+    results, pending = {}, dict(plan)
+
+    while pending:
+        # 1) 의존성이 모두 해소된 작업들을 한 번에 고름 (Task Fetching Unit)
+        ready = [tid for tid, t in pending.items()
+                 if all(d in results for d in t[&quot;deps&quot;])]
+
+        async def run(tid):
+            t = pending[tid]
+            args = [results[a[1:]] if str(a).startswith(&quot;$&quot;) else a
+                    for a in t[&quot;args&quot;]]          # $1 → 작업1의 실제 결과로 치환
+            return tid, await tools[t[&quot;tool&quot;]](*args)
+
+        # 2) 준비된 독립 작업들을 병렬 실행 (Executor)
+        done = await asyncio.gather(*[run(tid) for tid in ready])
+        for tid, out in done:
+            results[tid] = out
+            del pending[tid]                     # 완료 → 큐에서 제거
+
+    return results
+
+# 작업 1·2(파리·도쿄 검색)는 서로 독립 → 동시에 실행
+# 작업 3(비교)은 1·2에 의존 → 둘이 끝난 뒤 실행 (DAG가 순서를 보장)
+</code></pre>
+      <div class="c-walk"><p>이 코드가 순차 루프를 그래프로 바꾼 정수다. <strong>(1) 의존성 기반 스케줄링</strong> — <code>ready</code>는 '입력이 다 준비된' 작업만 고른다. 작업 1·2는 <code>deps</code>가 비었으니 즉시 실행 가능, 작업 3은 1·2가 끝나야 한다. 흐름이 코드 순서가 아니라 <strong>데이터 의존성</strong>으로 결정된다. <strong>(2) 병렬 실행</strong> — <code>asyncio.gather</code>가 독립 작업(파리·도쿄 검색)을 동시에 돌린다. ReAct라면 순차로 두 번 걸렸을 시간이 한 번으로 준다 — 여기서 3.7배 latency 이득이 나온다. <strong>(3) 결과 참조(<code>$1</code>)</strong> — Planner가 남긴 변수 참조가 ReWOO의 증거 변수(<code>#E1</code>)와 같은 발상이다. 계획이 실행과 분리돼 있다. 이 <code>execute_dag</code>를 노드마다 조건 분기·상태·순환까지 갖도록 일반화하면, 그게 바로 10장의 LangGraph다. 순차 루프 → 작업 DAG → 완전한 상태 그래프로 이어지는 마지막 계단이다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">이 장은 &#x27;에이전트 성능·비용 최적화&#x27;를 다루므로, 프로덕션 경험을 검증하는 단골 주제다. 면접관은 지원자가 ReAct 루프의 순차성·재프롬프트 비용을 정량적으로 이해하는지, 그리고 계획-후-실행/DAG 병렬화가 언제 이득이고 언제 (적응성 손실로) 손해인지 균형 있게 판단하는지를 본다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>ReAct 순차 루프의 지연·토큰 비용을 정량적으로 분석</li><li>추론-관찰 분리(ReWOO)와 DAG 병렬화(LLMCompiler)의 원리를 정확히 설명</li><li>독립 작업 병렬화가 latency·cost를 어떻게 줄이는지 이해</li><li>계획-후-실행의 약점(중간 결과에 따른 경로 변경이 어려움)과 ReAct의 적응성을 저울질</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>ReAct 루프의 반복 재프롬프트 비용을 인지하지 못함</li><li>모든 작업을 DAG로 미리 계획하려 함(적응이 필요한 개방형 작업에도)</li><li>병렬화 가능한 독립 작업과 순차 의존 작업을 구분 못 함</li><li>성능 수치(3.7x, 6.7x)를 맥락 없이 절대적으로 신뢰</li></ul></div>
+        </div>
+        <div class="ie-q"><h4>🎤 예상 인터뷰 질문</h4><ol><li>ReAct 스타일 인터리빙 루프가 왜 느리고 비싼지, 도구 호출이 20개인 작업으로 설명해보라.</li><li>ReWOO의 계획-후-실행이 ReAct보다 불리한 상황은 언제이며 왜인가?</li><li>에이전트 작업을 DAG로 병렬화할 때, 무엇이 병렬 가능하고 무엇이 순차인지 어떻게 판별하는가?</li></ol></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> **표면**은 &#x27;ReWOO/LLMCompiler = 더 빠른 에이전트&#x27;로 안다. **마스터**는 이들이 &#x27;추론-관찰 분리&#x27;와 &#x27;DAG 병렬화&#x27;로 ReAct의 순차성·재프롬프트 비용을 공격했음을 정량적으로 설명하고, 그 대가로 잃는 적응성(중간 결과 기반 경로 변경)을 인지해 &#x27;계획형 그래프 vs 적응형 루프&#x27;를 문제에 따라 고르며, 이것이 loop→graph 전환의 성능 논거임을 짚는다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>인터리빙 루프의 비용</h3><p>ReAct는 매 도구 호출마다 멈춰 전체 맥락을 재프롬프트한다 — 순차적이고 토큰 낭비가 크다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>추론-관찰 분리</h3><p>ReWOO는 계획을 처음에 한 번에 세워 관찰과 추론을 떼어내, 반복 재프롬프트를 없앤다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>Planner-Worker-Solver</h3><p>계획(증거 변수) → 실행 → 종합의 3모듈 분리가 ReWOO의 골격이다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>작업 DAG</h3><p>LLMCompiler는 도구 호출을 의존성 DAG로 컴파일한다 — 노드는 작업, 엣지는 의존성.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>병렬 실행의 이득</h3><p>독립 작업을 동시에 돌려 ReAct 대비 최대 3.7x 빠르고 6.7x 저렴, 정확도 ~9% 향상.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>구조가 성능이다</h3><p>흐름을 명시적 그래프로 만들면 성능·비용·정확도가 모두 좋아진다 — loop→graph의 실용 논거.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>적응성과의 트레이드오프</h3><p>미리 계획하면 빠르지만, 중간 결과로 경로가 크게 바뀌는 문제엔 ReAct의 적응성이 낫다.</p></div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-08.html">← Tree &amp; Graph of Thoughts: From Linear Loop to Search</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-10.html">DSPy &amp; LangGraph: The Destination of Graph Engineering →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+</body></html>
