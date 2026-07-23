@@ -186,14 +186,17 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 .ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
 
 @media(max-width:800px){
-  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .app,.app.collapsed{display:block;grid-template-columns:1fr}
   .sidebar{display:none}
+  .main{width:100%;min-width:0}
   .chapter-wrap{padding:24px 20px 60px}
   .ie-grid{grid-template-columns:1fr}
   .chapter-nav{flex-direction:column}
+  .sb-block table,.a-body table,.c-walk table{display:block;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}
 }
 
-.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-display{display:block;max-width:100%;overflow-x:auto;overflow-y:hidden;padding:10px 0;text-align:center;-webkit-overflow-scrolling:touch}
+.math-display .katex-display{margin:0;max-width:100%}
 .math-inline{white-space:nowrap}
 </style>
 </head>
@@ -277,29 +280,56 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
         <ul><li>단일 LLM 스트리밍의 &#x27;말하는 동안 눈 감는&#x27; 동기화 문제를 설명한다</li><li>Perception·Decision·Reaction 세 역할의 비용 프로파일을 구분한다</li><li>장면 경계 기반 비균일 세그먼트가 왜 고정 분할보다 효율적인지 안다</li><li>1토큰 &lt;TODO&gt;/&lt;ANS&gt; 판단이 비용을 거의 없앤 원리를 설명한다</li><li>Dispider가 이벤트 탐지기의 구조적 레퍼런스가 되는 이유를 안다</li></ul>
       </div>
 
-      <div class="sb-block"><p>2장 DTD가 &quot;무엇을 입력할지&quot;를 패치 공간에서 줄였다면, Dispider(CVPR 2025)는 같은 아이디어를 <strong>시간축과 역할 구조</strong>로 확장한다. 그리고 3대 병목 중 세 번째 — 파이프라인 동기화 제약을 정면으로 공략한다.</p>
-<p>문제 설정부터 보자. VideoLLM-Online(9장) 같은 초기 스트리밍 모델은 하나의 LLM이 프레임을 읽으며 &quot;말할까 말까&quot;도 판단하고, 말하기로 하면 답변 생성까지 한다. 그런데 답변을 생성하는 동안(decode는 토큰을 하나씩 뱉으니 몇 초가 걸린다) <strong>비디오는 계속 흘러가는데 모델은 그걸 못 보고 있다.</strong> 말하는 동안 눈을 감는 셈이다. 결정적 이벤트가 하필 발화 중에 지나가면 놓친다.</p>
-<p>Dispider의 해법은 세 역할을 별도 모듈로 쪼개고 <strong>비동기로</strong> 돌리는 것이다. 가벼운 인식은 항상 켜두고, 판단은 1토큰으로 싸게, 무거운 생성은 별도 스레드에서 드물게. 이 &quot;싸게 감시, 드물게 생성&quot; 철학은 10장 StreamMind(게이트를 인코더로 내림)와 StreamBridge(판단을 0.5B로 분리)로 이어지는 계보의 원형이다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>Perception — 항상 켜진 가벼운 눈</h2><p>첫 번째 모듈 Perception은 무거운 LLM이 아니라 <strong>가벼운 비전 인코더(SigLIP류)</strong>로 프레임 특징만 계속 뽑는다. 상시 가동되지만 비용이 낮은 이유가 여기 있다 — LLM 포워딩이 아니라 인코더 한 번이면 되니까.</p>
-<p>여기서 핵심 트릭이 <strong>장면 기반 비균일 세그먼트(non-uniform segmentation)</strong>다. &quot;5초마다 자르기&quot; 같은 고정 분할 대신, 인접 프레임 특징의 유사도를 보고 <strong>장면이 바뀌는 지점에서 자른다</strong>. 정적인 구간은 하나의 긴 덩어리로 뭉개지고(토큰 절약), 변화가 많은 구간만 잘게 쪼개진다.</p>
+      <div class="sb-block"><p>2장 DTD가 "무엇을 입력할지"를 패치 공간에서 줄였다면, Dispider(CVPR 2025)는 같은 아이디어를 <strong>시간축과 역할 구조</strong>로 확장한다. 그리고 3대 병목 중 세 번째 — 파이프라인 동기화 제약을 정면으로 공략한다.</p>
+<p>문제 설정부터 보자. VideoLLM-Online(9장) 같은 초기 스트리밍 모델은 하나의 LLM이 프레임을 읽으며 "말할까 말까"도 판단하고, 말하기로 하면 답변 생성까지 한다. 그런데 답변을 생성하는 동안(decode는 토큰을 하나씩 뱉으니 몇 초가 걸린다) <strong>비디오는 계속 흘러가는데 모델은 그걸 못 보고 있다.</strong> 말하는 동안 눈을 감는 셈이다. 결정적 이벤트가 하필 발화 중에 지나가면 놓친다.</p>
+<p>Dispider의 해법은 세 역할을 별도 모듈로 쪼개고 <strong>비동기로</strong> 돌리는 것이다. 가벼운 인식은 항상 켜두고, 판단은 1토큰으로 싸게, 무거운 생성은 별도 스레드에서 드물게. 이 "싸게 감시, 드물게 생성" 철학은 10장 StreamMind(게이트를 인코더로 내림)와 StreamBridge(판단을 0.5B로 분리)로 이어지는 계보의 원형이다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>Perception — 항상 켜진 가벼운 눈</h2><p>첫 번째 모듈 Perception은 무거운 LLM이 아니라 <strong>가벼운 비전 인코더(SigLIP류)</strong>로 프레임 특징만 계속 뽑는다. 상시 가동되지만 비용이 낮은 이유가 여기 있다 — LLM 포워딩이 아니라 인코더 한 번이면 되니까.</p>
+<p>여기서 핵심 트릭이 <strong>장면 기반 비균일 세그먼트(non-uniform segmentation)</strong>다. "5초마다 자르기" 같은 고정 분할 대신, 인접 프레임 특징의 유사도를 보고 <strong>장면이 바뀌는 지점에서 자른다</strong>. 정적인 구간은 하나의 긴 덩어리로 뭉개지고(토큰 절약), 변화가 많은 구간만 잘게 쪼개진다.</p>
 <p>이것을 2장과 연결하면 명확해진다. <strong>TimeChat-Online이 패치 단위(공간)로 하던 중복 제거를, Dispider는 시간축 단위로 한다.</strong> 안 변하는 5분짜리 복도 영상은 한 세그먼트로, 사람들이 붐비는 10초는 여러 세그먼트로 — 정보량에 비례해 시간 해상도를 배분하는 것이다.</p>
-<p>결과적으로 Perception 단계에서 이미 &quot;정보가 없는 시간 구간&quot;에는 연산을 아끼는 첫 번째 원리가 구현된다.</p></div><div class="sb-block"><h2>Decision — 1토큰짜리 판단</h2><p>두 번째 모듈 Decision은 이 코스에서 처음 만나는 <strong>명시적 트리거 게이트</strong>다.</p>
+<p>결과적으로 Perception 단계에서 이미 "정보가 없는 시간 구간"에는 연산을 아끼는 첫 번째 원리가 구현된다.</p></div><div class="sb-block"><h2>Decision — 1토큰짜리 판단</h2><p>두 번째 모듈 Decision은 이 코스에서 처음 만나는 <strong>명시적 트리거 게이트</strong>다.</p>
 <p>세그먼트가 하나 끝날 때마다 [지금까지의 메모리 + 현재 클립 특징 + 질문]을 넣고 딱 <strong>토큰 하나만</strong> 예측시킨다.</p>
-<p>- <code>&lt;TODO&gt;</code> = 아직 답할 때가 아님, 침묵하고 대기
-- <code>&lt;ANS&gt;</code> = 지금 답해라, 반응 모듈을 깨워라</p>
-<p>핵심은 <strong>전체 답변을 생성해보고 판단하는 게 아니라, 1토큰짜리 분류</strong>라는 점이다. Decode가 길게 돌 필요가 없으니 판단 비용이 거의 없다. 이것이 &quot;판단은 싸게&quot;의 구체적 구현이다.</p>
-<p>이 설계가 곧바로 이벤트 탐지기가 된다. &quot;이벤트 X가 발생하면 알려줘&quot;라는 질문을 걸어두면, Decision 모듈이 매 세그먼트마다 저비용으로 감시하다가 발생 시점에만 <code>&lt;ANS&gt;</code>를 낸다. 즉 <strong>Dispider의 구조 자체가 저비용 상시 감시기</strong>다 — 이벤트 탐지를 위해 별도 시스템을 얹는 게 아니라, 질문을 바꿔 끼우기만 하면 된다.</p>
+<ul>
+<li><code>&lt;TODO&gt;</code> = 아직 답할 때가 아님, 침묵하고 대기</li>
+<li><code>&lt;ANS&gt;</code> = 지금 답해라, 반응 모듈을 깨워라</li>
+</ul>
+<p>핵심은 <strong>전체 답변을 생성해보고 판단하는 게 아니라, 1토큰짜리 분류</strong>라는 점이다. Decode가 길게 돌 필요가 없으니 판단 비용이 거의 없다. 이것이 "판단은 싸게"의 구체적 구현이다.</p>
+<p>이 설계가 곧바로 이벤트 탐지기가 된다. "이벤트 X가 발생하면 알려줘"라는 질문을 걸어두면, Decision 모듈이 매 세그먼트마다 저비용으로 감시하다가 발생 시점에만 <code>&lt;ANS&gt;</code>를 낸다. 즉 <strong>Dispider의 구조 자체가 저비용 상시 감시기</strong>다 — 이벤트 탐지를 위해 별도 시스템을 얹는 게 아니라, 질문을 바꿔 끼우기만 하면 된다.</p>
 <p>다만 판단이 세그먼트 경계에서만 일어난다는 점을 기억하라. 이것은 뒤에서 다룰 지연의 원천이 된다.</p></div><div class="sb-block"><h2>Reaction — 무거운 생성을 별도 스레드로</h2><p>세 번째 모듈 Reaction은 <code>&lt;ANS&gt;</code>가 나왔을 때만 도는 무거운 생성 단계다. 여기서 Dispider의 진짜 기여가 드러난다 — <strong>비동기(asynchronous) 실행.</strong></p>
-<p>Reaction이 답변을 생성하는 동안, Perception은 멈추지 않고 계속 스트림을 관찰한다. 별도 스레드/프로세스에서 돌기 때문이다. 즉 <strong>말하면서도 눈을 뜨고 있다.</strong> 이것이 &quot;파이프라인 동기화 제약&quot;을 해소하는 핵심 설계다.</p>
+<p>Reaction이 답변을 생성하는 동안, Perception은 멈추지 않고 계속 스트림을 관찰한다. 별도 스레드/프로세스에서 돌기 때문이다. 즉 <strong>말하면서도 눈을 뜨고 있다.</strong> 이것이 "파이프라인 동기화 제약"을 해소하는 핵심 설계다.</p>
 <p>세 모듈의 비용 프로파일을 정리하면 이렇다.</p>
-<p>| 모듈 | 무게 | 가동 빈도 | 역할 |
-|---|---|---|---|
-| Perception | 가벼움(인코더) | 항상 | 특징 추출 + 세그먼트 |
-| Decision | 초경량(1토큰) | 세그먼트마다 | 침묵/응답 판단 |
-| Reaction | 무거움(풀 생성) | 트리거 시에만 | 답변 생성 |</p>
-<p>비용 절감의 논리는 결국 <strong>&quot;무거운 연산을 얼마나 드물게 호출하느냐&quot;</strong>로 귀결된다. 상시 도는 것은 가벼운 인코더뿐이고, LLM 생성은 이벤트 순간에만 켜진다. 평시 비용과 피크 비용을 분리해, 24시간 감시 같은 시나리오에서 평균 비용을 극적으로 낮춘다.</p></div><div class="sb-block"><h2>한계 — 라벨 제작과 경계 지연</h2><p>Dispider의 우아한 구조에는 두 가지 대가가 따른다.</p>
-<p>첫째, <strong>학습 데이터 제작이 까다롭다.</strong> Decision 모듈을 학습시키려면 &quot;언제 답해야 하는가&quot;의 정확한 타임스탬프 라벨이 필요하다. 즉 &quot;이 순간에는 <code>&lt;TODO&gt;</code>, 저 순간에는 <code>&lt;ANS&gt;</code>&quot;라는 정답을 영상마다 만들어야 하는데, 이런 시점 라벨링은 일반적인 비디오 캡션보다 훨씬 손이 많이 간다. 9장 VideoLLM-Online이 제안한 &quot;오프라인 라벨 → 스트리밍 대화 변환&quot; 합성 레시피가 이 부담을 던다.</p>
+<table>
+<thead>
+<tr>
+<th>모듈</th>
+<th>무게</th>
+<th>가동 빈도</th>
+<th>역할</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Perception</td>
+<td>가벼움(인코더)</td>
+<td>항상</td>
+<td>특징 추출 + 세그먼트</td>
+</tr>
+<tr>
+<td>Decision</td>
+<td>초경량(1토큰)</td>
+<td>세그먼트마다</td>
+<td>침묵/응답 판단</td>
+</tr>
+<tr>
+<td>Reaction</td>
+<td>무거움(풀 생성)</td>
+<td>트리거 시에만</td>
+<td>답변 생성</td>
+</tr>
+</tbody>
+</table>
+<p>비용 절감의 논리는 결국 <strong>"무거운 연산을 얼마나 드물게 호출하느냐"</strong>로 귀결된다. 상시 도는 것은 가벼운 인코더뿐이고, LLM 생성은 이벤트 순간에만 켜진다. 평시 비용과 피크 비용을 분리해, 24시간 감시 같은 시나리오에서 평균 비용을 극적으로 낮춘다.</p></div><div class="sb-block"><h2>한계 — 라벨 제작과 경계 지연</h2><p>Dispider의 우아한 구조에는 두 가지 대가가 따른다.</p>
+<p>첫째, <strong>학습 데이터 제작이 까다롭다.</strong> Decision 모듈을 학습시키려면 "언제 답해야 하는가"의 정확한 타임스탬프 라벨이 필요하다. 즉 "이 순간에는 <code>&lt;TODO&gt;</code>, 저 순간에는 <code>&lt;ANS&gt;</code>"라는 정답을 영상마다 만들어야 하는데, 이런 시점 라벨링은 일반적인 비디오 캡션보다 훨씬 손이 많이 간다. 9장 VideoLLM-Online이 제안한 "오프라인 라벨 → 스트리밍 대화 변환" 합성 레시피가 이 부담을 던다.</p>
 <p>둘째, <strong>경계 지연(boundary latency)이다.</strong> 판단이 세그먼트 경계에서만 일어나므로, 이벤트가 세그먼트 중간에 걸치면 다음 경계까지 반응이 미뤄진다. 세그먼트를 잘게 쪼개면 지연은 줄지만 판단 횟수가 늘어 비용이 오르는 트레이드오프가 생긴다.</p>
-<p>이 지연 문제는 10장 StreamMind가 다른 방식으로 공략한다 — SSM 게이트를 프레임마다 상수 비용으로 돌려 100 FPS 판단을 달성함으로써, 세그먼트 경계라는 개념 자체를 없앤다. Dispider가 &quot;세그먼트당 1토큰&quot;이라면 StreamMind는 &quot;프레임당 게이트 신호&quot;인 셈이다.</p>
+<p>이 지연 문제는 10장 StreamMind가 다른 방식으로 공략한다 — SSM 게이트를 프레임마다 상수 비용으로 돌려 100 FPS 판단을 달성함으로써, 세그먼트 경계라는 개념 자체를 없앤다. Dispider가 "세그먼트당 1토큰"이라면 StreamMind는 "프레임당 게이트 신호"인 셈이다.</p>
 <p>정리하면 Dispider는 <strong>역할 분리와 비동기라는 구조적 정답</strong>을 제시했지만, 판단 주기(세그먼트)와 학습 라벨이라는 실무적 비용을 남겼다. 이 둘을 각각 개선하는 것이 이후 트리거 계열 연구의 전장이다.</p></div>
       <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
     <div class="analogy-card">
@@ -307,11 +337,11 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
       <div class="a-title">응급실의 트리아지 간호사</div>
       <div class="a-body"><p>붐비는 응급실을 생각하자. 만약 전문의(무거운 LLM) 한 명이 접수·진단·수술을 혼자 다 하면, 수술하는 동안(생성) 새로 실려 오는 환자(프레임)를 아무도 못 본다. 그 사이 위독한 환자가 방치될 수 있다 — 이것이 단일 LLM의 동기화 문제다.</p>
 <p>Dispider의 응급실은 역할을 나눈다. <strong>접수 데스크(Perception)</strong>는 항상 열려 있고, 실려 오는 환자를 계속 훑는다. 한가한 시간대는 뭉뚱그려 넘기고, 사고가 몰리는 시간대만 촘촘히 기록한다(비균일 세그먼트).</p>
-<p><strong>트리아지 간호사(Decision)</strong>는 환자를 볼 때마다 딱 한 번의 판정만 한다 — &quot;대기(TODO)&quot; 또는 &quot;지금 의사 호출(ANS)&quot;. 진단서를 길게 쓰지 않고 초록/빨강 팔찌 하나만 채운다(1토큰). 그리고 <strong>전문의(Reaction)</strong>는 빨강 팔찌가 나올 때만 수술방으로 불려간다. 전문의가 수술하는 동안에도 접수 데스크는 계속 돌아가니, 응급실은 결코 눈을 감지 않는다.</p></div>
+<p><strong>트리아지 간호사(Decision)</strong>는 환자를 볼 때마다 딱 한 번의 판정만 한다 — "대기(TODO)" 또는 "지금 의사 호출(ANS)". 진단서를 길게 쓰지 않고 초록/빨강 팔찌 하나만 채운다(1토큰). 그리고 <strong>전문의(Reaction)</strong>는 빨강 팔찌가 나올 때만 수술방으로 불려간다. 전문의가 수술하는 동안에도 접수 데스크는 계속 돌아가니, 응급실은 결코 눈을 감지 않는다.</p></div>
     </div>
       <div class="section-div"><h2>💻 코드 예시</h2></div>
     <div class="code-card">
-      <div class="c-intro"><p>Dispider의 세 모듈을 개념 수준으로 엮어보자. 가벼운 perception이 장면 경계로 세그먼트를 끊고, 경계마다 1토큰 decision을 내리며, &lt;ANS&gt;일 때만 무거운 reaction을 비동기로 던진다.</p></div>
+      <div class="c-intro"><p>Dispider의 세 모듈을 개념 수준으로 엮어보자. 가벼운 perception이 장면 경계로 세그먼트를 끊고, 경계마다 1토큰 decision을 내리며, <ANS>일 때만 무거운 reaction을 비동기로 던진다.</p></div>
       <div class="code-bar">python</div>
       <pre><code class="language-python">import threading, queue
 

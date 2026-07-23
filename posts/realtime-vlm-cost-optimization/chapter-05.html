@@ -186,14 +186,17 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 .ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
 
 @media(max-width:800px){
-  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .app,.app.collapsed{display:block;grid-template-columns:1fr}
   .sidebar{display:none}
+  .main{width:100%;min-width:0}
   .chapter-wrap{padding:24px 20px 60px}
   .ie-grid{grid-template-columns:1fr}
   .chapter-nav{flex-direction:column}
+  .sb-block table,.a-body table,.c-walk table{display:block;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}
 }
 
-.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-display{display:block;max-width:100%;overflow-x:auto;overflow-y:hidden;padding:10px 0;text-align:center;-webkit-overflow-scrolling:touch}
+.math-display .katex-display{margin:0;max-width:100%}
 .math-inline{white-space:nowrap}
 </style>
 </head>
@@ -277,35 +280,56 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
         <ul><li>StreamingVLM(버림)과 ReKV(보관)의 철학 차이를 대비한다</li><li>sliding-window 인코딩으로 쓰기 비용을 상수로 유지하는 방법을 안다</li><li>레이어별 KV 검색이 왜 층마다 따로 일어나야 하는지 설명한다</li><li>ReKV가 비디오 RAG 대비 재인코딩 비용 0인 이유를 안다</li><li>ReKV가 reactive 구조라 트리거 없이 장기기억 백엔드로 쓰이는 위치를 안다</li></ul>
       </div>
 
-      <div class="sb-block"><p>4장 StreamingVLM은 &quot;과거는 어차피 다 못 들고 다니니 버리자 — 텍스트 요약만 남기고&quot;라는 철학이었다. ReKV(ICLR 2025)는 정확히 정반대에서 출발한다 — <strong>&quot;GPU에서만 내리자. 버리진 말자.&quot;</strong></p>
+      <div class="sb-block"><p>4장 StreamingVLM은 "과거는 어차피 다 못 들고 다니니 버리자 — 텍스트 요약만 남기고"라는 철학이었다. ReKV(ICLR 2025)는 정확히 정반대에서 출발한다 — <strong>"GPU에서만 내리자. 버리진 말자."</strong></p>
 <p>두 논문은 같은 병목(무한 KV cache)을 공략하지만 해법이 대칭적이다. StreamingVLM은 GPU 메모리도 저장 공간도 상수로 묶는 대신 과거 시각 정보를 잃는다. ReKV는 GPU 메모리는 상수로 묶되 저장 공간은 선형으로 늘리는 대신 <strong>과거를 완전히 보존</strong>한다. 무엇을 희생하고 무엇을 지킬지의 선택이 다른 것이다.</p>
-<p>ReKV의 핵심 통찰은 &quot;한 번 계산한 KV를 두 번 계산하지 마라&quot;다. 프레임을 인코딩하며 만든 KV cache를 버리는 대신 창고(RAM/디스크)에 차곡차곡 넣어두고, 질문이 오면 관련된 부분만 꺼내 재사용한다. 게다가 training-free — 기존 Video-LLM에 재학습 없이 붙는다. 이 챕터는 그 쓰기(오프로드)와 읽기(레이어별 검색) 두 축을 해부하고, 이벤트 탐지 파이프라인에서 ReKV가 차지하는 &quot;사후 질의 백엔드&quot;라는 자리를 짚는다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>쓰기 — sliding-window 인코딩과 오프로드</h2><p>ReKV의 첫 번째 축은 프레임이 들어올 때의 <strong>쓰기(write)</strong> 경로다.</p>
+<p>ReKV의 핵심 통찰은 "한 번 계산한 KV를 두 번 계산하지 마라"다. 프레임을 인코딩하며 만든 KV cache를 버리는 대신 창고(RAM/디스크)에 차곡차곡 넣어두고, 질문이 오면 관련된 부분만 꺼내 재사용한다. 게다가 training-free — 기존 Video-LLM에 재학습 없이 붙는다. 이 챕터는 그 쓰기(오프로드)와 읽기(레이어별 검색) 두 축을 해부하고, 이벤트 탐지 파이프라인에서 ReKV가 차지하는 "사후 질의 백엔드"라는 자리를 짚는다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>쓰기 — sliding-window 인코딩과 오프로드</h2><p>ReKV의 첫 번째 축은 프레임이 들어올 때의 <strong>쓰기(write)</strong> 경로다.</p>
 <p>프레임이 들어오는 대로 sliding-window attention으로 인코딩한다. 새 프레임은 최근 프레임들만 참조하므로 인코딩 비용이 일정하게 유지된다 — 여기까지는 상수 비용이다. 그런데 이때 생성된 KV cache를 버리지 않는다. 대신 <strong>GPU → CPU RAM → 디스크로 계층적으로 오프로드</strong>한다.</p>
 <p>비유하면 이렇다. 책상(GPU 메모리)은 좁으니, 다 읽은 서류를 버리는 게 아니라 서랍(RAM)과 창고(디스크)에 차곡차곡 옮겨둔다. 책상 위는 늘 깔끔하게 유지되지만(GPU 메모리 상수), 창고는 시간이 갈수록 계속 커진다(저장 공간 선형 증가).</p>
 <p>이 트레이드오프가 ReKV의 정체성이다.</p>
-<p>| 자원 | StreamingVLM | ReKV |
-|---|---|---|
-| GPU 메모리 | 고정 | 고정 |
-| 저장 공간 | 고정 | <strong>선형 증가</strong> |
-| 과거 정보 | 텍스트 요약만 | <strong>완전 보존</strong> |</p>
-<p>GPU라는 비싸고 좁은 자원은 상수로 지키되, 값싼 디스크를 늘려 과거를 통째로 보존하는 교환이다. 디스크는 GPU보다 훨씬 싸므로, &quot;완전한 기억&quot;이 필요한 응용에서는 합리적인 선택이 된다.</p></div><div class="sb-block"><h2>읽기 — 레이어별 KV 검색</h2><p>두 번째 축은 질문이 왔을 때의 <strong>읽기(read)</strong> 경로이고, 여기가 ReKV의 진짜 기여다.</p>
+<table>
+<thead>
+<tr>
+<th>자원</th>
+<th>StreamingVLM</th>
+<th>ReKV</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GPU 메모리</td>
+<td>고정</td>
+<td>고정</td>
+</tr>
+<tr>
+<td>저장 공간</td>
+<td>고정</td>
+<td><strong>선형 증가</strong></td>
+</tr>
+<tr>
+<td>과거 정보</td>
+<td>텍스트 요약만</td>
+<td><strong>완전 보존</strong></td>
+</tr>
+</tbody>
+</table>
+<p>GPU라는 비싸고 좁은 자원은 상수로 지키되, 값싼 디스크를 늘려 과거를 통째로 보존하는 교환이다. 디스크는 GPU보다 훨씬 싸므로, "완전한 기억"이 필요한 응용에서는 합리적인 선택이 된다.</p></div><div class="sb-block"><h2>읽기 — 레이어별 KV 검색</h2><p>두 번째 축은 질문이 왔을 때의 <strong>읽기(read)</strong> 경로이고, 여기가 ReKV의 진짜 기여다.</p>
 <p>질문이 들어오면 전체 창고를 다 꺼내오는 게 아니라, <strong>질문과 관련된 구간의 KV만 검색해서</strong> GPU로 다시 올려 attention을 수행한다. 창고가 아무리 커도 GPU에 올리는 것은 관련 부분뿐이라, 응답 비용이 저장량에 비례해 폭발하지 않는다.</p>
 <p>핵심 디테일은 이 검색이 <strong>레이어별(layer-wise)로</strong> 일어난다는 것이다. LLM의 각 층은 서로 다른 것에 주목한다 — 어떤 층은 물체의 외형에, 어떤 층은 동작에, 어떤 층은 공간 관계에 민감하다. 따라서 하나의 검색 결과를 모든 층에 똑같이 쓰면 각 층의 필요를 못 맞춘다.</p>
-<p>ReKV는 층마다 질문 벡터와 그 층 KV의 유사도를 따로 계산해, <strong>각 층에 필요한 블록을 각각 골라온다</strong>. 어떤 층에는 3분 구간의 KV를, 다른 층에는 20분 구간의 KV를 올리는 식이다. 이 레이어별 정밀 검색이 검색 정확도를 끌어올리고, 이후 &quot;KV retrieval 계열&quot;의 기준점이 되었다.</p></div><div class="sb-block"><h2>왜 중요한가 — 비디오 RAG와의 결정적 차이</h2><p>ReKV의 가치는 비디오 RAG와 비교하면 선명해진다.</p>
-<p>일반적인 비디오 RAG는 &quot;관련 프레임을 찾아서 → 그 프레임을 <strong>다시 인코딩</strong>&quot;한다. 그런데 다시 인코딩한다는 것은 찾아온 프레임에 대한 <strong>prefill을 또 지불</strong>한다는 뜻이다(1장의 prefill 비용을 상기하라). 검색은 싸도 재인코딩이 비싸다.</p>
-<p>ReKV는 다르다. <strong>이미 계산해둔 KV를 그대로 재사용</strong>하므로 재인코딩 비용이 0이다. &quot;한 번 계산한 건 두 번 계산하지 않는다&quot;가 이 논문의 비용 절감 원리다.</p>
+<p>ReKV는 층마다 질문 벡터와 그 층 KV의 유사도를 따로 계산해, <strong>각 층에 필요한 블록을 각각 골라온다</strong>. 어떤 층에는 3분 구간의 KV를, 다른 층에는 20분 구간의 KV를 올리는 식이다. 이 레이어별 정밀 검색이 검색 정확도를 끌어올리고, 이후 "KV retrieval 계열"의 기준점이 되었다.</p></div><div class="sb-block"><h2>왜 중요한가 — 비디오 RAG와의 결정적 차이</h2><p>ReKV의 가치는 비디오 RAG와 비교하면 선명해진다.</p>
+<p>일반적인 비디오 RAG는 "관련 프레임을 찾아서 → 그 프레임을 <strong>다시 인코딩</strong>"한다. 그런데 다시 인코딩한다는 것은 찾아온 프레임에 대한 <strong>prefill을 또 지불</strong>한다는 뜻이다(1장의 prefill 비용을 상기하라). 검색은 싸도 재인코딩이 비싸다.</p>
+<p>ReKV는 다르다. <strong>이미 계산해둔 KV를 그대로 재사용</strong>하므로 재인코딩 비용이 0이다. "한 번 계산한 건 두 번 계산하지 않는다"가 이 논문의 비용 절감 원리다.</p>
 <p><span class="math-display">\[\text{비디오 RAG: } \text{검색} + \underbrace{\text{재인코딩(prefill)}}_{\text{비쌈}} \qquad \text{ReKV: } \text{검색} + \underbrace{\text{KV 로드}}_{\text{저렴}}\]</span></p>
 <p>여기에 결정적 실용 이점이 하나 더 있다 — <strong>training-free</strong>다. ReKV는 기존 Video-LLM의 이미 학습된 attention을 그대로 활용하므로, 재학습 없이 붙는다. 4장 StreamingVLM이 정렬 학습을 요구하고, 7장 Flash-VStream이 전용 메모리 모듈 학습을 요구하는 것과 대비된다. 이식성(portability) 관점에서 ReKV는 Stage ② 중 가장 붙이기 쉬운 축에 속한다.</p></div><div class="sb-block"><h2>위치 — reactive 장기기억 백엔드</h2><p>ReKV를 이벤트 탐지 파이프라인 안에 정확히 배치하는 것이 이 챕터의 실무적 결론이다.</p>
-<p>ReKV는 본질적으로 <strong>reactive(수동적)</strong> 구조다. 스스로 &quot;지금 이벤트다&quot;라고 발화하는 트리거가 없다 — 질문이 와야 답한다. 따라서 ReKV 자체는 실시간 이벤트 탐지의 본체가 될 수 없다. 그것은 Stage ③(9·10장)의 몫이다.</p>
-<p>대신 ReKV는 <strong>이벤트 탐지 이후</strong>의 사후 질의에서 빛난다. 예를 들어 트리거가 &quot;수상한 사람 발견&quot;을 잡은 뒤, 운영자가 &quot;그 사람이 30분 전에는 뭘 했지?&quot;라고 물으면 — 이 질의에 답하려면 30분 전의 완전한 시각 정보가 필요하다. StreamingVLM은 텍스트로만 요약해뒀으니 답할 수 없지만, ReKV는 그 시점의 KV를 창고에서 검색해 정밀하게 답한다.</p>
-<p>즉 ReKV의 파이프라인 내 자리는 <strong>장기기억 백엔드 / 포렌식(forensic) 계층</strong>이다. 10장 최종 아키텍처에서 &quot;포렌식이 필요한 배포라면 ReKV식 디스크 오프로드를 병행해 원본 KV를 창고에 보존&quot;하는 선택지로 다시 등장한다.</p>
-<p>한계도 명확하다. <strong>KV는 원본 영상보다 크다</strong>(토큰당 레이어 × 헤드 × 차원). 그래서 초장시간 저장은 부담이고, 검색 정확도가 답변 품질의 상한이 된다 — 창고에 다 있어도 못 찾으면 없는 것과 같다. 이 &quot;다 보관하되 검색이 병목&quot; 구조가, 6장 LiveVLM(창고에 넣기 전에 압축)의 출발점이 된다.</p></div>
+<p>ReKV는 본질적으로 <strong>reactive(수동적)</strong> 구조다. 스스로 "지금 이벤트다"라고 발화하는 트리거가 없다 — 질문이 와야 답한다. 따라서 ReKV 자체는 실시간 이벤트 탐지의 본체가 될 수 없다. 그것은 Stage ③(9·10장)의 몫이다.</p>
+<p>대신 ReKV는 <strong>이벤트 탐지 이후</strong>의 사후 질의에서 빛난다. 예를 들어 트리거가 "수상한 사람 발견"을 잡은 뒤, 운영자가 "그 사람이 30분 전에는 뭘 했지?"라고 물으면 — 이 질의에 답하려면 30분 전의 완전한 시각 정보가 필요하다. StreamingVLM은 텍스트로만 요약해뒀으니 답할 수 없지만, ReKV는 그 시점의 KV를 창고에서 검색해 정밀하게 답한다.</p>
+<p>즉 ReKV의 파이프라인 내 자리는 <strong>장기기억 백엔드 / 포렌식(forensic) 계층</strong>이다. 10장 최종 아키텍처에서 "포렌식이 필요한 배포라면 ReKV식 디스크 오프로드를 병행해 원본 KV를 창고에 보존"하는 선택지로 다시 등장한다.</p>
+<p>한계도 명확하다. <strong>KV는 원본 영상보다 크다</strong>(토큰당 레이어 × 헤드 × 차원). 그래서 초장시간 저장은 부담이고, 검색 정확도가 답변 품질의 상한이 된다 — 창고에 다 있어도 못 찾으면 없는 것과 같다. 이 "다 보관하되 검색이 병목" 구조가, 6장 LiveVLM(창고에 넣기 전에 압축)의 출발점이 된다.</p></div>
       <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
     <div class="analogy-card">
       <div class="a-head">Analogy</div>
       <div class="a-title">국가기록원의 서고와 사서</div>
       <div class="a-body"><p>방대한 기록을 다루는 두 방식이 있다. StreamingVLM식 사무실은 책상 위 서류만 남기고 나머지는 요약 메모만 남긴 뒤 폐기한다 — 깔끔하지만 원본은 영영 사라진다. ReKV식 기록원은 다르다. <strong>어떤 문서도 버리지 않고 지하 서고에 원본 그대로 보관</strong>한다. 책상(GPU)은 늘 비어 있지만, 서고(디스크)는 해마다 층이 늘어난다.</p>
-<p>누군가 &quot;3년 전 그 사건의 원본 기록을 보고 싶다&quot;고 오면, 사서는 서고 전체를 끌어올리지 않는다. <strong>청구 주제와 관련된 서가의 상자만</strong> 정확히 찾아 열람실로 올린다(검색 후 로드). 게다가 이 사서는 층마다 전문이 달라서 — 인명 담당, 지명 담당, 날짜 담당이 각자 자기 서가에서 관련 상자를 따로 찾아온다(레이어별 검색).</p>
+<p>누군가 "3년 전 그 사건의 원본 기록을 보고 싶다"고 오면, 사서는 서고 전체를 끌어올리지 않는다. <strong>청구 주제와 관련된 서가의 상자만</strong> 정확히 찾아 열람실로 올린다(검색 후 로드). 게다가 이 사서는 층마다 전문이 달라서 — 인명 담당, 지명 담당, 날짜 담당이 각자 자기 서가에서 관련 상자를 따로 찾아온다(레이어별 검색).</p>
 <p>여기서 결정적 절약 — 일반 도서관(비디오 RAG)은 원본이 없어 관련 책을 <strong>다시 인쇄</strong>해야 하지만, 이 기록원은 <strong>원본이 그대로 있으니 꺼내오기만</strong> 하면 된다(재인코딩 0). 단, 서고는 원본이라 요약본보다 훨씬 넓은 공간을 먹고, 사서가 엉뚱한 상자를 찾아오면 아무리 완벽히 보관돼 있어도 헛일이다.</p></div>
     </div>
       <div class="section-div"><h2>💻 코드 예시</h2></div>

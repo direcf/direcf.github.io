@@ -186,14 +186,17 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 .ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
 
 @media(max-width:800px){
-  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .app,.app.collapsed{display:block;grid-template-columns:1fr}
   .sidebar{display:none}
+  .main{width:100%;min-width:0}
   .chapter-wrap{padding:24px 20px 60px}
   .ie-grid{grid-template-columns:1fr}
   .chapter-nav{flex-direction:column}
+  .sb-block table,.a-body table,.c-walk table{display:block;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}
 }
 
-.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-display{display:block;max-width:100%;overflow-x:auto;overflow-y:hidden;padding:10px 0;text-align:center;-webkit-overflow-scrolling:touch}
+.math-display .katex-display{margin:0;max-width:100%}
 .math-inline{white-space:nowrap}
 </style>
 </head>
@@ -278,40 +281,65 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
       </div>
 
       <div class="sb-block"><p>이제 Stage ② 기억 관리로 넘어간다. 이 단계의 다섯 논문은 전부 하나의 질문에 답한다 — <strong>KV cache를 시간과 무관한 고정 크기로 어떻게 유지하는가.</strong> 그 계보의 출발점이 StreamingVLM(MIT Han Lab, arXiv 2510.09608)이다.</p>
-<p>1장에서 배운 attention sink를 기억하는가? StreamingLLM이 텍스트에서 &quot;sink + 최근 윈도우&quot;로 무한 스트림을 처리했다면, StreamingVLM은 이것을 <strong>비디오로</strong> 확장한다. 하지만 단순 확장이 아니다. 핵심은 &quot;왜 슬라이딩 윈도우를 그냥 쓰면 망하는가&quot;에 대한 정교한 답에 있다.</p>
+<p>1장에서 배운 attention sink를 기억하는가? StreamingLLM이 텍스트에서 "sink + 최근 윈도우"로 무한 스트림을 처리했다면, StreamingVLM은 이것을 <strong>비디오로</strong> 확장한다. 하지만 단순 확장이 아니다. 핵심은 "왜 슬라이딩 윈도우를 그냥 쓰면 망하는가"에 대한 정교한 답에 있다.</p>
 <p>비디오에는 텍스트에 없는 특수성이 있다 — 비전 토큰은 양이 많고 정보 밀도가 낮은 반면, 모델이 생성한 텍스트(캡션·답변)는 양이 적고 밀도가 높다. StreamingVLM은 이 비대칭을 이용해 <strong>비전 토큰은 짧게 유지하고 텍스트는 길게 유지</strong>한다. 그 결과 과거 영상의 원본 픽셀은 버리되 그 내용을 서술한 텍스트가 압축된 장기 기억으로 남는다. 이 챕터는 그 3구역 구조와, 그것을 실제로 작동시키는 두 디테일(위치 재인덱싱, 학습-추론 정렬)을 해부한다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>왜 순진한 두 접근이 실패하는가</h2><p>고정 캐시를 만들려는 순진한 두 시도가 왜 무너지는지부터 봐야 StreamingVLM의 설계가 이해된다.</p>
 <p><strong>접근 A — 전부 유지.</strong> KV cache가 선형으로 커지고 attention은 사실상 제곱 비용이 된다(1장에서 계산했다). 몇 분 만에 메모리와 지연이 폭발한다. 무한 스트림에는 애초에 불가능한 선택지다.</p>
 <p><strong>접근 B — 최근 N개만 유지(순수 슬라이딩 윈도우).</strong> 여기엔 두 가지 함정이 있다.</p>
 <p>첫째, 앞서 배운 <strong>attention sink를 버리면 모델이 붕괴</strong>한다. 최근 N개만 남기면 맨 앞 sink 토큰이 사라져 attention 분포가 무너진다.</p>
-<p>둘째, 더 미묘한 <strong>학습-추론 불일치(train-test mismatch)</strong>다. 모델은 학습 때 &quot;처음부터 끝까지 다 보이는&quot; 풀 attention으로 배웠는데, 추론에서 갑자기 중간이 뻥 뚫린 캐시를 주면 이는 학습 중 본 적 없는 분포다. 모델은 처음 보는 입력 형태에 성능이 무너진다.</p>
-<p>즉 고정 캐시는 &quot;무엇을 남길지&quot;만의 문제가 아니라 &quot;모델이 그 남긴 형태를 학습 때도 봤는가&quot;의 문제이기도 하다. StreamingVLM은 이 둘을 각각 3구역 구조와 정렬 학습으로 푼다.</p></div><div class="sb-block"><h2>3구역 KV cache — 역할에 따라 수명을 달리한다</h2><p>StreamingVLM의 KV cache는 세 구역으로 나뉘고, 각 구역이 서로 다른 수명을 가진다.</p>
-<p>- <strong>Sink 토큰</strong> — 맨 앞 몇 개, 영구 보존. attention 붕괴를 막는 닻(anchor) 역할. 절대 방출하지 않는다.</p>
-<p>- <strong>텍스트 윈도우(길게)</strong> — 지금까지 모델이 생성한 답변·캡션 토큰들. 텍스트는 토큰당 정보 밀도가 높아 사실상 과거 영상의 &quot;요약본&quot; 역할을 하므로 오래 유지한다.</p>
-<p>- <strong>비전 윈도우(짧게)</strong> — 최근 프레임의 비주얼 토큰만. 양이 많고 밀도가 낮으므로 오래된 것부터 빨리 방출한다.</p>
+<p>둘째, 더 미묘한 <strong>학습-추론 불일치(train-test mismatch)</strong>다. 모델은 학습 때 "처음부터 끝까지 다 보이는" 풀 attention으로 배웠는데, 추론에서 갑자기 중간이 뻥 뚫린 캐시를 주면 이는 학습 중 본 적 없는 분포다. 모델은 처음 보는 입력 형태에 성능이 무너진다.</p>
+<p>즉 고정 캐시는 "무엇을 남길지"만의 문제가 아니라 "모델이 그 남긴 형태를 학습 때도 봤는가"의 문제이기도 하다. StreamingVLM은 이 둘을 각각 3구역 구조와 정렬 학습으로 푼다.</p></div><div class="sb-block"><h2>3구역 KV cache — 역할에 따라 수명을 달리한다</h2><p>StreamingVLM의 KV cache는 세 구역으로 나뉘고, 각 구역이 서로 다른 수명을 가진다.</p>
+<ul>
+<li>
+<p><strong>Sink 토큰</strong> — 맨 앞 몇 개, 영구 보존. attention 붕괴를 막는 닻(anchor) 역할. 절대 방출하지 않는다.</p>
+</li>
+<li>
+<p><strong>텍스트 윈도우(길게)</strong> — 지금까지 모델이 생성한 답변·캡션 토큰들. 텍스트는 토큰당 정보 밀도가 높아 사실상 과거 영상의 "요약본" 역할을 하므로 오래 유지한다.</p>
+</li>
+<li>
+<p><strong>비전 윈도우(짧게)</strong> — 최근 프레임의 비주얼 토큰만. 양이 많고 밀도가 낮으므로 오래된 것부터 빨리 방출한다.</p>
+</li>
+</ul>
 <p>이 구조의 직관이 핵심이다. <strong>과거 영상의 원본 픽셀 토큰은 버리되, 그 내용을 서술한 텍스트가 압축된 기억으로 남는다.</strong></p>
-<p>사람이 영화를 볼 때와 똑같다. 두 시간 전 장면의 픽셀을 정확히 기억하진 못해도, &quot;아까 주인공이 총을 챙겼지&quot;라는 언어적 기억은 또렷이 남는다. 비전은 순간의 지각이고 텍스트는 지속되는 기억이다. StreamingVLM은 이 인간 기억의 비대칭을 KV cache 설계에 그대로 옮겼다.</p>
+<p>사람이 영화를 볼 때와 똑같다. 두 시간 전 장면의 픽셀을 정확히 기억하진 못해도, "아까 주인공이 총을 챙겼지"라는 언어적 기억은 또렷이 남는다. 비전은 순간의 지각이고 텍스트는 지속되는 기억이다. StreamingVLM은 이 인간 기억의 비대칭을 KV cache 설계에 그대로 옮겼다.</p>
 <p>덕분에 캐시 크기가 상수로 고정되어, 시간이 아무리 지나도 프레임당 처리 비용이 일정하다. 결과는 강력하다 — H100 한 장에서 8 FPS로 사실상 무한 스트림을 처리하고, 자체 장기 스트리밍 벤치마크에서 GPT-4o mini 대비 66% 승률을 낸다.</p></div><div class="sb-block"><h2>위치 재인덱싱 — 구멍 난 좌표를 메운다</h2><p>3구역 구조를 실제로 작동시키려면 반드시 풀어야 하는 디테일이 있다 — <strong>위치 정보 문제</strong>다.</p>
 <p>요즘 LLM은 RoPE(Rotary Position Embedding)로 각 토큰에 위치 정보를 심는다. 그런데 중간의 비전 토큰을 방출하면 위치 번호에 구멍이 생긴다. 예를 들어 남은 토큰의 위치가 <span class="math-inline">\(0, 1, 2, \dots, 5000, 90000, 90001, \dots\)</span> 처럼 뛴다.</p>
-<p>모델은 이런 거대한 간격(gap)을 학습한 적이 없다. RoPE는 상대 위치에 민감하게 설계되어 있어, 5000에서 90000으로 점프하는 상대 거리는 모델에게 &quot;듣도 보도 못한 먼 거리&quot;로 해석되어 혼란을 일으킨다.</p>
+<p>모델은 이런 거대한 간격(gap)을 학습한 적이 없다. RoPE는 상대 위치에 민감하게 설계되어 있어, 5000에서 90000으로 점프하는 상대 거리는 모델에게 "듣도 보도 못한 먼 거리"로 해석되어 혼란을 일으킨다.</p>
 <p>해법은 방출 후 남은 토큰들의 위치를 <strong>연속되게 다시 매기는 것</strong>이다.</p>
 <p><span class="math-display">\[\text{방출 전: } [0,1,\dots,5000,\ 90000,90001,\dots] \;\longrightarrow\; \text{재인덱싱 후: } [0,1,2,3,\dots]\]</span></p>
-<p>이렇게 하면 모델 입장에서는 &quot;구멍 없는 짧은 시퀀스&quot;처럼 보인다. 실제로는 1시간 전 정보와 방금 전 정보가 섞여 있지만, 위치 좌표상으로는 매끄럽게 이어진 짧은 문맥이 된다. 이 재인덱싱이 없으면 3구역 캐시는 이론적으로만 예쁘고 실전에서는 붕괴한다 — 논문의 숨은 일꾼이다.</p></div><div class="sb-block"><h2>학습-추론 정렬 — 짧게 배워 무한히 추론한다</h2><p>마지막 조각은 앞서 언급한 학습-추론 불일치를 정면으로 해소하는 <strong>정렬 학습(training-inference alignment)</strong>이다.</p>
+<p>이렇게 하면 모델 입장에서는 "구멍 없는 짧은 시퀀스"처럼 보인다. 실제로는 1시간 전 정보와 방금 전 정보가 섞여 있지만, 위치 좌표상으로는 매끄럽게 이어진 짧은 문맥이 된다. 이 재인덱싱이 없으면 3구역 캐시는 이론적으로만 예쁘고 실전에서는 붕괴한다 — 논문의 숨은 일꾼이다.</p></div><div class="sb-block"><h2>학습-추론 정렬 — 짧게 배워 무한히 추론한다</h2><p>마지막 조각은 앞서 언급한 학습-추론 불일치를 정면으로 해소하는 <strong>정렬 학습(training-inference alignment)</strong>이다.</p>
 <p>추론 때 캐시가 [sink + 텍스트 + 최근 비전]이라는 특정 모양을 가진다면, 학습도 그 모양과 비슷해지도록 맞춰준다. 구체적으로는 긴 영상 전체를 한 번에 학습하는 대신, <strong>짧은 구간을 겹쳐가며(overlapped) 학습</strong>해 추론 시의 캐시 분포를 학습 중에 미리 경험시킨다.</p>
 <p>이 정렬의 실용적 이득이 크다. 무한 스트림을 추론하기 위해 무한 길이 영상으로 학습할 필요가 없다. <strong>짧은 시퀀스 학습만으로 무한 스트림 추론이 가능</strong>하다. 학습 비용까지 절감되는 것이다 — Stage ②의 다른 기법들이 대부분 추론 시 비용만 다루는 것과 대조된다.</p>
 <p>정리하면 StreamingVLM은 세 가지를 결합해 완성된다.</p>
-<p>| 구성요소 | 해결하는 문제 |
-|---|---|
-| 3구역 고정 캐시 | 캐시 크기를 상수로 (메모리 폭발) |
-| 위치 재인덱싱 | RoPE 좌표 구멍 (위치 혼란) |
-| 학습-추론 정렬 | 분포 불일치 (성능 붕괴) |</p>
-<p>한계도 분명하다. 장기 기억이 <strong>텍스트 서술에 의존</strong>하므로, 모델이 말로 남기지 않은 과거 시각 정보는 소실된다. &quot;1시간 전 그 장면을 다시 자세히 봐&quot; 같은 질의에는 취약하다. 이 빈틈을 다음 장 ReKV(버리지 않고 오프로드+검색)가 보완재로 메운다. StreamingVLM과 ReKV는 &quot;버리되 요약을 남긴다&quot; vs &quot;안 버리고 창고에 넣는다&quot;라는 정반대 철학의 짝이다.</p></div>
+<table>
+<thead>
+<tr>
+<th>구성요소</th>
+<th>해결하는 문제</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>3구역 고정 캐시</td>
+<td>캐시 크기를 상수로 (메모리 폭발)</td>
+</tr>
+<tr>
+<td>위치 재인덱싱</td>
+<td>RoPE 좌표 구멍 (위치 혼란)</td>
+</tr>
+<tr>
+<td>학습-추론 정렬</td>
+<td>분포 불일치 (성능 붕괴)</td>
+</tr>
+</tbody>
+</table>
+<p>한계도 분명하다. 장기 기억이 <strong>텍스트 서술에 의존</strong>하므로, 모델이 말로 남기지 않은 과거 시각 정보는 소실된다. "1시간 전 그 장면을 다시 자세히 봐" 같은 질의에는 취약하다. 이 빈틈을 다음 장 ReKV(버리지 않고 오프로드+검색)가 보완재로 메운다. StreamingVLM과 ReKV는 "버리되 요약을 남긴다" vs "안 버리고 창고에 넣는다"라는 정반대 철학의 짝이다.</p></div>
       <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
     <div class="analogy-card">
       <div class="a-head">Analogy</div>
       <div class="a-title">회의록만 남기는 서기</div>
       <div class="a-body"><p>온종일 이어지는 마라톤 회의가 있다. 속기사가 모든 발언의 음성 파일을 통째로 보관하려 들면(full cache), 저장고가 몇 시간 만에 터진다. 그렇다고 최근 10분 음성만 남기면(순수 슬라이딩 윈도우), 회의 초반에 정한 대전제를 잊어 논의가 산으로 간다.</p>
-<p>유능한 서기는 다르게 한다. <strong>회의 안건표 첫 장(sink)은 늘 펼쳐두고</strong>, 지나간 논의는 원본 음성을 버리는 대신 <strong>핵심을 요약한 회의록 텍스트(텍스트 윈도우)로 길게 남기며</strong>, 방금 나온 발언의 생생한 음성(비전 윈도우)만 잠깐 손에 쥔다. 두 시간 전 발언의 억양은 잊어도 &quot;그때 예산 삭감에 합의했다&quot;는 문장은 회의록에 또렷이 남는다.</p>
-<p>여기에 두 가지 요령이 더 있다. 회의록 페이지를 버릴 때마다 <strong>쪽 번호를 1,2,3…으로 다시 매겨(위치 재인덱싱)</strong> 나중에 참조가 꼬이지 않게 하고, 신입 서기를 훈련할 때 <strong>실제 회의와 똑같은 &#x27;요약본+최근 발언&#x27; 형태로 연습시켜(학습-추론 정렬)</strong> 첫날부터 무한정 긴 회의도 감당하게 만든다. 단, 회의록에 안 적힌 사소한 장면은 영원히 사라진다 — 그게 이 방식의 한계다.</p></div>
+<p>유능한 서기는 다르게 한다. <strong>회의 안건표 첫 장(sink)은 늘 펼쳐두고</strong>, 지나간 논의는 원본 음성을 버리는 대신 <strong>핵심을 요약한 회의록 텍스트(텍스트 윈도우)로 길게 남기며</strong>, 방금 나온 발언의 생생한 음성(비전 윈도우)만 잠깐 손에 쥔다. 두 시간 전 발언의 억양은 잊어도 "그때 예산 삭감에 합의했다"는 문장은 회의록에 또렷이 남는다.</p>
+<p>여기에 두 가지 요령이 더 있다. 회의록 페이지를 버릴 때마다 <strong>쪽 번호를 1,2,3…으로 다시 매겨(위치 재인덱싱)</strong> 나중에 참조가 꼬이지 않게 하고, 신입 서기를 훈련할 때 <strong>실제 회의와 똑같은 '요약본+최근 발언' 형태로 연습시켜(학습-추론 정렬)</strong> 첫날부터 무한정 긴 회의도 감당하게 만든다. 단, 회의록에 안 적힌 사소한 장면은 영원히 사라진다 — 그게 이 방식의 한계다.</p></div>
     </div>
       <div class="section-div"><h2>💻 코드 예시</h2></div>
     <div class="code-card">

@@ -186,14 +186,17 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 .ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
 
 @media(max-width:800px){
-  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .app,.app.collapsed{display:block;grid-template-columns:1fr}
   .sidebar{display:none}
+  .main{width:100%;min-width:0}
   .chapter-wrap{padding:24px 20px 60px}
   .ie-grid{grid-template-columns:1fr}
   .chapter-nav{flex-direction:column}
+  .sb-block table,.a-body table,.c-walk table{display:block;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}
 }
 
-.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-display{display:block;max-width:100%;overflow-x:auto;overflow-y:hidden;padding:10px 0;text-align:center;-webkit-overflow-scrolling:touch}
+.math-display .katex-display{margin:0;max-width:100%}
 .math-inline{white-space:nowrap}
 </style>
 </head>
@@ -277,37 +280,60 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
         <ul><li>Prefill과 Decode가 각각 어떤 비용을 만드는지 설명할 수 있다</li><li>KV cache가 왜 스트리밍에서 선형으로 폭발하는지 계산할 수 있다</li><li>Attention sink 현상과 그것이 캐시 절단을 어렵게 만드는 이유를 안다</li><li>실시간 VLM의 3대 병목(무한 KV·시간 컨텍스트 단절·파이프라인 동기화)을 구분한다</li><li>10편의 논문이 어느 단계의 비용을 깎는지 지도 위에 배치할 수 있다</li></ul>
       </div>
 
-      <div class="sb-block"><p>이 코스는 하나의 실용적 목표를 축으로 삼는다 — <strong>끝없이 흘러 들어오는 비디오에서 특정 이벤트를, 가능한 한 싼 비용으로, 실시간에 탐지하기.</strong> CCTV에서 &quot;가방을 두고 떠나는 사람&quot;을 잡거나, 공정 라인에서 &quot;불량 동작&quot;을 포착하거나, 라이브 방송에서 &quot;특정 장면&quot;을 순간 알림하는 문제들이 전부 여기에 속한다.</p>
-<p>문제는 Vision-Language Model(VLM)이 본래 이런 무한 스트림을 염두에 두고 설계되지 않았다는 점이다. VLM은 &quot;이미지 몇 장 + 질문&quot;을 한 번에 받아 답하는 오프라인 구조에서 출발했다. 이것을 초당 수십 프레임이 영원히 들어오는 상황에 그대로 켜두면, 연산량과 메모리가 시간에 비례해 폭발한다. 1분은 되지만 1시간은 안 되고, 1시간은 되지만 하루는 안 된다.</p>
-<p>그래서 이 챕터에서는 먼저 <strong>비용이 어디서 발생하는지</strong>를 정확히 짚는다. Prefill과 Decode의 차이, KV cache가 왜 커지는지, attention sink라는 이상한 현상까지 — 이 세 가지 기초가 잡히면 이후 10편의 논문이 전부 &quot;이 병목 중 하나를 어떻게 깎았는가&quot;로 깔끔하게 읽힌다. 마지막으로 전체 파이프라인을 3단계 비용 지도로 정리하고, 각 논문을 그 위에 배치한다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>Prefill vs Decode — 두 개의 서로 다른 비용</h2><p>LLM 추론은 성격이 완전히 다른 두 단계로 나뉜다. 이 구분을 모르면 &quot;왜 비디오가 특히 비싼가&quot;를 이해할 수 없다.</p>
+      <div class="sb-block"><p>이 코스는 하나의 실용적 목표를 축으로 삼는다 — <strong>끝없이 흘러 들어오는 비디오에서 특정 이벤트를, 가능한 한 싼 비용으로, 실시간에 탐지하기.</strong> CCTV에서 "가방을 두고 떠나는 사람"을 잡거나, 공정 라인에서 "불량 동작"을 포착하거나, 라이브 방송에서 "특정 장면"을 순간 알림하는 문제들이 전부 여기에 속한다.</p>
+<p>문제는 Vision-Language Model(VLM)이 본래 이런 무한 스트림을 염두에 두고 설계되지 않았다는 점이다. VLM은 "이미지 몇 장 + 질문"을 한 번에 받아 답하는 오프라인 구조에서 출발했다. 이것을 초당 수십 프레임이 영원히 들어오는 상황에 그대로 켜두면, 연산량과 메모리가 시간에 비례해 폭발한다. 1분은 되지만 1시간은 안 되고, 1시간은 되지만 하루는 안 된다.</p>
+<p>그래서 이 챕터에서는 먼저 <strong>비용이 어디서 발생하는지</strong>를 정확히 짚는다. Prefill과 Decode의 차이, KV cache가 왜 커지는지, attention sink라는 이상한 현상까지 — 이 세 가지 기초가 잡히면 이후 10편의 논문이 전부 "이 병목 중 하나를 어떻게 깎았는가"로 깔끔하게 읽힌다. 마지막으로 전체 파이프라인을 3단계 비용 지도로 정리하고, 각 논문을 그 위에 배치한다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>Prefill vs Decode — 두 개의 서로 다른 비용</h2><p>LLM 추론은 성격이 완전히 다른 두 단계로 나뉜다. 이 구분을 모르면 "왜 비디오가 특히 비싼가"를 이해할 수 없다.</p>
 <p><strong>Prefill</strong> = 입력(프롬프트 + 비디오 토큰)을 한 번에 통째로 읽어 처리하는 단계.</p>
-<p>Prefill은 모든 입력 토큰을 병렬로 처리하므로 GPU 연산량(FLOPs)이 크다. 입력이 길수록 오래 걸리고, 이것이 &quot;첫 응답까지의 지연&quot; 즉 <strong>TTFT(Time To First Token)</strong>를 결정한다. 사진 한 장은 순식간이지만, 프레임 수백 장을 쌓으면 prefill만으로 몇 초가 날아간다.</p>
+<p>Prefill은 모든 입력 토큰을 병렬로 처리하므로 GPU 연산량(FLOPs)이 크다. 입력이 길수록 오래 걸리고, 이것이 "첫 응답까지의 지연" 즉 <strong>TTFT(Time To First Token)</strong>를 결정한다. 사진 한 장은 순식간이지만, 프레임 수백 장을 쌓으면 prefill만으로 몇 초가 날아간다.</p>
 <p><strong>Decode</strong> = 답변 토큰을 하나씩 순차적으로 생성하는 단계.</p>
 <p>Decode는 토큰 하나당 연산은 작지만, 매 토큰마다 과거 전체를 참조해야 하고 순차적이라 병렬화가 안 된다. 답변이 길수록 느려진다.</p>
 <p>비디오 스트리밍의 본질적 문제가 여기서 드러난다. 프레임이 들어올 때마다 새로운 비주얼 토큰 수백 개가 입력에 추가되므로, <strong>prefill이 영원히 반복되는 상황</strong>이 된다. 오프라인 VLM은 prefill을 딱 한 번 내지만, 스트리밍 VLM은 매 프레임 prefill 비용을 다시 지불한다. 이 코스의 Stage ①(토큰 다이어트)은 바로 이 반복되는 prefill의 입력 크기를 줄이는 전략이다.</p></div><div class="sb-block"><h2>KV Cache — 요약 노트가 무한히 두꺼워진다</h2><p>Attention은 각 토큰이 과거의 모든 토큰을 참조하는 연산이다. 새 토큰을 생성할 때마다 과거 전체의 Key/Value를 다시 계산하면 엄청난 낭비이므로, 한 번 계산한 각 토큰의 <strong>Key·Value 벡터를 저장해두고 재사용</strong>한다. 이것이 KV cache다.</p>
 <p>비유하자면 시험을 볼 때 책을 매번 처음부터 다시 읽는 대신, 읽으면서 요약 노트를 쌓아두고 그 노트만 참조하는 것과 같다. 계산을 재활용하니 훨씬 빠르다.</p>
 <p>문제는 이 노트가 <strong>토큰 수에 정비례해 선형으로 커진다</strong>는 것이다. 한 토큰의 KV는 (레이어 수 × 헤드 수 × 헤드 차원 × 2)만큼의 실수 값을 차지한다. 프레임당 토큰이 많은 비디오에서는 이게 순식간에 눈덩이가 된다.</p>
 <p><span class="math-display">\[\text{KV 메모리} \propto (\text{총 토큰 수}) = (\text{FPS}) \times (\text{프레임당 토큰}) \times (\text{시간})\]</span></p>
-<p>예를 들어 1 FPS로 프레임당 196토큰을 넣으면 1시간에 약 70만 토큰이 쌓인다. 메모리가 폭발할 뿐 아니라, attention 연산 자체도 참조 대상이 많아져 함께 느려진다. 이 코스 Stage ②(기억 관리)의 논문들은 전부 &quot;KV cache를 어떻게 시간과 무관한 고정 크기로 유지하느냐&quot;라는 하나의 질문에 답한다.</p></div><div class="sb-block"><h2>Attention Sink — 함부로 앞을 버리면 모델이 붕괴한다</h2><p>캐시가 커지면 단순히 오래된 토큰을 버리면 될 것 같다. 그런데 여기 반직관적인 함정이 있다. <strong>맨 앞 토큰 몇 개를 버리면 모델의 출력이 통째로 무너진다.</strong></p>
-<p>이유는 Transformer가 attention 확률을 &quot;어딘가에는 쏟아부어야&quot; 하는 softmax 구조이기 때문이다. 딱히 참조할 곳이 없는 상황에서도 확률의 합은 1이어야 하므로, 모델은 남는 attention을 <strong>맨 앞 토큰들에 습관적으로 버린다</strong>. 이 &quot;attention 쓰레기통&quot; 역할을 하는 앞쪽 토큰들을 <strong>attention sink</strong>라 부른다(StreamingLLM, 2023의 발견).</p>
+<p>예를 들어 1 FPS로 프레임당 196토큰을 넣으면 1시간에 약 70만 토큰이 쌓인다. 메모리가 폭발할 뿐 아니라, attention 연산 자체도 참조 대상이 많아져 함께 느려진다. 이 코스 Stage ②(기억 관리)의 논문들은 전부 "KV cache를 어떻게 시간과 무관한 고정 크기로 유지하느냐"라는 하나의 질문에 답한다.</p></div><div class="sb-block"><h2>Attention Sink — 함부로 앞을 버리면 모델이 붕괴한다</h2><p>캐시가 커지면 단순히 오래된 토큰을 버리면 될 것 같다. 그런데 여기 반직관적인 함정이 있다. <strong>맨 앞 토큰 몇 개를 버리면 모델의 출력이 통째로 무너진다.</strong></p>
+<p>이유는 Transformer가 attention 확률을 "어딘가에는 쏟아부어야" 하는 softmax 구조이기 때문이다. 딱히 참조할 곳이 없는 상황에서도 확률의 합은 1이어야 하므로, 모델은 남는 attention을 <strong>맨 앞 토큰들에 습관적으로 버린다</strong>. 이 "attention 쓰레기통" 역할을 하는 앞쪽 토큰들을 <strong>attention sink</strong>라 부른다(StreamingLLM, 2023의 발견).</p>
 <p>따라서 sink 토큰을 버리면 모델은 attention을 쏟을 닻을 잃고 분포가 붕괴한다. StreamingLLM의 해법은 명료하다 — <strong>맨 앞 sink 토큰 몇 개 + 최근 윈도우만 유지하고, 중간은 버린다.</strong> 앞과 뒤를 붙잡으면 무한 텍스트 스트림을 고정 캐시로 처리할 수 있다.</p>
-<p>이 코스의 4장 StreamingVLM은 정확히 이 아이디어를 비디오로 확장한 논문이다. 그래서 지금 이 개념을 확실히 잡아두면 뒤가 편하다 — &quot;sink는 남기고, 최근은 남기고, 중간 비전 토큰은 버린다&quot;가 그 골격이다.</p></div><div class="sb-block"><h2>3대 병목과 3단계 비용 지도</h2><p>2026년 중반의 서베이들은 스트리밍 VLM의 병목을 세 가지로 정리한다. 이 코스의 구조도 그 축을 따른다.</p>
-<p>| 병목 | 증상 | 대응 단계 |
-|---|---|---|
-| 무한정 커지는 KV 캐시 | 메모리·attention 비용이 시간에 비례 폭발 | Stage ② 기억 관리 |
-| 시간적 컨텍스트 단절 | 과거를 버리면 장기 정보 소실 | Stage ② 기억 관리 |
-| 파이프라인 동기화 제약 | 답변 생성 중엔 새 프레임을 못 봄 | Stage ③ 트리거(비동기) |</p>
+<p>이 코스의 4장 StreamingVLM은 정확히 이 아이디어를 비디오로 확장한 논문이다. 그래서 지금 이 개념을 확실히 잡아두면 뒤가 편하다 — "sink는 남기고, 최근은 남기고, 중간 비전 토큰은 버린다"가 그 골격이다.</p></div><div class="sb-block"><h2>3대 병목과 3단계 비용 지도</h2><p>2026년 중반의 서베이들은 스트리밍 VLM의 병목을 세 가지로 정리한다. 이 코스의 구조도 그 축을 따른다.</p>
+<table>
+<thead>
+<tr>
+<th>병목</th>
+<th>증상</th>
+<th>대응 단계</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>무한정 커지는 KV 캐시</td>
+<td>메모리·attention 비용이 시간에 비례 폭발</td>
+<td>Stage ② 기억 관리</td>
+</tr>
+<tr>
+<td>시간적 컨텍스트 단절</td>
+<td>과거를 버리면 장기 정보 소실</td>
+<td>Stage ② 기억 관리</td>
+</tr>
+<tr>
+<td>파이프라인 동기화 제약</td>
+<td>답변 생성 중엔 새 프레임을 못 봄</td>
+<td>Stage ③ 트리거(비동기)</td>
+</tr>
+</tbody>
+</table>
 <p>이제 비용을 깎는 지점을 파이프라인 위에 3단계로 배치한다.</p>
-<p>- <strong>Stage ① 토큰 다이어트</strong> — 정보 없는 토큰을 LLM 입장 전에 잘라낸다. prefill·KV·attention이 동시에 줄어드는 최상류 절감점. (2장 TimeChat-Online, 3장 Dispider)
-- <strong>Stage ② 기억 관리</strong> — KV cache를 시간과 무관한 상수 크기로 고정한다. (4장 StreamingVLM ~ 8장 Flash-VStream)
-- <strong>Stage ③ 트리거</strong> — 무거운 LLM을 &quot;언제 깨울지&quot; 판단해 호출 자체를 줄인다. 이벤트 탐지의 본체. (9장 VideoLLM-Online, 10장 StreamMind·StreamBridge)</p>
-<p>이 지도를 관통하는 두 원리를 기억하라. <strong>① 정보가 없는 곳에 연산을 쓰지 마라</strong> — 안 변한 패치, 뻔한 프레임, 침묵할 순간은 전부 헐값 처리한다. <strong>② 무거운 모델은 드물게, 가벼운 모듈은 항상.</strong> 그리고 반복해서 등장할 공짜 신호 하나 — &quot;압축이 안 되는 순간이 곧 이벤트다&quot;.</p></div>
+<ul>
+<li><strong>Stage ① 토큰 다이어트</strong> — 정보 없는 토큰을 LLM 입장 전에 잘라낸다. prefill·KV·attention이 동시에 줄어드는 최상류 절감점. (2장 TimeChat-Online, 3장 Dispider)</li>
+<li><strong>Stage ② 기억 관리</strong> — KV cache를 시간과 무관한 상수 크기로 고정한다. (4장 StreamingVLM ~ 8장 Flash-VStream)</li>
+<li><strong>Stage ③ 트리거</strong> — 무거운 LLM을 "언제 깨울지" 판단해 호출 자체를 줄인다. 이벤트 탐지의 본체. (9장 VideoLLM-Online, 10장 StreamMind·StreamBridge)</li>
+</ul>
+<p>이 지도를 관통하는 두 원리를 기억하라. <strong>① 정보가 없는 곳에 연산을 쓰지 마라</strong> — 안 변한 패치, 뻔한 프레임, 침묵할 순간은 전부 헐값 처리한다. <strong>② 무거운 모델은 드물게, 가벼운 모듈은 항상.</strong> 그리고 반복해서 등장할 공짜 신호 하나 — "압축이 안 되는 순간이 곧 이벤트다".</p></div>
       <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
     <div class="analogy-card">
       <div class="a-head">Analogy</div>
       <div class="a-title">경비실의 CCTV 벽</div>
-      <div class="a-body"><p>24시간 도는 CCTV 100대를 한 명의 경비원이 본다고 상상하자. 순진한 오프라인 VLM은 &quot;매 순간 100개 화면 전체를 처음부터 끝까지 정독하는 경비원&quot;이다. 몇 분은 버티지만 이내 지쳐 쓰러진다.</p>
-<p>Prefill은 &quot;새 장면이 뜰 때마다 그 화면을 다시 정독하는 행위&quot;이고, KV cache는 &quot;지금까지 본 것을 적어둔 수첩&quot;이다. 수첩은 시간이 갈수록 두꺼워져 나중엔 넘겨보는 것만으로도 한나절이 걸린다. Attention sink는 &quot;수첩 맨 앞 표지를 찢으면 경비원이 방향 감각을 잃고 헛것을 보기 시작하는&quot; 기이한 습관이다.</p>
+      <div class="a-body"><p>24시간 도는 CCTV 100대를 한 명의 경비원이 본다고 상상하자. 순진한 오프라인 VLM은 "매 순간 100개 화면 전체를 처음부터 끝까지 정독하는 경비원"이다. 몇 분은 버티지만 이내 지쳐 쓰러진다.</p>
+<p>Prefill은 "새 장면이 뜰 때마다 그 화면을 다시 정독하는 행위"이고, KV cache는 "지금까지 본 것을 적어둔 수첩"이다. 수첩은 시간이 갈수록 두꺼워져 나중엔 넘겨보는 것만으로도 한나절이 걸린다. Attention sink는 "수첩 맨 앞 표지를 찢으면 경비원이 방향 감각을 잃고 헛것을 보기 시작하는" 기이한 습관이다.</p>
 <p>이 코스가 만드는 유능한 경비원은 다르다. <strong>바뀐 화면만 흘깃 보고(토큰 다이어트), 수첩은 늘 정해진 몇 장으로 요약해 유지하며(기억 관리), 진짜 이상한 일이 생긴 순간에만 상급자에게 보고한다(트리거).</strong> 평소엔 거의 힘을 쓰지 않다가 결정적 순간에만 집중하는 것 — 그게 비용 최적화의 전부다.</p></div>
     </div>
       <div class="section-div"><h2>💻 코드 예시</h2></div>

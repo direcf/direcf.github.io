@@ -186,14 +186,17 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 .ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
 
 @media(max-width:800px){
-  .app,.app.collapsed{grid-template-columns:0 1fr}
+  .app,.app.collapsed{display:block;grid-template-columns:1fr}
   .sidebar{display:none}
+  .main{width:100%;min-width:0}
   .chapter-wrap{padding:24px 20px 60px}
   .ie-grid{grid-template-columns:1fr}
   .chapter-nav{flex-direction:column}
+  .sb-block table,.a-body table,.c-walk table{display:block;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}
 }
 
-.math-display{overflow-x:auto;padding:10px 0;text-align:center}
+.math-display{display:block;max-width:100%;overflow-x:auto;overflow-y:hidden;padding:10px 0;text-align:center;-webkit-overflow-scrolling:touch}
+.math-display .katex-display{margin:0;max-width:100%}
 .math-inline{white-space:nowrap}
 </style>
 </head>
@@ -277,38 +280,63 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
         <ul><li>ReKV의 저장·검색 부담을 LiveVLM이 어떻게 앞당겨 푸는지 안다</li><li>vision-to-vision attention으로 허브 토큰을 찾는 원리를 설명한다</li><li>query-agnostic 사전 압축의 이점과 위험을 구분한다</li><li>position-agnostic retrieval이 필요한 이유를 안다</li><li>고정 압축률과 FIFO 망각이라는 한계가 StreamMem으로 이어지는 흐름을 안다</li></ul>
       </div>
 
-      <div class="sb-block"><p>5장 ReKV는 KV를 통째로 보관해 완전한 기억을 얻었지만, 두 가지 대가를 남겼다 — KV가 원본보다 커서 저장이 부담스럽고, 창고가 커질수록 검색이 병목이 된다. LiveVLM(arXiv 2505.15269)의 발상은 단순하다 — <strong>&quot;창고에 넣기 전에 압축부터 하자.&quot;</strong></p>
-<p>ReKV가 &quot;일단 다 넣고 나중에 검색&quot;이라면, LiveVLM은 &quot;넣기 전에 알맹이만 걸러 넣는다&quot;. 창고 자체가 작아지니 저장 부담도 줄고, 검색 대상도 줄어 QA 지연까지 짧아진다. 같은 병목을 한 단계 상류에서 공략하는 것이다.</p>
-<p>핵심 질문은 &quot;무엇이 알맹이인가&quot;다. LiveVLM의 답은 Vision Sink Bucketing(VSB) — <strong>다른 토큰들이 많이 쳐다보는 허브(hub) 토큰</strong>만 남긴다는 것이다. 여기에 training-free이면서 query-agnostic(질문을 모른 채 미리 압축)이라는 실용적 성질이 더해진다. 이 챕터는 VSB의 허브 선별 논리와, 그 대가로 생기는 고정 압축률·FIFO 망각이라는 한계 — 다음 장 StreamMem이 정확히 이 지점을 공략한다 — 를 짚는다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>Vision Sink Bucketing — 허브 토큰만 남긴다</h2><p>LiveVLM의 압축은 &quot;어떤 비전 토큰이 중요한가&quot;를 attention 구조에서 읽어낸다.</p>
+      <div class="sb-block"><p>5장 ReKV는 KV를 통째로 보관해 완전한 기억을 얻었지만, 두 가지 대가를 남겼다 — KV가 원본보다 커서 저장이 부담스럽고, 창고가 커질수록 검색이 병목이 된다. LiveVLM(arXiv 2505.15269)의 발상은 단순하다 — <strong>"창고에 넣기 전에 압축부터 하자."</strong></p>
+<p>ReKV가 "일단 다 넣고 나중에 검색"이라면, LiveVLM은 "넣기 전에 알맹이만 걸러 넣는다". 창고 자체가 작아지니 저장 부담도 줄고, 검색 대상도 줄어 QA 지연까지 짧아진다. 같은 병목을 한 단계 상류에서 공략하는 것이다.</p>
+<p>핵심 질문은 "무엇이 알맹이인가"다. LiveVLM의 답은 Vision Sink Bucketing(VSB) — <strong>다른 토큰들이 많이 쳐다보는 허브(hub) 토큰</strong>만 남긴다는 것이다. 여기에 training-free이면서 query-agnostic(질문을 모른 채 미리 압축)이라는 실용적 성질이 더해진다. 이 챕터는 VSB의 허브 선별 논리와, 그 대가로 생기는 고정 압축률·FIFO 망각이라는 한계 — 다음 장 StreamMem이 정확히 이 지점을 공략한다 — 를 짚는다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block"><h2>Vision Sink Bucketing — 허브 토큰만 남긴다</h2><p>LiveVLM의 압축은 "어떤 비전 토큰이 중요한가"를 attention 구조에서 읽어낸다.</p>
 <p>1장에서 attention sink를 배웠다 — 다른 토큰들의 attention이 습관적으로 몰리는 토큰. LiveVLM은 이 아이디어를 비전 토큰에 적용한다. <strong>vision-to-vision attention 점수</strong>를 보면, 어떤 비전 토큰에는 다른 많은 비전 토큰들의 참조가 집중된다. 이런 토큰은 그 장면의 정보가 모이는 <strong>허브(hub)</strong>다 — 하나만 남겨도 주변 맥락을 상당 부분 대표한다.</p>
 <p>VSB(Vision Sink Bucketing)는 이 허브 토큰들을 선별하되, <strong>버킷(bucket) 단위로</strong> 골라 맥락 커버리지를 최대화한다. 한 영역에서만 허브를 다 뽑으면 다른 영역 정보가 통째로 빠지므로, 버킷으로 나눠 골고루 대표를 남기는 것이다.</p>
 <p><span class="math-display">\[\text{hub score}(t) = \sum_{t&#x27; \neq t} \text{attn}_{\text{vision}\to\text{vision}}(t&#x27; \to t)\]</span></p>
-<p>허브 점수가 높은 토큰만 저장하고 나머지는 버린다. 결과적으로 ReKV가 저장하던 KV 양이 대폭 줄어든다. &quot;많이 참조되는 것이 중요하다&quot;는 직관은 검색 알고리즘의 PageRank와 같은 발상 — 링크를 많이 받는 페이지가 중요하듯, attention을 많이 받는 토큰이 중요하다.</p></div><div class="sb-block"><h2>query-agnostic — 질문을 모른 채 미리 압축</h2><p>LiveVLM의 압축이 갖는 중요한 성질은 <strong>query-agnostic</strong>이라는 것이다 — 즉 사용자의 질문이 무엇일지 모르는 상태에서 미리 압축한다.</p>
+<p>허브 점수가 높은 토큰만 저장하고 나머지는 버린다. 결과적으로 ReKV가 저장하던 KV 양이 대폭 줄어든다. "많이 참조되는 것이 중요하다"는 직관은 검색 알고리즘의 PageRank와 같은 발상 — 링크를 많이 받는 페이지가 중요하듯, attention을 많이 받는 토큰이 중요하다.</p></div><div class="sb-block"><h2>query-agnostic — 질문을 모른 채 미리 압축</h2><p>LiveVLM의 압축이 갖는 중요한 성질은 <strong>query-agnostic</strong>이라는 것이다 — 즉 사용자의 질문이 무엇일지 모르는 상태에서 미리 압축한다.</p>
 <p>이것은 양날의 검이다. 장점부터 보자. 질문이 오기 전에 스트리밍 도중 압축을 끝내두므로, <strong>질문이 왔을 때 이미 작아진 창고에서 빠르게 검색</strong>할 수 있다. 압축을 질문 시점으로 미루면 사용자를 기다리게 하지만, 미리 해두면 응답이 즉각적이다. 실시간 상호작용에 유리한 설계다.</p>
-<p>또 하나의 실용적 강점은 <strong>training-free</strong>라는 것이다. VSB는 이미 학습된 모델의 attention 점수를 읽어 허브를 고를 뿐, 새로운 파라미터를 학습하지 않는다. ReKV처럼 기존 Video-LLM에 재학습 없이 붙는다. Stage ② 중 StreamingVLM(정렬 학습 필요)·Flash-VStream(전용 모듈 필요)과 달리, ReKV·LiveVLM은 &quot;붙이기 쉬운&quot; 축에 속한다.</p>
+<p>또 하나의 실용적 강점은 <strong>training-free</strong>라는 것이다. VSB는 이미 학습된 모델의 attention 점수를 읽어 허브를 고를 뿐, 새로운 파라미터를 학습하지 않는다. ReKV처럼 기존 Video-LLM에 재학습 없이 붙는다. Stage ② 중 StreamingVLM(정렬 학습 필요)·Flash-VStream(전용 모듈 필요)과 달리, ReKV·LiveVLM은 "붙이기 쉬운" 축에 속한다.</p>
 <p>정리하면 LiveVLM은 ReKV의 이식성(training-free)을 물려받으면서 저장·검색 부담을 압축으로 덜어낸, ReKV의 자연스러운 개량이다.</p>
-<p>| 성질 | ReKV | LiveVLM |
-|---|---|---|
-| 저장량 | 완전 보존(큼) | 허브만(작음) |
-| QA 지연 | 창고 큼 → 김 | 창고 작음 → 짧음 |
-| 재학습 | 불필요 | 불필요 |
-| 압축 시점 | 없음(원본 보관) | 스트리밍 중 사전 |</p></div><div class="sb-block"><h2>Position-agnostic Retrieval — 조각을 매끄럽게 잇는다</h2><p>압축해서 띄엄띄엄 남긴 KV 조각들을 나중에 검색해 쓰려면 문제가 하나 생긴다 — <strong>위치 정합성</strong>이다.</p>
+<table>
+<thead>
+<tr>
+<th>성질</th>
+<th>ReKV</th>
+<th>LiveVLM</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>저장량</td>
+<td>완전 보존(큼)</td>
+<td>허브만(작음)</td>
+</tr>
+<tr>
+<td>QA 지연</td>
+<td>창고 큼 → 김</td>
+<td>창고 작음 → 짧음</td>
+</tr>
+<tr>
+<td>재학습</td>
+<td>불필요</td>
+<td>불필요</td>
+</tr>
+<tr>
+<td>압축 시점</td>
+<td>없음(원본 보관)</td>
+<td>스트리밍 중 사전</td>
+</tr>
+</tbody>
+</table></div><div class="sb-block"><h2>Position-agnostic Retrieval — 조각을 매끄럽게 잇는다</h2><p>압축해서 띄엄띄엄 남긴 KV 조각들을 나중에 검색해 쓰려면 문제가 하나 생긴다 — <strong>위치 정합성</strong>이다.</p>
 <p>4장에서 RoPE 위치 문제를 배웠다. 서로 다른 시점에서 검색해온 KV 조각들은 원래 제각각의 위치 좌표를 갖는다. 이것들을 그대로 이어붙이면 위치가 뒤죽박죽이 되어 모델이 혼란에 빠진다(StreamingVLM이 재인덱싱으로 풀었던 그 문제의 변형이다).</p>
 <p>LiveVLM의 <strong>PaR(Position-agnostic Retrieval)</strong>은 서로 다른 시점에서 검색해온 KV 조각들을 <strong>위치 의존성 없이 매끄럽게 이어붙인다</strong>. 즉 조각들이 원래 언제 것이었는지에 얽매이지 않고, 검색된 순서/맥락에 맞게 위치를 재구성해 하나의 일관된 문맥으로 조립한다.</p>
-<p>이것이 필요한 이유는 압축·검색 계열의 공통 숙제다 — <strong>비연속적으로 뽑아낸 조각들을 연속적인 시퀀스처럼 모델에 먹여야</strong> 한다. StreamingVLM은 방출 후 남은 것을 재인덱싱했고, LiveVLM은 검색 후 모은 것을 위치 무관하게 조립한다. 둘 다 &quot;모델은 매끄러운 시퀀스만 안다&quot;는 제약을 우회하는 장치다.</p>
+<p>이것이 필요한 이유는 압축·검색 계열의 공통 숙제다 — <strong>비연속적으로 뽑아낸 조각들을 연속적인 시퀀스처럼 모델에 먹여야</strong> 한다. StreamingVLM은 방출 후 남은 것을 재인덱싱했고, LiveVLM은 검색 후 모은 것을 위치 무관하게 조립한다. 둘 다 "모델은 매끄러운 시퀀스만 안다"는 제약을 우회하는 장치다.</p>
 <p>PaR 덕분에 LiveVLM은 압축(VSB)과 검색(PaR)을 한 세트로 완성해, training-free로 실시간 상호작용을 지원하는 KV 캐시 프레임워크가 된다.</p></div><div class="sb-block"><h2>한계 — 고정 압축률과 FIFO 망각</h2><p>LiveVLM의 두 한계는 다음 장 StreamMem의 존재 이유가 되므로 정확히 이해해야 한다.</p>
 <p>첫째, <strong>고정 압축률(fixed compression rate)</strong>이다. LiveVLM은 스트림 내내 대체로 일정한 비율로 압축한다. 그런데 비디오의 정보 밀도는 시간마다 다르다 — 아무 일 없는 10분과 사건이 폭발하는 10초는 정보량이 완전히 다르다. 고정 압축률은 이 변화에 무감해서, 한산한 구간은 과잉 보존하고 중요한 구간은 과소 보존할 수 있다.</p>
-<p>둘째, 더 치명적인 <strong>FIFO 망각(First-In-First-Out forgetting)</strong>이다. 저장 총량이 한계를 넘으면 LiveVLM은 오래된 것부터 밀어낸다. 문제는 이 방출이 <strong>나이순</strong>이라 중요도와 무관하다는 것이다. &quot;오래됐지만 결정적으로 중요한 정보&quot;가, 방금 들어온 사소한 정보 때문에 밀려나 소실될 수 있다.</p>
-<p>이벤트 탐지 관점에서 FIFO 망각은 특히 위험하다. 30분 전에 일어난 결정적 단서가 그 사이 들어온 무의미한 프레임들에 밀려 사라지면, 나중에 &quot;그때 뭐가 있었나&quot;를 물어도 답할 수 없다.</p>
+<p>둘째, 더 치명적인 <strong>FIFO 망각(First-In-First-Out forgetting)</strong>이다. 저장 총량이 한계를 넘으면 LiveVLM은 오래된 것부터 밀어낸다. 문제는 이 방출이 <strong>나이순</strong>이라 중요도와 무관하다는 것이다. "오래됐지만 결정적으로 중요한 정보"가, 방금 들어온 사소한 정보 때문에 밀려나 소실될 수 있다.</p>
+<p>이벤트 탐지 관점에서 FIFO 망각은 특히 위험하다. 30분 전에 일어난 결정적 단서가 그 사이 들어온 무의미한 프레임들에 밀려 사라지면, 나중에 "그때 뭐가 있었나"를 물어도 답할 수 없다.</p>
 <p><span class="math-display">\[\text{FIFO: 방출 우선순위} = \text{나이(오래됨)} \quad\longrightarrow\quad \text{StreamMem: 방출 우선순위} = \text{낮은 중요도}\]</span></p>
-<p>바로 이 지점 — &quot;나이순 방출을 중요도순 방출로 바꿀 수 없을까?&quot; — 이 StreamMem의 출발점이다. 6장에서 7장으로의 전환은 &quot;압축하되 무엇을 버릴지 더 똑똑하게&quot;라는 한 걸음의 진화다.</p></div>
+<p>바로 이 지점 — "나이순 방출을 중요도순 방출로 바꿀 수 없을까?" — 이 StreamMem의 출발점이다. 6장에서 7장으로의 전환은 "압축하되 무엇을 버릴지 더 똑똑하게"라는 한 걸음의 진화다.</p></div>
       <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
     <div class="analogy-card">
       <div class="a-head">Analogy</div>
       <div class="a-title">냉장고 정리의 두 원칙</div>
       <div class="a-body"><p>작은 냉장고(고정 저장 예산)에 장을 계속 봐 온다고 하자. ReKV식이라면 창고형 냉장고를 하나 더 사서 모든 걸 원본 그대로 쟁여둔다 — 완벽하지만 공간을 많이 먹고, 뭘 찾으려면 한참 뒤진다.</p>
-<p>LiveVLM식은 넣기 전에 정리한다. 다들 자주 꺼내 쓰는 <strong>핵심 재료(허브 토큰)</strong>만 눈에 잘 띄는 칸에 남기고, 잘 안 쓰는 건 과감히 뺀다(VSB). 덕분에 냉장고가 늘 여유롭고 원하는 걸 빨리 찾는다. 게다가 &quot;오늘 뭘 요리할지 모른 채(query-agnostic)&quot; 미리 정리해두니, 막상 요리할 때 바로 꺼낸다.</p>
-<p>문제는 정리 원칙에 있다. LiveVLM은 <strong>&quot;칸이 꽉 차면 안쪽 오래된 것부터 버린다&quot;(FIFO)</strong>는 규칙을 쓴다. 그런데 안쪽 깊숙이 있던 게 사실 아껴둔 값비싼 트러플이었다면? 방금 산 흔한 우유 때문에 트러플이 버려진다. 게다가 정리 강도가 늘 일정해서(고정 압축률), 재료가 넘치는 명절에도 텅 빈 평일에도 똑같은 비율로 버린다. &quot;오래됐냐&quot;가 아니라 &quot;중요하냐&quot;로 버릴 걸 골라야 한다 — 그게 다음 장 StreamMem의 냉장고 정리법이다.</p></div>
+<p>LiveVLM식은 넣기 전에 정리한다. 다들 자주 꺼내 쓰는 <strong>핵심 재료(허브 토큰)</strong>만 눈에 잘 띄는 칸에 남기고, 잘 안 쓰는 건 과감히 뺀다(VSB). 덕분에 냉장고가 늘 여유롭고 원하는 걸 빨리 찾는다. 게다가 "오늘 뭘 요리할지 모른 채(query-agnostic)" 미리 정리해두니, 막상 요리할 때 바로 꺼낸다.</p>
+<p>문제는 정리 원칙에 있다. LiveVLM은 <strong>"칸이 꽉 차면 안쪽 오래된 것부터 버린다"(FIFO)</strong>는 규칙을 쓴다. 그런데 안쪽 깊숙이 있던 게 사실 아껴둔 값비싼 트러플이었다면? 방금 산 흔한 우유 때문에 트러플이 버려진다. 게다가 정리 강도가 늘 일정해서(고정 압축률), 재료가 넘치는 명절에도 텅 빈 평일에도 똑같은 비율로 버린다. "오래됐냐"가 아니라 "중요하냐"로 버릴 걸 골라야 한다 — 그게 다음 장 StreamMem의 냉장고 정리법이다.</p></div>
     </div>
       <div class="section-div"><h2>💻 코드 예시</h2></div>
     <div class="code-card">
@@ -348,7 +376,7 @@ class LiveVLMCompressor:
             self.store = self.store[:self.max_store]      # 오래된 것 잘림
         return len(kept)
 </code></pre>
-      <div class="c-walk"><p><code>hub_score = vv_attn.sum(dim=0)</code>가 VSB의 심장이다 — attention 행렬의 열 합은 &#x27;다른 토큰들이 이 토큰을 얼마나 참조했나&#x27;이고, 값이 큰 토큰이 장면 정보가 모이는 허브다. 버킷 루프는 한 영역에 쏠리지 않게 공간을 나눠 각 버킷에서 상위 허브만 남긴다 — 커버리지 최대화다. 주목할 것은 4단계의 <code>self.store.sort(key=lambda x: -x[1])</code> — 총량이 넘치면 <strong>오직 나이(age)로만</strong> 방출을 결정한다. 여기엔 중요도가 전혀 개입하지 않는다. 30분 전의 결정적 허브라도 age가 크면 흔한 최신 토큰에 밀려 잘린다. 이 한 줄이 바로 FIFO 망각의 한계이고, 다음 장 StreamMem은 이 정렬 키를 &#x27;중요도&#x27;로 바꾼다.</p></div>
+      <div class="c-walk"><p><code>hub_score = vv_attn.sum(dim=0)</code>가 VSB의 심장이다 — attention 행렬의 열 합은 '다른 토큰들이 이 토큰을 얼마나 참조했나'이고, 값이 큰 토큰이 장면 정보가 모이는 허브다. 버킷 루프는 한 영역에 쏠리지 않게 공간을 나눠 각 버킷에서 상위 허브만 남긴다 — 커버리지 최대화다. 주목할 것은 4단계의 <code>self.store.sort(key=lambda x: -x[1])</code> — 총량이 넘치면 <strong>오직 나이(age)로만</strong> 방출을 결정한다. 여기엔 중요도가 전혀 개입하지 않는다. 30분 전의 결정적 허브라도 age가 크면 흔한 최신 토큰에 밀려 잘린다. 이 한 줄이 바로 FIFO 망각의 한계이고, 다음 장 StreamMem은 이 정렬 키를 '중요도'로 바꾼다.</p></div>
     </div>
       <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
     <div class="ie-card">
