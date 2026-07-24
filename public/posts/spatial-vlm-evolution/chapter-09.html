@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch9: Verifiable RL for Spatial Reasoning — The Evolution of Spatial VLMs — direcf</title>
+  <meta name="description" content="공간 능력은 더 많은 라벨을 모아서가 아니라, verifiable reward를 설계해 base model에 잠재한 능력을 &#x27;활성화&#x27;해서도 얻어진다. SVQA-R1은 view-consistency를 공짜 감독으로 삼아 SFT 없이 R1식 RL을 공간 VQA에 이식하고, Smooth Operator는 그 GRPO가 숫자 목표에서 왜 무너지는지 진단해 sigmoid 기반 dense reward로 고친다. 50K 샘플로 4.5M supervised에 필적한다.">
+  <link rel="canonical" href="https://direcf.github.io/posts/spatial-vlm-evolution/chapter-09.html">
+  <meta property="og:url" content="https://direcf.github.io/posts/spatial-vlm-evolution/chapter-09.html">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Ch9: Verifiable RL for Spatial Reasoning — The Evolution of Spatial VLMs — direcf">
+  <meta property="og:description" content="공간 능력은 더 많은 라벨을 모아서가 아니라, verifiable reward를 설계해 base model에 잠재한 능력을 &#x27;활성화&#x27;해서도 얻어진다. SVQA-R1은 view-consistency를 공짜 감독으로 삼아 SFT 없이 R1식 RL을 공간 VQA에 이식하고, Smooth Operator는 그 GRPO가 숫자 목표에서 왜 무너지는지 진단해 sigmoid 기반 dense reward로 고친다. 50K 샘플로 4.5M supervised에 필적한다.">
+  <meta property="og:site_name" content="direcf">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Ch9: Verifiable RL for Spatial Reasoning — The Evolution of Spatial VLMs — direcf">
+  <meta name="twitter:description" content="공간 능력은 더 많은 라벨을 모아서가 아니라, verifiable reward를 설계해 base model에 잠재한 능력을 &#x27;활성화&#x27;해서도 얻어진다. SVQA-R1은 view-consistency를 공짜 감독으로 삼아 SFT 없이 R1식 RL을 공간 VQA에 이식하고, Smooth Operator는 그 GRPO가 숫자 목표에서 왜 무너지는지 진단해 sigmoid 기반 dense reward로 고친다. 50K 샘플로 4.5M supervised에 필적한다.">
+  <script type="application/ld+json">{"@context": "https://schema.org", "@type": "LearningResource", "name": "Verifiable RL for Spatial Reasoning", "position": 9, "description": "공간 능력은 더 많은 라벨을 모아서가 아니라, verifiable reward를 설계해 base model에 잠재한 능력을 '활성화'해서도 얻어진다. SVQA-R1은 view-consistency를 공짜 감독으로 삼아 SFT 없이 R1식 RL을 공간 VQA에 이식하고, Smooth Operator는 그 GRPO가 숫자 목표에서 왜 무너지는지 진단해 sigmoid 기반 dense reward로 고친다. 50K 샘플로 4.5M supervised에 필적한다.", "learningResourceType": "lecture chapter", "inLanguage": "ko", "isPartOf": {"@type": "Course", "name": "The Evolution of Spatial VLMs"}, "author": {"@type": "Person", "name": "Seung Jun Lee"}}</script>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;height:22px;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+/* chapter hook (tension opener) */
+.chapter-hook{font-size:19px;line-height:1.6;font-weight:600;color:var(--text);margin:0 0 18px;letter-spacing:-.01em}
+.chapter-hook::first-letter{font-size:1em}
+
+/* reading meta + mini toc */
+.read-meta{display:flex;flex-wrap:wrap;gap:8px;margin:-6px 0 26px}
+.read-meta .pill{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);background:var(--bg-soft);border-radius:100px;padding:3px 11px}
+.mini-toc{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px 20px;margin:0 0 30px}
+.mini-toc .mt-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:10px}
+.mini-toc ol{list-style:none;counter-reset:mt;display:grid;gap:4px}
+.mini-toc li{counter-increment:mt;font-size:13.5px}
+.mini-toc a{color:var(--text-2);display:flex;gap:9px;padding:2px 0}
+.mini-toc a::before{content:counter(mt,decimal-leading-zero);font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);flex:none}
+.mini-toc a:hover{color:var(--accent)}
+.sb-block{scroll-margin-top:72px}
+
+/* figures (paper crops) — bilingual caption + source */
+.figure-block{margin:22px 0}
+.figure-block figure{margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.figure-block img{width:100%;display:block;object-fit:contain;max-height:440px;background:#fff;padding:8px}
+.figure-block.arch img{max-height:none}
+.figure-block figcaption{padding:11px 16px;border-top:1px solid var(--border)}
+.figure-block .fig-kr{font-size:13.5px;line-height:1.6;color:var(--text-2)}
+.figure-block .fig-orig{font-size:12px;line-height:1.5;color:var(--muted);margin-top:5px}
+.figure-block .fig-src{display:block;font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:7px}
+.figure-block .fig-src a{color:var(--accent)}
+.fig-two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+
+/* mermaid concept diagrams */
+.diagram-block{margin:24px 0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:20px 16px;text-align:center;overflow-x:auto}
+.diagram-block .mermaid{display:flex;justify-content:center;min-height:40px}
+.diagram-block figcaption{font-size:12.5px;color:var(--muted);margin-top:12px;line-height:1.5;text-align:center}
+
+/* interview Q&A (self-test) */
+.qa-item{border:1px solid var(--border);border-radius:8px;margin-bottom:8px;overflow:hidden;background:var(--bg-card)}
+.qa-item>summary{cursor:pointer;padding:12px 15px;font-size:13.5px;font-weight:600;color:var(--text);list-style:none;display:flex;gap:9px;align-items:baseline}
+.qa-item>summary::-webkit-details-marker{display:none}
+.qa-item>summary::before{content:"Q";font-family:'SF Mono',Menlo,monospace;font-size:11px;font-weight:700;color:#6d28d9;flex:none}
+.qa-item[open]>summary{border-bottom:1px solid var(--border)}
+.qa-answer{padding:12px 15px 14px 33px;font-size:13.5px;color:var(--text-2);line-height:1.7}
+.qa-answer::before{content:"A";font-family:'SF Mono',Menlo,monospace;font-size:11px;font-weight:700;color:var(--accent);margin-right:9px}
+
+/* next teaser */
+.next-teaser{background:linear-gradient(135deg,var(--accent-soft),#f5f3ff);border:1px solid var(--border);border-radius:var(--r);padding:16px 20px;margin:44px 0 0}
+.next-teaser .nt-k{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--accent);text-transform:uppercase}
+.next-teaser .nt-body{font-size:14.5px;color:var(--text);margin-top:5px;line-height:1.6}
+
+/* references */
+.ref-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:18px 22px;margin:28px 0 0}
+.ref-card .rc-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;margin-bottom:12px}
+.ref-list{list-style:none;display:grid;gap:9px;counter-reset:rf}
+.ref-list li{counter-increment:rf;font-size:13px;line-height:1.55;color:var(--text-2);padding-left:26px;position:relative}
+.ref-list li::before{content:"["counter(rf)"]";position:absolute;left:0;font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted)}
+.ref-list .rf-title{color:var(--text);font-weight:600}
+.ref-list a{color:var(--accent);font-family:"SF Mono",Menlo,monospace;font-size:12px}
+
+@media(max-width:800px){
+  .app,.app.collapsed{display:block;grid-template-columns:1fr}
+  .sidebar{display:none}
+  .main{width:100%;min-width:0}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+  .fig-two{grid-template-columns:1fr}
+  .sb-block table,.a-body table,.c-walk table{display:block;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}
+  .diagram-block{padding:14px 10px}
+}
+
+.math-display{display:block;max-width:100%;overflow-x:auto;overflow-y:hidden;padding:10px 0;text-align:center;-webkit-overflow-scrolling:touch}
+.math-display .katex-display{margin:0;max-width:100%}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><linearGradient id="direcf-nav-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs></svg>
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg></span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg></span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.25 15a4.5 4.5 0 0 0 4.5 4.5H18a3.75 3.75 0 0 0 1.332-7.257 3 3 0 0 0-3.758-3.848 5.25 5.25 0 0 0-10.233 2.33A4.502 4.502 0 0 0 2.25 15Z"/></svg></span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/multimodal-ai">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"/></svg></span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg></span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/multimodal-ai">The Evolution of Spatial VLMs</a><span class="sep">›</span>
+        <strong>Ch09 Verifiable RL for Spatial Reasoning</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 09 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🎯</div>
+      <h1 class="chapter-title">Verifiable RL for Spatial Reasoning</h1>
+      <div class="chapter-title-kr">보상으로 공간추론을 켜다: SVQA-R1에서 Smooth Operator까지</div>
+      <p class="chapter-hook">2025년, DeepSeek-R1의 한 문장이 reasoning 연구를 휩쓸었다. 정답을 채점만 할 수 있으면(verifiable), 사람이 만든 추론 예시(SFT) 없이 rule-based reward만으로 사고 사슬이 스스로 자라난다는 것. 2026년 이 레시피가 마침내 공간 추론에 도달했지만, &#x27;몇 미터냐&#x27;는 numeric geometry 앞에서 순진한 이식은 곧바로 깨졌다.</p>
+      <div class="chapter-tldr">공간 능력은 더 많은 라벨을 모아서가 아니라, verifiable reward를 설계해 base model에 잠재한 능력을 &#x27;활성화&#x27;해서도 얻어진다. SVQA-R1은 view-consistency를 공짜 감독으로 삼아 SFT 없이 R1식 RL을 공간 VQA에 이식하고, Smooth Operator는 그 GRPO가 숫자 목표에서 왜 무너지는지 진단해 sigmoid 기반 dense reward로 고친다. 50K 샘플로 4.5M supervised에 필적한다.</div>
+      <div class="read-meta"><span class="pill">⏱ 약 17분</span><span class="pill">§ 4 sections</span><span class="pill">🖼 figure 3</span><span class="pill">📊 diagram 2</span></div>
+
+      <div class="cs-wrap">
+        <div style="padding:40px;background:var(--bg-soft);border-radius:12px;color:var(--muted);text-align:center;border:1px dashed var(--border);">🍌 이미지 준비 중</div>
+        <div class="cs-label">🍌 Nano Banana — Chapter 9 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">4 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>DeepSeek-R1식 verifiable rule-based RL이 왜 reasoning에 들어맞았는지, GRPO의 group-relative advantage $\hat{A}_i=(r_i-\text{mean}(r))/\text{std}(r)$를 critic 없이 계산하는 구조를 설명할 수 있다.</li><li>SVQA-R1의 Spatial-GRPO가 flipping과 viewpoint transform을 통해 라벨 없이 view-consistency 보상을 만들어 SFT-free로 공간 추론을 활성화하는 원리를 재현할 수 있다.</li><li>왜 binary/ranking reward가 연속 numeric 목표에서 gradient를 잃는지 진단하고, Smooth Operator의 SNRA sigmoid dense reward와 AP-GRPO의 absolute-scalar gradient가 이를 어떻게 복구하는지 수식으로 논증할 수 있다.</li><li>SpatialThinker가 scene graph를 reasoning loop 안의 dense reward로 삼아 7K/50K 규모로 4.5M supervised를 능가하는 sample-efficiency 전환을, ch2–ch4의 &#x27;데이터를 더 모으자&#x27; 패러다임과 대비해 설명할 수 있다.</li></ul>
+      </div>
+      <nav class="mini-toc"><div class="mt-title">이 챕터에서</div><ol><li><a href="#s9-1">R1이 공간에 오다</a></li><li><a href="#s9-2">view consistency라는 보상</a></li><li><a href="#s9-3">숫자에서 GRPO가 무너지는 이유</a></li><li><a href="#s9-4">장면 그래프를 보상으로</a></li></ol></nav>
+
+      <div class="sb-block"><p>이전 장 <a href="https://arxiv.org/abs/2605.15876">DepthVLM</a>까지의 흐름은 한 방향을 가리켰다. 더 나은 감독 신호를 모델 안으로 밀어넣자. SpatialVLM은 20억 개의 합성 VQA를, SpatialRGPT는 depth-plugin을, DepthVLM은 metric depth를 언어 인터페이스 안으로 녹였다. 공통 전제는 명확하다. 능력은 데이터와 헤드로 주입된다.</p>
+<p>이 장은 그 전제를 뒤집는다. 2025년 <a href="https://arxiv.org/abs/2501.12948">DeepSeek-R1</a>이 보인 것은, 채점 가능한(verifiable) 정답만 있으면 사람이 짜준 추론 예시(SFT) 없이도 rule-based reward만으로 긴 사고 사슬이 emergent하게 자란다는 사실이었다. reasoning은 새로 가르쳐야 할 능력이 아니라, base model에 이미 잠재한 능력을 보상으로 활성화(activate)하는 문제일 수 있다는 것이다.</p>
+<p>2026년 이 관점이 공간 추론에 상륙한다. <a href="https://arxiv.org/abs/2506.01371">SVQA-R1</a>은 R1식 RL을 공간 VQA에 처음 이식하며 view-consistency를 공짜 감독으로 삼았다. 그런데 '몇 미터냐'는 numeric geometry로 넘어가자 순진한 GRPO가 곧바로 무너졌다. <a href="https://arxiv.org/abs/2601.07695">Smooth Operator</a>는 그 붕괴의 구조적 원인을 reward sparsity와 gradient 불안정으로 진단하고 dense한 sigmoid 보상으로 고친다. 마지막으로 <a href="https://arxiv.org/abs/2511.07403">SpatialThinker</a>는 scene graph 자체를 reasoning loop 안의 dense reward로 끌어들여 다음 장의 grounding으로 다리를 놓는다. 이 장의 지적 궤적은 하나다. discrete correctness → continuous numerical grounding → structured grounding as reward.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block" id="s9-1"><h2>R1이 공간에 오다</h2><p>verifiable reward의 매력은 단순함에 있다. 정답을 규칙으로 채점할 수 있으면(수학 답이 맞았는가, 코드가 테스트를 통과했는가), 보상 모델을 따로 학습할 필요도, 사람이 추론 과정을 라벨링할 필요도 없다. DeepSeek-R1은 이 rule-based reward만으로 base model에서 긴 chain-of-thought가 자발적으로 창발함을 보였고, 그것이 2025년 reasoning 연구의 문법을 다시 썼다.</p>
+<p>이 레시피의 엔진이 GRPO(Group Relative Policy Optimization)다. PPO와 달리 학습된 critic(value network)이 없다. 대신 한 prompt에 대해 정책이 <span class="math-inline">\(G\)</span>개의 응답을 sample해 하나의 group을 만들고, 각 응답의 보상 <span class="math-inline">\(r_i\)</span>를 group 통계로 정규화해 advantage를 만든다.</p>
+<p><span class="math-display">\[\hat{A}_i = \frac{r_i - \text{mean}(r_1,\dots,r_G)}{\text{std}(r_1,\dots,r_G)}\]</span></p>
+<p>직관은 이렇다. group 안에서 평균보다 잘한 응답은 양의 advantage로 강화되고, 못한 응답은 억제된다. critic이 없으니 value 추정 오차도 없고, 보상은 오직 verifiable해야 한다는 제약만 남는다. 이 구조가 reasoning에 들어맞은 이유는, 수학·코드처럼 정답이 기계적으로 채점되는 도메인에서 group 내 상대 비교가 별도 감독 없이 학습 신호를 주기 때문이다.</p>
+<p>공간 추론은 겉보기에 이상적인 다음 무대였다. 'A가 B의 왼쪽인가'는 참/거짓으로 채점 가능하고, '몇 미터 떨어졌나'는 GT 거리와 비교 가능하다. 그러나 이식에는 두 개의 함정이 숨어 있었다. 첫째, 공간 라벨 자체가 비싸다. SFT용 추론 예시는 물론이고 정답 라벨조차 3D 감독을 요구한다. 둘째, 그리고 더 치명적으로, '몇 미터'라는 연속 목표는 verifiable하되 그 보상을 어떻게 형태 짓느냐에 따라 GRPO가 완전히 다르게 행동한다. 이 두 함정이 각각 SVQA-R1과 Smooth Operator의 문제의식이 된다.</p><figure class="diagram-block"><div class="mermaid">flowchart LR
+  P[&quot;prompt&lt;br/&gt;(spatial VQA)&quot;] --&gt; S[&quot;policy samples&lt;br/&gt;G rollouts&quot;]
+  S --&gt; R[&quot;verifiable reward&lt;br/&gt;r_i (rule-based)&quot;]
+  R --&gt; A[&quot;group-relative adv&lt;br/&gt;(r_i - mean)/std&quot;]
+  A --&gt; U[&quot;policy update&lt;br/&gt;(no critic)&quot;]
+  U -.-&gt; S</div><figcaption>GRPO의 뼈대: 한 prompt에 G개 rollout을 sample하고, verifiable reward를 group 통계로 정규화해 critic 없이 advantage를 만든다. 보상 설계가 유일한 자유도이자 이 장의 승부처다.</figcaption></figure><div class="figure-block arch"><figure><img src="/posts/spatial-vlm-evolution/figures/2601.07695/ap-grpo.png" alt="Overview of the Absolute-Preserving GRPO framework" loading="lazy" decoding="async"><figcaption><div class="fig-kr">AP-GRPO 프레임워크 개요: 각 인스턴스마다 G개의 trajectory를 샘플링하고 task별 보상으로 평가한다.</div><div class="fig-orig">arXiv:2601.07695, Fig. 2</div><span class="fig-src">Figure 2 · <a href="https://arxiv.org/abs/2601.07695" target="_blank" rel="noopener">arXiv:2601.07695</a></span></figcaption></figure></div></div><div class="sb-block" id="s9-2"><h2>view-consistency라는 보상</h2><p>SVQA-R1(Peiyao Wang &amp; Haibin Ling, Stony Brook, 2025)의 출발점은 공간 도메인의 라벨 부족이었다. R1식 RL을 쓰고 싶지만, 채점할 정답과 SFT용 추론 예시를 대규모로 마련하는 비용이 걸림돌이다. 이들의 답은 라벨 대신 기하학적 불변량(invariant)을 보상으로 삼는 것이다.</p>
+<p>핵심 통찰은 공간 관계가 view 변환에 대해 예측 가능하게 변한다는 점이다. 이미지를 좌우로 flip하면 'A가 B의 왼쪽'은 반드시 'A가 B의 오른쪽'으로 뒤집혀야 한다. in-plane rotation이나 perspective warp를 가해도 거리·상대 위치의 순서 관계는 규칙대로 보존되거나 변형된다. 즉 GT 라벨이 없어도, 원본과 변환본에 대한 모델의 답이 이 규칙과 일관되는지(view-consistent)를 채점할 수 있다. 이것이 공짜 감독(free supervision)이다.</p>
+<p>SVQA-R1은 이를 Spatial-GRPO로 구현한다. 두 종류의 perturbation을 쓴다. 첫째, horizontal/mirror flipping은 left/right directionality를 감독한다. 원본과 mirror에 대한 답이 좌우 반전 규칙을 따르면 보상을 준다. 둘째, 2D viewpoint transform(in-plane rotation, perspective warp)은 distance/relative-position 추론을 강화한다. 시점이 흔들려도 거리 순서가 유지되어야 한다는 consistency를 보상한다. 결정적으로 이 과정에 SFT 데이터가 전혀 필요 없다(SFT-free). base model이 스스로 rollout을 내고, consistency 규칙이 채점관 역할을 하며, 그 결과로 해석 가능한 reasoning chain이 창발한다.</p>
+<p>이것이 evolution의 전환점이다. ch2의 SpatialVLM은 view 변환을 데이터 증강으로 써서 더 많은 라벨을 만들었다. SVQA-R1은 같은 view 변환을 보상의 채점 규칙으로 승격시킨다. 데이터를 늘리는 대신, 이미 존재하는 기하 불변량을 감독 신호로 재활용하는 것이다. 다만 flip·rotation이 만드는 보상은 본질적으로 discrete correctness(방향이 맞았나, 순서가 맞았나)에 머문다. '정확히 몇 미터'라는 연속 값 앞에서 이 이산 보상은 다음 절의 붕괴를 예고한다.</p><figure class="diagram-block"><div class="mermaid">flowchart LR
+  I[&quot;input image&quot;] --&gt; AUG[&quot;augment view&quot;]
+  AUG --&gt; F[&quot;h/mirror flip&lt;br/&gt;(left/right)&quot;]
+  AUG --&gt; V[&quot;2D viewpoint&lt;br/&gt;rotate + warp&quot;]
+  I --&gt; ROL[&quot;sample rollouts&lt;br/&gt;(base model, no SFT)&quot;]
+  F --&gt; CR[&quot;view-consistency&lt;br/&gt;reward&quot;]
+  V --&gt; CR
+  ROL --&gt; CR
+  CR --&gt; G[&quot;Spatial-GRPO&lt;br/&gt;update&quot;]</div><figcaption>SVQA-R1의 Spatial-GRPO: flip과 viewpoint transform이 만드는 기하 불변량을 채점 규칙으로 삼아, GT 라벨과 SFT 없이 view-consistency만으로 공간 추론을 활성화한다.</figcaption></figure></div><div class="sb-block" id="s9-3"><h2>숫자에서 GRPO가 무너지는 이유</h2><p>Smooth Operator(Siwen Jiao 외, Amap/Alibaba·NUS·Tsinghua, 2026)는 불편한 사실에서 출발한다. numeric 3D 과제(거리·크기 추정)에 순진하게 GRPO를 적용하면 학습이 반복적으로 무너진다. 저자들의 진단은 두 단어로 압축된다. reward sparsity와 gradient 불안정.</p>
+<p>문제의 뿌리는 보상이 numeric error의 크기(magnitude)를 버린다는 데 있다. binary reward <span class="math-inline">\(r=\mathbb{1}[|d_{pred}-d_{gt}|/d_{gt}\le\tau]\)</span>는 오차가 임계 <span class="math-inline">\(\tau\)</span> 안이면 1, 밖이면 0이다. 그런데 group 안의 rollout이 전부 tolerance 밖이면 모든 <span class="math-inline">\(r_i=0\)</span>이 되고, group-relative advantage는 <span class="math-inline">\((0-0)/\text{std}=0\)</span>으로 전부 소멸한다. gradient가 문자 그대로 0이다. ranking reward도 순서만 볼 뿐 3.6m와 3.7m가 정답 2.0m에서 얼마나 떨어졌는지 그 절대 격차를 지워버린다.</p>
+<p>Smooth Operator의 처방은 두 축이다. 첫째, SNRA(Smooth Numerical Reward Activation)는 raw numeric error를 dense한 연속 보상으로 바꾼다. 동적으로 parameterize된 sigmoid가 그 변환기다.</p>
+<p><span class="math-display">\[r = \sigma\!\left(\alpha\left(\tau - \frac{|d_{pred}-d_{gt}|}{d_{gt}}\right)\right) \quad\text{vs.}\quad r=\mathbb{1}\!\left[\frac{|d_{pred}-d_{gt}|}{d_{gt}}\le\tau\right]\]</span></p>
+<p>여기서 상대 오차 <span class="math-inline">\(\delta=|d_{pred}-d_{gt}|/d_{gt}\)</span>가 <span class="math-inline">\(\tau\)</span>에 가까울수록 보상이 부드럽게 상승한다. 오차가 조금이라도 다르면 보상도 다르므로, 전원이 틀린 group에서도 '덜 틀린' rollout이 더 높은 보상을 받아 advantage가 살아난다. 둘째, AP-GRPO(Absolute-Preserving GRPO)는 group 내 상대 ranking이 지워버린 절대 스케일 gradient를 다시 주입한다. magnitude 정보가 relative 정규화에 씻겨나가지 않도록 absolute scalar gradient를 보존하는 것이다.</p>
+<table>
+<thead>
+<tr>
+<th>보상 형태</th>
+<th>정의</th>
+<th>magnitude 보존</th>
+<th>전원 오답 group의 gradient</th>
+<th>실패 모드</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Binary</td>
+<td><span class="math-inline">\(\mathbb{1}[\delta\le\tau]\)</span></td>
+<td>없음</td>
+<td>0 (전부 소멸)</td>
+<td>reward sparsity</td>
+</tr>
+<tr>
+<td>Ranking</td>
+<td>rollout 순위만</td>
+<td>순서만</td>
+<td>순위 있으나 절대격차 소실</td>
+<td>크기 정보 손실</td>
+</tr>
+<tr>
+<td>Smooth (SNRA)</td>
+<td><span class="math-inline">\(\sigma(\alpha(\tau-\delta))\)</span></td>
+<td>연속 보존</td>
+<td>비영(덜 틀린 쪽 우대)</td>
+<td>안정적 dense 신호</td>
+</tr>
+</tbody>
+</table>
+<p>결과의 무게는 sample efficiency에 있다. 아키텍처를 전혀 바꾸지 않고, 새 dataset Numerical3D-50K로 학습한 Smooth Operator가 약 4.5M 샘플을 쓴 large-scale supervised 방법에 필적한다. 50K 대 4.5M. 이는 ch2–ch4가 대표하던 '라벨을 더 모으자'는 축이, '보상을 잘 형태 지어 base model의 잠재 능력을 켜자'는 축으로 얼마나 급격히 기우는지를 보여주는 수치다. 보상 형태 하나가 두 자릿수 배의 데이터를 대체한다.</p><div class="figure-block"><figure><img src="/posts/spatial-vlm-evolution/figures/2601.07695/intro.png" alt="Standard GRPO versus AP-GRPO binary reward comparison" loading="lazy" decoding="async"><figcaption><div class="fig-kr">Standard GRPO(왼쪽)는 binary 보상이라 near-correct 응답에 advantage 0을 주고 스칼라 정보를 버린다. AP-GRPO는 크기 정보를 보존한다.</div><div class="fig-orig">arXiv:2601.07695, Fig. 1</div><span class="fig-src">Figure 1 · <a href="https://arxiv.org/abs/2601.07695" target="_blank" rel="noopener">arXiv:2601.07695</a></span></figcaption></figure></div><div class="figure-block arch"><figure><img src="/posts/spatial-vlm-evolution/figures/2601.07695/sigmoid.png" alt="Derivation of the SNRA operator from sigmoid" loading="lazy" decoding="async"><figcaption><div class="fig-kr">SNRA 연산자의 유도: 표준 sigmoid를 dense한 연속 보상 매핑으로 변환해 수치 오차의 크기를 gradient로 살린다.</div><div class="fig-orig">arXiv:2601.07695, Fig. 3</div><span class="fig-src">Figure 3 · <a href="https://arxiv.org/abs/2601.07695" target="_blank" rel="noopener">arXiv:2601.07695</a></span></figcaption></figure></div></div><div class="sb-block" id="s9-4"><h2>장면 그래프를 보상으로</h2><p>SVQA-R1이 discrete consistency를, Smooth Operator가 continuous magnitude를 보상으로 다뤘다면, <a href="https://arxiv.org/abs/2511.07403">SpatialThinker</a>(2025)는 한 걸음 더 나아가 구조(structure) 자체를 보상으로 만든다. 아이디어는 대담하다. reasoning 도중에 모델이 '머릿속 scene graph'를 세우게 하고, 그 그래프의 품질을 dense spatial reward로 채점하는 것이다.</p>
+<p>구체적으로 SpatialThinker는 Scene Graph Generation과 reasoning을 별도 단계로 분리하지 않고 ONE pass 안에서 online RL로 통합한다. 모델은 답을 내기 전, 장면의 물체와 관계를 그래프로 표상하며 추론하고, dense spatial reward가 그 중간 표상이 실제 기하와 얼마나 부합하는지를 매 순간 감독한다. 보상이 최종 정답뿐 아니라 추론 과정의 구조적 grounding을 채점한다는 점에서, 이것은 reward를 통한 grounding이다.</p>
+<p>효과는 규모 대비 극적이다. 7B 모델이 단 7K 샘플로 SFT 대비 3.6배 향상을 내며 GPT-5에 필적하고 GPT-4o를 능가한다. 30B로 키우면 14개 벤치마크 전반에서 GPT-5와 Claude 4 Sonnet을 넘어선다. ch2의 20억, supervised의 4.5M과 나란히 놓으면 7K라는 숫자의 의미가 선명해진다. 잘 설계된 보상은 데이터를 대체할 뿐 아니라, 세 자릿수 배 적은 샘플로 frontier 상용 모델을 앞지르게 한다.</p>
+<p>이 장을 관통한 궤적을 다시 세우자. discrete correctness(SVQA-R1의 view-consistency) → continuous numerical grounding(Smooth Operator의 SNRA) → structured grounding as reward(SpatialThinker의 scene graph). 세 논문이 공통으로 증명하는 것은, RL이 SpatialVLM·SpatialRGPT의 supervised 데이터 생성을 verifiable geometric-consistency reward로 대체하는 paradigm shift다. 라벨을 더 모으는 대신 보상을 형태 지어 base model에 잠든 공간 능력을 켠다. 그리고 SpatialThinker가 mid-reasoning으로 세운 scene graph는, 자연스럽게 다음 질문으로 이어진다. 보상으로 grounding을 감독하는 것을 넘어, 단일 VLM이 아예 장면을 명시적으로 재구성하며 추론하게 하면 어떻게 될까.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">과녁 없는 사격장에서 코치가 채점하는 법</div>
+      <div class="a-body"><p>공간 추론 RL을 사격 훈련이라고 하자. verifiable reward는 '표적지에 채점 규칙이 붙어 있다'는 뜻이다. 사수(base model)가 여러 발(G개 rollout)을 쏘면 코치는 정답을 몰라도 규칙만으로 점수를 매긴다. GRPO는 그 한 조(group) 안에서 평균보다 잘 쏜 발을 칭찬하고 못 쏜 발을 나무란다. 별도의 심판(critic)을 고용할 필요가 없다.</p>
+<p>SVQA-R1의 코치는 영리하게도 표적을 좌우로 뒤집어 다시 쏘게 한다. '왼쪽을 맞혔다'던 사수가 뒤집힌 표적에서 여전히 같은 쪽을 맞히면 규칙과 모순이니 감점이다. 정답지 없이도, 표적을 흔드는 것만으로 일관성이라는 채점 기준이 생긴다.</p>
+<p>문제는 '중앙에서 몇 cm 벗어났나'를 물을 때다. binary 코치는 '10cm 원 안이냐 밖이냐'만 본다. 한 조가 전부 원 밖이면 모두 0점이고, 사수는 자기 탄착이 원에서 11cm였는지 50cm였는지 피드백을 못 받는다. 개선의 방향을 잃는 것이다. Smooth Operator의 코치는 벗어난 거리에 비례해 점수를 부드럽게 깎는다(sigmoid). 전원이 원 밖이어도 '가장 덜 벗어난 발'이 가장 높은 점수를 받으니, 조 전체가 조금씩 중앙으로 수렴한다. 채점표의 모양 하나가, 같은 사수를 훨씬 적은 훈련으로 명사수로 만든다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>GRPO의 group-relative advantage를 구현하고, 같은 numeric 예측 batch에 binary reward와 smooth sigmoid reward를 적용해 gradient 신호가 어떻게 달라지는지 비교한다. 특히 group 내 모든 rollout이 tolerance 밖일 때 binary advantage가 전부 0으로 붕괴(reward sparsity)하는 반면, smooth reward는 magnitude에 따라 유효한 advantage를 유지함을 출력으로 보인다. numpy만으로 실행 가능하다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import numpy as np
+
+d_gt = 2.00                       # ground-truth distance (m) for one VQA prompt
+# a sampled GRPO group: G rollouts, each predicts a numeric distance
+d_pred = np.array([2.6, 3.4, 1.5, 4.0, 2.9, 3.1, 0.9, 3.6])
+
+rel_err = np.abs(d_pred - d_gt) / d_gt          # delta = |d_pred-d_gt|/d_gt
+
+tau = 0.10                                       # &quot;correct&quot; iff within 10%
+sigmoid = lambda x: 1.0 / (1.0 + np.exp(-x))
+
+r_binary = (rel_err &lt;= tau).astype(float)        # 1[delta&lt;=tau]
+r_smooth = sigmoid(6.0 * (tau - rel_err))        # sigma(alpha(tau-delta))
+
+def grpo_adv(r):                                 # (r-mean)/std, no critic
+    return (r - r.mean()) / (r.std() + 1e-8)
+
+np.set_printoptions(precision=3, suppress=True)
+print(&quot;rel_err delta:&quot;, rel_err)
+print(&quot;binary adv   :&quot;, grpo_adv(r_binary))
+print(&quot;smooth adv   :&quot;, grpo_adv(r_smooth))
+
+# all rollouts outside tau -&gt; binary collapses, smooth still ranks by magnitude
+d_wrong = np.array([3.1, 3.4, 3.0, 3.6, 3.2, 3.5, 3.3, 3.7])
+e = np.abs(d_wrong - d_gt) / d_gt
+print(&quot;\nALL-WRONG group:&quot;)
+print(&quot;  binary adv:&quot;, grpo_adv((e &lt;= tau).astype(float)), &quot;-&gt; zero gradient&quot;)
+print(&quot;  smooth adv:&quot;, grpo_adv(sigmoid(6.0 * (tau - e))), &quot;-&gt; usable gradient&quot;)</code></pre>
+      <div class="c-walk"><p>grpo_adv는 브리프의 advantage 식 <span class="math-inline">\(\hat{A}_i=(r_i-\text{mean}(r))/\text{std}(r)\)</span>를 그대로 옮긴 것으로, critic 없이 group 통계만으로 강화/억제 신호를 만든다. binary reward는 상대 오차 <span class="math-inline">\(\delta\)</span>가 <span class="math-inline">\(\tau\)</span> 안이면 1이라 첫 group에서 어느 rollout도 10% 안에 들지 못해 전부 0이 되고, advantage도 전부 0으로 소멸한다. 이것이 reward sparsity로 인한 gradient 붕괴다. smooth reward는 <span class="math-inline">\(\sigma(\alpha(\tau-\delta))\)</span>로 오차 크기를 연속 반영하므로, 같은 group에서도 덜 틀린 rollout이 더 큰 보상을 받아 advantage에 뚜렷한 순위가 생긴다. 두 번째 ALL-WRONG group은 극단을 보여준다. 모든 예측이 tolerance 밖이라 binary advantage는 다시 전부 0이지만, smooth advantage는 magnitude에 따라 여전히 학습 가능한 신호를 준다. Smooth Operator의 SNRA가 왜 dense reward여야 하는지, AP-GRPO가 왜 절대 스케일 gradient를 지켜야 하는지를 이 한 batch가 실증한다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">이 장은 &#x27;더 많은 데이터&#x27;와 &#x27;더 나은 보상&#x27;이라는 두 패러다임을 가르는 지점이다. 면접관은 지원자가 verifiable RL의 전제(채점 가능성)와 GRPO의 무-critic 구조를 정확히 이해하는지, 그리고 연속 목표에서 보상 형태가 gradient에 미치는 영향을 수식 수준으로 진단할 수 있는지를 본다. reward engineering을 &#x27;하이퍼파라미터 튜닝&#x27;이 아니라 학습 신호의 존재 여부를 좌우하는 설계 문제로 다루는지가 변별점이다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>GRPO의 advantage $(r_i-\text{mean})/\text{std}$가 critic 없이 어떻게 학습 신호를 만드는지, 그리고 그 신호가 group 내 reward 분산에 의존한다는 점을 이해하는가. 분산이 0이면 왜 gradient가 죽는지 즉시 설명할 수 있는가.</li><li>binary/ranking reward가 연속 numeric 목표에서 magnitude를 버려 reward sparsity와 gradient 불안정을 낳는다는 진단, 그리고 SNRA sigmoid dense reward와 AP-GRPO의 absolute-scalar gradient가 이를 어떻게 복구하는지를 수식으로 논증하는 능력.</li><li>50K vs 4.5M, 7K로 GPT-5 필적 같은 sample-efficiency 수치를 &#x27;보상으로 잠재 능력을 활성화&#x27;하는 패러다임 전환의 증거로 해석하고, ch2–ch4의 데이터 스케일 축과 대비할 수 있는가.</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>verifiable RL을 그냥 &#x27;RLHF의 일종&#x27;으로 뭉뚱그리고, reward가 rule-based로 채점 가능해야 한다는 전제와 GRPO가 critic을 제거했다는 구조적 차이를 놓치는 경우.</li><li>&#x27;공간 추론이 안 되니 데이터를 더 모으자&#x27;로 반사적으로 회귀하고, 보상 형태를 바꾸는 것이 두 자릿수 배 데이터를 대체할 수 있다는 가능성을 고려하지 않는 태도.</li><li>binary reward가 연속 목표에서 왜 실패하는지를 &#x27;학습률이 낮아서&#x27; 같은 표면적 이유로 돌리고, group 전원 오답 시 advantage가 구조적으로 0이 된다는 근본 원인을 짚지 못하는 경우.</li></ul></div>
+        </div>
+        <div class="ie-q" style="background:none;padding:0;margin-top:14px"><h4 style="color:#6d28d9">🎤 예상 인터뷰 질문 (클릭하면 모범답안)</h4><details class="qa-item"><summary>GRPO는 PPO와 달리 critic이 없다. group-relative advantage를 어떻게 계산하며, 이 구조가 왜 verifiable reward를 요구하는가?</summary><div class="qa-answer"><p>한 prompt에 대해 정책이 G개 응답을 sample해 group을 만들고, 각 응답의 보상을 group 통계로 정규화해 <span class="math-inline">\(\hat{A}_i=(r_i-\text{mean}(r))/\text{std}(r)\)</span>로 advantage를 만듭니다. 학습된 value network가 없으므로 baseline 역할을 group 평균이 대신하고, value 추정 오차가 사라집니다. 대신 보상이 오직 규칙으로 채점 가능(verifiable)해야 합니다. 수학 답 정오, 코드 테스트 통과, 공간 관계의 view-consistency처럼 기계적으로 채점되는 신호여야 group 비교가 의미를 가지기 때문입니다.</p></div></details><details class="qa-item"><summary>SVQA-R1은 GT 라벨과 SFT 없이 어떻게 공간 추론을 감독하는가? 그 보상이 numeric 목표로 넘어가면 왜 부족한가?</summary><div class="qa-answer"><p>이미지를 좌우 flip하면 left/right가 반드시 뒤집히고, in-plane rotation·perspective warp를 가해도 거리·상대 위치의 순서 관계가 규칙대로 변합니다. 원본과 변환본에 대한 모델 답이 이 기하 불변량과 일관되는지를 채점하면, GT 없이 view-consistency만으로 보상이 생깁니다. base model이 rollout을 내고 consistency 규칙이 채점관이 되어 SFT-free로 reasoning chain이 창발합니다. 다만 flip·순서 consistency는 본질적으로 discrete correctness라, '정확히 몇 미터'라는 연속 값의 오차 크기를 반영하지 못해 Smooth Operator가 지적한 sparsity로 이어집니다.</p></div></details><details class="qa-item"><summary>binary reward로 numeric 거리 추정을 학습하면 왜 무너지며, SNRA의 sigmoid dense reward는 이를 어떻게 고치는가?</summary><div class="qa-answer"><p>binary reward <span class="math-inline">\(\mathbb{1}[\delta\le\tau]\)</span>는 group 내 모든 rollout이 tolerance 밖이면 전부 0이 되고, advantage <span class="math-inline">\((0-\text{mean})/\text{std}\)</span>가 전부 0으로 소멸해 gradient가 사라집니다. 오차의 크기를 버리기 때문입니다. SNRA는 <span class="math-inline">\(r=\sigma(\alpha(\tau-\delta))\)</span>로 상대 오차 <span class="math-inline">\(\delta\)</span>를 연속 보상으로 바꿔, 전원 오답 group에서도 덜 틀린 rollout이 더 높은 보상을 받아 advantage에 순위가 생깁니다. 여기에 AP-GRPO가 relative 정규화에 씻겨나가는 절대 스케일 gradient를 다시 주입해 magnitude 정보를 보존합니다. 그 결과 Numerical3D-50K 50K 샘플로 약 4.5M supervised에 필적합니다.</p></div></details></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> familiar한 지원자는 &#x27;RL로 공간 VQA를 파인튜닝한 논문들&#x27;이라고 요약한다. mastery한 지원자는 GRPO advantage 식을 칠판에 쓰고 분산이 0이면 gradient가 죽는 메커니즘을 설명하며, view-consistency가 왜 공짜 감독인지, binary→ranking→smooth reward가 magnitude 보존에서 어떻게 갈리는지를 표로 정리한다. 나아가 50K vs 4.5M, 7K로 GPT-5 필적이라는 수치를 &#x27;데이터 스케일에서 reward shaping으로&#x27;의 패러다임 전환 증거로 읽고, SpatialThinker의 scene-graph reward가 다음 장의 명시적 재구성 grounding으로 이어지는 인과를 짚는다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>verifiable RL = 활성화 패러다임</h3><p>채점 가능한 정답만 있으면 SFT 없이 rule-based reward로 추론이 창발한다. 공간 능력은 새로 가르치는 것이 아니라 base model에 잠재한 것을 보상으로 켜는 문제로 재정의된다. ch2–ch4의 &#x27;데이터를 더 모으자&#x27;와 대비된다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>GRPO는 critic이 없다</h3><p>$\hat{A}_i=(r_i-\text{mean}(r))/\text{std}(r)$. group 평균이 baseline을 대신하므로 value network가 필요 없고, 보상은 오직 verifiable해야 한다. advantage가 group reward 분산에 의존하는 것이 이후 붕괴의 씨앗이다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>SVQA-R1: view-consistency가 공짜 감독</h3><p>flip은 left/right를, viewpoint transform(rotation·warp)은 distance/relative-position을 감독한다. GT 라벨과 SFT 없이 기하 불변량만으로 Spatial-GRPO가 해석 가능한 reasoning chain을 활성화한다. R1을 공간 VQA에 처음 이식.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>numeric에서 GRPO가 무너지는 이유</h3><p>binary/ranking reward는 numeric error의 magnitude를 버린다. group 전원이 tolerance 밖이면 advantage가 전부 0으로 소멸(reward sparsity)하고 gradient가 불안정해진다. 이것이 Smooth Operator의 진단이다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>SNRA + AP-GRPO</h3><p>SNRA는 $r=\sigma(\alpha(\tau-\delta))$의 dynamic sigmoid로 오차를 dense 연속 보상으로 바꾸고, AP-GRPO는 relative 정규화에 씻기는 absolute scalar gradient를 재주입한다. 아키텍처 변경 없이 학습 신호를 복구한다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>50K vs 4.5M</h3><p>Numerical3D-50K 50K 샘플로 학습한 Smooth Operator가 약 4.5M supervised에 필적한다. 보상 형태 하나가 두 자릿수 배의 라벨을 대체한다는 sample-efficiency의 실증.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>SpatialThinker: scene graph를 dense reward로</h3><p>SGG와 reasoning을 ONE pass online RL로 통합해 &#x27;머릿속 scene graph&#x27;를 dense spatial reward로 감독한다. 7B는 7K로 SFT 대비 3.6배·GPT-5 필적, 30B는 14개 벤치마크에서 GPT-5·Claude 4 Sonnet 능가.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>이 장의 궤적</h3><p>discrete correctness(SVQA-R1) → continuous numerical grounding(Smooth Operator) → structured grounding as reward(SpatialThinker). RL이 supervised 데이터 생성을 verifiable geometric-consistency reward로 대체하는 paradigm shift.</p></div></div>
+      <div class="ref-card"><div class="rc-title">📎 References</div><ol class="ref-list"><li>Siwen Jiao et al. (2026). <span class="rf-title">Smooth Operator: Smooth Verifiable Reward Activates Spatial Reasoning Ability of Vision-Language Model</span>. arXiv 2026. <a href="https://arxiv.org/abs/2601.07695" target="_blank" rel="noopener">arXiv:2601.07695</a></li></ol></div>
+      <div class="next-teaser"><div class="nt-k">Next · Ch10</div><div class="nt-body">SpatialThinker가 mid-reasoning으로 세운 scene graph가 실마리라면, 다음 장은 보상을 넘어 단일 VLM이 장면을 명시적으로 재구성하며 추론하는 GR3D·VLM-3R로, reconstruction·grounding·생성시점 추론이 하나로 수렴하는 프런티어를 종합한다.</div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-08.html">← Depth-native VLMs — DepthVLM vs DepthLM</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-10.html">Grounded 3D-Aware — Reconstruct While You Reason →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({
+    startOnLoad:true, securityLevel:'loose',
+    theme:'base',
+    themeVariables:{
+      primaryColor:'#dbeafe', primaryTextColor:'#0f1f3a', primaryBorderColor:'#1d4ed8',
+      lineColor:'#1d4ed8', secondaryColor:'#f5f3ff', tertiaryColor:'#ecfdf5',
+      fontFamily:'-apple-system,Pretendard,sans-serif', fontSize:'14px'
+    }
+  });
+</script>
+</body></html>

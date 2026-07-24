@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch3: SpatialRGPT — Point at a Region, Plant the Depth — The Evolution of Spatial VLMs — direcf</title>
+  <meta name="description" content="SpatialRGPT는 whole-image·RGB-only였던 SpatialVLM에 region grounding과 우아하게 degrade하는 depth-plugin을 붙여, VLM을 처음으로 &#x27;이 물체&#x27;를 가리키며 metric 3D를 추론하는 시스템으로 끌어올렸다.">
+  <link rel="canonical" href="https://direcf.github.io/posts/spatial-vlm-evolution/chapter-03.html">
+  <meta property="og:url" content="https://direcf.github.io/posts/spatial-vlm-evolution/chapter-03.html">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Ch3: SpatialRGPT — Point at a Region, Plant the Depth — The Evolution of Spatial VLMs — direcf">
+  <meta property="og:description" content="SpatialRGPT는 whole-image·RGB-only였던 SpatialVLM에 region grounding과 우아하게 degrade하는 depth-plugin을 붙여, VLM을 처음으로 &#x27;이 물체&#x27;를 가리키며 metric 3D를 추론하는 시스템으로 끌어올렸다.">
+  <meta property="og:site_name" content="direcf">
+  <meta property="og:image" content="https://direcf.github.io/posts/spatial-vlm-evolution/cheatsheets/chapter-03.png">
+  <meta property="og:image:width" content="1024">
+  <meta property="og:image:height" content="1024">
+  <meta property="og:image:alt" content="Ch3: SpatialRGPT — Point at a Region, Plant the Depth — The Evolution of Spatial VLMs — direcf">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Ch3: SpatialRGPT — Point at a Region, Plant the Depth — The Evolution of Spatial VLMs — direcf">
+  <meta name="twitter:description" content="SpatialRGPT는 whole-image·RGB-only였던 SpatialVLM에 region grounding과 우아하게 degrade하는 depth-plugin을 붙여, VLM을 처음으로 &#x27;이 물체&#x27;를 가리키며 metric 3D를 추론하는 시스템으로 끌어올렸다.">
+  <meta name="twitter:image" content="https://direcf.github.io/posts/spatial-vlm-evolution/cheatsheets/chapter-03.png">
+  <script type="application/ld+json">{"@context": "https://schema.org", "@type": "LearningResource", "name": "SpatialRGPT — Point at a Region, Plant the Depth", "position": 3, "description": "SpatialRGPT는 whole-image·RGB-only였던 SpatialVLM에 region grounding과 우아하게 degrade하는 depth-plugin을 붙여, VLM을 처음으로 '이 물체'를 가리키며 metric 3D를 추론하는 시스템으로 끌어올렸다.", "learningResourceType": "lecture chapter", "inLanguage": "ko", "isPartOf": {"@type": "Course", "name": "The Evolution of Spatial VLMs"}, "author": {"@type": "Person", "name": "Seung Jun Lee"}}</script>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;height:22px;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+/* chapter hook (tension opener) */
+.chapter-hook{font-size:19px;line-height:1.6;font-weight:600;color:var(--text);margin:0 0 18px;letter-spacing:-.01em}
+.chapter-hook::first-letter{font-size:1em}
+
+/* reading meta + mini toc */
+.read-meta{display:flex;flex-wrap:wrap;gap:8px;margin:-6px 0 26px}
+.read-meta .pill{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);background:var(--bg-soft);border-radius:100px;padding:3px 11px}
+.mini-toc{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px 20px;margin:0 0 30px}
+.mini-toc .mt-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:10px}
+.mini-toc ol{list-style:none;counter-reset:mt;display:grid;gap:4px}
+.mini-toc li{counter-increment:mt;font-size:13.5px}
+.mini-toc a{color:var(--text-2);display:flex;gap:9px;padding:2px 0}
+.mini-toc a::before{content:counter(mt,decimal-leading-zero);font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);flex:none}
+.mini-toc a:hover{color:var(--accent)}
+.sb-block{scroll-margin-top:72px}
+
+/* figures (paper crops) — bilingual caption + source */
+.figure-block{margin:22px 0}
+.figure-block figure{margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.figure-block img{width:100%;display:block;object-fit:contain;max-height:440px;background:#fff;padding:8px}
+.figure-block.arch img{max-height:none}
+.figure-block figcaption{padding:11px 16px;border-top:1px solid var(--border)}
+.figure-block .fig-kr{font-size:13.5px;line-height:1.6;color:var(--text-2)}
+.figure-block .fig-orig{font-size:12px;line-height:1.5;color:var(--muted);margin-top:5px}
+.figure-block .fig-src{display:block;font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:7px}
+.figure-block .fig-src a{color:var(--accent)}
+.fig-two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+
+/* mermaid concept diagrams */
+.diagram-block{margin:24px 0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:20px 16px;text-align:center;overflow-x:auto}
+.diagram-block .mermaid{display:flex;justify-content:center;min-height:40px}
+.diagram-block figcaption{font-size:12.5px;color:var(--muted);margin-top:12px;line-height:1.5;text-align:center}
+
+/* interview Q&A (self-test) */
+.qa-item{border:1px solid var(--border);border-radius:8px;margin-bottom:8px;overflow:hidden;background:var(--bg-card)}
+.qa-item>summary{cursor:pointer;padding:12px 15px;font-size:13.5px;font-weight:600;color:var(--text);list-style:none;display:flex;gap:9px;align-items:baseline}
+.qa-item>summary::-webkit-details-marker{display:none}
+.qa-item>summary::before{content:"Q";font-family:'SF Mono',Menlo,monospace;font-size:11px;font-weight:700;color:#6d28d9;flex:none}
+.qa-item[open]>summary{border-bottom:1px solid var(--border)}
+.qa-answer{padding:12px 15px 14px 33px;font-size:13.5px;color:var(--text-2);line-height:1.7}
+.qa-answer::before{content:"A";font-family:'SF Mono',Menlo,monospace;font-size:11px;font-weight:700;color:var(--accent);margin-right:9px}
+
+/* next teaser */
+.next-teaser{background:linear-gradient(135deg,var(--accent-soft),#f5f3ff);border:1px solid var(--border);border-radius:var(--r);padding:16px 20px;margin:44px 0 0}
+.next-teaser .nt-k{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--accent);text-transform:uppercase}
+.next-teaser .nt-body{font-size:14.5px;color:var(--text);margin-top:5px;line-height:1.6}
+
+/* references */
+.ref-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:18px 22px;margin:28px 0 0}
+.ref-card .rc-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;margin-bottom:12px}
+.ref-list{list-style:none;display:grid;gap:9px;counter-reset:rf}
+.ref-list li{counter-increment:rf;font-size:13px;line-height:1.55;color:var(--text-2);padding-left:26px;position:relative}
+.ref-list li::before{content:"["counter(rf)"]";position:absolute;left:0;font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted)}
+.ref-list .rf-title{color:var(--text);font-weight:600}
+.ref-list a{color:var(--accent);font-family:"SF Mono",Menlo,monospace;font-size:12px}
+
+@media(max-width:800px){
+  .app,.app.collapsed{display:block;grid-template-columns:1fr}
+  .sidebar{display:none}
+  .main{width:100%;min-width:0}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+  .fig-two{grid-template-columns:1fr}
+  .sb-block table,.a-body table,.c-walk table{display:block;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}
+  .diagram-block{padding:14px 10px}
+}
+
+.math-display{display:block;max-width:100%;overflow-x:auto;overflow-y:hidden;padding:10px 0;text-align:center;-webkit-overflow-scrolling:touch}
+.math-display .katex-display{margin:0;max-width:100%}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><linearGradient id="direcf-nav-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs></svg>
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg></span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg></span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.25 15a4.5 4.5 0 0 0 4.5 4.5H18a3.75 3.75 0 0 0 1.332-7.257 3 3 0 0 0-3.758-3.848 5.25 5.25 0 0 0-10.233 2.33A4.502 4.502 0 0 0 2.25 15Z"/></svg></span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/multimodal-ai">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"/></svg></span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg></span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/multimodal-ai">The Evolution of Spatial VLMs</a><span class="sep">›</span>
+        <strong>Ch03 SpatialRGPT — Point at a Region, Plant the Depth</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 03 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">📦</div>
+      <h1 class="chapter-title">SpatialRGPT — Point at a Region, Plant the Depth</h1>
+      <div class="chapter-title-kr">영역을 가리키고 depth를 심다: grounded 공간 추론</div>
+      <p class="chapter-hook">사용자가 창고 사진 위에 마우스로 두 개의 박스를 그린다. 하나는 지게차, 하나는 벽면 선반. 그리고 묻는다. &quot;이 지게차가 저 선반에서 몇 미터 떨어져 있지?&quot; 이전 장의 SpatialVLM은 이 질문 자체를 받을 수 없다. 전체 이미지 하나에 대한 답만 뱉을 뿐, &#x27;이것&#x27;과 &#x27;저것&#x27;을 가리킬 언어가 없기 때문이다.</p>
+      <div class="chapter-tldr">SpatialRGPT는 whole-image·RGB-only였던 SpatialVLM에 region grounding과 우아하게 degrade하는 depth-plugin을 붙여, VLM을 처음으로 &#x27;이 물체&#x27;를 가리키며 metric 3D를 추론하는 시스템으로 끌어올렸다.</div>
+      <div class="read-meta"><span class="pill">⏱ 약 12분</span><span class="pill">§ 4 sections</span><span class="pill">🖼 figure 1</span><span class="pill">📊 diagram 3</span></div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-03.png" alt="Chapter 3 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 3 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">4 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>whole-image VLM이 왜 &#x27;이 물체 vs 저 물체&#x27; 관계 질의를 구조적으로 못 하는지 설명한다</li><li>depth를 별도 connector로 주입하되 inference에서 depth가 없어도 무너지지 않게 만드는 설계 원리를 이해한다</li><li>Grounding DINO→Metric3Dv2→camera calibration→3D scene graph로 이어지는 OSD 파이프라인의 각 단계 역할을 분해한다</li><li>MaskPooling으로 region embedding을 뽑는 연산을 직접 구현하고, SpatialRGPT-Bench 수치가 무엇을 증명하는지 해석한다</li></ul>
+      </div>
+      <nav class="mini-toc"><div class="mt-title">이 챕터에서</div><ol><li><a href="#s3-1">왜 전체 이미지로는 못 가리키나</a></li><li><a href="#s3-2">depth를 어떻게 심나</a></li><li><a href="#s3-3">3D scene graph 데이터 공장</a></li><li><a href="#s3-4">숫자로 보는 도약</a></li></ol></nav>
+
+      <div class="sb-block"><p>2장에서 <a href="https://arxiv.org/abs/2401.12168">SpatialVLM</a>은 공간 추론이 '데이터 문제'임을 증명했다. 인터넷 이미지에서 2B 규모의 spatial VQA를 합성해, 모델이 metric 거리·크기를 학습할 수 있음을 보였다. 그러나 두 개의 구멍이 남았다. 첫째, 질의 단위가 이미지 전체다. 화면에 물체가 여럿이면 '왼쪽 컵'과 '오른쪽 컵'을 지칭할 방법이 없다. 둘째, 입력이 RGB뿐이다. 거리는 결국 3D 기하인데, 모델은 2D 픽셀에서 depth를 암묵적으로 추측해야 한다.</p>
+<p><a href="https://arxiv.org/abs/2406.01584">SpatialRGPT</a>(An-Chieh Cheng 등, NVIDIA·UCSD, NeurIPS 2024)는 이 두 구멍을 정면으로 메운다. (1) region grounding으로 임의의 마스크/박스를 토큰화해 LLM이 개별 물체를 가리킬 수 있게 하고, (2) depth-plugin으로 metric geometry를 언어 토큰 공간에 직접 심는다. 이 장의 제목이 '가리키고, 심다'인 이유다.</p>
+<p>이 챕터는 코스의 아키텍처 전환점이다. RGB-only whole-image에서 region-grounded·depth-aware로 넘어가는 지점이며, 여기서 등장한 두 설계 패턴 — inference에서 사라져도 되는 depth-plugin, 그리고 3D scene graph를 자동으로 찍어내는 데이터 공장(OSD) — 은 이후 여러 논문의 참조 템플릿이 된다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block" id="s3-1"><h2>왜 전체 이미지로는 못 가리키나</h2><p>SpatialVLM의 파이프라인을 다시 떠올려 보자. 이미지 하나가 encoder를 거쳐 토큰이 되고, 질문은 그 이미지 '전체'에 대한 것이다. "컵이 접시보다 왼쪽에 있나?" 같은 질문은 화면에 컵과 접시가 각각 하나뿐일 때만 성립한다. 실제 장면은 그렇지 않다. 창고에는 지게차가 셋, 선반이 다섯 개 있다.</p>
+<p>이 한계는 표면적 UX 문제가 아니라 표현의 문제다. 코스 전체를 관통하는 진단 — 서베이 <a href="https://arxiv.org/abs/2511.15722">Spatial Reasoning in MLLMs</a>가 말하는 projection bottleneck — 은 2D encoder가 semantic alignment를 위해 토큰화하지, 개별 인스턴스의 기하를 보존하지 않는다는 데 있다. 모델이 '이 물체'를 붙잡을 손잡이(handle) 자체가 없다.</p>
+<p>SpatialRGPT의 첫 수술은 그 손잡이를 만드는 것이다. 사용자가 준 마스크(또는 박스)를 image feature map 위에 얹어, 그 영역만의 embedding을 뽑아낸다. 구체적으로는 feature map을 두 층의 deconvolution으로 refine해 공간 해상도를 회복한 뒤, 마스크 영역의 feature를 평균 pooling한다. 이 MaskPooling 결과가 하나의 region token이 되어 LLM 입력에 삽입된다.</p>
+<p>결과적으로 프롬프트는 "&lt;region0&gt;이 &lt;region1&gt;에서 얼마나 떨어져 있나?" 형태가 된다. LLM은 이제 서수(왼쪽/오른쪽)나 클래스명(컵/접시)에 의존하지 않고, 명시적 참조 토큰으로 특정 인스턴스를 지목한다. GPT-4V에 Set-of-Marks를 붙이는 우회로가 이 시기 유행했지만, SpatialRGPT는 region을 프롬프트 텍스트로 '설명'하는 대신 feature로 '주입'한다는 점에서 다르다.</p><figure class="diagram-block"><div class="mermaid">flowchart LR
+  IMG[&quot;입력 이미지&quot;] --&gt; ENC[&quot;shared&lt;br/&gt;image encoder&quot;]
+  ENC --&gt; FM[&quot;feature map&lt;br/&gt;[C,H,W]&quot;]
+  MSK[&quot;사용자 region&lt;br/&gt;마스크/박스&quot;] --&gt; POOL
+  FM --&gt; DECONV[&quot;2-layer&lt;br/&gt;deconv refine&quot;]
+  DECONV --&gt; POOL[&quot;MaskPooling&quot;]
+  POOL --&gt; RTOK[&quot;region token&quot;]
+  RTOK --&gt; LLM[&quot;LLM&lt;br/&gt;&amp;lt;region_i&amp;gt; 참조&quot;]</div><figcaption>region grounding: 마스크로 지목한 영역을 deconv refine 후 MaskPooling해 하나의 region token으로 LLM에 주입한다.</figcaption></figure><div class="figure-block"><figure><img src="/posts/spatial-vlm-evolution/figures/2406.01584/teaser_v2.png" alt="SpatialRGPT region-grounded spatial reasoning teaser" loading="lazy" decoding="async"><figcaption><div class="fig-kr">SpatialRGPT은 사용자가 지정한 region을 가리키며 그 사이의 정성·정량 공간 관계에 답한다. whole-image만 보던 SpatialVLM의 한계를 넘는 지점.</div><div class="fig-orig">arXiv:2406.01584, Fig. 2</div><span class="fig-src">Figure 2 · <a href="https://arxiv.org/abs/2406.01584" target="_blank" rel="noopener">arXiv:2406.01584</a></span></figcaption></figure></div></div><div class="sb-block" id="s3-2"><h2>depth를 어떻게 심나</h2><p>두 번째 수술은 depth다. 거리·높이·크기는 근본적으로 3D 기하이므로, RGB만으로는 모델이 depth를 암묵 추정해야 한다. SpatialRGPT는 depth map을 아예 입력으로 받되, 이를 이질적 modality로 따로 처리하지 않고 영리하게 재사용한다.</p>
+<p>설계의 골자는 이렇다. depth map은 RGB와 '같은' shared image encoder를 통과해 depth feature map이 된다. 그다음이 핵심 분기점이다. RGB feature는 RGB connector로, depth feature는 별도의 depth connector로 LLM 토큰 공간에 매핑된다. 두 connector를 분리하는 이유는 cross-modal interference를 막기 위함이다. 하나의 connector에 두 modality를 섞으면 서로의 표현을 오염시킨다.</p>
+<p>가장 중요한 트릭은 초기화와 학습 스케줄에 있다. depth connector는 무작위가 아니라 RGB connector의 가중치로 초기화되고, spatial QA 데이터에서만 학습된다. 이 두 조건이 합쳐지면 우아한 성질이 생긴다. depth가 주어지지 않은 inference 상황에서도 모델이 무너지지 않는다. depth connector가 RGB connector의 '이웃'에서 출발해 spatial 과제로만 특화되었기 때문에, depth 입력이 빠져도 RGB 경로가 여전히 합리적인 답을 낸다. 이것이 plugin-that-degrades-gracefully 패턴이다.</p>
+<p>region 처리는 이 두 스트림 위에서 동일하게 작동한다. RGB feature map과 depth feature map 각각에서 같은 마스크로 MaskPooling을 수행하면, 같은 영역에 대한 semantic embedding과 geometric embedding을 함께 얻는다. LLM은 "이 region은 이렇게 생겼고(RGB), 이만큼 멀다(depth)"를 한 토큰 묶음으로 받는다.</p>
+<p>한 문장으로 요약하면, depth는 새 modality의 무거운 별도 tower가 아니라, 공유 encoder에 얹은 얇고 탈착 가능한 plug다. 다음 4장의 <a href="https://arxiv.org/abs/2406.13642">SpatialBot</a>은 여기서 한 걸음 더 나아가, depth를 feature로 녹이는 대신 아예 읽고 질의하는 도구로 만든다.</p><figure class="diagram-block"><div class="mermaid">flowchart TB
+  RGB[&quot;RGB 이미지&quot;] --&gt; ENC[&quot;shared&lt;br/&gt;image encoder&quot;]
+  DEP[&quot;depth map&lt;br/&gt;(optional)&quot;] --&gt; ENC
+  ENC --&gt; RFM[&quot;RGB feature&quot;]
+  ENC --&gt; DFM[&quot;depth feature&quot;]
+  RFM --&gt; RCON[&quot;RGB connector&quot;]
+  DFM --&gt; DCON[&quot;depth connector&lt;br/&gt;(init from RGB conn.)&quot;]
+  MSK[&quot;region 마스크&quot;] --&gt; MP[&quot;MaskPooling&lt;br/&gt;(RGB · depth 각각)&quot;]
+  RCON --&gt; MP
+  DCON --&gt; MP
+  MP --&gt; LLM[&quot;LLM 토큰 공간&quot;]
+  DEP -.&quot;없으면 이 경로만 skip&quot;.-&gt; DCON</div><figcaption>depth-plugin: depth는 shared encoder를 재사용하고 RGB connector에서 초기화된 별도 depth connector로 주입된다. depth가 없으면 그 경로만 빠지고 RGB 경로로 graceful degradation.</figcaption></figure></div><div class="sb-block" id="s3-3"><h2>3D scene graph 데이터 공장</h2><p>새 능력(region+depth)을 학습시키려면 새 데이터가 필요하다. SpatialVLM의 합성 레시피는 whole-image 거리 QA였지, 개별 region 사이의 grounded 관계가 아니었다. SpatialRGPT는 이를 위해 Open Spatial Dataset(OSD)이라는 자동 파이프라인을 만든다.</p>
+<p>파이프라인은 raw 2D 이미지에서 3D 구조를 복원하는 순서로 흐른다. 먼저 Grounding DINO가 물체를 검출하고 segmentation으로 인스턴스 마스크를 얻는다. 다음 Metric3Dv2가 각 픽셀의 metric depth를 예측한다. 여기가 결정적이다. relative가 아닌 metric depth라야 '3.2m'처럼 절대 거리를 말할 수 있다. 이어 WildCamera/PerspectiveFields로 카메라 intrinsic을 추정하고 장면을 canonical한 자세로 정규화한다. 카메라를 모르면 픽셀을 3D로 unproject할 수 없기 때문이다.</p>
+<p>이렇게 얻은 per-instance 점구름은 노이즈가 많으므로 DBSCAN으로 outlier를 제거한다. 정제된 점구름 각각에 axis-aligned 3D bounding box를 씌우면, 물체들의 3D 위치·크기·상호관계를 담은 3D scene graph가 완성된다. 이 scene graph가 곧 ground-truth의 원천이다. 두 박스 사이 거리, 어느 것이 더 큰지, 무엇이 앞에 있는지를 그래프에서 곧바로 읽어낸다.</p>
+<p>마지막으로 이 grounded fact를 자연어 QA로 변환한다. 규칙 기반 template로 8M쌍을, 그리고 Llama3-70B로 약 700K쌍의 복잡한 multi-step reasoning QA를 생성한다. 최종 규모는 1M 이미지, 5M region, 8.7M grounded spatial concept에 이른다. 이 '2D→3D scene graph→QA' 공장은 이후 여러 후속 연구가 그대로 참조하는 템플릿이 된다.</p><figure class="diagram-block"><div class="mermaid">flowchart LR
+  IMG[&quot;2D 이미지&quot;] --&gt; GD[&quot;Grounding DINO&lt;br/&gt;+ segmentation&quot;]
+  GD --&gt; M3D[&quot;Metric3Dv2&lt;br/&gt;metric depth&quot;]
+  M3D --&gt; CAM[&quot;WildCamera /&lt;br/&gt;PerspectiveFields&lt;br/&gt;calib + canonical&quot;]
+  CAM --&gt; PC[&quot;per-instance&lt;br/&gt;point cloud&quot;]
+  PC --&gt; DB[&quot;DBSCAN&lt;br/&gt;denoise&quot;]
+  DB --&gt; SG[&quot;3D scene graph&lt;br/&gt;axis-aligned 3D box&quot;]
+  SG --&gt; TQA[&quot;template QA&lt;br/&gt;8M&quot;]
+  SG --&gt; LQA[&quot;Llama3-70B&lt;br/&gt;~700K reasoning&quot;]</div><figcaption>OSD 파이프라인: 검출→metric depth→카메라 정규화→DBSCAN→3D scene graph를 거쳐 grounded fact를 뽑고, template과 LLM으로 QA를 합성한다.</figcaption></figure></div><div class="sb-block" id="s3-4"><h2>숫자로 보는 도약</h2><p>능력을 주장하려면 그것을 측정할 자가 필요하다. SpatialRGPT-Bench는 657개의 정성 pair와 749개의 정량 pair, 88개 클래스로 구성되며, 실내·실외·시뮬레이션을 아우르는 ground-truth 3D cuboid 주석을 최초로 제공하는 벤치마크다. 이전까지 공간 추론 평가는 사람이 눈대중으로 채점하거나, metric ground-truth가 없어 상대 비교에 그쳤다.</p>
+<p>정성 평가는 관계의 방향성(왼쪽/오른쪽, 위/아래, 앞/뒤 등)을 맞히는 success rate다. 정량 평가는 거리·크기의 절대 상대 오차 <span class="math-inline">\(\delta = |d_{pred}-d_{gt}|/d_{gt}\)</span>로 채점한다. 이 metric은 예측이 클수록 페널티가 커지므로, 그럴듯한 언어가 아니라 실제 수치의 정확도를 강제한다.</p>
+<p>결과는 명확한 도약을 보인다. 정성에서 SpatialRGPT는 91.78%로, GPT-4V의 58.14%, SoM을 붙인 GPT-4V의 54.33%, LLaVA-34B의 43.98%를 큰 격차로 앞선다. 정량에서는 depth를 켠 SpatialRGPT-Depth가 절대 상대 오차 0.33으로, GPT-4V 0.92·LLaVA 0.76 대비 오차를 절반 이하로 줄인다. depth-plugin이 metric 정확도에 직접 기여함을 보여주는 대목이다.</p>
+<p>주의할 해석 포인트가 하나 있다. 정량 오차 0.33은 여전히 30% 남짓의 상대 오차다. metric 거리 추정은 이 논문으로 '풀린' 것이 아니라 '가능함이 증명된' 단계다. 이 잔여 오차가 이후 8장 <a href="https://arxiv.org/abs/2605.15876">DepthVLM</a> 계열이 depth를 언어 인터페이스 안으로 더 깊이 끌어들이려는 동기가 된다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">형광펜과 접이식 3D 자</div>
+      <div class="a-body"><p>whole-image VLM은 사진 전체를 놓고 '이 사진 어때?'만 물을 수 있는 감상자다. SpatialRGPT의 region grounding은 그 사진에 형광펜을 쥐여 주는 것과 같다. "여기(형광펜 A)와 저기(형광펜 B)"라고 표시하면, 이제 대화는 특정 두 지점에 대한 것이 된다. 클래스명이나 '왼쪽 것' 같은 모호한 서술이 필요 없다.</p>
+<p>depth-plugin은 그 감상자의 주머니에 접이식 3D 자를 넣어 주는 격이다. 자가 있으면(depth 입력) '3.2m'라고 정확히 잰다. 자를 안 챙긴 날(depth 없음)에도 눈대중으로 대략은 답한다. 결정적으로, 이 자는 원래 쓰던 눈(RGB connector)의 사용법을 물려받아 만들어졌기에, 자가 없다고 감상자가 갑자기 앞을 못 보게 되지는 않는다. 이것이 graceful degradation이다.</p>
+<p>OSD 데이터 공장은 이 감상자를 훈련시킨 학원이다. 수백만 장의 평범한 사진을 자동으로 3D 도면(scene graph)으로 바꿔, '두 지점 사이 거리는 이만큼'이라는 정답지를 사람 손 없이 대량으로 찍어냈다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>SpatialRGPT의 region grounding 핵심 연산인 MaskPooling을 numpy로 구현한다. feature map [C,H,W]와 이진 region 마스크가 주어지면, 마스크가 덮은 위치의 feature를 masked average pooling해 하나의 region embedding [C]로 만든다. 실제 모델은 pooling 전에 2-layer deconvolution으로 feature map을 upsample해 공간 해상도를 회복하는데, 여기서는 그 refine 단계를 최근접 업샘플로 흉내 냈다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import numpy as np
+
+def deconv_refine(feat, scale=2):
+    # 실제로는 학습된 2-layer transposed conv.
+    # 여기서는 해상도 회복 효과만 nearest-upsample로 근사.
+    return np.repeat(np.repeat(feat, scale, axis=1), scale, axis=2)
+
+def mask_pooling(feat, mask):
+    # feat: [C, H, W] 이미지 feature map
+    # mask: [h, w] 이진 region 마스크 (feat과 크기 달라도 됨)
+    C, H, W = feat.shape
+    if mask.shape != (H, W):                 # 마스크를 feat 격자에 맞춰 샘플
+        ys = np.linspace(0, mask.shape[0]-1, H).astype(int)
+        xs = np.linspace(0, mask.shape[1]-1, W).astype(int)
+        mask = mask[np.ix_(ys, xs)]
+    m = mask.astype(np.float32)
+    denom = m.sum()
+    if denom == 0:                            # 빈 영역 방어
+        return np.zeros(C, dtype=feat.dtype)
+    # 마스크로 가린 위치만 평균 -&gt; region embedding
+    return (feat * m[None]).sum(axis=(1, 2)) / denom
+
+np.random.seed(0)
+feat = np.random.randn(256, 24, 24).astype(np.float32)   # encoder feature
+mask = np.zeros((24, 24), np.uint8); mask[6:14, 8:18] = 1  # 지목한 region
+
+emb = mask_pooling(feat, mask)
+print(&#x27;region embedding:&#x27;, emb.shape, &#x27;| mask px:&#x27;, int(mask.sum()))
+
+refined = deconv_refine(feat, 2)                          # 2x 해상도 회복
+big = np.zeros((48, 48), np.uint8); big[12:28, 16:36] = 1
+print(&#x27;refined map:&#x27;, refined.shape,
+      &#x27;| refined region embedding:&#x27;, mask_pooling(refined, big).shape)</code></pre>
+      <div class="c-walk"><p>mask_pooling은 feature map에 마스크를 element-wise 곱해 region 밖을 0으로 만든 뒤, 채널별 합을 마스크 픽셀 수로 나눈다. 곧 masked average pooling이며, 결과는 그 영역의 semantic을 압축한 [C] 벡터 하나다. 이 벡터가 &lt;region_i&gt; 토큰이 되어 LLM에 들어간다. depth 스트림에도 같은 마스크로 이 함수를 한 번 더 적용하면 geometric embedding을 얻는다. deconv_refine은 pooling 전 feature 해상도를 회복해, 작은 물체 마스크가 격자 몇 칸으로 뭉개지지 않게 한다. 빈 마스크에 0 벡터를 돌려주는 방어는 학습 중 라벨 노이즈로 마스크가 비는 경우를 막는다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">SpatialRGPT는 &#x27;멀티모달 입력을 어떻게 LLM에 우아하게 붙이는가&#x27;라는, 산업에서 매일 부딪히는 문제의 모범 사례다. 면접에서는 depth-plugin의 초기화·학습 스케줄 설계와 OSD 같은 auto-labeling 파이프라인 설계를 물어, 지원자가 아키텍처 결정의 &#x27;이유&#x27;까지 아는지 가른다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>새 modality(depth)를 별도 tower로 늘리지 않고 shared encoder를 재사용하면서 connector만 분리한 판단, 그리고 그 이유(cross-modal interference 차단 + 학습 비용 절감)를 설명할 수 있는가</li><li>depth connector를 RGB connector에서 초기화하고 spatial QA로만 학습시켜 graceful degradation을 얻는 설계를, 단순 fine-tuning 트릭이 아니라 배포 안정성 관점에서 해석하는가</li><li>OSD 파이프라인의 각 컴포넌트(Metric3Dv2, 카메라 calibration, DBSCAN)가 왜 그 순서로 필요한지, 하나를 빼면 무엇이 깨지는지 추론하는가</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>depth를 그냥 4번째 채널로 concat하면 되지 않느냐고만 말하고, 별도 connector와 초기화 전략이 필요한 이유를 설명하지 못함</li><li>정성 91.78% 같은 성공률 숫자만 외우고, 정량 절대 상대 오차 0.33이 여전히 30% 오차라는 한계를 해석하지 못함</li><li>OSD를 &#x27;GPT로 QA 뽑은 것&#x27;으로만 이해하고, metric depth·카메라 정규화 없이는 절대 거리 ground-truth가 성립하지 않는다는 점을 놓침</li></ul></div>
+        </div>
+        <div class="ie-q" style="background:none;padding:0;margin-top:14px"><h4 style="color:#6d28d9">🎤 예상 인터뷰 질문 (클릭하면 모범답안)</h4><details class="qa-item"><summary>depth를 RGB에 4채널로 concat하지 않고 별도 connector로 주입한 이유는? 그 대가는 무엇인가?</summary><div class="qa-answer"><p>concat은 encoder 초입에서 두 modality를 강제로 섞어 cross-modal interference를 일으키고, depth가 없는 입력에 대해 아예 forward가 깨진다. SpatialRGPT는 shared encoder는 재사용하되 RGB feature와 depth feature를 각자의 connector로 LLM 공간에 매핑해 표현 오염을 막는다. 대가는 파라미터·경로가 늘어나는 것이지만, depth connector를 RGB connector에서 초기화하고 spatial QA로만 학습해 depth 없는 inference에서도 무너지지 않는 graceful degradation을 얻으므로 배포상 이득이 훨씬 크다.</p></div></details><details class="qa-item"><summary>OSD에서 Metric3Dv2와 카메라 calibration을 둘 다 두는 이유는? 하나만 있으면 왜 안 되나?</summary><div class="qa-answer"><p>Metric3Dv2는 픽셀별 '절대' depth를 주어 3.2m 같은 metric 답의 근거가 되지만, depth만으로는 픽셀을 3D 좌표로 unproject할 수 없다. camera intrinsic이 있어야 (u,v,depth)를 실제 (X,Y,Z)로 역투영하고 장면을 canonical 자세로 정규화할 수 있다. 카메라만 있고 metric depth가 없으면 상대 스케일만 알아 절대 거리를 말할 수 없고, depth만 있고 카메라가 없으면 3D scene graph의 기하가 왜곡된다. 두 단계가 함께 있어야 axis-aligned 3D box와 그 사이 거리를 ground-truth로 뽑을 수 있다.</p></div></details><details class="qa-item"><summary>region grounding은 GPT-4V에 Set-of-Marks를 붙이는 방식과 무엇이 다른가?</summary><div class="qa-answer"><p>SoM은 region을 이미지 위 시각 마커와 텍스트 라벨로 '설명'해 LLM이 다시 픽셀에서 읽게 만드는 우회로다. 반면 SpatialRGPT는 마스크로 feature map을 MaskPooling해 그 영역의 embedding을 직접 region token으로 LLM에 주입한다. 정보가 텍스트를 거치지 않고 feature 수준에서 들어가므로 인스턴스 지시가 더 정확하고, depth 스트림에도 같은 마스크를 적용해 geometric embedding까지 함께 붙일 수 있다. 벤치마크에서도 SpatialRGPT 91.78% 대 GPT-4V+SoM 54.33%로 격차가 크다.</p></div></details></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 익숙한 수준은 &#x27;SpatialRGPT는 region과 depth를 추가했다&#x27;를 말하는 것이다. 숙달한 수준은 depth connector의 RGB 초기화와 spatial-only 학습이 graceful degradation을 만드는 인과를 설명하고, OSD 파이프라인에서 어느 단계를 빼면 metric ground-truth가 왜 무너지는지, 그리고 정량 오차 0.33이 남긴 한계가 이후 depth-native VLM으로 이어지는 흐름까지 연결하는 것이다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>두 구멍을 메운다</h3><p>SpatialRGPT는 SpatialVLM의 whole-image·RGB-only 한계를 region grounding과 depth-plugin 두 축으로 동시에 수술한 아키텍처 전환점이다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>region은 설명이 아니라 주입</h3><p>deconv refine 후 MaskPooling으로 뽑은 region embedding을 토큰으로 직접 넣어, LLM이 클래스명·서수 없이 특정 인스턴스를 &amp;lt;region_i&amp;gt;로 지목한다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>탈착 가능한 depth-plugin</h3><p>depth는 shared encoder를 재사용하고 RGB에서 초기화된 별도 connector로 들어간다. spatial QA로만 학습해 depth가 없는 inference에서도 graceful degradation을 보인다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>connector 분리 = interference 차단</h3><p>RGB와 depth를 별도 module로 refine하는 이유는 두 modality가 서로의 표현을 오염시키는 cross-modal interference를 막기 위함이다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>3D scene graph 데이터 공장</h3><p>OSD는 Grounding DINO→Metric3Dv2→camera calibration→DBSCAN→3D scene graph로 절대 거리 ground-truth를 자동 생성한다. 1M 이미지·5M region·8.7M concept 규모.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>metric 정량 오차를 절반 이하로</h3><p>SpatialRGPT-Bench 정성 91.78%(GPT-4V 58.14%), 정량 절대 상대 오차 0.33(GPT-4V 0.92)으로, ground-truth 3D cuboid 기반 최초의 metric 평가에서 도약을 입증한다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>&#x27;풀림&#x27;이 아니라 &#x27;가능함&#x27;</h3><p>정량 오차 0.33은 여전히 30%대 상대 오차다. metric 거리 추정은 증명 단계이며, 이 잔여 오차가 depth를 언어 안으로 더 끌어들이는 후속 흐름의 동기가 된다.</p></div></div>
+      <div class="ref-card"><div class="rc-title">📎 References</div><ol class="ref-list"><li>An-Chieh Cheng et al. (2024). <span class="rf-title">SpatialRGPT: Grounded Spatial Reasoning in Vision Language Models</span>. NeurIPS 2024. <a href="https://arxiv.org/abs/2406.01584" target="_blank" rel="noopener">arXiv:2406.01584</a></li></ol></div>
+      <div class="next-teaser"><div class="nt-k">Next · Ch04</div><div class="nt-body">depth를 feature로 녹여 넣는 대신, 아예 픽셀을 읽고 질의하는 &#x27;도구&#x27;로 다루면 어떻게 될까. 다음 장은 SpatialBot이 embedded 로봇을 향해 depth를 입력·API로 승격시키는 이야기다.</div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-02.html">← SpatialVLM: Data Is the Answer</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-04.html">SpatialBot — Learning to Read Depth →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({
+    startOnLoad:true, securityLevel:'loose',
+    theme:'base',
+    themeVariables:{
+      primaryColor:'#dbeafe', primaryTextColor:'#0f1f3a', primaryBorderColor:'#1d4ed8',
+      lineColor:'#1d4ed8', secondaryColor:'#f5f3ff', tertiaryColor:'#ecfdf5',
+      fontFamily:'-apple-system,Pretendard,sans-serif', fontSize:'14px'
+    }
+  });
+</script>
+</body></html>

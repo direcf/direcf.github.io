@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch4: SpatialBot — Learning to Read Depth — The Evolution of Spatial VLMs — direcf</title>
+  <meta name="description" content="depth map은 줄곧 VLM 앞에 놓여 있었지만 모델은 그 숫자를 읽는 법을 배운 적이 없었다. SpatialBot은 millimeter metric depth를 uint24로 보존해 읽히고, 필요하면 Depth API로 호출하게 만든다.">
+  <link rel="canonical" href="https://direcf.github.io/posts/spatial-vlm-evolution/chapter-04.html">
+  <meta property="og:url" content="https://direcf.github.io/posts/spatial-vlm-evolution/chapter-04.html">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Ch4: SpatialBot — Learning to Read Depth — The Evolution of Spatial VLMs — direcf">
+  <meta property="og:description" content="depth map은 줄곧 VLM 앞에 놓여 있었지만 모델은 그 숫자를 읽는 법을 배운 적이 없었다. SpatialBot은 millimeter metric depth를 uint24로 보존해 읽히고, 필요하면 Depth API로 호출하게 만든다.">
+  <meta property="og:site_name" content="direcf">
+  <meta property="og:image" content="https://direcf.github.io/posts/spatial-vlm-evolution/cheatsheets/chapter-04.png">
+  <meta property="og:image:width" content="1024">
+  <meta property="og:image:height" content="1024">
+  <meta property="og:image:alt" content="Ch4: SpatialBot — Learning to Read Depth — The Evolution of Spatial VLMs — direcf">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Ch4: SpatialBot — Learning to Read Depth — The Evolution of Spatial VLMs — direcf">
+  <meta name="twitter:description" content="depth map은 줄곧 VLM 앞에 놓여 있었지만 모델은 그 숫자를 읽는 법을 배운 적이 없었다. SpatialBot은 millimeter metric depth를 uint24로 보존해 읽히고, 필요하면 Depth API로 호출하게 만든다.">
+  <meta name="twitter:image" content="https://direcf.github.io/posts/spatial-vlm-evolution/cheatsheets/chapter-04.png">
+  <script type="application/ld+json">{"@context": "https://schema.org", "@type": "LearningResource", "name": "SpatialBot — Learning to Read Depth", "position": 4, "description": "depth map은 줄곧 VLM 앞에 놓여 있었지만 모델은 그 숫자를 읽는 법을 배운 적이 없었다. SpatialBot은 millimeter metric depth를 uint24로 보존해 읽히고, 필요하면 Depth API로 호출하게 만든다.", "learningResourceType": "lecture chapter", "inLanguage": "ko", "isPartOf": {"@type": "Course", "name": "The Evolution of Spatial VLMs"}, "author": {"@type": "Person", "name": "Seung Jun Lee"}}</script>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;height:22px;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+/* chapter hook (tension opener) */
+.chapter-hook{font-size:19px;line-height:1.6;font-weight:600;color:var(--text);margin:0 0 18px;letter-spacing:-.01em}
+.chapter-hook::first-letter{font-size:1em}
+
+/* reading meta + mini toc */
+.read-meta{display:flex;flex-wrap:wrap;gap:8px;margin:-6px 0 26px}
+.read-meta .pill{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);background:var(--bg-soft);border-radius:100px;padding:3px 11px}
+.mini-toc{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px 20px;margin:0 0 30px}
+.mini-toc .mt-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:10px}
+.mini-toc ol{list-style:none;counter-reset:mt;display:grid;gap:4px}
+.mini-toc li{counter-increment:mt;font-size:13.5px}
+.mini-toc a{color:var(--text-2);display:flex;gap:9px;padding:2px 0}
+.mini-toc a::before{content:counter(mt,decimal-leading-zero);font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);flex:none}
+.mini-toc a:hover{color:var(--accent)}
+.sb-block{scroll-margin-top:72px}
+
+/* figures (paper crops) — bilingual caption + source */
+.figure-block{margin:22px 0}
+.figure-block figure{margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.figure-block img{width:100%;display:block;object-fit:contain;max-height:440px;background:#fff;padding:8px}
+.figure-block.arch img{max-height:none}
+.figure-block figcaption{padding:11px 16px;border-top:1px solid var(--border)}
+.figure-block .fig-kr{font-size:13.5px;line-height:1.6;color:var(--text-2)}
+.figure-block .fig-orig{font-size:12px;line-height:1.5;color:var(--muted);margin-top:5px}
+.figure-block .fig-src{display:block;font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:7px}
+.figure-block .fig-src a{color:var(--accent)}
+.fig-two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+
+/* mermaid concept diagrams */
+.diagram-block{margin:24px 0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:20px 16px;text-align:center;overflow-x:auto}
+.diagram-block .mermaid{display:flex;justify-content:center;min-height:40px}
+.diagram-block figcaption{font-size:12.5px;color:var(--muted);margin-top:12px;line-height:1.5;text-align:center}
+
+/* interview Q&A (self-test) */
+.qa-item{border:1px solid var(--border);border-radius:8px;margin-bottom:8px;overflow:hidden;background:var(--bg-card)}
+.qa-item>summary{cursor:pointer;padding:12px 15px;font-size:13.5px;font-weight:600;color:var(--text);list-style:none;display:flex;gap:9px;align-items:baseline}
+.qa-item>summary::-webkit-details-marker{display:none}
+.qa-item>summary::before{content:"Q";font-family:'SF Mono',Menlo,monospace;font-size:11px;font-weight:700;color:#6d28d9;flex:none}
+.qa-item[open]>summary{border-bottom:1px solid var(--border)}
+.qa-answer{padding:12px 15px 14px 33px;font-size:13.5px;color:var(--text-2);line-height:1.7}
+.qa-answer::before{content:"A";font-family:'SF Mono',Menlo,monospace;font-size:11px;font-weight:700;color:var(--accent);margin-right:9px}
+
+/* next teaser */
+.next-teaser{background:linear-gradient(135deg,var(--accent-soft),#f5f3ff);border:1px solid var(--border);border-radius:var(--r);padding:16px 20px;margin:44px 0 0}
+.next-teaser .nt-k{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--accent);text-transform:uppercase}
+.next-teaser .nt-body{font-size:14.5px;color:var(--text);margin-top:5px;line-height:1.6}
+
+/* references */
+.ref-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:18px 22px;margin:28px 0 0}
+.ref-card .rc-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;margin-bottom:12px}
+.ref-list{list-style:none;display:grid;gap:9px;counter-reset:rf}
+.ref-list li{counter-increment:rf;font-size:13px;line-height:1.55;color:var(--text-2);padding-left:26px;position:relative}
+.ref-list li::before{content:"["counter(rf)"]";position:absolute;left:0;font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted)}
+.ref-list .rf-title{color:var(--text);font-weight:600}
+.ref-list a{color:var(--accent);font-family:"SF Mono",Menlo,monospace;font-size:12px}
+
+@media(max-width:800px){
+  .app,.app.collapsed{display:block;grid-template-columns:1fr}
+  .sidebar{display:none}
+  .main{width:100%;min-width:0}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+  .fig-two{grid-template-columns:1fr}
+  .sb-block table,.a-body table,.c-walk table{display:block;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}
+  .diagram-block{padding:14px 10px}
+}
+
+.math-display{display:block;max-width:100%;overflow-x:auto;overflow-y:hidden;padding:10px 0;text-align:center;-webkit-overflow-scrolling:touch}
+.math-display .katex-display{margin:0;max-width:100%}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><linearGradient id="direcf-nav-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs></svg>
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg></span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg></span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.25 15a4.5 4.5 0 0 0 4.5 4.5H18a3.75 3.75 0 0 0 1.332-7.257 3 3 0 0 0-3.758-3.848 5.25 5.25 0 0 0-10.233 2.33A4.502 4.502 0 0 0 2.25 15Z"/></svg></span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/multimodal-ai">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"/></svg></span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg></span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/multimodal-ai">The Evolution of Spatial VLMs</a><span class="sep">›</span>
+        <strong>Ch04 SpatialBot — Learning to Read Depth</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 04 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">📐</div>
+      <h1 class="chapter-title">SpatialBot — Learning to Read Depth</h1>
+      <div class="chapter-title-kr">SpatialBot — depth를 읽는 법: 질의 가능한 깊이와 Depth API</div>
+      <p class="chapter-hook">depth map은 처음부터 VLM 앞에 놓여 있었다. 모델은 그 위의 숫자를 읽는 법을 한 번도 배우지 못했을 뿐이다. SpatialBot의 주장은 도발적일 만큼 단순하다. depth를 새 feature로 녹여 넣기 전에, 먼저 그것을 읽을 수 있는 map으로 다뤄야 한다는 것이다.</p>
+      <div class="chapter-tldr">depth map은 줄곧 VLM 앞에 놓여 있었지만 모델은 그 숫자를 읽는 법을 배운 적이 없었다. SpatialBot은 millimeter metric depth를 uint24로 보존해 읽히고, 필요하면 Depth API로 호출하게 만든다.</div>
+      <div class="read-meta"><span class="pill">⏱ 약 13분</span><span class="pill">§ 4 sections</span><span class="pill">📊 diagram 2</span></div>
+
+      <div class="cs-wrap">
+        <img src="cheatsheets/chapter-04.png" alt="Chapter 4 Cheat Sheet" loading="lazy">
+        <div class="cs-label">🍌 Nano Banana — Chapter 4 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">4 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>normalized/ordinal depth가 왜 metric scale을 파괴하는지, 그리고 그것이 indoor-mm 대 outdoor-range 문제로 어떻게 드러나는지 설명한다.</li><li>millimeter depth를 세 개의 uint8 채널에 담는 uint24 power-of-two 인코딩을 직접 pack/unpack하고 lossless 복원을 검증한다.</li><li>Depth API가 어떻게 depth를 passive channel에서 callable tool로 바꾸는지, 그 agentic lookup 루프를 sequence로 그린다.</li><li>SpatialQA의 low/middle/high 커리큘럼과 RT-X manipulation에서의 embodied payoff를 연결해, SpatialBot이 로봇 갈래로 이어지는 이유를 논증한다.</li></ul>
+      </div>
+      <nav class="mini-toc"><div class="mt-title">이 챕터에서</div><ol><li><a href="#s4-1">왜 depth를 못 읽나</a></li><li><a href="#s4-2">uint24로 밀리미터를 담다</a></li><li><a href="#s4-3">Depth API: 깊이를 호출하다</a></li><li><a href="#s4-4">3단계 커리큘럼과 로봇</a></li></ol></nav>
+
+      <div class="sb-block"><p>3장의 SpatialRGPT는 depth를 encoder 안으로 녹여 넣었다. depth estimator의 feature를 vision backbone에 fuse해서, 모델이 geometry를 semantic feature와 함께 흡수하도록 만든 방식이다. 이 접근은 강력하지만 한 가지를 포기한다. depth가 모델 내부에서 feature로 흩어지는 순간, 그 위의 개별 숫자를 다시 정확히 읽어낼 방법이 사라진다.</p>
+<p><a href="https://arxiv.org/abs/2406.13642">SpatialBot</a>은 반대 방향을 택한다. Wenxiao Cai 등(BAAI/PKU/Oxford)이 제안한 이 모델은 ICRA 2025로 발표된 것으로 알려지며, depth를 feature로 녹이는 대신 읽을 수 있는 map으로, 나아가 호출할 수 있는 tool로 유지한다. RGB와 depth를 둘 다 image encoder와 multimodal projector에 통과시키되, depth의 실제 millimeter 값이 파괴되지 않도록 보존한다. 그리고 모델이 특정 픽셀의 정밀한 깊이가 필요하다고 판단하면, <code>Depth(point)</code>를 발화해 API로부터 참값을 되받는다.</p>
+<p>이 장은 세 가지를 관통한다. 첫째, 왜 기존 depth 표현이 읽히지 않는가. 둘째, millimeter를 손실 없이 담는 uint24 인코딩은 무엇을 해결하는가. 셋째, Depth API라는 도구 호출 루프가 왜 embodied·agentic 계보의 출발점이 되는가. SpatialBot은 정지 이미지 위의 데이터 레시피(2장)와 region grounding(3장)을 로봇의 손끝으로 끌고 나가는 다리다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block" id="s4-1"><h2>왜 depth를 못 읽나</h2><p>depth map은 이미 존재한다. RGB-D 센서, stereo, monocular estimator 어디서든 픽셀마다 거리 값을 뱉는다. 그런데 이 map을 그대로 VLM에 넣어도 모델은 "이 지점이 몇 mm인가"를 답하지 못한다. 이유는 입력 파이프라인이 그 숫자를 이미 지워버렸기 때문이다.</p>
+<p>전형적인 실패는 normalization에서 온다. depth를 <span class="math-inline">\([0, 1]\)</span>로 min-max 정규화해 8-bit 그레이스케일로 저장하는 순간, 값 <span class="math-inline">\(v\)</span>는 <span class="math-inline">\(v = (d - d_{min})/(d_{max} - d_{min})\)</span>가 되고 <span class="math-inline">\(d_{min}, d_{max}\)</span>는 장면마다 다르다. 같은 픽셀 값 <span class="math-inline">\(0.5\)</span>가 실내 장면에서는 1.2m를, 실외 장면에서는 40m를 의미한다. metric scale이 장면 의존적으로 붕괴하는 것이다. ordinal(순서만 보존) 표현도 마찬가지다. "A가 B보다 가깝다"는 유지되지만 "A는 850mm"는 복원 불가다.</p>
+<p>이것을 dynamic-range 문제로 정리할 수 있다. 실내 조작(manipulation)은 mm 단위 정밀도를 요구한다. 컵의 손잡이가 5mm 더 가까운지가 grasp 성공을 가른다. 반대로 실외 내비게이션은 100m 단위를 다뤄야 한다. 단일 8-bit 채널의 256 레벨로 이 두 요구를 동시에 만족시킬 수 없다. mm 정밀도를 주면 최대 거리가 25.6cm에서 끊기고, 100m 범위를 담으면 한 레벨이 약 40cm가 되어 실내 정밀도가 사라진다.</p>
+<p><span class="math-display">\[\text{요구: } \underbrace{\sim 1\,\text{mm}}_{\text{indoor precision}} \quad\text{동시에}\quad \underbrace{\gtrsim 100\,\text{m}}_{\text{outdoor range}}, \qquad \frac{100{,}000\,\text{mm}}{1\,\text{mm}} = 10^5 \gg 256\]</span></p>
+<p>SpatialBot의 진단은 여기서 나온다. depth가 안 읽히는 것은 모델의 무능이 아니라 표현의 손실이다. 값을 살려주면, 모델은 그 위의 숫자를 읽는 것을 학습으로 익힐 수 있다. 그러므로 먼저 풀어야 할 것은 아키텍처가 아니라 인코딩이다.</p></div><div class="sb-block" id="s4-2"><h2>uint24로 밀리미터를 담다</h2><p>SpatialBot은 raw metric depth를 millimeter 단위 그대로 보존한다. 이를 위해 depth 값을 세 개의 uint8 채널에 나눠 담는 uint24 스킴을 쓴다. 세 채널은 각각 서로 다른 power-of-two 단위(<span class="math-inline">\(2^0\)</span>, <span class="math-inline">\(2^5\)</span>, <span class="math-inline">\(2^{10}\)</span> mm)를 담당해, 하나의 픽셀이 마치 RGB처럼 3채널 이미지가 되도록 만든다. 이 배치 덕분에 depth map은 기존 vision encoder(SigLIP)의 3채널 입력 규격에 그대로 흘러들어간다.</p>
+<p>세 채널이 나눠 갖는 자릿수와 단위는 다음과 같다.</p>
+<table>
+<thead>
+<tr>
+<th>채널</th>
+<th>단위 (mm)</th>
+<th>담당 비트</th>
+<th>값 범위</th>
+<th>역할</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ch0 (fine)</td>
+<td><span class="math-inline">\(2^0 = 1\)</span></td>
+<td>bit 0–4</td>
+<td>0–31</td>
+<td>1mm 정밀도</td>
+</tr>
+<tr>
+<td>ch1 (mid)</td>
+<td><span class="math-inline">\(2^5 = 32\)</span></td>
+<td>bit 5–9</td>
+<td>0–992</td>
+<td>cm~dm 스케일</td>
+</tr>
+<tr>
+<td>ch2 (coarse)</td>
+<td><span class="math-inline">\(2^{10} = 1024\)</span></td>
+<td>bit 10–16</td>
+<td>0–130048</td>
+<td>m 스케일</td>
+</tr>
+</tbody>
+</table>
+<p>복원은 세 채널의 가중합이다. 픽셀의 실제 깊이 <span class="math-inline">\(d\)</span>는 채널 값 <span class="math-inline">\(c_0, c_1, c_2\)</span>로부터</p>
+<p><span class="math-display">\[d \;=\; c_0 \cdot 2^0 \;+\; c_1 \cdot 2^5 \;+\; c_2 \cdot 2^{10} \quad [\text{mm}]\]</span></p>
+<p>로 정확히 복원된다. 총 17비트가 실효 표현이며 최대값은 <span class="math-inline">\(2^{17}-1 = 131{,}071\)</span> mm, 즉 약 131m다. 실내 mm 정밀도와 실외 100m급 범위를 하나의 표현이 동시에 만족한다. 앞 절의 dynamic-range 딜레마가 사라지는 지점이다.</p>
+<p>중요한 성질은 무손실이다. normalized depth와 달리 이 인코딩은 pack→unpack이 완전 가역이라, 모델이 채널 위의 숫자를 읽어 원래 metric 값을 되찾을 수 있다. depth가 처음으로 "읽을 수 있는 map"이 되는 것이다. 코드 예제에서 이 pack/unpack을 직접 구현하고 lossless 복원을 검증한다.</p>
+<p>입력 아키텍처 자체는 절제되어 있다. RGB와 (선택적) depth 두 map이 각각 SigLIP vision encoder(@384×384)와 multimodal projector를 지나 토큰이 되고, base LLM으로 들어간다. SpatialBot은 Bunny VLM 계열 위에 세워졌고, base LLM으로 Phi-2(3B)/Phi-3(4B)/Qwen-1.5(4B)/Llama-3(8B)를 두루 시험했으며 LoRA로 fine-tuning한다. depth를 특별한 head로 처리하는 대신, 읽을 수 있게 인코딩한 뒤 기존 경로로 흘리는 것이 설계 철학이다.</p><figure class="diagram-block"><div class="mermaid">flowchart LR
+  RGB[&quot;RGB 이미지&quot;] --&gt; ENC[&quot;SigLIP&lt;br/&gt;384x384&quot;]
+  DEP[&quot;Depth map&lt;br/&gt;(uint24 mm)&quot;] --&gt; ENC
+  ENC --&gt; PROJ[&quot;Multimodal&lt;br/&gt;Projector&quot;]
+  PROJ --&gt; LLM[&quot;Base LLM&lt;br/&gt;Phi/Qwen/Llama&quot;]
+  LLM --&gt; OUT[&quot;공간 추론 답변&quot;]</div><figcaption>RGB와 depth 두 map이 같은 SigLIP encoder와 projector를 지나 base LLM으로 들어간다. depth는 uint24 millimeter로 인코딩되어 3채널 이미지처럼 취급된다.</figcaption></figure></div><div class="sb-block" id="s4-3"><h2>Depth API: 깊이를 호출하다</h2><p>인코딩이 depth를 읽을 수 있게 만들었다면, Depth API는 depth를 호출할 수 있게 만든다. 이것이 SpatialBot의 서명과도 같은 기여다.</p>
+<p>메커니즘은 이렇다. 모델이 답을 생성하다가 특정 픽셀의 정밀한 깊이가 필요하다고 판단하면, 자유 서술 대신 <code>Depth(point)</code> 형태의 호출을 발화한다. 그러면 외부 API가 그 픽셀 위치의 참(true) metric depth를 depth map에서 조회해 값을 되돌려주고, 모델은 이 값을 컨텍스트에 받아 답을 정련한다. depth가 passive channel이 아니라 callable tool이 되는 순간이다.</p>
+<p>이 loop는 학습 중 선택적으로 적용된다. 모든 질문이 정밀 조회를 요구하지는 않기 때문이다. 두 물체의 대략적 원근 비교는 encoder를 통과한 depth map만으로 충분하지만, "이 지점이 정확히 몇 mm인가" 또는 mm 단위 차이가 결과를 가르는 manipulation류 질문에서는 API 조회가 오차를 크게 줄인다. 모델은 언제 도구를 부를지를 데이터로 배운다.</p>
+<p>왜 인코딩만으로 부족한가. encoder를 지난 depth는 patch 토큰으로 압축·양자화되어 픽셀 단위 정밀도가 일부 흐려진다. Depth API는 이 손실을 우회한다. 조회 시점에 원본 map에서 참값을 직접 읽으므로, 토큰화된 근사가 아니라 ground-truth 숫자가 답변에 들어간다. read(인코딩)와 call(API)은 상호보완적이다. 하나는 전역적 맥락을, 다른 하나는 국소적 정밀도를 담당한다.</p>
+<p>이 도구 호출 loop는 이 코스의 계보에서 중요한 분기점이다. 3장 SpatialRGPT가 depth를 feature로 fuse했다면, SpatialBot은 depth를 explicit map + tool-call로 유지한다. 후자는 자연스럽게 tool-augmented·agentic spatial VLM으로 이어지고, 이후 장들에서 다룰 depth-native·verifiable-reward 계열의 embodied 갈래를 예고한다.</p><figure class="diagram-block"><div class="mermaid">sequenceDiagram
+  participant M as Model
+  participant A as Depth API
+  participant D as Depth map
+  M-&gt;&gt;M: RGB+depth로 초안 추론
+  M-&gt;&gt;A: Depth(point) 발화
+  A-&gt;&gt;D: 픽셀 위치 조회
+  D--&gt;&gt;A: true metric depth (mm)
+  A--&gt;&gt;M: 참값 반환
+  M-&gt;&gt;M: 값을 반영해 답변 정련
+  M--&gt;&gt;M: 최종 답 출력</div><figcaption>Depth API 도구 호출 루프. 모델이 Depth(point)를 발화하면 API가 원본 depth map에서 참 metric 값을 조회해 되돌려주고, 모델은 그 값으로 답을 정련한다.</figcaption></figure></div><div class="sb-block" id="s4-4"><h2>3단계 커리큘럼과 로봇</h2><p>읽고 호출하는 능력은 저절로 생기지 않는다. SpatialBot은 SpatialQA라는 데이터셋을 low→middle→high 3단계 커리큘럼으로 구성해, 능력을 아래에서 위로 쌓아 올린다.</p>
+<table>
+<thead>
+<tr>
+<th>레벨</th>
+<th>배우는 것</th>
+<th>예시 과제</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Low</td>
+<td>depth 값 읽기</td>
+<td>pixel→depth 매핑, 특정 지점의 깊이 조회</td>
+</tr>
+<tr>
+<td>Middle</td>
+<td>RGB–depth 정렬</td>
+<td>min/max/mean/center depth로 proximity 판단</td>
+</tr>
+<tr>
+<td>High</td>
+<td>고차 공간 추론</td>
+<td>counting, spatial relations, manipulation</td>
+</tr>
+</tbody>
+</table>
+<p>데이터 출처는 COCO, Visual Genome, 그리고 Open X-Embodiment(RT-X)다. RGB만 있는 이미지에는 ZoeDepth로 depth를 생성해 붙인다. low 레벨이 "숫자를 읽는" 기초 감각을 심고, middle이 RGB의 semantic과 depth의 geometry를 정렬시키며, high가 그 위에서 세기·관계·조작 같은 실전 능력을 얹는 구조다.</p>
+<p>성능은 이 설계가 작동함을 보인다. SpatialBench에서 depth estimation 93–95%, proximity 77–91%, counting 약 89–94%를 기록한다. 주목할 점은 일반 능력이 희생되지 않았다는 것이다. depth를 읽게 만들었는데도 general MME perception이 1376에서 1551로 올랐고, GQA도 62%에서 63%로 개선됐다. 공간 특화가 일반 시지각을 깎지 않았다.</p>
+<p>embodied payoff가 이 장의 결승선이다. RT-X manipulation에서 depth 이해는 RGB-only 대비 robot action prediction을 향상시킨다. 정지 이미지 위의 데이터 레시피(2장)와 region grounding(3장)이 여기서 로봇의 손끝으로 이어진다. depth를 읽고 호출하는 능력이 실제 조작 성능으로 환산되는 것, 이것이 SpatialBot이 embodied 계보의 출발점으로 자리하는 이유다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">숫자를 지운 지도 vs. 눈금이 살아 있는 지도</div>
+      <div class="a-body"><p>normalized depth를 넣는 것은 등고선의 높이 숫자를 지운 지형도를 주는 것과 같다. 어느 봉우리가 더 높은지는 색의 농담으로 짐작할 수 있지만, "이 지점의 고도는 몇 m인가"는 답할 수 없다. 색은 지도마다 기준이 달라, 같은 회색이 어떤 지도에선 언덕을 어떤 지도에선 산맥을 뜻한다. 이것이 metric scale의 장면 의존적 붕괴다.</p>
+<p>uint24 인코딩은 등고선마다 실제 고도 숫자를 다시 인쇄한 지도다. 1m 단위의 미세한 눈금과 1000m 단위의 굵은 눈금을 한 지도에 겹쳐 찍어, 마당의 턱과 먼 산을 같은 종이 위에서 정확히 읽게 한다. Depth API는 여기에 측량 기사를 붙이는 것이다. 지도만으로 애매한 한 지점이 있으면, 기사를 그 자리로 보내 실측값을 받아온다. 지도는 전체 지형의 맥락을, 측량 기사는 한 점의 정밀도를 책임진다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p>SpatialBot의 uint24 depth 인코딩을 직접 구현한다. millimeter depth 배열을 세 개의 uint8 채널(<span class="math-inline">\(2^0\)</span>, <span class="math-inline">\(2^5\)</span>, <span class="math-inline">\(2^{10}\)</span> mm 단위)로 pack하고 다시 unpack해, metric 값이 무손실로 복원됨을 확인한다. 실내 mm부터 실외 131m까지 하나의 표현이 커버한다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import numpy as np
+
+U0, U1, U2 = 2**0, 2**5, 2**10      # 세 채널의 단위 (mm)
+MAX_MM = 2**17 - 1                  # 131071 mm  ~= 131 m
+
+def encode_depth_mm(depth_mm):
+    &quot;&quot;&quot;millimeter depth -&gt; 3x uint8 채널 (uint24 스킴).&quot;&quot;&quot;
+    d = np.clip(depth_mm.astype(np.int64), 0, MAX_MM)
+    ch0 = d &amp; 0x1F            # bit 0-4   : 단위 2^0  = 1 mm
+    ch1 = (d &gt;&gt; 5) &amp; 0x1F     # bit 5-9   : 단위 2^5  = 32 mm
+    ch2 = (d &gt;&gt; 10) &amp; 0x7F    # bit 10-16 : 단위 2^10 = 1024 mm
+    return np.stack([ch0, ch1, ch2], axis=-1).astype(np.uint8)
+
+def decode_depth_mm(enc):
+    &quot;&quot;&quot;3x uint8 채널 -&gt; millimeter depth (가중합 복원).&quot;&quot;&quot;
+    ch0 = enc[..., 0].astype(np.int64)
+    ch1 = enc[..., 1].astype(np.int64)
+    ch2 = enc[..., 2].astype(np.int64)
+    return ch0 * U0 + ch1 * U1 + ch2 * U2
+
+# 실내 mm 정밀도부터 실외 131m 범위까지
+depth = np.array([1, 850, 2500, 65535, 131071], dtype=np.int64)
+enc = encode_depth_mm(depth)
+dec = decode_depth_mm(enc)
+
+print(&quot;in  (mm):&quot;, depth)
+print(&quot;3xuint8 :\n&quot;, enc)
+print(&quot;out (mm):&quot;, dec)
+print(&quot;lossless:&quot;, np.array_equal(depth, dec))
+print(&quot;max range (m):&quot;, MAX_MM / 1000)
+
+# normalized 8-bit와의 대비: min-max 정규화는 scale을 파괴한다
+norm = ((depth - depth.min()) / (depth.max() - depth.min()) * 255).astype(np.uint8)
+recovered = norm.astype(np.float64) / 255 * (depth.max() - depth.min()) + depth.min()
+print(&quot;normalized 복원 오차(mm):&quot;, np.abs(recovered - depth).astype(int))</code></pre>
+      <div class="c-walk"><p>encode는 clip으로 범위를 [0, 131071]mm로 묶은 뒤, 비트 시프트와 마스크로 depth를 세 자리로 쪼갠다. ch0는 하위 5비트(1mm 단위), ch1은 그다음 5비트(32mm 단위), ch2는 상위 7비트(1024mm 단위)를 담아 총 17비트를 표현한다. decode는 각 채널에 자기 단위를 곱해 더하는 가중합으로 원래 mm를 복원한다. 출력의 lossless=True가 pack→unpack이 완전 가역임을 보이고, max range=131.071m가 실내 mm 정밀도와 실외 100m급 범위를 하나의 표현이 동시에 만족함을 확인시킨다. 마지막 블록은 대조군이다. min-max 정규화 후 8-bit로 저장하면 한 레벨이 수백 mm를 뭉개, 같은 depth를 되돌렸을 때 큰 복원 오차가 남는다. 바로 이 손실이 모델이 depth를 못 읽게 만든 원인이다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">면접에서 SpatialBot은 표현(representation) 설계 감각과 tool-use/agentic 설계 감각을 동시에 검증하는 좋은 소재다. 왜 depth가 안 읽히는지를 인코딩 손실로 진단하고, 언제 feature fusion 대신 tool-call이 옳은지를 논증할 수 있어야 한다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>normalized/ordinal depth가 metric scale을 파괴하는 이유를 dynamic-range 관점($10^5 \gg 256$)에서 정량적으로 설명하는가.</li><li>uint24 3채널 인코딩이 왜 lossless이며 기존 3채널 vision encoder에 무리 없이 흘러드는지, trade-off까지 짚는가.</li><li>Depth API를 passive channel과 대비해 &#x27;언제 도구를 부르는가&#x27;라는 학습 문제로 프레이밍하고, encoder 토큰화 손실을 우회하는 이점을 아는가.</li><li>SpatialQA 커리큘럼과 RT-X manipulation payoff를 연결해, 이 설계가 embodied 성능으로 환산되는 인과를 설명하는가.</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>&quot;depth를 넣으면 모델이 알아서 읽는다&quot;고 말하며 인코딩/정규화 손실 문제를 인지하지 못함.</li><li>Depth API를 단순 후처리로 오해하고, 도구 호출을 학습 중 선택적으로 다룬다는 점을 놓침.</li><li>3장 SpatialRGPT의 feature-fusion과 SpatialBot의 explicit-map+tool 접근 차이를 구분하지 못함.</li><li>성능 수치를 depth 특화가 일반 능력(MME/GQA)을 깎지 않았다는 맥락 없이 나열만 함.</li></ul></div>
+        </div>
+        <div class="ie-q" style="background:none;padding:0;margin-top:14px"><h4 style="color:#6d28d9">🎤 예상 인터뷰 질문 (클릭하면 모범답안)</h4><details class="qa-item"><summary>normalized 8-bit depth를 그대로 VLM에 넣으면 왜 모델이 metric 질문에 답하지 못하는가?</summary><div class="qa-answer"><p>min-max 정규화는 픽셀 값을 <span class="math-inline">\([0,1]\)</span>로 압축하는데 <span class="math-inline">\(d_{min}, d_{max}\)</span>가 장면마다 달라, 같은 값이 실내에선 수 미터를 실외에선 수십 미터를 뜻하게 되어 metric scale이 장면 의존적으로 붕괴합니다. 단일 8-bit 채널의 256 레벨로는 실내 mm 정밀도와 실외 100m 범위를 동시에 담을 수 없어 dynamic range가 근본적으로 부족합니다. 따라서 모델의 무능이 아니라 입력 표현이 이미 metric 정보를 지운 것이고, 값을 무손실로 보존해야 읽는 것을 학습할 수 있습니다.</p></div></details><details class="qa-item"><summary>SpatialBot의 uint24 인코딩은 구체적으로 어떻게 mm 정밀도와 100m 범위를 동시에 만족하는가?</summary><div class="qa-answer"><p>millimeter depth를 세 uint8 채널에 나눠, 각 채널이 <span class="math-inline">\(2^0\)</span>, <span class="math-inline">\(2^5\)</span>, <span class="math-inline">\(2^{10}\)</span> mm 단위를 담당하도록 비트 시프트로 pack합니다. 복원은 <span class="math-inline">\(d = c_0\cdot2^0 + c_1\cdot2^5 + c_2\cdot2^{10}\)</span>의 가중합이며 총 17비트로 최대 약 131m를 표현하면서 하위 채널이 1mm 정밀도를 유지합니다. pack/unpack이 완전 가역이라 무손실이고, 3채널이라 SigLIP 같은 기존 RGB용 encoder에 그대로 흘러들어갑니다.</p></div></details><details class="qa-item"><summary>depth를 encoder feature로 fuse하는 대신 Depth API로 호출하게 하는 것의 이점은 무엇인가?</summary><div class="qa-answer"><p>encoder를 지난 depth는 patch 토큰으로 압축·양자화되어 픽셀 단위 정밀도가 흐려지는데, Depth API는 조회 시점에 원본 map에서 참 metric 값을 직접 읽어 이 손실을 우회합니다. 덕분에 mm 차이가 결과를 가르는 manipulation류 질문에서 ground-truth 숫자가 답에 들어가 오차가 줄어듭니다. 인코딩된 map은 전역 맥락을, API 조회는 국소 정밀도를 담당해 상호보완적이며, 모델은 언제 도구를 호출할지를 학습으로 익혀 tool-augmented·agentic 계보로 이어집니다.</p></div></details></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 친숙한 수준은 &#x27;SpatialBot이 depth를 읽고 Depth API로 호출한다&#x27;를 아는 것이다. 통달한 수준은 정규화 손실을 dynamic-range로 정량화하고, uint24가 왜 lossless이며 어떤 trade-off를 갖는지 손으로 pack/unpack하며, feature-fusion 대비 tool-call의 이점을 encoder 토큰화 손실 관점에서 논증하고, 이 설계가 RT-X manipulation payoff로 환산되는 인과까지 연결하는 것이다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>depth는 무능이 아니라 손실 때문에 안 읽힌다</h3><p>normalized/ordinal 표현이 metric scale을 장면 의존적으로 파괴한다. 값을 무손실로 보존하면 모델은 depth 위의 숫자 읽기를 학습으로 익힐 수 있다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>uint24가 dynamic-range 딜레마를 푼다</h3><p>세 uint8 채널이 $2^0$, $2^5$, $2^{10}$ mm 단위를 나눠 담아, 실내 1mm 정밀도와 실외 약 131m 범위를 하나의 무손실 표현으로 동시에 만족한다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>3채널이라 기존 encoder에 그대로 흐른다</h3><p>depth를 RGB처럼 3채널 이미지로 인코딩하므로 SigLIP(@384×384)과 projector를 특별한 head 없이 통과한다. 설계의 절제가 곧 강점이다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>Depth API는 depth를 callable tool로 만든다</h3><p>모델이 `Depth(point)`를 발화하면 API가 원본 map에서 참값을 조회해 되돌려주고 답을 정련한다. encoder 토큰화 손실을 우회하는 국소 정밀도 경로다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>언제 부를지를 학습한다</h3><p>도구 호출은 학습 중 선택적으로 적용된다. 대략적 원근 비교는 map으로 충분하고, mm 정밀 질문에서만 API를 호출하도록 모델이 데이터로 익힌다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>커리큘럼이 능력을 쌓아 올린다</h3><p>SpatialQA는 low(값 읽기)→middle(RGB–depth 정렬)→high(counting·relations·manipulation)로 구성되며, RGB-only 이미지엔 ZoeDepth로 depth를 붙인다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>공간 특화가 일반 능력을 깎지 않았다</h3><p>SpatialBench에서 depth estimation 93–95%, proximity 77–91%, counting 약 89–94%를 얻으면서도 MME perception 1376→1551, GQA 62→63%로 일반 시지각이 함께 개선됐다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>embodied payoff가 결승선이다</h3><p>RT-X manipulation에서 depth 이해가 RGB-only 대비 robot action prediction을 향상시킨다. SpatialBot은 정지 이미지 레시피를 로봇의 손끝으로 잇는 다리다.</p></div></div>
+      
+      <div class="next-teaser"><div class="nt-k">Next · Ch05</div><div class="nt-body">정지 이미지에서 depth를 읽는 데 성공했다면, 이제 무대는 비디오와 기억으로 넘어간다. 그런데 다음 장은 뜻밖의 발견을 던진다. 공간 추론에서는 CoT가 오히려 안 통한다.</div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-03.html">← SpatialRGPT — Point at a Region, Plant the Depth</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-05.html">Thinking in Space →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({
+    startOnLoad:true, securityLevel:'loose',
+    theme:'base',
+    themeVariables:{
+      primaryColor:'#dbeafe', primaryTextColor:'#0f1f3a', primaryBorderColor:'#1d4ed8',
+      lineColor:'#1d4ed8', secondaryColor:'#f5f3ff', tertiaryColor:'#ecfdf5',
+      fontFamily:'-apple-system,Pretendard,sans-serif', fontSize:'14px'
+    }
+  });
+</script>
+</body></html>

@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ch8: Depth-native VLMs — DepthVLM vs DepthLM — The Evolution of Spatial VLMs — direcf</title>
+  <meta name="description" content="SpatialVLM 이후 dense geometry는 전용 vision head의 몫으로 여겨졌다. DepthVLM과 DepthLM은 정반대 설계로 같은 결론에 도달한다. VLM 자체가 metric depth 센서가 될 수 있고, 언어 인터페이스를 통해 specialist depth network를 넘어선다는 것이다.">
+  <link rel="canonical" href="https://direcf.github.io/posts/spatial-vlm-evolution/chapter-08.html">
+  <meta property="og:url" content="https://direcf.github.io/posts/spatial-vlm-evolution/chapter-08.html">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Ch8: Depth-native VLMs — DepthVLM vs DepthLM — The Evolution of Spatial VLMs — direcf">
+  <meta property="og:description" content="SpatialVLM 이후 dense geometry는 전용 vision head의 몫으로 여겨졌다. DepthVLM과 DepthLM은 정반대 설계로 같은 결론에 도달한다. VLM 자체가 metric depth 센서가 될 수 있고, 언어 인터페이스를 통해 specialist depth network를 넘어선다는 것이다.">
+  <meta property="og:site_name" content="direcf">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Ch8: Depth-native VLMs — DepthVLM vs DepthLM — The Evolution of Spatial VLMs — direcf">
+  <meta name="twitter:description" content="SpatialVLM 이후 dense geometry는 전용 vision head의 몫으로 여겨졌다. DepthVLM과 DepthLM은 정반대 설계로 같은 결론에 도달한다. VLM 자체가 metric depth 센서가 될 수 있고, 언어 인터페이스를 통해 specialist depth network를 넘어선다는 것이다.">
+  <script type="application/ld+json">{"@context": "https://schema.org", "@type": "LearningResource", "name": "Depth-native VLMs — DepthVLM vs DepthLM", "position": 8, "description": "SpatialVLM 이후 dense geometry는 전용 vision head의 몫으로 여겨졌다. DepthVLM과 DepthLM은 정반대 설계로 같은 결론에 도달한다. VLM 자체가 metric depth 센서가 될 수 있고, 언어 인터페이스를 통해 specialist depth network를 넘어선다는 것이다.", "learningResourceType": "lecture chapter", "inLanguage": "ko", "isPartOf": {"@type": "Course", "name": "The Evolution of Spatial VLMs"}, "author": {"@type": "Person", "name": "Seung Jun Lee"}}</script>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <style>
+:root {
+  --bg:#eef4fb; --bg-card:#fff; --bg-soft:#dde8f3;
+  --border:#cfdbe8; --border-strong:#1e3a8a;
+  --text:#0f1f3a; --text-2:#2c3e5d; --muted:#6a7a92;
+  --accent:#1d4ed8; --accent-soft:#dbeafe; --accent-2:#0891b2;
+  --shadow-sm:0 1px 2px rgba(30,58,138,.06);
+  --shadow-md:0 4px 16px -6px rgba(30,58,138,.16);
+  --sidebar-w:248px; --sidebar-w-col:64px; --header-h:58px;
+  --r:10px; --t:cubic-bezier(.4,0,.2,1); --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","SF Pro Text",sans-serif;
+  color:var(--text);background:var(--bg);line-height:1.65;font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+/* app shell */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;transition:grid-template-columns .25s var(--t)}
+.app.collapsed{grid-template-columns:var(--sidebar-w-col) 1fr}
+
+/* sidebar */
+.sidebar{background:var(--bg);border-right:1px solid var(--border);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--border);font-weight:800;font-size:17px;letter-spacing:-.02em}
+.sidebar-brand .logo{width:28px;height:28px;border-radius:7px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.sidebar-brand .brand-text{white-space:nowrap;opacity:1;transition:opacity .15s}
+.collapsed .sidebar-brand .brand-text{opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:15px;right:-14px;width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:1px solid var(--border);display:grid;place-items:center;z-index:5;box-shadow:var(--shadow-sm);transition:transform .25s var(--t)}
+.sidebar-toggle:hover{background:var(--bg-soft)}
+.sidebar-toggle svg{width:14px;height:14px;transition:transform .25s var(--t)}
+.collapsed .sidebar-toggle svg{transform:rotate(180deg)}
+.nav{padding:14px 0;overflow-y:auto;flex:1}
+.nav-section{font-size:10.5px;font-weight:700;letter-spacing:1.5px;color:var(--muted);padding:18px 22px 8px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.collapsed .nav-section{opacity:0;pointer-events:none;height:14px;padding:4px 0}
+.nav-item{display:flex;align-items:center;gap:12px;padding:9px 18px;margin:1px 8px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text-2);white-space:nowrap;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg-soft);color:var(--text)}
+.nav-item.active{background:var(--text);color:var(--bg)}
+.nav-item .icon{width:22px;height:22px;font-size:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.nav-item .label{transition:opacity .15s;flex:1}
+.collapsed .nav-item .label{opacity:0;pointer-events:none}
+.collapsed .nav-item{justify-content:center;padding:9px 0}
+.sidebar-foot{border-top:1px solid var(--border);padding:14px 18px;font-size:12px;color:var(--muted);white-space:nowrap}
+.collapsed .sidebar-foot span{display:none}
+
+/* header */
+.header{height:var(--header-h);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 32px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(238,244,251,.88)}
+.crumbs{font-size:13px;color:var(--muted);font-family:"SF Mono",Menlo,monospace}
+.crumbs a:hover{color:var(--accent)}
+.crumbs strong{color:var(--text);font-weight:700}
+.crumbs .sep{margin:0 5px;opacity:.4}
+.header-actions{display:flex;gap:10px}
+.back-btn{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);display:flex;align-items:center;gap:5px}
+.back-btn:hover{background:var(--bg-soft);color:var(--text)}
+
+/* main */
+.main{min-width:0}
+.chapter-wrap{max-width:860px;padding:40px 48px 96px}
+
+/* chapter intro */
+.chapter-kicker{display:inline-flex;align-items:center;gap:8px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:16px}
+.chapter-emoji{font-size:44px;margin:8px 0 4px}
+.chapter-title{font-size:clamp(24px,4vw,34px);font-weight:800;letter-spacing:-.025em;margin-bottom:6px}
+.chapter-title-kr{font-size:17px;color:var(--muted);font-weight:400;margin-bottom:18px}
+.chapter-tldr{font-size:14.5px;color:var(--text-2);background:var(--bg-soft);border-left:3px solid var(--accent);padding:12px 18px;border-radius:0 8px 8px 0;margin-bottom:32px}
+
+/* cheatsheet */
+.cs-wrap{text-align:center;padding:28px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:32px 0}
+.cs-wrap img,.cs-wrap object{max-width:min(560px,100%);height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow-md);margin:0 auto}
+.cs-label{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px}
+
+/* section divider */
+.section-div{display:flex;align-items:baseline;justify-content:space-between;margin:40px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--border-strong)}
+.section-div h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.section-div .meta{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--muted)}
+
+/* goals */
+.goals-box{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:36px}
+.goals-box .box-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+.goals-box ul{list-style:none}
+.goals-box li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:14.5px}
+.goals-box li:last-child{border-bottom:none}
+.goals-box li::before{content:"✓";color:var(--accent);font-weight:700;flex-shrink:0;margin-top:1px}
+
+/* body text */
+.sb-block,.a-body,.c-intro,.c-walk,.ie-overview{font-size:15px;line-height:1.78;color:var(--text-2)}
+.sb-block{margin:28px 0}
+.sb-block h2{font-size:17px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.sb-block p,.a-body p,.c-intro p,.c-walk p,.ie-overview p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:14px}
+.sb-block p:last-child,.a-body p:last-child,.c-intro p:last-child,.c-walk p:last-child{margin-bottom:0}
+.sb-block strong,.a-body strong,.c-intro strong,.c-walk strong{color:var(--text)}
+.sb-block code,.a-body code,.c-intro code,.c-walk code,.ie-overview code{font-family:"SF Mono",Menlo,monospace;font-size:12.5px;background:var(--bg-soft);padding:1px 5px;border-radius:4px}
+.sb-block h3,.a-body h3,.c-intro h3,.c-walk h3{font-size:15.5px;font-weight:700;color:var(--text);margin:20px 0 10px;letter-spacing:-.01em}
+.sb-block h4,.a-body h4{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px}
+.sb-block ul,.sb-block ol,.a-body ul,.a-body ol,.c-intro ul,.c-walk ul{margin:0 0 14px 0;padding-left:22px}
+.sb-block li,.a-body li,.c-intro li,.c-walk li{font-size:14.5px;line-height:1.7;color:var(--text-2);margin-bottom:4px}
+.sb-block li::marker,.a-body li::marker{color:var(--accent)}
+.sb-block table,.a-body table,.c-walk table{border-collapse:collapse;width:100%;margin:16px 0 18px;font-size:13.5px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sb-block th,.a-body th,.c-walk th{background:var(--bg-soft);font-weight:700;color:var(--text);padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.2px}
+.sb-block td,.a-body td,.c-walk td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.sb-block tr:last-child td,.a-body tr:last-child td,.c-walk tr:last-child td{border-bottom:none}
+.sb-block pre,.a-body pre,.c-intro pre,.c-walk pre{background:var(--code-bg);color:#e2e8f0;padding:14px 16px;border-radius:8px;font-family:"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:14px 0}
+.sb-block pre code,.a-body pre code{background:transparent;color:inherit;padding:0;font-size:inherit}
+.sb-block blockquote,.a-body blockquote{border-left:3px solid var(--accent);padding:2px 14px;margin:14px 0;color:var(--muted);font-style:italic}
+.fig-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.fig-item{flex:1 1 260px;max-width:100%;margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.fig-item img{width:100%;display:block;object-fit:contain;max-height:320px;background:#fff}
+.fig-item figcaption{padding:10px 14px;font-size:13px;line-height:1.55;color:var(--muted);border-top:1px solid var(--border)}
+
+/* analogy */
+.analogy-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.analogy-card .a-head{background:var(--bg-soft);padding:10px 20px;font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border)}
+.analogy-card .a-title{font-size:16px;font-weight:700;color:var(--text);padding:16px 20px 0;letter-spacing:-.01em}
+.analogy-card .a-body{padding:10px 20px 20px}
+.analogy-card .a-body p{font-size:15px;line-height:1.78;color:var(--text-2);margin-bottom:12px}
+
+/* code */
+.code-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.code-card .c-intro{padding:16px 20px;font-size:14.5px;color:var(--text-2);line-height:1.7}
+.code-bar{background:#1e293b;color:rgba(255,255,255,.45);font-family:"SF Mono",Menlo,monospace;font-size:11.5px;padding:8px 16px;display:flex;align-items:center;gap:10px}
+.code-bar::before{content:"● ● ●";opacity:.35;font-size:10px}
+.code-card pre{background:var(--code-bg);color:#e2e8f0;padding:20px;overflow-x:auto;font-family:"SF Mono",Menlo,monospace;font-size:13px;line-height:1.65;margin:0}
+.code-card .c-walk{padding:14px 20px;font-size:13.5px;color:var(--muted);border-top:1px solid var(--border);line-height:1.7}
+
+/* industry eval */
+.ie-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin:28px 0}
+.ie-head{background:var(--text);color:rgba(255,255,255,.9);padding:13px 20px;font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+.ie-body{padding:20px}
+.ie-overview{font-size:14.5px;color:var(--text-2);margin-bottom:16px;line-height:1.75}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.ie-cell{background:var(--bg-soft);border-radius:8px;padding:14px}
+.ie-cell h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:8px}
+.ie-cell ul{list-style:none}
+.ie-cell li{font-size:13.5px;color:var(--text-2);padding:3px 0 3px 14px;position:relative;line-height:1.55}
+.ie-cell li::before{content:"·";position:absolute;left:0;color:var(--muted)}
+.ie-cell.danger li::before{content:"⚠";font-size:11px}
+.ie-q{background:#f5f3ff;border-radius:8px;padding:14px;margin-top:12px}
+.ie-q h4{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#6d28d9;margin-bottom:8px}
+.ie-q ol{padding-left:18px}
+.ie-q li{font-size:13.5px;color:var(--text-2);padding:3px 0;line-height:1.55}
+.mastery-bar{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:11px 16px;margin-top:10px;font-size:13.5px;color:#166534;line-height:1.6}
+
+/* takeaways */
+.tw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.tw-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s,box-shadow .15s}
+.tw-cell:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
+.tw-cell h3{font-size:13.5px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em}
+.tw-cell p{font-size:13px;color:var(--text-2);line-height:1.55}
+
+/* chapter nav */
+.chapter-nav{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border);gap:12px}
+.ch-nav-btn{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:8px;font-size:13.5px;font-weight:500;border:1px solid var(--border);background:var(--bg-card);color:var(--text-2);transition:all .15s var(--t)}
+.ch-nav-btn:hover{background:var(--bg-soft);border-color:var(--border-strong);color:var(--text)}
+.ch-nav-btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.ch-nav-btn.primary:hover{opacity:.88}
+
+/* syllabus */
+.syl-hero{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:6px;font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:14px}
+.syl-hero h1{font-size:clamp(26px,4vw,36px);font-weight:800;letter-spacing:-.025em;margin-bottom:8px}
+.syl-hero .sub{font-size:15px;color:var(--muted);margin-bottom:20px}
+.badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 11px;border-radius:100px;border:1px solid var(--border);background:var(--bg-card);color:var(--muted)}
+.ch-list{display:grid;gap:0}
+.ch-row{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start;padding:18px 0;border-bottom:1px solid var(--border);transition:padding .15s var(--t)}
+.ch-row:hover{padding-left:6px}
+.ch-num{font-family:"SF Mono",Menlo,monospace;font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;padding-top:3px}
+.ch-body .ch-title{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+.ch-body .ch-title .emoji{font-size:17px}
+.ch-body .ch-kr{font-size:13px;color:var(--muted);margin-top:2px}
+.ch-body .ch-tldr{font-size:13.5px;color:var(--text-2);margin-top:4px;line-height:1.55}
+.ch-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ch-tag{font-size:11px;padding:2px 9px;border-radius:100px;background:var(--bg-soft);color:var(--muted)}
+
+/* chapter hook (tension opener) */
+.chapter-hook{font-size:19px;line-height:1.6;font-weight:600;color:var(--text);margin:0 0 18px;letter-spacing:-.01em}
+.chapter-hook::first-letter{font-size:1em}
+
+/* reading meta + mini toc */
+.read-meta{display:flex;flex-wrap:wrap;gap:8px;margin:-6px 0 26px}
+.read-meta .pill{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);background:var(--bg-soft);border-radius:100px;padding:3px 11px}
+.mini-toc{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:16px 20px;margin:0 0 30px}
+.mini-toc .mt-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.4px;color:var(--accent);text-transform:uppercase;margin-bottom:10px}
+.mini-toc ol{list-style:none;counter-reset:mt;display:grid;gap:4px}
+.mini-toc li{counter-increment:mt;font-size:13.5px}
+.mini-toc a{color:var(--text-2);display:flex;gap:9px;padding:2px 0}
+.mini-toc a::before{content:counter(mt,decimal-leading-zero);font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);flex:none}
+.mini-toc a:hover{color:var(--accent)}
+.sb-block{scroll-margin-top:72px}
+
+/* figures (paper crops) — bilingual caption + source */
+.figure-block{margin:22px 0}
+.figure-block figure{margin:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.figure-block img{width:100%;display:block;object-fit:contain;max-height:440px;background:#fff;padding:8px}
+.figure-block.arch img{max-height:none}
+.figure-block figcaption{padding:11px 16px;border-top:1px solid var(--border)}
+.figure-block .fig-kr{font-size:13.5px;line-height:1.6;color:var(--text-2)}
+.figure-block .fig-orig{font-size:12px;line-height:1.5;color:var(--muted);margin-top:5px}
+.figure-block .fig-src{display:block;font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);margin-top:7px}
+.figure-block .fig-src a{color:var(--accent)}
+.fig-two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+
+/* mermaid concept diagrams */
+.diagram-block{margin:24px 0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:20px 16px;text-align:center;overflow-x:auto}
+.diagram-block .mermaid{display:flex;justify-content:center;min-height:40px}
+.diagram-block figcaption{font-size:12.5px;color:var(--muted);margin-top:12px;line-height:1.5;text-align:center}
+
+/* interview Q&A (self-test) */
+.qa-item{border:1px solid var(--border);border-radius:8px;margin-bottom:8px;overflow:hidden;background:var(--bg-card)}
+.qa-item>summary{cursor:pointer;padding:12px 15px;font-size:13.5px;font-weight:600;color:var(--text);list-style:none;display:flex;gap:9px;align-items:baseline}
+.qa-item>summary::-webkit-details-marker{display:none}
+.qa-item>summary::before{content:"Q";font-family:'SF Mono',Menlo,monospace;font-size:11px;font-weight:700;color:#6d28d9;flex:none}
+.qa-item[open]>summary{border-bottom:1px solid var(--border)}
+.qa-answer{padding:12px 15px 14px 33px;font-size:13.5px;color:var(--text-2);line-height:1.7}
+.qa-answer::before{content:"A";font-family:'SF Mono',Menlo,monospace;font-size:11px;font-weight:700;color:var(--accent);margin-right:9px}
+
+/* next teaser */
+.next-teaser{background:linear-gradient(135deg,var(--accent-soft),#f5f3ff);border:1px solid var(--border);border-radius:var(--r);padding:16px 20px;margin:44px 0 0}
+.next-teaser .nt-k{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--accent);text-transform:uppercase}
+.next-teaser .nt-body{font-size:14.5px;color:var(--text);margin-top:5px;line-height:1.6}
+
+/* references */
+.ref-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);padding:18px 22px;margin:28px 0 0}
+.ref-card .rc-title{font-family:"SF Mono",Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase;margin-bottom:12px}
+.ref-list{list-style:none;display:grid;gap:9px;counter-reset:rf}
+.ref-list li{counter-increment:rf;font-size:13px;line-height:1.55;color:var(--text-2);padding-left:26px;position:relative}
+.ref-list li::before{content:"["counter(rf)"]";position:absolute;left:0;font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted)}
+.ref-list .rf-title{color:var(--text);font-weight:600}
+.ref-list a{color:var(--accent);font-family:"SF Mono",Menlo,monospace;font-size:12px}
+
+@media(max-width:800px){
+  .app,.app.collapsed{display:block;grid-template-columns:1fr}
+  .sidebar{display:none}
+  .main{width:100%;min-width:0}
+  .chapter-wrap{padding:24px 20px 60px}
+  .ie-grid{grid-template-columns:1fr}
+  .chapter-nav{flex-direction:column}
+  .fig-two{grid-template-columns:1fr}
+  .sb-block table,.a-body table,.c-walk table{display:block;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}
+  .diagram-block{padding:14px 10px}
+}
+
+.math-display{display:block;max-width:100%;overflow-x:auto;overflow-y:hidden;padding:10px 0;text-align:center;-webkit-overflow-scrolling:touch}
+.math-display .katex-display{margin:0;max-width:100%}
+.math-inline{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs><linearGradient id="direcf-nav-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs></svg>
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <a href="../../index.html" style="display:flex;align-items:center;gap:10px">
+      <div class="logo">d</div>
+      <span class="brand-text">direcf</span>
+    </a>
+  </div>
+  <button class="sidebar-toggle" id="sbToggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+  <nav class="nav">
+    <a class="nav-item " href="../../index.html">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></span><span class="label">Home</span>
+    </a>
+    <div class="nav-section">Study</div>
+    <a class="nav-item " href="../../index.html#/category/computer-science">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg></span><span class="label">Computer Science</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/engineering-philosophy">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg></span><span class="label">Engineering Philosophy</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/cloud-infra">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.25 15a4.5 4.5 0 0 0 4.5 4.5H18a3.75 3.75 0 0 0 1.332-7.257 3 3 0 0 0-3.758-3.848 5.25 5.25 0 0 0-10.233 2.33A4.502 4.502 0 0 0 2.25 15Z"/></svg></span><span class="label">Cloud/Infra</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/computer-vision">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></span><span class="label">Computer Vision</span>
+    </a>
+    <a class="nav-item active" href="../../index.html#/category/multimodal-ai">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"/></svg></span><span class="label">Multimodal AI</span>
+    </a>
+    <a class="nav-item " href="../../index.html#/category/ai-engineering">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg></span><span class="label">AI Engineering</span>
+    </a>
+    <div class="nav-section">Personal</div>
+    <a class="nav-item" href="../../portfolio/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Portfolio</span>
+    </a>
+    <a class="nav-item" href="../../property/">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="url(#direcf-nav-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/></svg></span><span class="label">Property</span>
+    </a></nav>
+  <div class="sidebar-foot"><span>© Seung Jun Lee</span></div>
+</aside>
+  <div class="main"><header class="header">
+      <div class="crumbs">
+        <a href="../../index.html">direcf</a><span class="sep">›</span>
+        <a href="../../index.html#/category/multimodal-ai">The Evolution of Spatial VLMs</a><span class="sep">›</span>
+        <strong>Ch08 Depth-native VLMs — DepthVLM vs DepthLM</strong>
+      </div>
+      <div class="header-actions">
+        <a class="back-btn" href="index.html">← 목록</a>
+      </div>
+    </header>
+    <div class="chapter-wrap">
+      <div class="chapter-kicker">
+        Chapter 08 <span style="opacity:.3">·</span> 10 chapters
+      </div>
+      <div class="chapter-emoji">🎯</div>
+      <h1 class="chapter-title">Depth-native VLMs — DepthVLM vs DepthLM</h1>
+      <div class="chapter-title-kr">Depth-native VLMs — VLM이 곧 깊이 센서: DepthVLM vs DepthLM</div>
+      <p class="chapter-hook">주장은 도발적이다. VLM은 depth를 &#x27;이해&#x27;하는 데 그치지 않고 depth 센서 그 자체가 될 수 있다. 별도의 vision head 없이, 혹은 아주 작은 것 하나만으로, 언어 모델의 출력이 곧 metric depth map이 된다. 그리고 그 depth는 오랫동안 이 일을 독점해 온 specialist depth network를 넘어선다.</p>
+      <div class="chapter-tldr">SpatialVLM 이후 dense geometry는 전용 vision head의 몫으로 여겨졌다. DepthVLM과 DepthLM은 정반대 설계로 같은 결론에 도달한다. VLM 자체가 metric depth 센서가 될 수 있고, 언어 인터페이스를 통해 specialist depth network를 넘어선다는 것이다.</div>
+      <div class="read-meta"><span class="pill">⏱ 약 17분</span><span class="pill">§ 4 sections</span><span class="pill">🖼 figure 2</span><span class="pill">📊 diagram 2</span></div>
+
+      <div class="cs-wrap">
+        <div style="padding:40px;background:var(--bg-soft);border-radius:12px;color:var(--muted);text-align:center;border:1px dashed var(--border);">🍌 이미지 준비 중</div>
+        <div class="cs-label">🍌 Nano Banana — Chapter 8 Visual Summary</div>
+      </div>
+
+      <div class="section-div">
+        <h2>🎯 학습 목표</h2>
+        <span class="meta">4 goals</span>
+      </div>
+      <div class="goals-box">
+        <div class="box-title">Learning Goals</div>
+        <ul><li>SpatialVLM 이후 dense geometry가 왜 전용 vision head의 몫으로 여겨졌는지, 그리고 두 논문이 그 가정을 어떻게 반박하는지 설명한다.</li><li>DepthVLM의 dense depth head + unified vision–text supervision + two-stage schedule이 어떻게 depth map과 언어를 한 번의 forward pass로 함께 내놓는지 그린다.</li><li>DepthLM이 진단한 두 병목(pixel reference ambiguity, cross-dataset intrinsic ambiguity)과 그 해법(visual prompting, intrinsic-conditioned augmentation)을 논증한다.</li><li>$\delta_1$·AbsRel의 정의를 쓰고, dense map과 per-pixel text query가 coverage와 cost를 어떻게 맞바꾸는지 코드로 검증한다.</li></ul>
+      </div>
+      <nav class="mini-toc"><div class="mt-title">이 챕터에서</div><ol><li><a href="#s8-1">VLM을 깊이 센서로</a></li><li><a href="#s8-2">DepthVLM: 밀집 헤드 한 방에</a></li><li><a href="#s8-3">DepthLM: 헤드 없이 텍스트로</a></li><li><a href="#s8-4">같은 문제, 반대 설계</a></li></ol></nav>
+
+      <div class="sb-block"><p>7장의 APC는 mental simulation으로 perspective-taking을 정면돌파했다. 하지만 그 시뮬레이션은 토대를 하나 전제한다. 장면의 metric depth, 즉 각 지점이 카메라로부터 실제 몇 미터 떨어졌는가다. 2장 SpatialVLM은 이 depth를 오프라인 depth estimator로 뽑아 QA를 합성하는 데이터 레시피로 우회했고, 3·4장은 depth를 feature로 fuse하거나 읽을 수 있는 map으로 다뤘다. 공통 전제는 하나였다. dense metric geometry는 언어 모델 바깥의 전용 vision network가 담당한다는 것.</p>
+<p>이 장의 두 논문은 그 전제를 정면으로 뒤집는다. <a href="https://arxiv.org/abs/2605.15876">DepthVLM</a>은 LLM backbone에 가벼운 dense depth head를 붙여, 단일 VLM이 언어 출력과 full-resolution dense depth map을 한 번의 forward pass로 함께 내놓게 한다. <a href="https://arxiv.org/abs/2509.25413">DepthLM</a>은 정반대 극단을 택한다. head도, 아키텍처 변경도 없이, sparse depth label 위의 순수 text-based SFT만으로 expert-level per-pixel metric depth에 도달한다. 한쪽은 dense map을, 다른 쪽은 text token을 출력한다.</p>
+<p>두 설계가 반대인데도 결론은 같다. metric geometry는 언어 인터페이스를 통해 복원 가능하며, VLM은 specialist depth network에 필적하거나 그것을 넘어선다. DepthVLM은 기존 VLM을 능가하면서 pure-vision 선도 모델까지 앞서고, DepthLM은 가장 앞선 VLM을 metric depth에서 2배 넘게 이긴다. 이 장은 2장의 데이터 레시피와 loop를 닫는다. depth를 오프라인으로 합성해 QA로 굽는 대신, VLM이 online으로 metric depth를 산출한다. metric depth가 native가 되면서 7장의 mental simulation과 10장의 reconstruction 계열로 흘러 들어간다.</p></div><div class="section-div" style="margin-top:36px"><h2>핵심 내용</h2></div><div class="sb-block" id="s8-1"><h2>VLM을 깊이 센서로</h2><p>SpatialVLM이 던진 데이터 레시피는 한 가지를 명시적으로 분업했다. depth는 오프라인 depth estimator가 뽑고, VLM은 그 depth에서 유도된 거리·크기 QA를 언어로 답한다. 이 분업은 이후 암묵적 정설이 됐다. dense metric geometry는 언어 모델이 아니라 그 바깥의 전용 vision head(dense prediction network)가 책임진다는 것이다. 코스의 central thesis로 말하면 projection bottleneck의 자연스러운 귀결이다. 2D encoder는 semantic alignment를 위해 tokenize하지, faithful 3D geometry를 위해 tokenize하지 않는다.</p>
+<p>그래서 metric depth를 VLM이 직접 내놓는다는 발상은 오래 불가능해 보였다. 근거는 성능이었다. 이 과제의 난이도를 보여주는 앵커가 있다. DepthVLM의 project page는 심지어 GPT-5.5조차 이 metric depth 과제에서 <span class="math-inline">\(\delta_1 \approx 0.4\)</span>에 머문다고 보고한다. 절반 이상의 픽셀에서 예측이 참값과 25% 이내로 맞지 않는다는 뜻이다. 가장 앞선 범용 VLM도 depth를 '말로 재는' 데는 실패해 왔다.</p>
+<p>여기서 두 metric을 고정하자. <span class="math-inline">\(\delta_1\)</span>은 예측 <span class="math-inline">\(d_{pred}\)</span>와 참값 <span class="math-inline">\(d_{gt}\)</span>의 비율이 임계 이내인 픽셀의 비율이다.</p>
+<p><span class="math-display">\[\delta_1 = \frac{1}{N}\sum_{i=1}^{N} \mathbb{1}\!\left[\max\!\left(\frac{d_{pred,i}}{d_{gt,i}},\ \frac{d_{gt,i}}{d_{pred,i}}\right) &lt; 1.25\right]\]</span></p>
+<p>AbsRel은 평균 절대 상대 오차다.</p>
+<p><span class="math-display">\[\text{AbsRel} = \frac{1}{N}\sum_{i=1}^{N} \frac{|d_{pred,i}-d_{gt,i}|}{d_{gt,i}}\]</span></p>
+<p><span class="math-inline">\(\delta_1\)</span>은 높을수록, AbsRel은 낮을수록 좋다. GPT-5.5의 <span class="math-inline">\(\delta_1 \approx 0.4\)</span>가 왜 낮은지는 이 정의에서 분명하다. metric scale을 조금만 놓쳐도 비율이 1.25를 넘어 그 픽셀은 통째로 오답 처리된다.</p>
+<p>이 장의 두 논문은 이 벽을 서로 다른 방향에서 뚫는다. DepthVLM은 언어 모델에 dense depth head를 달아 map을 직접 출력하고, DepthLM은 head 없이 depth를 text token으로 뱉는다. 둘 다 증명하는 명제는 동일하다. metric geometry는 전용 vision head의 전유물이 아니라 언어 인터페이스를 통해 회수 가능하다. post-SpatialVLM의 암묵적 가정에 대한 정면 반박이다.</p><div class="figure-block"><figure><img src="/posts/spatial-vlm-evolution/figures/2605.15876/teaser2-v1.png" alt="Comparison of prevailing VLMs versus DepthVLM" loading="lazy" decoding="async"><figcaption><div class="fig-kr">기존 VLM은 text space에서만 감독되어 dense 3D geometry를 밖으로 내놓지 못한다. DepthVLM은 언어 출력과 함께 dense depth를 낸다.</div><div class="fig-orig">arXiv:2605.15876, Fig. 2</div><span class="fig-src">Figure 2 · <a href="https://arxiv.org/abs/2605.15876" target="_blank" rel="noopener">arXiv:2605.15876</a></span></figcaption></figure></div></div><div class="sb-block" id="s8-2"><h2>DepthVLM: 밀집 헤드 한 방에</h2><p>DepthVLM의 선택은 단순하고 대담하다. RGB를 ViT encoder로 토큰화해 LLM backbone에 흘리는 표준 VLM 구조 위에, 가벼운 dense depth head 하나를 추가한다. LLM의 표현이 두 갈래로 나뉜다. 기존 text head는 언어를 생성하고, 새 dense depth head는 full-resolution metric depth map을 예측한다. 두 출력이 단 한 번의 forward pass에서 동시에 나온다. depth를 얻으려고 픽셀마다 다시 질의할 필요가 없다.</p>
+<p>학습은 unified vision–text supervision으로 이뤄진다. 언어 supervision과 dense depth supervision을 하나의 목적함수 아래 묶어, 모델이 semantic과 geometry를 함께 익히게 한다. 여기에 two-stage schedule을 둔다. 대략적으로 먼저 언어·정렬 능력을 세운 뒤 dense depth 예측을 정련하는 순서다. 이 결합 덕분에 depth head는 LLM이 이미 학습한 풍부한 장면 표현 위에 올라탄다.</p>
+<p>설계에서 의도적으로 피한 두 가지가 이 논문의 성격을 규정한다. 첫째, DepthVLM은 외부 vision model로부터 distill하지 않는다. 외부 depth network의 출력을 teacher로 삼으면 그 network의 오차가 누적(error accumulation)되기 때문이다. 대신 supervision을 ground-truth metric depth에서 직접 받는다. 둘째, per-pixel querying을 하지 않는다. depth를 픽셀 단위로 언어 질의해 받는 방식은 느리다. dense head는 한 번의 pass로 map 전체를 뱉어 이 비용을 없앤다.</p>
+<p>이 접근을 뒷받침하려면 데이터가 필요하다. DepthVLM은 indoor와 outdoor를 아우르는 unified metric-depth benchmark를 VLM-compatible format으로 새로 제안한다. 실내 mm 스케일과 실외 수십 미터 스케일을 하나의 평가 틀에 담아, VLM이 두 domain을 한 표현으로 다루도록 강제한다. 이는 4장 SpatialBot이 인코딩 층위에서 마주했던 indoor-mm 대 outdoor-range 딜레마를, 이번엔 benchmark·supervision 층위에서 정면으로 다루는 것이다.</p>
+<p>결과는 주장을 뒷받침한다. DepthVLM은 기존 VLM들을 능가하면서 inference 효율은 더 높고, 나아가 선도적 pure-vision depth 모델까지 앞선다. 언어 인터페이스를 유지한 채로 specialist를 넘어선 것이다. dense head가 있으니 이건 여전히 vision head 아니냐는 반문이 가능하지만, 요점은 그 head가 별도 network가 아니라 LLM backbone에 얹힌 lightweight 모듈이며 언어와 하나의 pass·하나의 supervision을 공유한다는 데 있다.</p><figure class="diagram-block"><div class="mermaid">flowchart LR
+  RGB[&quot;RGB 이미지&quot;] --&gt; VIT[&quot;ViT&lt;br/&gt;encoder&quot;]
+  VIT --&gt; LLM[&quot;LLM&lt;br/&gt;backbone&quot;]
+  LLM --&gt; TH[&quot;Text head&quot;]
+  LLM --&gt; DH[&quot;Dense&lt;br/&gt;depth head&quot;]
+  TH --&gt; LANG[&quot;언어 출력&quot;]
+  DH --&gt; DMAP[&quot;Full-res&lt;br/&gt;metric depth map&quot;]
+  LANG -.-&gt;|&quot;한 번의 forward pass&quot;| DMAP</div><figcaption>DepthVLM: RGB가 ViT를 지나 LLM backbone으로 들어가고, text head와 dense depth head가 언어 출력과 full-resolution metric depth map을 한 번의 forward pass에서 함께 내놓는다. 외부 vision model distillation 없이 unified vision–text supervision으로 학습한다.</figcaption></figure><div class="figure-block arch"><figure><img src="/posts/spatial-vlm-evolution/figures/2605.15876/pipeline-v1.png" alt="DepthVLM architecture with lightweight DPT-style depth head" loading="lazy" decoding="async"><figcaption><div class="fig-kr">DepthVLM 구조: 표준 VLM에 경량 DPT-style depth head를 붙여 단일 forward pass로 dense metric depth와 언어를 동시에 출력한다.</div><div class="fig-orig">arXiv:2605.15876, Fig. 3</div><span class="fig-src">Figure 3 · <a href="https://arxiv.org/abs/2605.15876" target="_blank" rel="noopener">arXiv:2605.15876</a></span></figcaption></figure></div></div><div class="sb-block" id="s8-3"><h2>DepthLM: 헤드 없이 텍스트로</h2><p>DepthLM은 반대 극단에서 같은 결론에 닿는다. dense head도, 아키텍처 변경도 없다. 표준 VLM에 sparse depth label 위의 순수 text-based SFT를 태우는 것만으로 expert-level per-pixel metric depth에 도달한다. depth는 map이 아니라 text token으로 출력된다. 질문이 특정 픽셀을 가리키면, 모델이 그 지점의 metric depth를 숫자 텍스트로 답한다.</p>
+<p>DepthLM의 진짜 기여는 아키텍처가 아니라 진단이다. VLM이 metric depth에 실패해 온 원인이 표현력 부족이 아니라 두 개의 ambiguity라고 짚는다.</p>
+<p>첫째는 pixel reference ambiguity다. "이 지점의 depth는?"이라 물을 때, 모델은 정확히 어느 픽셀을 묻는지 알기 어렵다. 텍스트 좌표는 이미지 그리드와 정렬이 흐릿하고, 근처 물체 경계에서 depth는 급변한다. 잘못된 픽셀을 참조하면 답 자체가 무의미해진다. 둘째는 cross-dataset camera-intrinsic ambiguity다. 같은 픽셀 변위라도 카메라의 focal length·principal point 같은 intrinsic이 다르면 대응하는 metric depth가 달라진다. 여러 데이터셋을 섞어 학습하면 모델은 intrinsic을 모른 채 상충하는 신호를 받아 metric scale을 고정하지 못한다.</p>
+<p>해법은 두 병목에 정확히 대응한다. pixel reference에는 visual prompting을 쓴다. 질의 대상 픽셀에 marker(가리키는 시각적 표식)를 이미지 위에 직접 그려 넣어, 어느 점을 묻는지 모호함 없이 지정한다. intrinsic에는 intrinsic-conditioned augmentation을 쓴다. 학습 중 카메라 intrinsic을 조건으로 반영·증강해, 모델이 intrinsic에 맞춰 metric scale을 보정하도록 만든다. 두 fix 모두 아키텍처가 아니라 입력·데이터 층위의 개입이라는 점이 이 논문의 성격이다.</p>
+<p>효과는 두 갈래다. 정확도에서 DepthLM은 가장 앞선 VLM들을 metric depth에서 2배 넘게 이기며, pure-vision specialist에 필적한 첫 VLM이 된다. 그리고 뜻밖의 부수 효과가 하나 있다. dense regression network는 인접 픽셀을 매끄럽게 이으려다 물체 경계에서 depth를 뭉개고 'flying point'(경계에 떠 있는 허깨비 점)를 만든다. DepthLM은 픽셀을 개별 text query로 다루므로 이런 over-smoothing이 구조적으로 발생하지 않는다. 별도의 boundary regularization 없이도 경계가 날카롭게 유지된다.</p>
+<p>DepthLM은 arXiv non-exclusive 라이선스라 이 코스는 그 아키텍처를 논문 figure 대신 mermaid로 재현한다. 위 flowchart의 핵심은 marker가 찍힌 RGB와 intrinsic 조건이 표준 VLM으로 들어가 depth를 text token으로 내놓는다는 것, 그리고 head가 없다는 것이다.</p><figure class="diagram-block"><div class="mermaid">flowchart LR
+  RGB[&quot;RGB 이미지&quot;] --&gt; MARK[&quot;Visual prompt&lt;br/&gt;marker 삽입&quot;]
+  MARK --&gt; VLM[&quot;표준 VLM&lt;br/&gt;(head 변경 없음)&quot;]
+  INTR[&quot;Camera intrinsic&lt;br/&gt;조건·증강&quot;] --&gt; VLM
+  VLM --&gt; TXT[&quot;Depth as&lt;br/&gt;text token&quot;]
+  TXT --&gt; D[&quot;질의 픽셀의&lt;br/&gt;metric depth (숫자)&quot;]</div><figcaption>DepthLM(mermaid 재현): 질의 픽셀에 marker를 그린 RGB와 camera-intrinsic 조건이 표준 VLM으로 들어가고, depth가 text token으로 나온다. dense head 없이 sparse text label SFT만으로 학습하며, pixel-reference와 intrinsic ambiguity를 입력 층위에서 해소한다.</figcaption></figure></div><div class="sb-block" id="s8-4"><h2>같은 문제, 반대 설계</h2><p>두 논문은 metric depth라는 동일한 목표를, 축마다 정반대의 선택으로 공략한다. 출력 modality, supervision, 아키텍처, inference 비용, over-smoothing 성향이 전부 갈린다.</p>
+<table>
+<thead>
+<tr>
+<th>축</th>
+<th>DepthVLM</th>
+<th>DepthLM</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>출력 modality</td>
+<td>full-resolution dense depth map</td>
+<td>픽셀별 text token(숫자)</td>
+</tr>
+<tr>
+<td>supervision</td>
+<td>dense GT depth (unified vision–text)</td>
+<td>sparse depth label (text SFT)</td>
+</tr>
+<tr>
+<td>아키텍처</td>
+<td>LLM backbone + lightweight dense head</td>
+<td>head 없음, 아키텍처 무변경</td>
+</tr>
+<tr>
+<td>inference 비용</td>
+<td>한 번의 forward pass로 map 전체</td>
+<td>질의 픽셀당 1 pass</td>
+</tr>
+<tr>
+<td>over-smoothing</td>
+<td>dense regression 특성상 경계 뭉갬 우려</td>
+<td>per-pixel query라 구조적으로 회피</td>
+</tr>
+<tr>
+<td>대표 성과</td>
+<td>기존 VLM·pure-vision 모델 초과, 고효율</td>
+<td>최상위 VLM 2배 초과, specialist에 필적</td>
+</tr>
+</tbody>
+</table>
+<p>이 대립을 coverage와 cost의 trade-off로 읽으면 본질이 드러난다. DepthVLM의 dense map은 한 번의 pass로 100% 픽셀을 덮는다. coverage가 최대이고 pass는 1회다. DepthLM의 text query는 질의한 픽셀만 답하므로 coverage는 예산에 비례하고, 전체 map을 덮으려면 픽셀 수만큼 pass가 필요하다. 대신 픽셀 하나에 집중하므로 그 지점의 정밀도와 경계 선명도를 얻는다. 밀집 커버리지를 한 번에 사느냐, 국소 정밀도를 질의당 사느냐의 교환이다. 코드 예제가 이 교환을 <span class="math-inline">\(\delta_1\)</span>·AbsRel과 pass 수로 수치화한다.</p>
+<p>반대 설계가 같은 명제를 증명한다는 점이 이 장의 결론이다. 한쪽은 head를 더해 map을, 다른 쪽은 head를 빼고 token을 내놓지만, 둘 다 metric geometry가 언어 인터페이스를 통해 회수됨을 보인다. post-SpatialVLM의 '전용 vision head 필요' 가정은 필요조건이 아니라 하나의 선택지였을 뿐이다.</p>
+<p>이로써 2장에서 열린 loop가 닫힌다. SpatialVLM은 depth를 오프라인으로 뽑아 QA로 굽는 offline 합성이었다. depth-native VLM은 그 depth를 online으로 산출한다. metric depth가 파생 라벨이 아니라 모델의 native 출력이 되면서, 7장의 mental simulation은 실측 가능한 토대를 얻고 10장의 reconstruction 계열은 재구성의 재료를 얻는다.</p></div>
+      <div class="section-div"><h2>💡 비유로 이해하기</h2></div>
+    <div class="analogy-card">
+      <div class="a-head">Analogy</div>
+      <div class="a-title">지형 전체를 찍는 항공 라이다 vs. 한 점을 재는 레이저 거리계</div>
+      <div class="a-body"><p>DepthVLM은 항공 라이다 스캐너다. 비행기가 지형 위를 한 번 지나가면 모든 지점의 고도가 담긴 dense한 지형도가 통째로 나온다. 한 번의 비행(forward pass)으로 전 영역을 덮으니 coverage가 완전하다. 다만 스캐너는 인접 점을 부드럽게 잇는 경향이 있어, 절벽 같은 급격한 경계에서 값이 살짝 뭉개지기 쉽다.</p>
+<p>DepthLM은 삼각대 위의 레이저 거리계다. 측량사가 겨냥한 그 한 점의 거리를 매우 정확히 읽어 숫자로 불러준다. 겨냥(marker)이 정확하니 경계에서도 값이 흐트러지지 않는다. 대신 전체 지형을 알려면 점을 하나하나 다시 겨냥해 재야 한다. 점당 정밀도는 최고지만, 전 영역 커버리지에는 그만큼의 측정 횟수가 든다.</p>
+<p>두 장비 모두 결국 '거리를 재는 기계'다. 그리고 이 장의 요점은, 그 기계가 이제 별도의 측량 장비가 아니라 말을 하는 조수(언어 모델) 자신이라는 것이다. 하나는 지도를 통째로 그려주고, 하나는 겨냥한 점을 불러준다. 출력 형태만 다를 뿐, 둘 다 언어 인터페이스를 쓰는 metric depth 센서다.</p></div>
+    </div>
+      <div class="section-div"><h2>💻 코드 예시</h2></div>
+    <div class="code-card">
+      <div class="c-intro"><p><span class="math-inline">\(\delta_1\)</span>과 AbsRel을 numpy로 구현하고, DepthVLM의 dense map과 DepthLM의 per-pixel text query가 coverage와 cost를 어떻게 맞바꾸는지 시뮬레이션한다. dense head는 한 번의 pass로 전 픽셀을 덮고, text query는 예산만큼의 픽셀을 질의당 1 pass로 답한다. 난이도 앵커로 GPT-5.5의 <span class="math-inline">\(\delta_1 \approx 0.4\)</span>를 함께 출력한다.</p></div>
+      <div class="code-bar">python</div>
+      <pre><code class="language-python">import numpy as np
+
+def delta1(pred, gt, thr=1.25):
+    &quot;&quot;&quot;delta_1: max(pred/gt, gt/pred) &lt; 1.25 인 픽셀 비율.&quot;&quot;&quot;
+    pred = np.asarray(pred, dtype=np.float64)
+    gt = np.asarray(gt, dtype=np.float64)
+    ratio = np.maximum(pred / gt, gt / pred)
+    return float(np.mean(ratio &lt; thr))
+
+def abs_rel(pred, gt):
+    &quot;&quot;&quot;AbsRel: 평균 절대 상대 오차.&quot;&quot;&quot;
+    pred = np.asarray(pred, dtype=np.float64)
+    gt = np.asarray(gt, dtype=np.float64)
+    return float(np.mean(np.abs(pred - gt) / gt))
+
+rng = np.random.default_rng(0)
+H, W = 120, 160
+gt = rng.uniform(0.5, 10.0, size=(H, W))               # GT metric depth (m)
+
+# DepthVLM: dense head가 한 번의 forward pass로 전 픽셀 예측
+pred_dense = gt * rng.normal(1.0, 0.06, size=gt.shape)
+print(&quot;=== DepthVLM: dense map (1 forward pass) ===&quot;)
+print(f&quot;coverage: {gt.size} px (100%)&quot;)
+print(f&quot;delta_1 : {delta1(pred_dense, gt):.3f}   AbsRel: {abs_rel(pred_dense, gt):.3f}&quot;)
+print(f&quot;passes  : 1&quot;)
+
+# DepthLM: 예산만큼의 픽셀만 text query, 질의당 1 pass, 픽셀당 더 정밀
+budget = 200
+idx = (rng.integers(0, H, budget), rng.integers(0, W, budget))
+gt_q = gt[idx]
+pred_q = gt_q * rng.normal(1.0, 0.03, size=budget)
+print(&quot;\n=== DepthLM: per-pixel text query (query당 1 pass) ===&quot;)
+print(f&quot;coverage: {budget} px ({budget/gt.size*100:.1f}%)&quot;)
+print(f&quot;delta_1 : {delta1(pred_q, gt_q):.3f}   AbsRel: {abs_rel(pred_q, gt_q):.3f}  (질의 픽셀 한정)&quot;)
+print(f&quot;passes  : {budget} (질의당 1회)&quot;)
+
+print(&quot;\n=== trade-off ===&quot;)
+print(f&quot;text query로 전체 map을 덮으려면 {gt.size} passes 필요 (dense map은 1)&quot;)
+print(f&quot;난이도 앵커: GPT-5.5도 이 과제에서 delta_1 ~= 0.40&quot;)</code></pre>
+      <div class="c-walk"><p>delta1은 예측·참값 비율의 최대치가 1.25 미만인 픽셀 비율을, abs_rel은 상대 오차의 평균을 계산한다. 두 정의 모두 브리프의 수식 그대로다. DepthVLM 블록은 dense head가 한 번의 pass로 전 픽셀(19200개)을 예측하는 상황으로, coverage 100%에 pass 1회다. DepthLM 블록은 예산 200픽셀만 text query로 답하는 상황이다. 질의된 픽셀에 집중하므로 픽셀당 노이즈를 작게 줘 AbsRel이 더 낮게 나오지만, coverage는 약 1%에 그치고 pass는 200회다. 마지막 블록이 교환의 본질을 못 박는다. text query로 dense map과 같은 커버리지를 얻으려면 픽셀 수만큼(19200회) pass가 들어, dense-head 단일패스 대비 coverage와 cost가 정확히 반대로 맞바뀐다. GPT-5.5의 delta_1 ~= 0.40 출력은 이 과제 자체가 최상위 범용 VLM에도 얼마나 어려운지를 상기시키는 앵커다.</p></div>
+    </div>
+      <div class="section-div"><h2>🏭 현업에서의 평가</h2></div>
+    <div class="ie-card">
+      <div class="ie-head">Industry Evaluation</div>
+      <div class="ie-body">
+        <div class="ie-overview">면접에서 이 장은 아키텍처 trade-off 감각과 문제 진단 능력을 동시에 검증한다. 같은 목표에 두 반대 설계가 어떻게 도달하는지, 그리고 DepthLM처럼 아키텍처가 아니라 ambiguity를 병목으로 지목하는 진단형 기여를 읽어낼 수 있어야 한다.</div>
+        <div class="ie-grid">
+          <div class="ie-cell"><h4>✅ 시니어가 보는 것</h4><ul><li>$\delta_1$·AbsRel의 정의를 정확히 쓰고, metric scale을 조금만 놓쳐도 $\delta_1$이 급락하는 이유(비율 1.25 임계)를 설명하는가.</li><li>DepthVLM이 외부 vision model distillation과 per-pixel querying을 왜 피했는지(error accumulation·속도)를 설계 의도로 논증하는가.</li><li>DepthLM의 두 병목(pixel reference·intrinsic ambiguity)과 그 입력·데이터 층위 해법(visual prompt·intrinsic 증강)을 아키텍처 해법과 구분하는가.</li><li>dense-head 단일패스와 head-free 텍스트질의를 coverage 대 cost, over-smoothing 성향까지 축별로 대비하는가.</li></ul></div>
+          <div class="ie-cell danger"><h4>⚠️ 레드 플래그</h4><ul><li>&quot;VLM에 depth head만 붙이면 된다&quot;며 unified supervision·two-stage·distillation 회피 같은 학습 설계를 통째로 생략함.</li><li>DepthLM의 기여를 &#x27;더 큰 모델·더 많은 데이터&#x27;로 오해하고, 진짜 기여가 ambiguity 진단과 입력 층위 fix라는 점을 놓침.</li><li>$\delta_1$을 단순 정확도로 뭉뚱그리고 1.25 비율 임계나 scale 민감성을 설명하지 못함.</li><li>두 논문을 &#x27;둘 다 depth를 잘한다&#x27;로만 묶고, 출력 modality·supervision·inference 비용의 반대 설계를 대비하지 못함.</li></ul></div>
+        </div>
+        <div class="ie-q" style="background:none;padding:0;margin-top:14px"><h4 style="color:#6d28d9">🎤 예상 인터뷰 질문 (클릭하면 모범답안)</h4><details class="qa-item"><summary>DepthVLM은 왜 외부 depth network에서 distill하지 않고 GT depth로 직접 supervision을 받는가?</summary><div class="qa-answer"><p>외부 vision model의 출력을 teacher로 삼으면 그 network의 오차가 학생 VLM으로 누적되는 error accumulation이 생기기 때문입니다. DepthVLM은 대신 dense depth head를 ground-truth metric depth로 직접 학습하고, 언어와 묶은 unified vision–text supervision을 two-stage로 태웁니다. 그 결과 depth가 LLM의 장면 표현 위에 올라타면서도 teacher의 편향을 물려받지 않아, pure-vision 선도 모델까지 넘어섭니다.</p></div></details><details class="qa-item"><summary>DepthLM은 아키텍처를 바꾸지 않는데 어떻게 metric depth를 크게 개선했는가?</summary><div class="qa-answer"><p>DepthLM은 병목을 아키텍처가 아니라 두 ambiguity로 진단합니다. 어느 픽셀을 묻는지 모호한 pixel reference ambiguity와, 데이터셋마다 카메라 intrinsic이 달라 metric scale이 흔들리는 cross-dataset intrinsic ambiguity입니다. 해법은 각각 질의 픽셀에 marker를 그리는 visual prompting과 intrinsic을 조건·증강으로 반영하는 것이며, 둘 다 입력·데이터 층위 개입입니다. 이 sparse text-label SFT만으로 최상위 VLM을 metric depth에서 2배 넘게 이기고 pure-vision specialist에 필적합니다.</p></div></details><details class="qa-item"><summary>dense depth map(DepthVLM)과 per-pixel text query(DepthLM)는 어떤 trade-off를 갖는가?</summary><div class="qa-answer"><p>DepthVLM의 dense head는 한 번의 forward pass로 전 픽셀을 덮어 coverage가 완전하고 inference가 효율적이지만, dense regression 특성상 경계에서 over-smoothing 우려가 있습니다. DepthLM의 text query는 질의한 픽셀만 답해 coverage가 예산에 비례하고 전체 map을 덮으려면 픽셀 수만큼 pass가 들지만, per-pixel이라 over-smoothing과 flying point가 구조적으로 발생하지 않아 경계가 날카롭습니다. 밀집 커버리지를 한 번에 사느냐, 국소 정밀도를 질의당 사느냐의 교환입니다.</p></div></details></div>
+        <div class="mastery-bar"><strong>숙달 vs 익숙함:</strong> 친숙한 수준은 &#x27;DepthVLM은 dense head로 map을, DepthLM은 head 없이 text로 depth를 낸다&#x27;를 아는 것이다. 통달한 수준은 $\delta_1$·AbsRel을 정의하고 scale 민감성을 설명하며, DepthVLM의 distillation·per-pixel 회피 의도와 DepthLM의 두 ambiguity 진단·입력 층위 fix를 구분하고, 두 설계를 coverage·cost·over-smoothing 축으로 대비해 &#x27;반대 설계가 같은 명제를 증명한다&#x27;는 결론까지 잇는 것이다.</div>
+      </div>
+    </div>
+
+      <div class="section-div" style="margin-top:48px"><h2>✨ 핵심 요약</h2></div>
+      <div class="tw-grid"><div class="tw-cell" style="border-top:3px solid #dbeafe"><h3>VLM이 곧 metric depth 센서가 될 수 있다</h3><p>post-SpatialVLM의 &#x27;전용 vision head 필요&#x27; 가정은 필요조건이 아니었다. DepthVLM·DepthLM은 반대 설계로 metric geometry가 언어 인터페이스를 통해 회수됨을 증명한다.</p></div><div class="tw-cell" style="border-top:3px solid #fce7f3"><h3>GPT-5.5도 delta_1 ~= 0.4인 어려운 과제다</h3><p>$\delta_1$은 비율이 1.25 이내인 픽셀 비율이라 metric scale을 조금만 놓쳐도 급락한다. 최상위 범용 VLM도 이 과제에서 절반 이상의 픽셀을 놓친다.</p></div><div class="tw-cell" style="border-top:3px solid #dcfce7"><h3>DepthVLM: dense head로 한 번의 pass에 map과 언어를 함께</h3><p>LLM backbone에 lightweight dense depth head를 얹어 full-resolution depth map과 언어 출력을 단일 forward pass로 낸다. per-pixel querying의 느림을 없앤다.</p></div><div class="tw-cell" style="border-top:3px solid #e0e7ff"><h3>DepthVLM은 distillation을 피한다</h3><p>외부 depth network를 teacher로 쓰면 error accumulation이 생기므로, GT depth로 직접 unified vision–text supervision을 two-stage로 태워 pure-vision 모델까지 넘어선다.</p></div><div class="tw-cell" style="border-top:3px solid #fef9c3"><h3>DepthLM: 아키텍처가 아니라 ambiguity가 병목</h3><p>head도 아키텍처 변경도 없이 sparse text-label SFT만으로 expert-level에 도달한다. 진짜 병목은 pixel reference와 cross-dataset intrinsic의 두 ambiguity다.</p></div><div class="tw-cell" style="border-top:3px solid #ffedd5"><h3>visual prompt와 intrinsic 증강이 그 병목을 푼다</h3><p>질의 픽셀에 marker를 그려 어느 점인지 못 박고, camera intrinsic을 조건·증강으로 반영해 metric scale을 고정한다. 최상위 VLM을 depth에서 2배 넘게 이긴다.</p></div><div class="tw-cell" style="border-top:3px solid #f5f3ff"><h3>text query는 over-smoothing을 구조적으로 피한다</h3><p>dense regression이 경계에서 만드는 flying point를, per-pixel text query는 boundary regularization 없이도 회피한다. coverage 대신 경계 정밀도를 얻는다.</p></div><div class="tw-cell" style="border-top:3px solid #ecfdf5"><h3>2장 데이터 레시피의 loop를 닫는다</h3><p>depth를 오프라인 합성해 QA로 굽던 방식이 online metric depth 산출로 바뀐다. metric depth가 native가 되어 mental simulation·reconstruction 계열의 토대가 된다.</p></div></div>
+      <div class="ref-card"><div class="rc-title">📎 References</div><ol class="ref-list"><li>Hanxun Yu et al. (2026). <span class="rf-title">Unlocking Dense Metric Depth Estimation in VLMs (DepthVLM)</span>. arXiv 2026. <a href="https://arxiv.org/abs/2605.15876" target="_blank" rel="noopener">arXiv:2605.15876</a></li></ol></div>
+      <div class="next-teaser"><div class="nt-k">Next · Ch09</div><div class="nt-body">데이터와 head로 밀어붙이던 시대가 여기서 저문다. 다음 장은 묻는다. supervised 데이터 생성 없이, verifiable reward만으로 공간 추론을 &#x27;활성화&#x27;할 수 있는가.</div></div>
+
+      <nav class="chapter-nav">
+        <a class="ch-nav-btn" href="chapter-07.html">← Perspective-Aware Reasoning (APC)</a>
+        <a class="ch-nav-btn" href="index.html">📚 목록</a>
+        <a class="ch-nav-btn primary" href="chapter-09.html">Verifiable RL for Spatial Reasoning →</a>
+      </nav>
+    </div></div>
+</div>
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var btn=document.getElementById('sbToggle');
+  var KEY='direcf:sb-collapsed';
+  function apply(c){app.classList.toggle('collapsed',c);localStorage.setItem(KEY,c?'1':'0');}
+  apply(localStorage.getItem(KEY)==='1');
+  if(btn)btn.addEventListener('click',function(){apply(!app.classList.contains('collapsed'));});
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}]})"></script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({
+    startOnLoad:true, securityLevel:'loose',
+    theme:'base',
+    themeVariables:{
+      primaryColor:'#dbeafe', primaryTextColor:'#0f1f3a', primaryBorderColor:'#1d4ed8',
+      lineColor:'#1d4ed8', secondaryColor:'#f5f3ff', tertiaryColor:'#ecfdf5',
+      fontFamily:'-apple-system,Pretendard,sans-serif', fontSize:'14px'
+    }
+  });
+</script>
+</body></html>
