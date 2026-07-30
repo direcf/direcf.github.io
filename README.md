@@ -8,6 +8,59 @@
 
 ---
 
+## 📚 전체 코스 (Course Index)
+
+AI·시스템·로보틱스 심화 학습 코스 모음. 각 코스는 10~15개 챕터로, 대표 논문·개념 다이어그램·실행 코드와 함께 하나의 주제를 관통합니다. 전체 목록은 [direcf.github.io](https://direcf.github.io/) 에서도 볼 수 있습니다.
+
+#### 💻 Computer Science
+
+- [AI 엔지니어를 위한 백엔드 & Ops](https://direcf.github.io/posts/backend-ops/)
+- [AI 엔지니어를 위한 멀티모달 데이터 시스템](https://direcf.github.io/posts/multimodal-data-systems/)
+- [Video Codecs — H.264, H.265, AV1, and Beyond](https://direcf.github.io/posts/video-codec/)
+- [System Architecture & Network Protocols](https://direcf.github.io/posts/system-architecture/)
+
+#### 🧠 Engineering Philosophy
+
+- [Engineering Philosophy in the AI Agent Era](https://direcf.github.io/posts/engineering-philosophy/)
+
+#### ☁️ Cloud / Infra
+
+- [AWS 기초 완전 정복 — S3·EC2·VPC·Lambda부터 실전 아키텍처까지](https://direcf.github.io/posts/aws-fundamentals/)
+- [AWS 심화 완전 정복 — ECS·SageMaker·EventBridge·Kinesis부터 FinOps까지](https://direcf.github.io/posts/aws-advanced/)
+
+#### 👁️ Computer Vision
+
+- [에고-엑소 시점 일관성 — 두 시점을 하나로 잇는 연구의 흐름 (대표 논문 10편)](https://direcf.github.io/posts/ego-exo-view-consistency/)
+- [Ego-Exo 연구 — 크로스뷰 학습부터 논문 작성까지](https://direcf.github.io/posts/ego-exo/)
+
+#### 🎨 Multimodal AI
+
+- [Spatial VLM의 진화 — 대표 논문 10편으로 읽는 공간추론 연구의 흐름](https://direcf.github.io/posts/spatial-vlm-evolution/)
+- [실시간 VLM 비용 최적화 — 단계별 이벤트 탐지 논문 10편](https://direcf.github.io/posts/realtime-vlm-cost-optimization/)
+- [LLM & VLM Post-Training 완전 정복 — SFT부터 최신 RL까지](https://direcf.github.io/posts/llm-vlm-post-training/)
+- [Pretrained to Imagine, Fine-Tuned to Act: World-Action Models](https://direcf.github.io/posts/world-action-models/)
+- [Temporal Grounding for Video VLMs (2026)](https://direcf.github.io/posts/temporal-grounding-vlm/)
+- [Real-time Video LLM](https://direcf.github.io/posts/real-time-video-llm/)
+- [World Models & JEPA — LeCun's Path Beyond Generative AI](https://direcf.github.io/posts/jepa-world-models/)
+- [Frame Sampling for Multimodal AI](https://direcf.github.io/posts/frame-sampling-multimodal-ai/)
+
+#### ⚙️ AI Engineering
+
+- [Loop Engineering — 프레임워크에서 루프, 그리고 그래프로 (대표 논문 13편)](https://direcf.github.io/posts/loop-engineering/)
+- [빅테크 System Design 완전 정복 — 분산 시스템부터 LLM 인프라까지](https://direcf.github.io/posts/system-design-interview/)
+- [Claude Code 완전 정복 — CLAUDE.md부터 Multi-agent까지](https://direcf.github.io/posts/claude-code-mastery/)
+- [Claude Code 스킬 생태계 & 전문가 워크플로 완전 가이드](https://direcf.github.io/posts/claude-code-skills-guide/)
+- [How AI Agents Reshape Knowledge Work](https://direcf.github.io/posts/ai-agents-knowledge-work/)
+- [Harness Engineering — Claude Code 하네스 완전 가이드](https://direcf.github.io/posts/harness-engineering/)
+
+#### 🤖 Physical AI
+
+- [COMPASS & Cross-Embodiment Mobility — 하나의 정책으로 모든 로봇을 움직이다](https://direcf.github.io/posts/compass-cross-embodiment/)
+- [NVIDIA Physical AI Map — Omniverse·Cosmos·Isaac·GR00T 전체 지도](https://direcf.github.io/posts/nvidia-physical-ai-map/)
+- [GR00T & NVIDIA Physical AI 2026 — GR00T는 데이터로 navigation과 manipulation을 다 먹는가](https://direcf.github.io/posts/groot-loco-manipulation/)
+
+---
+
 ## 1. 이 사이트가 뭐인가
 
 콘텐츠 중심의 정적 사이트. 두 종류의 글이 있다:
